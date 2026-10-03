@@ -32,7 +32,8 @@ local COLORS = {
 }
 
 -- Characters can recolor their hit effects (VFX.SetPalette).
-type Palette = { hit: Color3, heavy: Color3, flash: Color3 }
+-- `cleanM1`: M1 hits only flash the victim and show damage (no sparks/rings).
+type Palette = { hit: Color3, heavy: Color3, flash: Color3, cleanM1: boolean? }
 local DEFAULT_PALETTE: Palette = { hit = COLORS.Hit, heavy = COLORS.Heavy, flash = Color3.new(1, 1, 1) }
 local palettes: { [string]: Palette } = {}
 
@@ -444,7 +445,26 @@ end
 -- Effects (names match what the server sends)
 ---------------------------------------------------------------------------
 
+-- M1 hit for kits with a clean style: a quick body flash and the number.
+local function cleanM1Hit(data, heavy: boolean): boolean
+	local palette = paletteFor(data)
+	if not palette.cleanM1 or data.variant == nil then
+		return false
+	end
+	highlight(data.victim, Color3.new(1, 1, 1), if heavy then 0.18 else 0.1)
+	if data.damage then
+		popup(data.position, string.format("%g", data.damage), Color3.new(1, 1, 1), if heavy then 1.2 else 1)
+	end
+	if heavy and (isLocal(data.attacker) or isLocal(data.victim)) then
+		CameraShake.FovKick(4)
+	end
+	return true
+end
+
 function Effects.Hit(data)
+	if cleanM1Hit(data, false) then
+		return
+	end
 	local position: Vector3 = data.position
 	local direction: Vector3 = data.direction or Vector3.zAxis
 	local palette = paletteFor(data)
@@ -466,6 +486,9 @@ function Effects.Hit(data)
 end
 
 function Effects.HeavyHit(data)
+	if cleanM1Hit(data, true) then
+		return
+	end
 	local position: Vector3 = data.position
 	local direction: Vector3 = data.direction or Vector3.zAxis
 	local palette = paletteFor(data)

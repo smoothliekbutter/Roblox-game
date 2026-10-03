@@ -145,10 +145,10 @@ function Kit.Equip(character: Model)
 	local sword = buildSword()
 	local handle = sword.PrimaryPart :: BasePart
 
-	-- Held in the right hand, blade 35 degrees forward of the arm, so it
-	-- extends naturally when the arm swings (the client holds the arm up
-	-- in a ready stance so the blade doesn't hang into the ground).
-	local weld = Instance.new("Weld")
+	-- Held in the right hand, blade 35 degrees forward of the arm. A Motor6D
+	-- rather than a Weld so clients can animate it like a wrist (resting the
+	-- sword on the shoulder, angling it through swings).
+	local weld = Instance.new("Motor6D")
 	weld.Name = "SwordGrip"
 	weld.Part1 = handle
 	weld.Parent = handle
@@ -660,6 +660,25 @@ local function demonDestroyer(ctx)
 	fx(ctx, "DemonDestroyer", "Heal")
 	c.ShakeArea(ctx.root.Position, 70, 0.9)
 	CombatState.SetCasting(character, 0.35)
+end
+
+-- Spawn entrance: the grimoire appears, he draws the sword from it, twirls
+-- it and slams it into the ground. Untouchable and rooted while it plays;
+-- the animation itself is client-side (Client/Kits/AntiMagic).
+local ENTRANCE_TIME = 2.45
+
+function Kit.Entrance(ctx)
+	local c, character = ctx.combat, ctx.character
+	CombatState.SetCasting(character, ENTRANCE_TIME)
+	CombatState.GiveIFrames(character, ENTRANCE_TIME)
+	character:SetAttribute("Rooted", true)
+	fx(ctx, "Entrance", "Start")
+	task.wait(1.7)
+	if CombatState.IsAlive(character) then
+		c.ShakeArea(ctx.root.Position, 35, 0.3)
+	end
+	task.wait(ENTRANCE_TIME - 1.7)
+	character:SetAttribute("Rooted", false)
 end
 
 Kit.Skills = { bullThrust, blackMeteorite, blackDivider, antiMagicDeflect }

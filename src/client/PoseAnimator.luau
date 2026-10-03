@@ -14,9 +14,16 @@
 	  LeftArm     Left Shoulder
 	  RightLeg    Right Hip
 	  LeftLeg     Left Hip
+	  Sword       SwordGrip (a weapon's wrist), relative to the right arm
 	Axes: X = right, Y = up, Z = back. So for a limb hanging down,
 	  +X rotation swings it forward, +Y turns it to the left,
 	  +Z swings it out to the right. For the Torso, +X leans back.
+
+	Two layers per character:
+	  idle   a looping stance, one version for standing still and one for
+	         moving, blended by how fast the character is going
+	  track  one-shot animations (attacks, skills) that blend in from
+	         wherever the body is and back out into the idle
 ]]
 
 local RunService = game:GetService("RunService")
@@ -35,10 +42,20 @@ export type Animation = {
 	keyframes: { Keyframe },
 	fadeIn: number?,
 	fadeOut: number?,
-	-- Joints whose pose is layered on top of the default walk/idle animation
-	-- instead of replacing it (e.g. legs counter-twisting while still walking).
+	loop: boolean?,
+	-- Joints whose pose is layered on top of the layer below instead of
+	-- replacing it (e.g. legs counter-twisting while still walking).
 	additive: { [string]: boolean }?,
+	-- Overlapping action: a joint with a delay follows the animation that
+	-- many seconds late (negative leads), so the body leads and the arm and
+	-- weapon drag behind like in hand-made animation.
+	delays: { [string]: number }?,
 	events: { { time: number, name: string } }?,
+}
+
+export type IdleSet = {
+	stand: Animation?, -- played while standing still
+	move: Animation?, -- played while moving (usually upper body only)
 }
 
 local JOINTS = {
@@ -48,7 +65,11 @@ local JOINTS = {
 	LeftArm = "Left Shoulder",
 	RightLeg = "Right Hip",
 	LeftLeg = "Left Hip",
+	Sword = "SwordGrip",
 }
+
+local STAND_SPEED = 1.5 -- studs/s; slower than this counts as standing still
+local STANCE_BLEND = 8 -- how fast the idle switches between stand and move
 
 type Track = {
 	animation: Animation,
@@ -66,17 +87,20 @@ type Track = {
 }
 
 type Idle = {
-	pose: Pose,
+	set: IdleSet,
+	covered: { [string]: boolean },
 	joints: { [string]: Motor6D },
+	start: number,
+	standWeight: number,
+	nextJointScan: number,
 }
 
 local tracks: { [Model]: Track } = {}
--- Persistent stances (e.g. holding a sword up) that play whenever no
--- animation is using those joints, and that animations blend from/to.
 local idles: { [Model]: Idle } = {}
 -- What we wrote to each joint last frame. If the default Animator didn't
 -- overwrite it, the joint has no base animation and its base is identity.
 local lastWritten: { [Motor6D]: CFrame } = {}
+local posedCache: { [Animation]: { [string]: boolean } } = setmetatable({}, { __mode = "k" }) :: any
 
 local PoseAnimator = {}
 
@@ -101,9 +125,41 @@ local function smooth(x: number): number
 	return x * x * (3 - 2 * x)
 end
 
--- The animation's pose for one joint at time t (identity if never posed).
-local function sample(animation: Animation, poseName: string, t: number): CFrame
+local function lengthOf(animation: Animation): number
 	local keyframes = animation.keyframes
+	return keyframes[#keyframes].time
+end
+
+local function posed(animation: Animation): { [string]: boolean }
+	local cached = posedCache[animation]
+	if cached then
+		return cached
+	end
+	local set = {}
+	for _, keyframe in animation.keyframes do
+		for poseName in keyframe.pose do
+			set[poseName] = true
+		end
+	end
+	posedCache[animation] = set
+	return set
+end
+
+-- The animation's pose for one joint at time t (identity if never posed).
+-- Applies the joint's delay; looping animations wrap around.
+local function sample(animation: Animation, poseName: string, t: number): CFrame
+	local delays = animation.delays
+	if delays and delays[poseName] then
+		t -= delays[poseName]
+	end
+	local keyframes = animation.keyframes
+	if animation.loop then
+		local length = keyframes[#keyframes].time
+		if length > 0 then
+			t %= length
+		end
+	end
+
 	local previous = keyframes[1]
 	if t <= previous.time then
 		return previous.pose[poseName] or CFrame.identity
@@ -122,25 +178,27 @@ local function sample(animation: Animation, poseName: string, t: number): CFrame
 	return previous.pose[poseName] or CFrame.identity
 end
 
-local function posedJoints(animation: Animation): { [string]: boolean }
-	local set = {}
-	for _, keyframe in animation.keyframes do
-		for poseName in keyframe.pose do
-			set[poseName] = true
-		end
-	end
-	return set
-end
-
 -- Parent-part-space pose -> the joint's own space.
 local function toJointSpace(joint: Motor6D, pose: CFrame): CFrame
 	local c0 = joint.C0.Rotation
 	return c0:Inverse() * pose * c0
 end
 
+-- What the default Animator (walk/idle) set this frame, or identity if
+-- nothing but us animates this joint.
+local function animatorBase(joint: Motor6D): CFrame
+	local current = joint.Transform
+	return if lastWritten[joint] == current then CFrame.identity else current
+end
+
+local function write(joint: Motor6D, value: CFrame)
+	joint.Transform = value
+	lastWritten[joint] = value
+end
+
 local function release(track: Track, character: Model)
 	-- Hand the joints back; the default Animator overwrites them next frame
-	-- if it's animating them. Joints with an idle stance stay put, the idle
+	-- if it's animating them. Joints the idle covers stay put, the idle
 	-- takes over next frame.
 	local idle = idles[character]
 	for poseName, joint in track.joints do
@@ -156,9 +214,59 @@ local function release(track: Track, character: Model)
 	end
 end
 
-local function step()
+-- The idle layer's value for every joint it covers this frame (joint space).
+local function idleValues(character: Model, idle: Idle, now: number, dt: number): { [string]: CFrame }
+	-- Joints can show up late (a weapon replicating after the kit was set)
+	-- or get recreated (avatar applied), so look for missing ones now and then.
+	if now >= idle.nextJointScan then
+		idle.nextJointScan = now + 0.25
+		local fresh: { [string]: Motor6D }? = nil
+		for poseName in idle.covered do
+			local joint = idle.joints[poseName]
+			if not joint or not joint.Parent then
+				fresh = fresh or findJoints(character)
+				idle.joints[poseName] = (fresh :: { [string]: Motor6D })[poseName]
+			end
+		end
+	end
+
+	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local speed = 0
+	if root then
+		local velocity = root.AssemblyLinearVelocity
+		speed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
+	end
+	local target = if speed < STAND_SPEED then 1 else 0
+	idle.standWeight += (target - idle.standWeight) * math.min(dt * STANCE_BLEND, 1)
+	local w = smooth(idle.standWeight)
+
+	local t = now - idle.start
+	local stand, move = idle.set.stand, idle.set.move
+	local values = {}
+	for poseName, joint in idle.joints do
+		if not joint.Parent then
+			continue
+		end
+		local base = animatorBase(joint)
+		local standValue = if stand and posed(stand)[poseName]
+			then toJointSpace(joint, sample(stand, poseName, t))
+			else nil
+		local moveValue = if move and posed(move)[poseName] then toJointSpace(joint, sample(move, poseName, t)) else nil
+		if standValue and moveValue then
+			values[poseName] = moveValue:Lerp(standValue, w)
+		elseif standValue then
+			values[poseName] = base:Lerp(standValue, w)
+		elseif moveValue then
+			values[poseName] = moveValue:Lerp(base, w)
+		end
+	end
+	return values
+end
+
+local function step(dt: number)
 	local now = os.clock()
 
+	local idleFrame: { [Model]: { [string]: CFrame } } = {}
 	for character, idle in idles do
 		if not character.Parent then
 			idles[character] = nil
@@ -167,21 +275,12 @@ local function step()
 		if character:GetAttribute("Ragdolled") == true then
 			continue
 		end
-		-- Joints get recreated if the body is rebuilt (e.g. avatar applied).
-		for poseName, joint in idle.joints do
-			if not joint.Parent then
-				local fresh = findJoints(character)[poseName]
-				if fresh then
-					idle.joints[poseName] = fresh
-				end
-			end
-		end
+		local values = idleValues(character, idle, now, dt)
+		idleFrame[character] = values
 		local track = tracks[character]
-		for poseName, joint in idle.joints do
-			if joint.Parent and not (track and track.joints[poseName]) then
-				local value = toJointSpace(joint, idle.pose[poseName])
-				joint.Transform = value
-				lastWritten[joint] = value
+		for poseName, value in values do
+			if not (track and track.joints[poseName]) then
+				write(idle.joints[poseName], value)
 			end
 		end
 	end
@@ -218,35 +317,30 @@ local function step()
 		end
 
 		local additive = animation.additive or {}
-		local idle = idles[character]
+		local idleValuesNow = idleFrame[character]
+		local clampedTime = math.min(elapsed, track.length)
 		for poseName, joint in track.joints do
-			local base
-			if idle and idle.joints[poseName] then
-				base = toJointSpace(joint, idle.pose[poseName])
-			else
-				local current = joint.Transform
-				base = if lastWritten[joint] == current then CFrame.identity else current
+			if not joint.Parent then
+				continue
 			end
-			local local_ = toJointSpace(joint, sample(animation, poseName, elapsed))
+			local base = (idleValuesNow and idleValuesNow[poseName]) or animatorBase(joint)
+			local local_ = toJointSpace(joint, sample(animation, poseName, clampedTime))
 			local target = if additive[poseName] then base * local_ else local_
 			-- Fading in starts from wherever the joint really was (mid-swing
 			-- from the previous track, for example), not from the base.
 			local start = if fadingIn then track.from[poseName] or base else base
-			local final = start:Lerp(target, weight)
-			joint.Transform = final
-			lastWritten[joint] = final
+			write(joint, start:Lerp(target, weight))
 		end
 	end
 end
 
 -- Plays `animation` on `character`, replacing whatever this module was playing on it.
 function PoseAnimator.Play(character: Model, animation: Animation, onEvent: ((name: string) -> ())?)
-	local posed = posedJoints(animation)
-	local all = findJoints(character)
+	local wanted = posed(animation)
 	local joints = {}
 	local from = {}
-	for poseName, joint in all do
-		if posed[poseName] then
+	for poseName, joint in findJoints(character) do
+		if wanted[poseName] then
 			joints[poseName] = joint
 			from[poseName] = joint.Transform -- captured before the old track lets go
 		end
@@ -261,12 +355,11 @@ function PoseAnimator.Play(character: Model, animation: Animation, onEvent: ((na
 		return -- not an R6 rig
 	end
 
-	local keyframes = animation.keyframes
 	tracks[character] = {
 		animation = animation,
 		joints = joints,
 		start = os.clock(),
-		length = keyframes[#keyframes].time,
+		length = lengthOf(animation),
 		onEvent = onEvent,
 		firedEvents = {},
 		from = from,
@@ -299,8 +392,8 @@ function PoseAnimator.Freeze(character: Model, duration: number)
 	track.start += duration
 end
 
--- Sets (or clears, with nil) a persistent stance for some joints.
-function PoseAnimator.SetIdle(character: Model, pose: Pose?)
+-- Sets (or clears, with nil) a character's idle layer.
+function PoseAnimator.SetIdle(character: Model, set: IdleSet?)
 	local old = idles[character]
 	if old then
 		idles[character] = nil
@@ -311,18 +404,29 @@ function PoseAnimator.SetIdle(character: Model, pose: Pose?)
 			end
 		end
 	end
-	if not pose then
+	if not set then
 		return
+	end
+	local covered: { [string]: boolean } = {}
+	for _, animation in { set.stand, set.move } do
+		for poseName in posed(animation :: Animation) do
+			covered[poseName] = true
+		end
 	end
 	local joints = {}
 	for poseName, joint in findJoints(character) do
-		if pose[poseName] then
+		if covered[poseName] then
 			joints[poseName] = joint
 		end
 	end
-	if next(joints) ~= nil then
-		idles[character] = { pose = pose, joints = joints }
-	end
+	idles[character] = {
+		set = set,
+		covered = covered,
+		joints = joints,
+		start = os.clock(),
+		standWeight = 1,
+		nextJointScan = 0,
+	}
 end
 
 function PoseAnimator.Start()

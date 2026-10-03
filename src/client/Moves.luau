@@ -84,7 +84,7 @@ local function watchCharacter(character: Model)
 	end
 	local function updateKit()
 		local kit = kitOf(character)
-		PoseAnimator.SetIdle(character, if kit then kit.IdlePose else nil)
+		PoseAnimator.SetIdle(character, if kit then kit.Idle else nil)
 	end
 	character:GetAttributeChangedSignal("Awakened"):Connect(updateAwakened)
 	character:GetAttributeChangedSignal("Kit"):Connect(updateKit)

@@ -18,6 +18,7 @@ local DEFAULTS = {
 	Evasive = 0,
 	Awakening = 0, -- meter, 0 to Config.Awakening.Max
 	Awakened = false,
+	Rooted = false, -- can't move (e.g. during a spawn entrance)
 }
 
 -- Skill slots 1-4. "CD<n>" is the server time the skill is ready again,

@@ -1,0 +1,133 @@
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from design import *
+
+def R(x,y=0,z=0): return ('rot',x,y,z)
+def L(p,y=0,r=0): return ('limb',p,y,r)
+def A(x,y,z): return ('aim',x,y,z)
+
+def torso_dir(torso_rot, d):
+    """Express a torso-relative blade direction in character space (so the
+    sword stays on the shoulder however the torso is turned)."""
+    M = rot(*torso_rot[1:])[:3,:3]
+    v = M @ np.array(d, float); v /= np.linalg.norm(v)
+    return ('aim', *[round(float(c), 3) for c in v])
+
+SHOULDER = (0.15, 0.49, 0.86)   # blade over the right shoulder, torso space
+REST_ARM = L(80, 10, -20)
+
+# ---------------- Idle ----------------
+def idle_key(torso, head, arm_pitch, larm, rleg, lleg):
+    t = R(*torso)
+    return {'Torso': t, 'Head': R(*head), 'RightArm': L(arm_pitch, 10, -20),
+            'Sword': torso_dir(t, SHOULDER), 'LeftArm': larm, 'RightLeg': rleg, 'LeftLeg': lleg}
+
+IDLE = [
+    (0.0, idle_key((-6,-18), (5,16), 80, L(10,0,-14), R(-6,0,9), R(12,0,-10))),
+    (1.3, idle_key((-2,-18), (2,16), 84, L(13,0,-16), R(-6,0,9), R(12,0,-10))),
+    (2.6, idle_key((-6,-18), (5,16), 80, L(10,0,-14), R(-6,0,9), R(12,0,-10))),
+]
+# While moving: just carry the sword on the shoulder; legs/left arm walk normally.
+IDLE_MOVE = [
+    (0.0, {'RightArm': REST_ARM, 'Sword': A(*SHOULDER)}),
+]
+
+# ---------------- M1 swings ----------------
+READY = IDLE[0][1]
+
+LEGS = lambda y: {'RightLeg': R(0,y,0), 'LeftLeg': R(0,y,0)}  # additive counter-twist
+
+def swing(windup, through, strike, settle, heavy=False):
+    t = (0.12, 0.18, 0.24, 0.44) if heavy else (0.08, 0.12, 0.17, 0.32)
+    # Start from the idle's upper body. Legs are left to the idle stance
+    # (or layered on top of it), so the stance isn't applied twice.
+    start = {k: v for k, v in READY.items() if k not in ('RightLeg', 'LeftLeg')}
+    if 'RightLeg' in windup:
+        start.update(LEGS(0))
+    return [(0.0, start), (t[0], windup), (t[1], through), (t[2], strike), (t[3], settle)]
+
+SLASH1 = swing(
+    {'Torso': R(3,-42), 'Head': R(0,32), 'RightArm': L(80,-100), 'Sword': A(0.75,0.25,0.6), 'LeftArm': L(40,-25), **LEGS(40)},
+    {'Torso': R(-4,-5), 'Head': R(0,4), 'RightArm': L(85,-20), 'Sword': A(0.35,0.05,-0.94), 'LeftArm': L(30,-25), **LEGS(5)},
+    {'Torso': R(-8,38), 'Head': R(0,-28), 'RightArm': L(82,70), 'Sword': A(-0.9,-0.1,-0.35), 'LeftArm': L(20,-40), **LEGS(-36)},
+    {'Torso': R(-6,28), 'Head': R(0,-20), 'RightArm': L(70,55), 'Sword': A(-0.75,-0.35,-0.5), 'LeftArm': L(25,-35), **LEGS(-26)},
+)
+SLASH2 = swing(
+    {'Torso': R(3,35), 'Head': R(0,-28), 'RightArm': L(82,80), 'Sword': A(-0.8,0.2,0.5), 'LeftArm': L(35,-10), **LEGS(-34)},
+    {'Torso': R(-4,0), 'Head': R(0,-2), 'RightArm': L(85,10), 'Sword': A(-0.3,0.05,-0.95), 'LeftArm': L(35,-25), **LEGS(0)},
+    {'Torso': R(-8,-38), 'Head': R(0,28), 'RightArm': L(80,-85), 'Sword': A(0.95,-0.1,-0.25), 'LeftArm': L(40,-30), **LEGS(36)},
+    {'Torso': R(-6,-26), 'Head': R(0,18), 'RightArm': L(72,-65), 'Sword': A(0.75,-0.35,-0.45), 'LeftArm': L(38,-28), **LEGS(24)},
+)
+SLASH3 = swing(
+    {'Torso': R(-14,-25), 'Head': R(10,18), 'RightArm': L(25,-40), 'Sword': A(0.45,-0.35,-0.8), 'LeftArm': L(45,-20), **LEGS(22)},
+    {'Torso': R(-3,0), 'Head': R(0,0), 'RightArm': L(85,-5), 'Sword': A(0.1,0.3,-0.95), 'LeftArm': L(35,-20), **LEGS(0)},
+    {'Torso': R(10,28), 'Head': R(-10,-15), 'RightArm': L(150,30), 'Sword': A(-0.45,0.85,-0.25), 'LeftArm': L(20,-20), **LEGS(-26)},
+    {'Torso': R(6,20), 'Head': R(-6,-10), 'RightArm': L(135,25), 'Sword': A(-0.35,0.8,0.45), 'LeftArm': L(25,-22), **LEGS(-18)},
+)
+CLEAVE = swing(
+    {'Torso': R(4,-60), 'Head': R(0,40), 'RightArm': L(80,-120), 'Sword': A(0.45,0.2,0.85), 'LeftArm': L(65,-30), **LEGS(55)},
+    {'Torso': R(-4,-10), 'Head': R(0,8), 'RightArm': L(85,-20), 'Sword': A(0.4,0.05,-0.9), 'LeftArm': L(45,-35), **LEGS(8)},
+    {'Torso': R(-12,62), 'Head': R(0,-42), 'RightArm': L(80,95), 'Sword': A(-0.85,-0.05,0.5), 'LeftArm': L(15,-45), **LEGS(-58)},
+    {'Torso': R(-10,50), 'Head': R(0,-34), 'RightArm': L(72,80), 'Sword': A(-0.7,-0.35,0.6), 'LeftArm': L(22,-40), **LEGS(-46)},
+    heavy=True,
+)
+RISING = swing(
+    {'Torso': R(-22,-15), 'Head': R(14,10), 'RightArm': L(15,-25), 'Sword': A(0.45,-0.3,-0.84), 'LeftArm': L(70,-25), 'RightLeg': R(-10,15), 'LeftLeg': R(15,15)},
+    {'Torso': R(-8,0), 'Head': R(2,0), 'RightArm': L(80,0), 'Sword': A(0.05,0.45,-0.9), 'LeftArm': L(50,-25), 'RightLeg': R(-5,0), 'LeftLeg': R(5,0)},
+    {'Torso': R(15,15), 'Head': R(-20,-10), 'RightArm': L(175,10), 'Sword': A(0.05,1,0.1), 'LeftArm': L(30,-20), 'RightLeg': R(0,-15), 'LeftLeg': R(0,-15)},
+    {'Torso': R(10,10), 'Head': R(-14,-8), 'RightArm': L(160,10), 'Sword': A(0.05,0.8,0.6), 'LeftArm': L(32,-20), 'RightLeg': R(0,-10), 'LeftLeg': R(0,-10)},
+    heavy=True,
+)
+CHOP = swing(
+    {'Torso': R(20), 'Head': R(-12), 'RightArm': L(175,8), 'LeftArm': L(170,-8), 'Sword': A(0,0.55,0.83)},
+    {'Torso': R(0), 'Head': R(0), 'RightArm': L(115,8), 'LeftArm': L(110,-8), 'Sword': A(0,0.75,-0.65)},
+    {'Torso': R(-35), 'Head': R(18), 'RightArm': L(40,8), 'LeftArm': L(45,-8), 'Sword': A(0,-0.3,-0.95)},
+    {'Torso': R(-28), 'Head': R(14), 'RightArm': L(48,8), 'LeftArm': L(52,-8), 'Sword': A(0,-0.36,-0.93)},
+    heavy=True,
+)
+
+# ---------------- Entrance ----------------
+CROUCH = {'Torso': R(-28), 'Head': R(22), 'RightArm': L(-12,0,28), 'LeftArm': L(-12,0,-28),
+          'RightLeg': R(-22,0,8), 'LeftLeg': R(34,0,-6), 'Sword': A(0,-1,0.2)}
+RISE = {'Torso': R(-10,10), 'Head': R(-4,-28), 'RightArm': L(15,0,18), 'LeftArm': L(75,-40),
+        'RightLeg': R(-10,0,8), 'LeftLeg': R(14,0,-8), 'Sword': A(0,-1,0.2)}
+REACH = {'Torso': R(-8,32), 'Head': R(0,-20), 'RightArm': L(82,72), 'LeftArm': L(70,-45),
+         'RightLeg': R(-8,-25,8), 'LeftLeg': R(12,-25,-8), 'Sword': A(-0.95,0,-0.3)}
+DRAW = {'Torso': R(4,-20), 'Head': R(-8,15), 'RightArm': L(150,-55), 'LeftArm': L(25,0,-30),
+        'RightLeg': R(-8,15,8), 'LeftLeg': R(12,15,-8), 'Sword': A(0.6,0.8,0)}
+def twirl(d): return {'Torso': R(4,0), 'Head': R(-12,0), 'RightArm': L(172,0), 'LeftArm': L(25,0,-30),
+                      'RightLeg': R(-6,0,8), 'LeftLeg': R(10,0,-8), 'Sword': A(*d)}
+SLAM_UP = {'Torso': R(16), 'Head': R(-10), 'RightArm': L(175,6), 'LeftArm': L(168,-6),
+           'RightLeg': R(-12,0,6), 'LeftLeg': R(18,0,-6), 'Sword': A(0,0.5,0.86)}
+SLAM = {'Torso': R(-30,5), 'Head': R(12), 'RightArm': L(52,8), 'LeftArm': L(48,-8),
+        'RightLeg': R(-25,0,8), 'LeftLeg': R(32,0,-6), 'Sword': A(0,-0.42,-0.91)}
+PLANTED = {'Torso': R(-20,8), 'Head': R(-12,-5), 'RightArm': L(55,8), 'LeftArm': L(15,0,-20),
+           'RightLeg': R(-18,0,8), 'LeftLeg': R(25,0,-6), 'Sword': A(0,-0.45,-0.89)}
+
+ENTRANCE = [
+    (0.00, CROUCH),
+    (0.30, CROUCH),
+    (0.62, RISE),
+    (0.88, REACH),
+    (1.05, DRAW),
+    (1.13, twirl((0.95,0.2,-0.2))),
+    (1.21, twirl((0.2,0.2,0.95))),
+    (1.29, twirl((-0.95,0.2,0.2))),
+    (1.37, twirl((-0.2,0.2,-0.95))),
+    (1.45, twirl((0.95,0.2,-0.2))),
+    (1.58, SLAM_UP),
+    (1.70, SLAM),
+    (2.05, PLANTED),
+    (2.45, IDLE[0][1]),
+]
+
+ALL = {'Idle': IDLE, 'IdleMove': IDLE_MOVE, 'Slash1': SLASH1, 'Slash2': SLASH2, 'Slash3': SLASH3,
+       'Cleave': CLEAVE, 'Rising': RISING, 'Chop': CHOP, 'Entrance': ENTRANCE}
+
+if __name__ == '__main__':
+    # Intentional floor contact: the air chop's tip grazes the floor, the
+    # entrance slam plants it. The entrance sword is hidden until the draw.
+    rules = {'Chop': dict(floor=-3.1), 'Entrance': dict(floor=-3.5, hidden_until=0.88)}
+    ok = True
+    for name, keys in ALL.items():
+        ok &= verify(name, keys, **rules.get(name, {}))
+    print("ALL CLEAN" if ok else "PROBLEMS FOUND")

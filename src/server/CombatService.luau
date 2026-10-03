@@ -778,11 +778,25 @@ function CombatService.EquipKit(character: Model, kitId: string)
 	CombatState.ResetCooldowns(character)
 	CombatService.ClearCounter(character)
 
-	character:SetAttribute("Kit", kitId)
+	-- Weapon first, then the attribute: clients react to "Kit" by animating
+	-- the weapon, so it should already be there when they see the change.
 	local serverKit = serverKits[kitId]
 	if serverKit and serverKit.Equip then
 		serverKit.Equip(character)
 	end
+	character:SetAttribute("Kit", kitId)
+end
+
+-- A kit's spawn entrance, if it has one. Slightly delayed so clients have
+-- the freshly spawned character (and its weapon) before it starts.
+function CombatService.PlayEntrance(character: Model)
+	task.delay(0.35, function()
+		local ctx = makeContext(character)
+		local serverKit = ctx and serverKits[ctx.kit.id]
+		if ctx and serverKit and serverKit.Entrance and CombatState.IsAlive(character) then
+			serverKit.Entrance(ctx)
+		end
+	end)
 end
 
 function CombatService.SelectKit(player: Player, kitId: string)
@@ -811,6 +825,7 @@ function CombatService.SelectKit(player: Player, kitId: string)
 	player:SetAttribute("Kit", kitId)
 	CombatService.EquipKit(character, kitId)
 	CombatService.FireVFX("KitSwitch", { character = character, kit = kitId })
+	CombatService.PlayEntrance(character)
 	CombatService.Notify(character, "Now playing: " .. kit.title, kit.color)
 end
 
@@ -882,6 +897,7 @@ function CombatService.Register(character: Model)
 			player:SetAttribute("Kit", kitId)
 		end
 		CombatService.EquipKit(character, kitId :: string)
+		CombatService.PlayEntrance(character)
 	end
 end
 
@@ -933,7 +949,7 @@ local function updateMovement()
 			local awakening = awakeningOf(character)
 			local bonus = if awakening then awakening.speedBonus else 0
 			local speed, jump = Config.Movement.WalkSpeed + bonus, Config.Movement.JumpHeight
-			if CombatState.IsRagdolled(character) then
+			if CombatState.IsRagdolled(character) or character:GetAttribute("Rooted") == true then
 				speed, jump = 0, 0
 			elseif CombatState.IsStunned(character) then
 				speed, jump = Config.Movement.StunnedSpeed, 0

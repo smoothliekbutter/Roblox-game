@@ -120,7 +120,14 @@ function Ragdoll.Enable(character: Model)
 	active[character] = record
 
 	for _, joint in character:GetDescendants() do
-		if joint:IsA("Motor6D") and not KEEP_JOINTS[joint.Name] and joint.Part0 and joint.Part1 then
+		-- Body joints only: a weapon's grip (Part1 inside the weapon model) stays rigid.
+		if
+			joint:IsA("Motor6D")
+			and not KEEP_JOINTS[joint.Name]
+			and joint.Part0
+			and joint.Part1
+			and joint.Part1.Parent == character
+		then
 			local settings = JOINT_SETTINGS[joint.Name] or DEFAULT_SETTINGS
 
 			local a0 = Instance.new("Attachment")

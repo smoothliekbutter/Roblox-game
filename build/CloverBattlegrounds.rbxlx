@@ -81,6 +81,7 @@ local DEFAULTS = {
 	Evasive = 0,
 	Awakening = 0, -- meter, 0 to Config.Awakening.Max
 	Awakened = false,
+	Rooted = false, -- can't move (e.g. during a spawn entrance)
 }
 
 -- Skill slots 1-4. "CD<n>" is the server time the skill is ready again,
@@ -1476,11 +1477,25 @@ function CombatService.EquipKit(character: Model, kitId: string)
 	CombatState.ResetCooldowns(character)
 	CombatService.ClearCounter(character)
 
-	character:SetAttribute("Kit", kitId)
+	-- Weapon first, then the attribute: clients react to "Kit" by animating
+	-- the weapon, so it should already be there when they see the change.
 	local serverKit = serverKits[kitId]
 	if serverKit and serverKit.Equip then
 		serverKit.Equip(character)
 	end
+	character:SetAttribute("Kit", kitId)
+end
+
+-- A kit's spawn entrance, if it has one. Slightly delayed so clients have
+-- the freshly spawned character (and its weapon) before it starts.
+function CombatService.PlayEntrance(character: Model)
+	task.delay(0.35, function()
+		local ctx = makeContext(character)
+		local serverKit = ctx and serverKits[ctx.kit.id]
+		if ctx and serverKit and serverKit.Entrance and CombatState.IsAlive(character) then
+			serverKit.Entrance(ctx)
+		end
+	end)
 end
 
 function CombatService.SelectKit(player: Player, kitId: string)
@@ -1509,6 +1524,7 @@ function CombatService.SelectKit(player: Player, kitId: string)
 	player:SetAttribute("Kit", kitId)
 	CombatService.EquipKit(character, kitId)
 	CombatService.FireVFX("KitSwitch", { character = character, kit = kitId })
+	CombatService.PlayEntrance(character)
 	CombatService.Notify(character, "Now playing: " .. kit.title, kit.color)
 end
 
@@ -1580,6 +1596,7 @@ function CombatService.Register(character: Model)
 			player:SetAttribute("Kit", kitId)
 		end
 		CombatService.EquipKit(character, kitId :: string)
+		CombatService.PlayEntrance(character)
 	end
 end
 
@@ -1631,7 +1648,7 @@ local function updateMovement()
 			local awakening = awakeningOf(character)
 			local bonus = if awakening then awakening.speedBonus else 0
 			local speed, jump = Config.Movement.WalkSpeed + bonus, Config.Movement.JumpHeight
-			if CombatState.IsRagdolled(character) then
+			if CombatState.IsRagdolled(character) or character:GetAttribute("Rooted") == true then
 				speed, jump = 0, 0
 			elseif CombatState.IsStunned(character) then
 				speed, jump = Config.Movement.StunnedSpeed, 0
@@ -2121,10 +2138,10 @@ function Kit.Equip(character: Model)
 	local sword = buildSword()
 	local handle = sword.PrimaryPart :: BasePart
 
-	-- Held in the right hand, blade 35 degrees forward of the arm, so it
-	-- extends naturally when the arm swings (the client holds the arm up
-	-- in a ready stance so the blade doesn't hang into the ground).
-	local weld = Instance.new("Weld")
+	-- Held in the right hand, blade 35 degrees forward of the arm. A Motor6D
+	-- rather than a Weld so clients can animate it like a wrist (resting the
+	-- sword on the shoulder, angling it through swings).
+	local weld = Instance.new("Motor6D")
 	weld.Name = "SwordGrip"
 	weld.Part1 = handle
 	weld.Parent = handle
@@ -2638,6 +2655,25 @@ local function demonDestroyer(ctx)
 	CombatState.SetCasting(character, 0.35)
 end
 
+-- Spawn entrance: the grimoire appears, he draws the sword from it, twirls
+-- it and slams it into the ground. Untouchable and rooted while it plays;
+-- the animation itself is client-side (Client/Kits/AntiMagic).
+local ENTRANCE_TIME = 2.45
+
+function Kit.Entrance(ctx)
+	local c, character = ctx.combat, ctx.character
+	CombatState.SetCasting(character, ENTRANCE_TIME)
+	CombatState.GiveIFrames(character, ENTRANCE_TIME)
+	character:SetAttribute("Rooted", true)
+	fx(ctx, "Entrance", "Start")
+	task.wait(1.7)
+	if CombatState.IsAlive(character) then
+		c.ShakeArea(ctx.root.Position, 35, 0.3)
+	end
+	task.wait(ENTRANCE_TIME - 1.7)
+	character:SetAttribute("Rooted", false)
+end
+
 Kit.Skills = { bullThrust, blackMeteorite, blackDivider, antiMagicDeflect }
 Kit.AwakenedSkills = { blackHurricane, blackSlashMove, grandDivider, demonDestroyer }
 
@@ -2895,7 +2931,14 @@ function Ragdoll.Enable(character: Model)
 	active[character] = record
 
 	for _, joint in character:GetDescendants() do
-		if joint:IsA("Motor6D") and not KEEP_JOINTS[joint.Name] and joint.Part0 and joint.Part1 then
+		-- Body joints only: a weapon's grip (Part1 inside the weapon model) stays rigid.
+		if
+			joint:IsA("Motor6D")
+			and not KEEP_JOINTS[joint.Name]
+			and joint.Part0
+			and joint.Part1
+			and joint.Part1.Parent == character
+		then
 			local settings = JOINT_SETTINGS[joint.Name] or DEFAULT_SETTINGS
 
 			local a0 = Instance.new("Attachment")
@@ -3937,6 +3980,7 @@ return Input
 ]]
 
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 local CameraShake = require(script.Parent.Parent.CameraShake)
 local PoseAnimator = require(script.Parent.Parent.PoseAnimator)
@@ -3960,6 +4004,7 @@ VFX.SetPalette("AntiMagic", {
 	hit = Color3.fromRGB(220, 50, 60),
 	heavy = Color3.fromRGB(170, 15, 25),
 	flash = Color3.fromRGB(255, 225, 225),
+	cleanM1 = true, -- sleek sword M1s: no sparks or rings on hit
 })
 
 ---------------------------------------------------------------------------
@@ -3975,283 +4020,92 @@ local function limb(pitch: number, yaw: number?, roll: number?): CFrame
 end
 
 -- Builds an animation from { {time, pose, easing?, direction?}, ... }.
+-- The sword's wrist joint is always posed (neutral grip if not given),
+-- otherwise the idle's shoulder-rest wrist would leak into other moves.
 local function clip(keys: { any }, options: { [string]: any }?): Animation
 	local keyframes = {}
 	for _, key in keys do
-		table.insert(keyframes, { time = key[1], pose = key[2], easing = key[3], direction = key[4] })
+		local pose = table.clone(key[2])
+		pose.Sword = pose.Sword or CFrame.identity
+		table.insert(keyframes, { time = key[1], pose = pose, easing = key[3], direction = key[4] })
 	end
 	local animation: any = options or {}
 	animation.keyframes = keyframes
 	return animation :: Animation
 end
 
+-- The grip the server welds the sword with (see Server/Kits/AntiMagic).
+local GRIP = CFrame.Angles(rad(215), 0, 0)
+local BLADE_REST = GRIP:VectorToWorldSpace(Vector3.yAxis) -- blade direction in arm space, neutral wrist
+
+-- Wrist rotation that points the blade along `direction` (character space),
+-- given the torso and arm poses of the same keyframe.
+local function solveWrist(torso: CFrame, arm: CFrame, direction: Vector3): CFrame
+	local armRotation = torso.Rotation * arm.Rotation
+	local target = armRotation:VectorToObjectSpace(direction.Unit)
+	local axis = BLADE_REST:Cross(target)
+	local angle = math.acos(math.clamp(BLADE_REST:Dot(target), -1, 1))
+	if axis.Magnitude < 1e-5 then
+		return if angle < 1 then CFrame.identity else CFrame.fromAxisAngle(Vector3.xAxis, math.pi)
+	end
+	return CFrame.fromAxisAngle(axis.Unit, angle)
+end
+
+-- Turns generated animation data (Animations.luau) into a playable Animation.
+local function build(raw: { [string]: any }): Animation
+	local keyframes = {}
+	for _, key in raw.keys do
+		local pose: { [string]: CFrame } = {}
+		local sword = nil
+		for name, value in key[2] do
+			if name == "Sword" then
+				sword = value
+			else
+				pose[name] = value
+			end
+		end
+		pose.Sword = if type(sword) == "table"
+			then solveWrist(pose.Torso or CFrame.identity, pose.RightArm or CFrame.identity, sword.aim)
+			else CFrame.identity
+		table.insert(keyframes, {
+			time = key[1],
+			pose = pose,
+			easing = if key[3] then (Enum.EasingStyle :: any)[key[3]] else nil,
+			direction = if key[4] then (Enum.EasingDirection :: any)[key[4]] else nil,
+		})
+	end
+	return {
+		keyframes = keyframes,
+		loop = raw.loop,
+		fadeIn = raw.fadeIn,
+		fadeOut = raw.fadeOut,
+		additive = raw.additive,
+		delays = raw.delays,
+		events = raw.events,
+	}
+end
+
+local Generated = require(script.Animations)
+local ANIMS: { [string]: Animation } = {}
+for name, raw in Generated do
+	ANIMS[name] = build(raw)
+end
+
 local LEGS_ADDITIVE = { RightLeg = true, LeftLeg = true }
 local BACK = Enum.EasingStyle.Back
 
--- The sword is in the right hand, angled 35 degrees forward of the arm,
--- so an arm pitch of ~55 holds it level.
+-- Starting pose for skills: sword held up in front (neutral wrist).
 local READY = {
 	Torso = rot(0, -5),
 	RightArm = limb(50, 15),
 	LeftArm = limb(40, -20),
 }
 
--- Always-on stance: the sword is held up and forward instead of hanging
--- (hanging, the long blade would point into the ground).
-Kit.IdlePose = {
-	RightArm = limb(50, 15),
-}
-
----------------------------------------------------------------------------
--- Sword M1s
----------------------------------------------------------------------------
-
-local SINE, QUAD, QUART = Enum.EasingStyle.Sine, Enum.EasingStyle.Quad, Enum.EasingStyle.Quart
-local IN, OUT, IN_OUT = Enum.EasingDirection.In, Enum.EasingDirection.Out, Enum.EasingDirection.InOut
-
---[[
-	A sword swing in four beats, each with its own easing so the motion
-	flows like a real swing instead of snapping between poses:
-	  windup  ease in-out   draw back (anticipation)
-	  through ease in       accelerate through the middle of the arc
-	  strike  ease out      full extension past the target (follow-through)
-	  settle  ease out      relax back toward the ready stance
-	Then the animation fades smoothly back into the idle stance.
-]]
-local function swing(
-	poses: {
-		windup: { [string]: CFrame },
-		through: { [string]: CFrame },
-		strike: { [string]: CFrame },
-		settle: { [string]: CFrame },
-	},
-	timing: { number },
-	options: { [string]: any }?
-): Animation
-	local opts: { [string]: any } = options or {}
-	opts.fadeIn = opts.fadeIn or 0.05
-	opts.fadeOut = opts.fadeOut or 0.2
-	opts.events = { { time = timing[1], name = "Strike" } }
-	return clip({
-		{ 0, READY },
-		{ timing[1], poses.windup, SINE, IN_OUT },
-		{ timing[2], poses.through, QUAD, IN },
-		{ timing[3], poses.strike, QUART, OUT },
-		{ timing[4], poses.settle, SINE, OUT },
-	}, opts)
-end
-
-local LIGHT = { 0.07, 0.11, 0.16, 0.3 }
-local HEAVY = { 0.12, 0.18, 0.24, 0.44 }
-
-local M1 = {
-	-- Right to left.
-	Slash1 = swing({
-		windup = {
-			Torso = rot(2, -28),
-			RightArm = limb(75, -80),
-			LeftArm = limb(35, -15),
-			Head = rot(0, 18),
-			RightLeg = rot(0, 28),
-			LeftLeg = rot(0, 28),
-		},
-		through = {
-			Torso = rot(-3, 0),
-			RightArm = limb(82, -5),
-			LeftArm = limb(30, -25),
-			Head = rot(0, 2),
-			RightLeg = rot(0, 0),
-			LeftLeg = rot(0, 0),
-		},
-		strike = {
-			Torso = rot(-6, 32),
-			RightArm = limb(78, 75),
-			LeftArm = limb(25, -35),
-			Head = rot(0, -22),
-			RightLeg = rot(0, -32),
-			LeftLeg = rot(0, -32),
-		},
-		settle = {
-			Torso = rot(-4, 22),
-			RightArm = limb(70, 55),
-			LeftArm = limb(30, -30),
-			Head = rot(0, -15),
-			RightLeg = rot(0, -22),
-			LeftLeg = rot(0, -22),
-		},
-	}, LIGHT, { additive = LEGS_ADDITIVE }),
-
-	-- Backhand, left to right.
-	Slash2 = swing({
-		windup = {
-			Torso = rot(2, 28),
-			RightArm = limb(80, 75),
-			LeftArm = limb(35, -10),
-			Head = rot(0, -18),
-			RightLeg = rot(0, -28),
-			LeftLeg = rot(0, -28),
-		},
-		through = {
-			Torso = rot(-3, 0),
-			RightArm = limb(84, 5),
-			LeftArm = limb(35, -25),
-			Head = rot(0, -2),
-			RightLeg = rot(0, 0),
-			LeftLeg = rot(0, 0),
-		},
-		strike = {
-			Torso = rot(-6, -32),
-			RightArm = limb(78, -80),
-			LeftArm = limb(40, -30),
-			Head = rot(0, 22),
-			RightLeg = rot(0, 32),
-			LeftLeg = rot(0, 32),
-		},
-		settle = {
-			Torso = rot(-4, -20),
-			RightArm = limb(70, -60),
-			LeftArm = limb(38, -28),
-			Head = rot(0, 15),
-			RightLeg = rot(0, 22),
-			LeftLeg = rot(0, 22),
-		},
-	}, LIGHT, { additive = LEGS_ADDITIVE }),
-
-	-- Rising diagonal, low right to high left.
-	Slash3 = swing({
-		windup = {
-			Torso = rot(-12, -22),
-			RightArm = limb(15, -40),
-			LeftArm = limb(45, -20),
-			Head = rot(8, 15),
-			RightLeg = rot(0, 20),
-			LeftLeg = rot(0, 20),
-		},
-		through = {
-			Torso = rot(-2, 0),
-			RightArm = limb(85, -5),
-			LeftArm = limb(35, -20),
-			Head = rot(0, 0),
-			RightLeg = rot(0, 0),
-			LeftLeg = rot(0, 0),
-		},
-		strike = {
-			Torso = rot(10, 26),
-			RightArm = limb(150, 30),
-			LeftArm = limb(20, -20),
-			Head = rot(-10, -15),
-			RightLeg = rot(0, -25),
-			LeftLeg = rot(0, -25),
-		},
-		settle = {
-			Torso = rot(6, 18),
-			RightArm = limb(132, 25),
-			LeftArm = limb(25, -22),
-			Head = rot(-6, -10),
-			RightLeg = rot(0, -18),
-			LeftLeg = rot(0, -18),
-		},
-	}, LIGHT, { additive = LEGS_ADDITIVE }),
-
-	-- Finisher: huge horizontal cleave.
-	Cleave = swing({
-		windup = {
-			Torso = rot(4, -50),
-			RightArm = limb(80, -115),
-			LeftArm = limb(65, -30),
-			Head = rot(0, 35),
-			RightLeg = rot(0, 45),
-			LeftLeg = rot(0, 45),
-		},
-		through = {
-			Torso = rot(-4, -5),
-			RightArm = limb(85, -15),
-			LeftArm = limb(45, -35),
-			Head = rot(0, 5),
-			RightLeg = rot(0, 5),
-			LeftLeg = rot(0, 5),
-		},
-		strike = {
-			Torso = rot(-10, 55),
-			RightArm = limb(82, 90),
-			LeftArm = limb(15, -45),
-			Head = rot(0, -38),
-			RightLeg = rot(0, -50),
-			LeftLeg = rot(0, -50),
-		},
-		settle = {
-			Torso = rot(-8, 42),
-			RightArm = limb(75, 72),
-			LeftArm = limb(22, -40),
-			Head = rot(0, -30),
-			RightLeg = rot(0, -40),
-			LeftLeg = rot(0, -40),
-		},
-	}, HEAVY, { additive = LEGS_ADDITIVE, fadeOut = 0.25 }),
-
-	-- Finisher (jump held): rising vertical slash.
-	Rising = swing({
-		windup = {
-			Torso = rot(-22, -15),
-			RightArm = limb(-30, -10),
-			LeftArm = limb(70, -25),
-			Head = rot(12, 10),
-			RightLeg = rot(-10, 15),
-			LeftLeg = rot(15, 15),
-		},
-		through = {
-			Torso = rot(-5, 0),
-			RightArm = limb(70, 0),
-			LeftArm = limb(50, -25),
-			Head = rot(0, 0),
-			RightLeg = rot(-5, 0),
-			LeftLeg = rot(5, 0),
-		},
-		strike = {
-			Torso = rot(15, 15),
-			RightArm = limb(175, 10),
-			LeftArm = limb(30, -20),
-			Head = rot(-20, -10),
-			RightLeg = rot(0, -15),
-			LeftLeg = rot(0, -15),
-		},
-		settle = {
-			Torso = rot(10, 10),
-			RightArm = limb(158, 10),
-			LeftArm = limb(32, -20),
-			Head = rot(-14, -8),
-			RightLeg = rot(0, -10),
-			LeftLeg = rot(0, -10),
-		},
-	}, HEAVY, { additive = LEGS_ADDITIVE, fadeOut = 0.25 }),
-
-	-- Finisher (in the air): two-handed overhead chop.
-	Chop = swing({
-		windup = {
-			Torso = rot(18),
-			RightArm = limb(175, 8),
-			LeftArm = limb(170, -8),
-			Head = rot(-12),
-		},
-		through = {
-			Torso = rot(0),
-			RightArm = limb(110, 8),
-			LeftArm = limb(110, -8),
-			Head = rot(0),
-		},
-		strike = {
-			Torso = rot(-35),
-			RightArm = limb(35, 8),
-			LeftArm = limb(40, -8),
-			Head = rot(18),
-		},
-		settle = {
-			Torso = rot(-28),
-			RightArm = limb(45, 8),
-			LeftArm = limb(50, -8),
-			Head = rot(14),
-		},
-	}, HEAVY, { fadeOut = 0.25 }),
+-- Signature stance: wide footing, the greatsword resting on the right
+-- shoulder, slow breathing. While moving he just carries it on his shoulder.
+Kit.Idle = {
+	stand = ANIMS.Idle,
+	move = ANIMS.IdleMove,
 }
 
 ---------------------------------------------------------------------------
@@ -4420,16 +4274,10 @@ end
 local STRING = { "Slash1", "Slash2", "Slash3" }
 local FINISHERS = { Knockback = "Cleave", Uppercut = "Rising", Downslam = "Chop" }
 
+-- M1s are just the sword swinging: no trails, no extra effects.
 function Kit.PlayM1(character: Model, index: number, variant: string)
 	local name = if variant ~= "Normal" then FINISHERS[variant] or "Cleave" else STRING[((index - 1) % #STRING) + 1]
-	local animation = (M1 :: any)[name] :: Animation
-	local heavy = variant ~= "Normal"
-	-- No extra effects on M1s: just the sword moving, with its blade trail.
-	play(character, animation, function(event)
-		if event == "Strike" then
-			swordTrail(character, if heavy then 0.16 else 0.1)
-		end
-	end)
+	play(character, ANIMS[name])
 end
 
 ---------------------------------------------------------------------------
@@ -5170,6 +5018,197 @@ function handlers.Awaken(data, character, root)
 	end
 end
 
+---------------------------------------------------------------------------
+-- Spawn entrance
+---------------------------------------------------------------------------
+
+local function easeInOut(alpha: number): number
+	return TweenService:GetValue(alpha, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+end
+
+local function setSwordVisible(character: Model, visible: boolean, fade: number?)
+	local sword = getSword(character)
+	if not sword then
+		return
+	end
+	for _, part in sword:GetDescendants() do
+		if part:IsA("BasePart") then
+			if fade and visible then
+				part.Transparency = 1
+				U.tween(part, fade, { Transparency = 0 })
+			else
+				part.Transparency = if visible then 0 else 1
+			end
+		end
+	end
+end
+
+-- Asta's grimoire: a tattered black book with a five-leaf clover floating
+-- over it. Anchored parts posed every frame around a moving anchor.
+local function grimoire(character: Model, root: BasePart): { open: (number) -> (), close: () -> (), burst: () -> () }
+	local parts: { { part: BasePart, offset: CFrame, side: number } } = {}
+	local function piece(size: Vector3, color: Color3, material: Enum.Material, offset: CFrame, side: number): BasePart
+		local part = U.newPart({ Size = size, Color = color, Material = material, Transparency = 1 })
+		table.insert(parts, { part = part, offset = offset, side = side })
+		return part
+	end
+	local cover = Color3.fromRGB(24, 22, 26)
+	local paper = Color3.fromRGB(205, 195, 170)
+	-- side -1 = left half (rotates open one way), 1 = right half, 0 = fixed
+	piece(Vector3.new(1.1, 1.45, 0.08), cover, Enum.Material.Fabric, CFrame.new(-0.55, 0, 0), -1)
+	piece(Vector3.new(1.1, 1.45, 0.08), cover, Enum.Material.Fabric, CFrame.new(0.55, 0, 0), 1)
+	piece(Vector3.new(1, 1.35, 0.12), paper, Enum.Material.SmoothPlastic, CFrame.new(-0.5, 0, -0.08), -1)
+	piece(Vector3.new(1, 1.35, 0.12), paper, Enum.Material.SmoothPlastic, CFrame.new(0.5, 0, -0.08), 1)
+	piece(Vector3.new(0.14, 1.45, 0.14), cover, Enum.Material.Fabric, CFrame.new(0, 0, 0.02), 0)
+	-- Five-leaf clover hovering over the pages.
+	for i = 1, 5 do
+		local angle = (i / 5) * math.pi * 2
+		piece(
+			Vector3.new(0.34, 0.34, 0.06),
+			BLACK,
+			Enum.Material.SmoothPlastic,
+			CFrame.new(math.cos(angle) * 0.24, 1.1 + math.sin(angle) * 0.24, -0.4) * CFrame.Angles(0, 0, angle),
+			0
+		)
+	end
+	local glowHolder = piece(Vector3.one * 0.1, RED, Enum.Material.Neon, CFrame.new(0, 1.1, -0.4), 0)
+	local glow = Instance.new("PointLight")
+	glow.Color = RED
+	glow.Brightness = 0
+	glow.Range = 8
+	glow.Parent = glowHolder
+
+	local smoke = Instance.new("ParticleEmitter")
+	smoke.Texture = U.textures.Smoke
+	smoke.Color = ColorSequence.new(BLACK)
+	smoke.LightEmission = 0
+	smoke.Size = NumberSequence.new(0.8, 1.6)
+	smoke.Transparency = NumberSequence.new(0.5, 1)
+	smoke.Lifetime = NumberRange.new(0.5, 0.9)
+	smoke.Rate = 25
+	smoke.Speed = NumberRange.new(0.5, 1.5)
+	smoke.SpreadAngle = Vector2.new(180, 180)
+	smoke.Acceleration = Vector3.new(0, 2, 0)
+	smoke.Parent = glowHolder
+
+	local openAngle, visible = 0, 0
+	local anchorOffset = CFrame.new(-1.9, 0.6, -1.7)
+	local start = os.clock()
+	local connection = RunService.RenderStepped:Connect(function()
+		if not root.Parent then
+			return
+		end
+		local t = os.clock() - start
+		local position = (root.CFrame * anchorOffset).Position + Vector3.new(0, math.sin(t * 3) * 0.12, 0)
+		-- Faces Asta, tilted back like it's being read.
+		local base = CFrame.lookAt(position, root.Position + Vector3.new(0, 0.6, 0)) * CFrame.Angles(rad(-20), 0, 0)
+		for _, entry in parts do
+			local hinge = CFrame.Angles(0, -entry.side * rad(openAngle), 0)
+			local spin = if entry.side == 0 and entry.offset.Y > 0.5
+				then CFrame.new(0, 1.1, -0.4) * CFrame.Angles(0, 0, t * 1.5) * CFrame.new(0, -1.1, 0.4)
+				else CFrame.identity
+			entry.part.CFrame = base * hinge * spin * entry.offset
+			entry.part.Transparency = 1 - visible
+		end
+		glowHolder.Transparency = 1
+		glow.Brightness = 3 * visible
+	end)
+
+	local function animateTo(duration: number, toOpen: number, toVisible: number)
+		local fromOpen, fromVisible = openAngle, visible
+		local t0 = os.clock()
+		local c
+		c = RunService.RenderStepped:Connect(function()
+			local a = math.min((os.clock() - t0) / duration, 1)
+			local e = easeInOut(a)
+			openAngle = fromOpen + (toOpen - fromOpen) * e
+			visible = fromVisible + (toVisible - fromVisible) * e
+			if a >= 1 then
+				c:Disconnect()
+			end
+		end)
+	end
+
+	return {
+		open = function(duration: number)
+			animateTo(duration, 65, 1)
+		end,
+		burst = function()
+			blackSmoke(glowHolder.Position, 10, 2.5, 8)
+			U.flash(glowHolder.Position, RED, 3, 0.2)
+			U.light(glowHolder.Position, RED, 6, 12, 0.3)
+		end,
+		close = function()
+			animateTo(0.3, 0, 0)
+			smoke.Enabled = false
+			task.delay(0.35, function()
+				blackSmoke(glowHolder.Position, 6, 1.5, 4)
+				connection:Disconnect()
+				for _, entry in parts do
+					entry.part:Destroy()
+				end
+			end)
+		end,
+	}
+end
+
+function handlers.Entrance(data, character, root)
+	if data.phase ~= "Start" then
+		return
+	end
+	setSwordVisible(character, false)
+	blackSmoke(root.Position - UP * 2.6, 10, 3, 6)
+	U.ringBurst(CFrame.new(root.Position - UP * 2.9), BLACK, 1, 7, 0.4, 0.25)
+
+	local book: any = nil
+	local finished = false
+	local function cleanup()
+		if finished then
+			return
+		end
+		finished = true
+		setSwordVisible(character, true)
+		if book then
+			book.close()
+		end
+	end
+	-- Whatever happens (death, interruption), never leave the sword hidden.
+	task.delay(3, cleanup)
+
+	play(character, ANIMS.Entrance, function(event)
+		if not character.Parent then
+			cleanup()
+			return
+		end
+		if event == "Grimoire" then
+			book = grimoire(character, root)
+			book.open(0.45)
+		elseif event == "Draw" then
+			if book then
+				book.burst()
+			end
+			setSwordVisible(character, true, 0.08)
+			redSparks(root.Position + UP * 1.5, 10, 0.8)
+		elseif event == "Slam" then
+			local sword = getSword(character)
+			local blade = sword and sword:FindFirstChild("Blade")
+			local tip = if blade and blade:IsA("BasePart")
+				then (blade.CFrame * CFrame.new(0, 2.3, 0)).Position
+				else root.Position + root.CFrame.LookVector * 5
+			U.groundRocks(tip, 9, 2, 1.4)
+			blackSmoke(tip, 12, 3.5, 14)
+			U.ringBurst(CFrame.new(tip + UP * 0.2), BLACK, 0.6, 9, 0.35, 0.3)
+			blackLightning(tip + UP, 5, 5)
+			U.light(tip, RED, 6, 18, 0.35)
+			if U.isLocal(character) then
+				CameraShake.Add(0.35)
+			end
+		elseif event == "Settle" then
+			cleanup()
+		end
+	end)
+end
+
 function Kit.OnSkill(data)
 	local character = data.character
 	if typeof(character) ~= "Instance" or not character:IsA("Model") then
@@ -5202,9 +5241,770 @@ end)
 return Kit
 ]]></string>
             </Properties>
+            <Item class="ModuleScript" referent="30">
+              <Properties>
+                <string name="Name">Animations</string>
+                <string name="Source"><![CDATA[--[[
+	Anti-Magic Knight animation data.
+
+	GENERATED by tools/anim/emit.py from tools/anim/asta_anims.py. Every
+	keyframe and the in-betweens are checked against an R6 model of the rig
+	(blade clear of the body, tip above the floor), so edit the Python and
+	re-run it instead of editing this file by hand.
+
+	Each animation: keys = { {time, pose, easingStyle?, easingDirection?}, ... }
+	  rot(x, y, z)          torso/head/leg rotation (degrees)
+	  limb(pitch, yaw, roll) arm/leg aim (degrees)
+	  aim(x, y, z)          which way the blade points, in character space
+	                        (X right, Y up, -Z forward); the wrist is solved
+	                        from it when the clip is built
+]]
+
+local rad = math.rad
+
+local function rot(x: number, y: number?, z: number?): CFrame
+	return CFrame.Angles(rad(x), rad(y or 0), rad(z or 0))
+end
+
+local function limb(pitch: number, yaw: number?, roll: number?): CFrame
+	return CFrame.Angles(0, rad(yaw or 0), 0) * CFrame.Angles(0, 0, rad(roll or 0)) * CFrame.Angles(rad(pitch), 0, 0)
+end
+
+local function aim(x: number, y: number, z: number): { aim: Vector3 }
+	return { aim = Vector3.new(x, y, z) }
+end
+
+local Animations = {}
+
+-- Standing still: wide stance, sword resting on the right shoulder, slow breathing.
+Animations.Idle = {
+	loop = true,
+	delays = { Head = 0.12, RightArm = 0.08, Sword = 0.16, LeftArm = 0.2 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(80, 10, -20),
+				Sword = aim(-0.123, 0.577, 0.807),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(-6, 0, 9),
+				LeftLeg = rot(12, 0, -10),
+			},
+		},
+		{
+			1.3,
+			{
+				Torso = rot(-2, -18),
+				Head = rot(2, 16),
+				RightArm = limb(84, 10, -20),
+				Sword = aim(-0.123, 0.519, 0.846),
+				LeftArm = limb(13, 0, -16),
+				RightLeg = rot(-6, 0, 9),
+				LeftLeg = rot(12, 0, -10),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			2.6,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(80, 10, -20),
+				Sword = aim(-0.123, 0.577, 0.807),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(-6, 0, 9),
+				LeftLeg = rot(12, 0, -10),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Moving: carries the sword on the shoulder; legs and left arm walk normally.
+Animations.IdleMove = {
+	loop = true,
+	keys = {
+		{
+			0,
+			{
+				RightArm = limb(80, 10, -20),
+				Sword = aim(0.15, 0.49, 0.86),
+			},
+		},
+	},
+}
+
+-- M1 1: right to left horizontal slash.
+Animations.Slash1 = {
+	fadeOut = 0.22,
+	additive = { RightLeg = true, LeftLeg = true },
+	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(80, 10, -20),
+				Sword = aim(-0.123, 0.577, 0.807),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = rot(3, -42),
+				Head = rot(0, 32),
+				RightArm = limb(80, -100),
+				Sword = aim(0.75, 0.25, 0.6),
+				LeftArm = limb(40, -25),
+				RightLeg = rot(0, 40),
+				LeftLeg = rot(0, 40),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.12,
+			{
+				Torso = rot(-4, -5),
+				Head = rot(0, 4),
+				RightArm = limb(85, -20),
+				Sword = aim(0.35, 0.05, -0.94),
+				LeftArm = limb(30, -25),
+				RightLeg = rot(0, 5),
+				LeftLeg = rot(0, 5),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.17,
+			{
+				Torso = rot(-8, 38),
+				Head = rot(0, -28),
+				RightArm = limb(82, 70),
+				Sword = aim(-0.9, -0.1, -0.35),
+				LeftArm = limb(20, -40),
+				RightLeg = rot(0, -36),
+				LeftLeg = rot(0, -36),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.32,
+			{
+				Torso = rot(-6, 28),
+				Head = rot(0, -20),
+				RightArm = limb(70, 55),
+				Sword = aim(-0.75, -0.35, -0.5),
+				LeftArm = limb(25, -35),
+				RightLeg = rot(0, -26),
+				LeftLeg = rot(0, -26),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- M1 2: backhand, left to right.
+Animations.Slash2 = {
+	fadeOut = 0.22,
+	additive = { RightLeg = true, LeftLeg = true },
+	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(80, 10, -20),
+				Sword = aim(-0.123, 0.577, 0.807),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = rot(3, 35),
+				Head = rot(0, -28),
+				RightArm = limb(82, 80),
+				Sword = aim(-0.8, 0.2, 0.5),
+				LeftArm = limb(35, -10),
+				RightLeg = rot(0, -34),
+				LeftLeg = rot(0, -34),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.12,
+			{
+				Torso = rot(-4),
+				Head = rot(0, -2),
+				RightArm = limb(85, 10),
+				Sword = aim(-0.3, 0.05, -0.95),
+				LeftArm = limb(35, -25),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.17,
+			{
+				Torso = rot(-8, -38),
+				Head = rot(0, 28),
+				RightArm = limb(80, -85),
+				Sword = aim(0.95, -0.1, -0.25),
+				LeftArm = limb(40, -30),
+				RightLeg = rot(0, 36),
+				LeftLeg = rot(0, 36),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.32,
+			{
+				Torso = rot(-6, -26),
+				Head = rot(0, 18),
+				RightArm = limb(72, -65),
+				Sword = aim(0.75, -0.35, -0.45),
+				LeftArm = limb(38, -28),
+				RightLeg = rot(0, 24),
+				LeftLeg = rot(0, 24),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- M1 3: rising diagonal.
+Animations.Slash3 = {
+	fadeOut = 0.22,
+	additive = { RightLeg = true, LeftLeg = true },
+	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(80, 10, -20),
+				Sword = aim(-0.123, 0.577, 0.807),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = rot(-14, -25),
+				Head = rot(10, 18),
+				RightArm = limb(25, -40),
+				Sword = aim(0.45, -0.35, -0.8),
+				LeftArm = limb(45, -20),
+				RightLeg = rot(0, 22),
+				LeftLeg = rot(0, 22),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.12,
+			{
+				Torso = rot(-3),
+				Head = rot(0),
+				RightArm = limb(85, -5),
+				Sword = aim(0.1, 0.3, -0.95),
+				LeftArm = limb(35, -20),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.17,
+			{
+				Torso = rot(10, 28),
+				Head = rot(-10, -15),
+				RightArm = limb(150, 30),
+				Sword = aim(-0.45, 0.85, -0.25),
+				LeftArm = limb(20, -20),
+				RightLeg = rot(0, -26),
+				LeftLeg = rot(0, -26),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.32,
+			{
+				Torso = rot(6, 20),
+				Head = rot(-6, -10),
+				RightArm = limb(135, 25),
+				Sword = aim(-0.35, 0.8, 0.45),
+				LeftArm = limb(25, -22),
+				RightLeg = rot(0, -18),
+				LeftLeg = rot(0, -18),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Finisher: huge horizontal cleave that wraps around the body.
+Animations.Cleave = {
+	fadeOut = 0.28,
+	additive = { RightLeg = true, LeftLeg = true },
+	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(80, 10, -20),
+				Sword = aim(-0.123, 0.577, 0.807),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.12,
+			{
+				Torso = rot(4, -60),
+				Head = rot(0, 40),
+				RightArm = limb(80, -120),
+				Sword = aim(0.45, 0.2, 0.85),
+				LeftArm = limb(65, -30),
+				RightLeg = rot(0, 55),
+				LeftLeg = rot(0, 55),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.18,
+			{
+				Torso = rot(-4, -10),
+				Head = rot(0, 8),
+				RightArm = limb(85, -20),
+				Sword = aim(0.4, 0.05, -0.9),
+				LeftArm = limb(45, -35),
+				RightLeg = rot(0, 8),
+				LeftLeg = rot(0, 8),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.24,
+			{
+				Torso = rot(-12, 62),
+				Head = rot(0, -42),
+				RightArm = limb(80, 95),
+				Sword = aim(-0.85, -0.05, 0.5),
+				LeftArm = limb(15, -45),
+				RightLeg = rot(0, -58),
+				LeftLeg = rot(0, -58),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.44,
+			{
+				Torso = rot(-10, 50),
+				Head = rot(0, -34),
+				RightArm = limb(72, 80),
+				Sword = aim(-0.7, -0.35, 0.6),
+				LeftArm = limb(22, -40),
+				RightLeg = rot(0, -46),
+				LeftLeg = rot(0, -46),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Finisher (jump held): rising vertical slash.
+Animations.Rising = {
+	fadeOut = 0.28,
+	additive = { RightLeg = true, LeftLeg = true },
+	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(80, 10, -20),
+				Sword = aim(-0.123, 0.577, 0.807),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.12,
+			{
+				Torso = rot(-22, -15),
+				Head = rot(14, 10),
+				RightArm = limb(15, -25),
+				Sword = aim(0.45, -0.3, -0.84),
+				LeftArm = limb(70, -25),
+				RightLeg = rot(-10, 15),
+				LeftLeg = rot(15, 15),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.18,
+			{
+				Torso = rot(-8),
+				Head = rot(2),
+				RightArm = limb(80),
+				Sword = aim(0.05, 0.45, -0.9),
+				LeftArm = limb(50, -25),
+				RightLeg = rot(-5),
+				LeftLeg = rot(5),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.24,
+			{
+				Torso = rot(15, 15),
+				Head = rot(-20, -10),
+				RightArm = limb(175, 10),
+				Sword = aim(0.05, 1, 0.1),
+				LeftArm = limb(30, -20),
+				RightLeg = rot(0, -15),
+				LeftLeg = rot(0, -15),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.44,
+			{
+				Torso = rot(10, 10),
+				Head = rot(-14, -8),
+				RightArm = limb(160, 10),
+				Sword = aim(0.05, 0.8, 0.6),
+				LeftArm = limb(32, -20),
+				RightLeg = rot(0, -10),
+				LeftLeg = rot(0, -10),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Finisher (airborne): two-handed overhead chop.
+Animations.Chop = {
+	fadeOut = 0.28,
+	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(80, 10, -20),
+				Sword = aim(-0.123, 0.577, 0.807),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.12,
+			{
+				Torso = rot(20),
+				Head = rot(-12),
+				RightArm = limb(175, 8),
+				Sword = aim(0, 0.55, 0.83),
+				LeftArm = limb(170, -8),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.18,
+			{
+				Torso = rot(0),
+				Head = rot(0),
+				RightArm = limb(115, 8),
+				Sword = aim(0, 0.75, -0.65),
+				LeftArm = limb(110, -8),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.24,
+			{
+				Torso = rot(-35),
+				Head = rot(18),
+				RightArm = limb(40, 8),
+				Sword = aim(0, -0.3, -0.95),
+				LeftArm = limb(45, -8),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.44,
+			{
+				Torso = rot(-28),
+				Head = rot(14),
+				RightArm = limb(48, 8),
+				Sword = aim(0, -0.36, -0.93),
+				LeftArm = limb(52, -8),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Spawn entrance: crouched landing, grimoire appears, sword drawn from it, twirled overhead, slammed into the ground, rested on the shoulder.
+Animations.Entrance = {
+	fadeIn = 0.08,
+	fadeOut = 0.25,
+	delays = { Sword = 0.025, Head = -0.02 },
+	events = {
+		{ time = 0.3, name = "Grimoire" },
+		{ time = 1, name = "Draw" },
+		{ time = 1.7, name = "Slam" },
+		{ time = 2.25, name = "Settle" },
+	},
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-28),
+				Head = rot(22),
+				RightArm = limb(-12, 0, 28),
+				Sword = aim(0, -1, 0.2),
+				LeftArm = limb(-12, 0, -28),
+				RightLeg = rot(-22, 0, 8),
+				LeftLeg = rot(34, 0, -6),
+			},
+		},
+		{
+			0.3,
+			{
+				Torso = rot(-28),
+				Head = rot(22),
+				RightArm = limb(-12, 0, 28),
+				Sword = aim(0, -1, 0.2),
+				LeftArm = limb(-12, 0, -28),
+				RightLeg = rot(-22, 0, 8),
+				LeftLeg = rot(34, 0, -6),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.62,
+			{
+				Torso = rot(-10, 10),
+				Head = rot(-4, -28),
+				RightArm = limb(15, 0, 18),
+				Sword = aim(0, -1, 0.2),
+				LeftArm = limb(75, -40),
+				RightLeg = rot(-10, 0, 8),
+				LeftLeg = rot(14, 0, -8),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.88,
+			{
+				Torso = rot(-8, 32),
+				Head = rot(0, -20),
+				RightArm = limb(82, 72),
+				Sword = aim(-0.95, 0, -0.3),
+				LeftArm = limb(70, -45),
+				RightLeg = rot(-8, -25, 8),
+				LeftLeg = rot(12, -25, -8),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			1.05,
+			{
+				Torso = rot(4, -20),
+				Head = rot(-8, 15),
+				RightArm = limb(150, -55),
+				Sword = aim(0.6, 0.8, 0),
+				LeftArm = limb(25, 0, -30),
+				RightLeg = rot(-8, 15, 8),
+				LeftLeg = rot(12, 15, -8),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			1.13,
+			{
+				Torso = rot(4),
+				Head = rot(-12),
+				RightArm = limb(172),
+				Sword = aim(0.95, 0.2, -0.2),
+				LeftArm = limb(25, 0, -30),
+				RightLeg = rot(-6, 0, 8),
+				LeftLeg = rot(10, 0, -8),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			1.21,
+			{
+				Torso = rot(4),
+				Head = rot(-12),
+				RightArm = limb(172),
+				Sword = aim(0.2, 0.2, 0.95),
+				LeftArm = limb(25, 0, -30),
+				RightLeg = rot(-6, 0, 8),
+				LeftLeg = rot(10, 0, -8),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			1.29,
+			{
+				Torso = rot(4),
+				Head = rot(-12),
+				RightArm = limb(172),
+				Sword = aim(-0.95, 0.2, 0.2),
+				LeftArm = limb(25, 0, -30),
+				RightLeg = rot(-6, 0, 8),
+				LeftLeg = rot(10, 0, -8),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			1.37,
+			{
+				Torso = rot(4),
+				Head = rot(-12),
+				RightArm = limb(172),
+				Sword = aim(-0.2, 0.2, -0.95),
+				LeftArm = limb(25, 0, -30),
+				RightLeg = rot(-6, 0, 8),
+				LeftLeg = rot(10, 0, -8),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			1.45,
+			{
+				Torso = rot(4),
+				Head = rot(-12),
+				RightArm = limb(172),
+				Sword = aim(0.95, 0.2, -0.2),
+				LeftArm = limb(25, 0, -30),
+				RightLeg = rot(-6, 0, 8),
+				LeftLeg = rot(10, 0, -8),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			1.58,
+			{
+				Torso = rot(16),
+				Head = rot(-10),
+				RightArm = limb(175, 6),
+				Sword = aim(0, 0.5, 0.86),
+				LeftArm = limb(168, -6),
+				RightLeg = rot(-12, 0, 6),
+				LeftLeg = rot(18, 0, -6),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			1.7,
+			{
+				Torso = rot(-30, 5),
+				Head = rot(12),
+				RightArm = limb(52, 8),
+				Sword = aim(0, -0.42, -0.91),
+				LeftArm = limb(48, -8),
+				RightLeg = rot(-25, 0, 8),
+				LeftLeg = rot(32, 0, -6),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			2.05,
+			{
+				Torso = rot(-20, 8),
+				Head = rot(-12, -5),
+				RightArm = limb(55, 8),
+				Sword = aim(0, -0.45, -0.89),
+				LeftArm = limb(15, 0, -20),
+				RightLeg = rot(-18, 0, 8),
+				LeftLeg = rot(25, 0, -6),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			2.45,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(80, 10, -20),
+				Sword = aim(-0.123, 0.577, 0.807),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(-6, 0, 9),
+				LeftLeg = rot(12, 0, -10),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+return Animations
+]]></string>
+              </Properties>
+            </Item>
           </Item>
         </Item>
-        <Item class="ModuleScript" referent="30">
+        <Item class="ModuleScript" referent="31">
           <Properties>
             <string name="Name">M1Animations</string>
             <string name="Source"><![CDATA[--[[
@@ -5592,7 +6392,7 @@ return M1Animations
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="31">
+        <Item class="ModuleScript" referent="32">
           <Properties>
             <string name="Name">Moves</string>
             <string name="Source"><![CDATA[--[[
@@ -5681,7 +6481,7 @@ local function watchCharacter(character: Model)
 	end
 	local function updateKit()
 		local kit = kitOf(character)
-		PoseAnimator.SetIdle(character, if kit then kit.IdlePose else nil)
+		PoseAnimator.SetIdle(character, if kit then kit.Idle else nil)
 	end
 	character:GetAttributeChangedSignal("Awakened"):Connect(updateAwakened)
 	character:GetAttributeChangedSignal("Kit"):Connect(updateKit)
@@ -5753,7 +6553,7 @@ return Moves
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="32">
+        <Item class="ModuleScript" referent="33">
           <Properties>
             <string name="Name">PoseAnimator</string>
             <string name="Source"><![CDATA[--[[
@@ -5772,9 +6572,16 @@ return Moves
 	  LeftArm     Left Shoulder
 	  RightLeg    Right Hip
 	  LeftLeg     Left Hip
+	  Sword       SwordGrip (a weapon's wrist), relative to the right arm
 	Axes: X = right, Y = up, Z = back. So for a limb hanging down,
 	  +X rotation swings it forward, +Y turns it to the left,
 	  +Z swings it out to the right. For the Torso, +X leans back.
+
+	Two layers per character:
+	  idle   a looping stance, one version for standing still and one for
+	         moving, blended by how fast the character is going
+	  track  one-shot animations (attacks, skills) that blend in from
+	         wherever the body is and back out into the idle
 ]]
 
 local RunService = game:GetService("RunService")
@@ -5793,10 +6600,20 @@ export type Animation = {
 	keyframes: { Keyframe },
 	fadeIn: number?,
 	fadeOut: number?,
-	-- Joints whose pose is layered on top of the default walk/idle animation
-	-- instead of replacing it (e.g. legs counter-twisting while still walking).
+	loop: boolean?,
+	-- Joints whose pose is layered on top of the layer below instead of
+	-- replacing it (e.g. legs counter-twisting while still walking).
 	additive: { [string]: boolean }?,
+	-- Overlapping action: a joint with a delay follows the animation that
+	-- many seconds late (negative leads), so the body leads and the arm and
+	-- weapon drag behind like in hand-made animation.
+	delays: { [string]: number }?,
 	events: { { time: number, name: string } }?,
+}
+
+export type IdleSet = {
+	stand: Animation?, -- played while standing still
+	move: Animation?, -- played while moving (usually upper body only)
 }
 
 local JOINTS = {
@@ -5806,7 +6623,11 @@ local JOINTS = {
 	LeftArm = "Left Shoulder",
 	RightLeg = "Right Hip",
 	LeftLeg = "Left Hip",
+	Sword = "SwordGrip",
 }
+
+local STAND_SPEED = 1.5 -- studs/s; slower than this counts as standing still
+local STANCE_BLEND = 8 -- how fast the idle switches between stand and move
 
 type Track = {
 	animation: Animation,
@@ -5824,17 +6645,20 @@ type Track = {
 }
 
 type Idle = {
-	pose: Pose,
+	set: IdleSet,
+	covered: { [string]: boolean },
 	joints: { [string]: Motor6D },
+	start: number,
+	standWeight: number,
+	nextJointScan: number,
 }
 
 local tracks: { [Model]: Track } = {}
--- Persistent stances (e.g. holding a sword up) that play whenever no
--- animation is using those joints, and that animations blend from/to.
 local idles: { [Model]: Idle } = {}
 -- What we wrote to each joint last frame. If the default Animator didn't
 -- overwrite it, the joint has no base animation and its base is identity.
 local lastWritten: { [Motor6D]: CFrame } = {}
+local posedCache: { [Animation]: { [string]: boolean } } = setmetatable({}, { __mode = "k" }) :: any
 
 local PoseAnimator = {}
 
@@ -5859,9 +6683,41 @@ local function smooth(x: number): number
 	return x * x * (3 - 2 * x)
 end
 
--- The animation's pose for one joint at time t (identity if never posed).
-local function sample(animation: Animation, poseName: string, t: number): CFrame
+local function lengthOf(animation: Animation): number
 	local keyframes = animation.keyframes
+	return keyframes[#keyframes].time
+end
+
+local function posed(animation: Animation): { [string]: boolean }
+	local cached = posedCache[animation]
+	if cached then
+		return cached
+	end
+	local set = {}
+	for _, keyframe in animation.keyframes do
+		for poseName in keyframe.pose do
+			set[poseName] = true
+		end
+	end
+	posedCache[animation] = set
+	return set
+end
+
+-- The animation's pose for one joint at time t (identity if never posed).
+-- Applies the joint's delay; looping animations wrap around.
+local function sample(animation: Animation, poseName: string, t: number): CFrame
+	local delays = animation.delays
+	if delays and delays[poseName] then
+		t -= delays[poseName]
+	end
+	local keyframes = animation.keyframes
+	if animation.loop then
+		local length = keyframes[#keyframes].time
+		if length > 0 then
+			t %= length
+		end
+	end
+
 	local previous = keyframes[1]
 	if t <= previous.time then
 		return previous.pose[poseName] or CFrame.identity
@@ -5880,25 +6736,27 @@ local function sample(animation: Animation, poseName: string, t: number): CFrame
 	return previous.pose[poseName] or CFrame.identity
 end
 
-local function posedJoints(animation: Animation): { [string]: boolean }
-	local set = {}
-	for _, keyframe in animation.keyframes do
-		for poseName in keyframe.pose do
-			set[poseName] = true
-		end
-	end
-	return set
-end
-
 -- Parent-part-space pose -> the joint's own space.
 local function toJointSpace(joint: Motor6D, pose: CFrame): CFrame
 	local c0 = joint.C0.Rotation
 	return c0:Inverse() * pose * c0
 end
 
+-- What the default Animator (walk/idle) set this frame, or identity if
+-- nothing but us animates this joint.
+local function animatorBase(joint: Motor6D): CFrame
+	local current = joint.Transform
+	return if lastWritten[joint] == current then CFrame.identity else current
+end
+
+local function write(joint: Motor6D, value: CFrame)
+	joint.Transform = value
+	lastWritten[joint] = value
+end
+
 local function release(track: Track, character: Model)
 	-- Hand the joints back; the default Animator overwrites them next frame
-	-- if it's animating them. Joints with an idle stance stay put, the idle
+	-- if it's animating them. Joints the idle covers stay put, the idle
 	-- takes over next frame.
 	local idle = idles[character]
 	for poseName, joint in track.joints do
@@ -5914,9 +6772,59 @@ local function release(track: Track, character: Model)
 	end
 end
 
-local function step()
+-- The idle layer's value for every joint it covers this frame (joint space).
+local function idleValues(character: Model, idle: Idle, now: number, dt: number): { [string]: CFrame }
+	-- Joints can show up late (a weapon replicating after the kit was set)
+	-- or get recreated (avatar applied), so look for missing ones now and then.
+	if now >= idle.nextJointScan then
+		idle.nextJointScan = now + 0.25
+		local fresh: { [string]: Motor6D }? = nil
+		for poseName in idle.covered do
+			local joint = idle.joints[poseName]
+			if not joint or not joint.Parent then
+				fresh = fresh or findJoints(character)
+				idle.joints[poseName] = (fresh :: { [string]: Motor6D })[poseName]
+			end
+		end
+	end
+
+	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local speed = 0
+	if root then
+		local velocity = root.AssemblyLinearVelocity
+		speed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
+	end
+	local target = if speed < STAND_SPEED then 1 else 0
+	idle.standWeight += (target - idle.standWeight) * math.min(dt * STANCE_BLEND, 1)
+	local w = smooth(idle.standWeight)
+
+	local t = now - idle.start
+	local stand, move = idle.set.stand, idle.set.move
+	local values = {}
+	for poseName, joint in idle.joints do
+		if not joint.Parent then
+			continue
+		end
+		local base = animatorBase(joint)
+		local standValue = if stand and posed(stand)[poseName]
+			then toJointSpace(joint, sample(stand, poseName, t))
+			else nil
+		local moveValue = if move and posed(move)[poseName] then toJointSpace(joint, sample(move, poseName, t)) else nil
+		if standValue and moveValue then
+			values[poseName] = moveValue:Lerp(standValue, w)
+		elseif standValue then
+			values[poseName] = base:Lerp(standValue, w)
+		elseif moveValue then
+			values[poseName] = moveValue:Lerp(base, w)
+		end
+	end
+	return values
+end
+
+local function step(dt: number)
 	local now = os.clock()
 
+	local idleFrame: { [Model]: { [string]: CFrame } } = {}
 	for character, idle in idles do
 		if not character.Parent then
 			idles[character] = nil
@@ -5925,21 +6833,12 @@ local function step()
 		if character:GetAttribute("Ragdolled") == true then
 			continue
 		end
-		-- Joints get recreated if the body is rebuilt (e.g. avatar applied).
-		for poseName, joint in idle.joints do
-			if not joint.Parent then
-				local fresh = findJoints(character)[poseName]
-				if fresh then
-					idle.joints[poseName] = fresh
-				end
-			end
-		end
+		local values = idleValues(character, idle, now, dt)
+		idleFrame[character] = values
 		local track = tracks[character]
-		for poseName, joint in idle.joints do
-			if joint.Parent and not (track and track.joints[poseName]) then
-				local value = toJointSpace(joint, idle.pose[poseName])
-				joint.Transform = value
-				lastWritten[joint] = value
+		for poseName, value in values do
+			if not (track and track.joints[poseName]) then
+				write(idle.joints[poseName], value)
 			end
 		end
 	end
@@ -5976,35 +6875,30 @@ local function step()
 		end
 
 		local additive = animation.additive or {}
-		local idle = idles[character]
+		local idleValuesNow = idleFrame[character]
+		local clampedTime = math.min(elapsed, track.length)
 		for poseName, joint in track.joints do
-			local base
-			if idle and idle.joints[poseName] then
-				base = toJointSpace(joint, idle.pose[poseName])
-			else
-				local current = joint.Transform
-				base = if lastWritten[joint] == current then CFrame.identity else current
+			if not joint.Parent then
+				continue
 			end
-			local local_ = toJointSpace(joint, sample(animation, poseName, elapsed))
+			local base = (idleValuesNow and idleValuesNow[poseName]) or animatorBase(joint)
+			local local_ = toJointSpace(joint, sample(animation, poseName, clampedTime))
 			local target = if additive[poseName] then base * local_ else local_
 			-- Fading in starts from wherever the joint really was (mid-swing
 			-- from the previous track, for example), not from the base.
 			local start = if fadingIn then track.from[poseName] or base else base
-			local final = start:Lerp(target, weight)
-			joint.Transform = final
-			lastWritten[joint] = final
+			write(joint, start:Lerp(target, weight))
 		end
 	end
 end
 
 -- Plays `animation` on `character`, replacing whatever this module was playing on it.
 function PoseAnimator.Play(character: Model, animation: Animation, onEvent: ((name: string) -> ())?)
-	local posed = posedJoints(animation)
-	local all = findJoints(character)
+	local wanted = posed(animation)
 	local joints = {}
 	local from = {}
-	for poseName, joint in all do
-		if posed[poseName] then
+	for poseName, joint in findJoints(character) do
+		if wanted[poseName] then
 			joints[poseName] = joint
 			from[poseName] = joint.Transform -- captured before the old track lets go
 		end
@@ -6019,12 +6913,11 @@ function PoseAnimator.Play(character: Model, animation: Animation, onEvent: ((na
 		return -- not an R6 rig
 	end
 
-	local keyframes = animation.keyframes
 	tracks[character] = {
 		animation = animation,
 		joints = joints,
 		start = os.clock(),
-		length = keyframes[#keyframes].time,
+		length = lengthOf(animation),
 		onEvent = onEvent,
 		firedEvents = {},
 		from = from,
@@ -6057,8 +6950,8 @@ function PoseAnimator.Freeze(character: Model, duration: number)
 	track.start += duration
 end
 
--- Sets (or clears, with nil) a persistent stance for some joints.
-function PoseAnimator.SetIdle(character: Model, pose: Pose?)
+-- Sets (or clears, with nil) a character's idle layer.
+function PoseAnimator.SetIdle(character: Model, set: IdleSet?)
 	local old = idles[character]
 	if old then
 		idles[character] = nil
@@ -6069,18 +6962,29 @@ function PoseAnimator.SetIdle(character: Model, pose: Pose?)
 			end
 		end
 	end
-	if not pose then
+	if not set then
 		return
+	end
+	local covered: { [string]: boolean } = {}
+	for _, animation in { set.stand, set.move } do
+		for poseName in posed(animation :: Animation) do
+			covered[poseName] = true
+		end
 	end
 	local joints = {}
 	for poseName, joint in findJoints(character) do
-		if pose[poseName] then
+		if covered[poseName] then
 			joints[poseName] = joint
 		end
 	end
-	if next(joints) ~= nil then
-		idles[character] = { pose = pose, joints = joints }
-	end
+	idles[character] = {
+		set = set,
+		covered = covered,
+		joints = joints,
+		start = os.clock(),
+		standWeight = 1,
+		nextJointScan = 0,
+	}
 end
 
 function PoseAnimator.Start()
@@ -6093,7 +6997,7 @@ return PoseAnimator
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="33">
+        <Item class="ModuleScript" referent="34">
           <Properties>
             <string name="Name">ShiftLock</string>
             <string name="Source"><![CDATA[--[[
@@ -6249,7 +7153,7 @@ return ShiftLock
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="34">
+        <Item class="ModuleScript" referent="35">
           <Properties>
             <string name="Name">TopBar</string>
             <string name="Source"><![CDATA[--[[
@@ -6540,7 +7444,7 @@ return TopBar
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="35">
+        <Item class="ModuleScript" referent="36">
           <Properties>
             <string name="Name">VFX</string>
             <string name="Source"><![CDATA[--[[
@@ -6577,7 +7481,8 @@ local COLORS = {
 }
 
 -- Characters can recolor their hit effects (VFX.SetPalette).
-type Palette = { hit: Color3, heavy: Color3, flash: Color3 }
+-- `cleanM1`: M1 hits only flash the victim and show damage (no sparks/rings).
+type Palette = { hit: Color3, heavy: Color3, flash: Color3, cleanM1: boolean? }
 local DEFAULT_PALETTE: Palette = { hit = COLORS.Hit, heavy = COLORS.Heavy, flash = Color3.new(1, 1, 1) }
 local palettes: { [string]: Palette } = {}
 
@@ -6989,7 +7894,26 @@ end
 -- Effects (names match what the server sends)
 ---------------------------------------------------------------------------
 
+-- M1 hit for kits with a clean style: a quick body flash and the number.
+local function cleanM1Hit(data, heavy: boolean): boolean
+	local palette = paletteFor(data)
+	if not palette.cleanM1 or data.variant == nil then
+		return false
+	end
+	highlight(data.victim, Color3.new(1, 1, 1), if heavy then 0.18 else 0.1)
+	if data.damage then
+		popup(data.position, string.format("%g", data.damage), Color3.new(1, 1, 1), if heavy then 1.2 else 1)
+	end
+	if heavy and (isLocal(data.attacker) or isLocal(data.victim)) then
+		CameraShake.FovKick(4)
+	end
+	return true
+end
+
 function Effects.Hit(data)
+	if cleanM1Hit(data, false) then
+		return
+	end
 	local position: Vector3 = data.position
 	local direction: Vector3 = data.direction or Vector3.zAxis
 	local palette = paletteFor(data)
@@ -7011,6 +7935,9 @@ function Effects.Hit(data)
 end
 
 function Effects.HeavyHit(data)
+	if cleanM1Hit(data, true) then
+		return
+	end
 	local position: Vector3 = data.position
 	local direction: Vector3 = data.direction or Vector3.zAxis
 	local palette = paletteFor(data)
@@ -7336,13 +8263,13 @@ return VFX
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="36">
+  <Item class="Workspace" referent="37">
     <Properties>
       <string name="Name">Workspace</string>
       <float name="Gravity">225</float>
       <bool name="NeedsPivotMigration">false</bool>
     </Properties>
-    <Item class="Part" referent="37">
+    <Item class="Part" referent="38">
       <Properties>
         <string name="Name">Baseplate</string>
         <bool name="Anchored">true</bool>
@@ -7361,7 +8288,7 @@ return VFX
         </Vector3>
       </Properties>
     </Item>
-    <Item class="SpawnLocation" referent="38">
+    <Item class="SpawnLocation" referent="39">
       <Properties>
         <string name="Name">SpawnLocation</string>
         <bool name="Anchored">true</bool>
