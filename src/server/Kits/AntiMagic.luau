@@ -120,11 +120,12 @@ local function buildSword(): Model
 	trail.Name = "SwingTrail"
 	trail.Attachment0 = base
 	trail.Attachment1 = tip
-	trail.Color = ColorSequence.new(Color3.fromRGB(10, 10, 12), Color3.fromRGB(150, 20, 30))
-	trail.Transparency = NumberSequence.new(0.15, 1)
+	-- Subtle: just enough to read the blade's path.
+	trail.Color = ColorSequence.new(Color3.fromRGB(30, 30, 34), Color3.fromRGB(90, 90, 100))
+	trail.Transparency = NumberSequence.new(0.55, 1)
 	trail.LightEmission = 0
 	trail.LightInfluence = 0
-	trail.Lifetime = 0.16
+	trail.Lifetime = 0.12
 	trail.MinLength = 0
 	trail.Enabled = false
 	trail.Parent = blade

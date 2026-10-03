@@ -20,13 +20,15 @@
 ]]
 
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 export type Pose = { [string]: CFrame }
 
 export type Keyframe = {
 	time: number,
 	pose: Pose,
-	easing: Enum.EasingStyle?, -- easing INTO this keyframe
+	easing: Enum.EasingStyle?, -- easing INTO this keyframe (default Quad)
+	direction: Enum.EasingDirection?, -- (default Out)
 }
 
 export type Animation = {
@@ -55,6 +57,9 @@ type Track = {
 	length: number,
 	onEvent: ((name: string) -> ())?,
 	firedEvents: { [number]: boolean },
+	-- Where each joint actually was when this track started, so a new swing
+	-- blends from the previous swing's pose instead of snapping to idle.
+	from: { [string]: CFrame },
 }
 
 type Idle = {
@@ -83,17 +88,14 @@ local function findJoints(character: Model): { [string]: Motor6D }
 	return found
 end
 
-local function ease(alpha: number, style: Enum.EasingStyle?): number
-	if style == Enum.EasingStyle.Linear then
-		return alpha
-	elseif style == Enum.EasingStyle.Back then
-		local c1 = 1.70158
-		local c3 = c1 + 1
-		return 1 + c3 * (alpha - 1) ^ 3 + c1 * (alpha - 1) ^ 2
-	elseif style == Enum.EasingStyle.Sine then
-		return math.sin(alpha * math.pi / 2)
-	end
-	return 1 - (1 - alpha) * (1 - alpha) -- Quad out
+local function ease(alpha: number, style: Enum.EasingStyle?, direction: Enum.EasingDirection?): number
+	return TweenService:GetValue(alpha, style or Enum.EasingStyle.Quad, direction or Enum.EasingDirection.Out)
+end
+
+-- Smooth 0..1 ramp (no sudden starts/stops) for fading tracks in and out.
+local function smooth(x: number): number
+	x = math.clamp(x, 0, 1)
+	return x * x * (3 - 2 * x)
 end
 
 -- The animation's pose for one joint at time t (identity if never posed).
@@ -110,7 +112,7 @@ local function sample(animation: Animation, poseName: string, t: number): CFrame
 			local alpha = if span > 0 then (t - previous.time) / span else 1
 			local from = previous.pose[poseName] or CFrame.identity
 			local to = nextFrame.pose[poseName] or CFrame.identity
-			return from:Lerp(to, ease(alpha, nextFrame.easing))
+			return from:Lerp(to, ease(alpha, nextFrame.easing, nextFrame.direction))
 		end
 		previous = nextFrame
 	end
@@ -204,11 +206,12 @@ local function step()
 			end
 		end
 
+		local fadingIn = elapsed < fadeIn
 		local weight = 1
-		if elapsed < fadeIn then
-			weight = elapsed / fadeIn
+		if fadingIn then
+			weight = smooth(elapsed / fadeIn)
 		elseif elapsed > track.length then
-			weight = 1 - (elapsed - track.length) / fadeOut
+			weight = 1 - smooth((elapsed - track.length) / fadeOut)
 		end
 
 		local additive = animation.additive or {}
@@ -223,7 +226,10 @@ local function step()
 			end
 			local local_ = toJointSpace(joint, sample(animation, poseName, elapsed))
 			local target = if additive[poseName] then base * local_ else local_
-			local final = base:Lerp(target, weight)
+			-- Fading in starts from wherever the joint really was (mid-swing
+			-- from the previous track, for example), not from the base.
+			local start = if fadingIn then track.from[poseName] or base else base
+			local final = start:Lerp(target, weight)
 			joint.Transform = final
 			lastWritten[joint] = final
 		end
@@ -232,19 +238,21 @@ end
 
 -- Plays `animation` on `character`, replacing whatever this module was playing on it.
 function PoseAnimator.Play(character: Model, animation: Animation, onEvent: ((name: string) -> ())?)
+	local posed = posedJoints(animation)
+	local all = findJoints(character)
+	local joints = {}
+	local from = {}
+	for poseName, joint in all do
+		if posed[poseName] then
+			joints[poseName] = joint
+			from[poseName] = joint.Transform -- captured before the old track lets go
+		end
+	end
+
 	local existing = tracks[character]
 	if existing then
 		tracks[character] = nil
 		release(existing, character)
-	end
-
-	local posed = posedJoints(animation)
-	local all = findJoints(character)
-	local joints = {}
-	for poseName, joint in all do
-		if posed[poseName] then
-			joints[poseName] = joint
-		end
 	end
 	if next(joints) == nil then
 		return -- not an R6 rig
@@ -258,6 +266,7 @@ function PoseAnimator.Play(character: Model, animation: Animation, onEvent: ((na
 		length = keyframes[#keyframes].time,
 		onEvent = onEvent,
 		firedEvents = {},
+		from = from,
 	}
 end
 

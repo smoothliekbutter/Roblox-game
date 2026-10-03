@@ -68,6 +68,9 @@ Kits.List = {
 			HitboxOffset = 3.75,
 			Damage = 4,
 			FinisherDamage = 6,
+			-- Hits land as the blade sweeps through the middle of the swing.
+			WindUp = 0.11,
+			FinisherWindUp = 0.18,
 		},
 		-- Close-range rushdown, built like Vessel (JJS) / Hero Hunter (TSB):
 		-- rush combo, grab, timing-crit heavy, counter.

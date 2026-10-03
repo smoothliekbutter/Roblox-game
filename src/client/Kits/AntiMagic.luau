@@ -45,11 +45,11 @@ local function limb(pitch: number, yaw: number?, roll: number?): CFrame
 	return CFrame.Angles(0, rad(yaw or 0), 0) * CFrame.Angles(0, 0, rad(roll or 0)) * CFrame.Angles(rad(pitch), 0, 0)
 end
 
--- Builds an animation from { {time, pose, easing?}, ... }.
+-- Builds an animation from { {time, pose, easing?, direction?}, ... }.
 local function clip(keys: { any }, options: { [string]: any }?): Animation
 	local keyframes = {}
 	for _, key in keys do
-		table.insert(keyframes, { time = key[1], pose = key[2], easing = key[3] })
+		table.insert(keyframes, { time = key[1], pose = key[2], easing = key[3], direction = key[4] })
 	end
 	local animation: any = options or {}
 	animation.keyframes = keyframes
@@ -77,121 +77,252 @@ Kit.IdlePose = {
 -- Sword M1s
 ---------------------------------------------------------------------------
 
-local function swingClip(windup: { [string]: CFrame }, strike: { [string]: CFrame }, heavy: boolean): Animation
-	local windupTime = if heavy then 0.09 else 0.04
-	local strikeTime = if heavy then 0.16 else 0.11
+local SINE, QUAD, QUART = Enum.EasingStyle.Sine, Enum.EasingStyle.Quad, Enum.EasingStyle.Quart
+local IN, OUT, IN_OUT = Enum.EasingDirection.In, Enum.EasingDirection.Out, Enum.EasingDirection.InOut
+
+--[[
+	A sword swing in four beats, each with its own easing so the motion
+	flows like a real swing instead of snapping between poses:
+	  windup  ease in-out   draw back (anticipation)
+	  through ease in       accelerate through the middle of the arc
+	  strike  ease out      full extension past the target (follow-through)
+	  settle  ease out      relax back toward the ready stance
+	Then the animation fades smoothly back into the idle stance.
+]]
+local function swing(
+	poses: {
+		windup: { [string]: CFrame },
+		through: { [string]: CFrame },
+		strike: { [string]: CFrame },
+		settle: { [string]: CFrame },
+	},
+	timing: { number },
+	options: { [string]: any }?
+): Animation
+	local opts: { [string]: any } = options or {}
+	opts.fadeIn = opts.fadeIn or 0.05
+	opts.fadeOut = opts.fadeOut or 0.2
+	opts.events = { { time = timing[1], name = "Strike" } }
 	return clip({
 		{ 0, READY },
-		{ windupTime, windup },
-		{ strikeTime, strike, BACK },
-		{ strikeTime + (if heavy then 0.16 else 0.09), strike },
-	}, {
-		fadeIn = 0.03,
-		fadeOut = if heavy then 0.22 else 0.16,
-		additive = LEGS_ADDITIVE,
-		events = { { time = windupTime, name = "Strike" } },
-	})
+		{ timing[1], poses.windup, SINE, IN_OUT },
+		{ timing[2], poses.through, QUAD, IN },
+		{ timing[3], poses.strike, QUART, OUT },
+		{ timing[4], poses.settle, SINE, OUT },
+	}, opts)
 end
+
+local LIGHT = { 0.07, 0.11, 0.16, 0.3 }
+local HEAVY = { 0.12, 0.18, 0.24, 0.44 }
 
 local M1 = {
 	-- Right to left.
-	Slash1 = swingClip({
-		Torso = rot(0, -25),
-		RightArm = limb(80, -70),
-		LeftArm = limb(40, -20),
-		RightLeg = rot(0, 25),
-		LeftLeg = rot(0, 25),
-	}, {
-		Torso = rot(-6, 30),
-		RightArm = limb(80, 65),
-		LeftArm = limb(30, -30),
-		Head = rot(0, -20),
-		RightLeg = rot(0, -30),
-		LeftLeg = rot(0, -30),
-	}, false),
-	-- Backhand, left to right.
-	Slash2 = swingClip({
-		Torso = rot(0, 25),
-		RightArm = limb(85, 70),
-		LeftArm = limb(40, -10),
-		RightLeg = rot(0, -25),
-		LeftLeg = rot(0, -25),
-	}, {
-		Torso = rot(-6, -30),
-		RightArm = limb(80, -70),
-		LeftArm = limb(40, -30),
-		Head = rot(0, 20),
-		RightLeg = rot(0, 30),
-		LeftLeg = rot(0, 30),
-	}, false),
-	-- Rising diagonal.
-	Slash3 = swingClip({
-		Torso = rot(-12, -20),
-		RightArm = limb(10, -35),
-		LeftArm = limb(50, -25),
-		RightLeg = rot(0, 20),
-		LeftLeg = rot(0, 20),
-	}, {
-		Torso = rot(10, 25),
-		RightArm = limb(150, 30),
-		LeftArm = limb(20, -20),
-		Head = rot(-10, -15),
-		RightLeg = rot(0, -25),
-		LeftLeg = rot(0, -25),
-	}, false),
-	-- Finisher: huge horizontal cleave.
-	Cleave = swingClip({
-		Torso = rot(0, -45),
-		RightArm = limb(85, -110),
-		LeftArm = limb(70, -30),
-		Head = rot(0, 30),
-		RightLeg = rot(0, 45),
-		LeftLeg = rot(0, 45),
-	}, {
-		Torso = rot(-10, 50),
-		RightArm = limb(85, 85),
-		LeftArm = limb(20, -40),
-		Head = rot(0, -35),
-		RightLeg = rot(0, -50),
-		LeftLeg = rot(0, -50),
-	}, true),
-	-- Finisher (jump held): rising vertical slash.
-	Rising = swingClip({
-		Torso = rot(-20, -15),
-		RightArm = limb(-30, -10),
-		LeftArm = limb(70, -25),
-		RightLeg = rot(-10, 15),
-		LeftLeg = rot(15, 15),
-	}, {
-		Torso = rot(15, 15),
-		RightArm = limb(175, 10),
-		LeftArm = limb(30, -20),
-		Head = rot(-20, -10),
-		RightLeg = rot(0, -15),
-		LeftLeg = rot(0, -15),
-	}, true),
-	-- Finisher (in the air): two-handed overhead chop.
-	Chop = swingClip({
-		Torso = rot(18),
-		RightArm = limb(175, 8),
-		LeftArm = limb(170, -8),
-		Head = rot(-12),
-	}, {
-		Torso = rot(-35),
-		RightArm = limb(35, 8),
-		LeftArm = limb(40, -8),
-		Head = rot(18),
-	}, true),
-}
+	Slash1 = swing({
+		windup = {
+			Torso = rot(2, -28),
+			RightArm = limb(75, -80),
+			LeftArm = limb(35, -15),
+			Head = rot(0, 18),
+			RightLeg = rot(0, 28),
+			LeftLeg = rot(0, 28),
+		},
+		through = {
+			Torso = rot(-3, 0),
+			RightArm = limb(82, -5),
+			LeftArm = limb(30, -25),
+			Head = rot(0, 2),
+			RightLeg = rot(0, 0),
+			LeftLeg = rot(0, 0),
+		},
+		strike = {
+			Torso = rot(-6, 32),
+			RightArm = limb(78, 75),
+			LeftArm = limb(25, -35),
+			Head = rot(0, -22),
+			RightLeg = rot(0, -32),
+			LeftLeg = rot(0, -32),
+		},
+		settle = {
+			Torso = rot(-4, 22),
+			RightArm = limb(70, 55),
+			LeftArm = limb(30, -30),
+			Head = rot(0, -15),
+			RightLeg = rot(0, -22),
+			LeftLeg = rot(0, -22),
+		},
+	}, LIGHT, { additive = LEGS_ADDITIVE }),
 
--- Slash arc endpoints (relative to the root) for each swing.
-local ARCS: { [string]: { CFrame } } = {
-	Slash1 = { CFrame.new(3.2, 1, -1.2), CFrame.new(-3.2, -0.3, -1.2) },
-	Slash2 = { CFrame.new(-3.2, 0.8, -1.2), CFrame.new(3.2, -0.4, -1.2) },
-	Slash3 = { CFrame.new(1.5, -2, -1.4), CFrame.new(-1.5, 4, -1.4) },
-	Cleave = { CFrame.new(4.5, 1, -0.5), CFrame.new(-4.5, 0, -0.5) },
-	Rising = { CFrame.new(0.4, -2.4, -1.6), CFrame.new(-0.4, 4.5, -1.6) },
-	Chop = { CFrame.new(0, 4.5, -1.6), CFrame.new(0, -2.4, -1.6) },
+	-- Backhand, left to right.
+	Slash2 = swing({
+		windup = {
+			Torso = rot(2, 28),
+			RightArm = limb(80, 75),
+			LeftArm = limb(35, -10),
+			Head = rot(0, -18),
+			RightLeg = rot(0, -28),
+			LeftLeg = rot(0, -28),
+		},
+		through = {
+			Torso = rot(-3, 0),
+			RightArm = limb(84, 5),
+			LeftArm = limb(35, -25),
+			Head = rot(0, -2),
+			RightLeg = rot(0, 0),
+			LeftLeg = rot(0, 0),
+		},
+		strike = {
+			Torso = rot(-6, -32),
+			RightArm = limb(78, -80),
+			LeftArm = limb(40, -30),
+			Head = rot(0, 22),
+			RightLeg = rot(0, 32),
+			LeftLeg = rot(0, 32),
+		},
+		settle = {
+			Torso = rot(-4, -20),
+			RightArm = limb(70, -60),
+			LeftArm = limb(38, -28),
+			Head = rot(0, 15),
+			RightLeg = rot(0, 22),
+			LeftLeg = rot(0, 22),
+		},
+	}, LIGHT, { additive = LEGS_ADDITIVE }),
+
+	-- Rising diagonal, low right to high left.
+	Slash3 = swing({
+		windup = {
+			Torso = rot(-12, -22),
+			RightArm = limb(15, -40),
+			LeftArm = limb(45, -20),
+			Head = rot(8, 15),
+			RightLeg = rot(0, 20),
+			LeftLeg = rot(0, 20),
+		},
+		through = {
+			Torso = rot(-2, 0),
+			RightArm = limb(85, -5),
+			LeftArm = limb(35, -20),
+			Head = rot(0, 0),
+			RightLeg = rot(0, 0),
+			LeftLeg = rot(0, 0),
+		},
+		strike = {
+			Torso = rot(10, 26),
+			RightArm = limb(150, 30),
+			LeftArm = limb(20, -20),
+			Head = rot(-10, -15),
+			RightLeg = rot(0, -25),
+			LeftLeg = rot(0, -25),
+		},
+		settle = {
+			Torso = rot(6, 18),
+			RightArm = limb(132, 25),
+			LeftArm = limb(25, -22),
+			Head = rot(-6, -10),
+			RightLeg = rot(0, -18),
+			LeftLeg = rot(0, -18),
+		},
+	}, LIGHT, { additive = LEGS_ADDITIVE }),
+
+	-- Finisher: huge horizontal cleave.
+	Cleave = swing({
+		windup = {
+			Torso = rot(4, -50),
+			RightArm = limb(80, -115),
+			LeftArm = limb(65, -30),
+			Head = rot(0, 35),
+			RightLeg = rot(0, 45),
+			LeftLeg = rot(0, 45),
+		},
+		through = {
+			Torso = rot(-4, -5),
+			RightArm = limb(85, -15),
+			LeftArm = limb(45, -35),
+			Head = rot(0, 5),
+			RightLeg = rot(0, 5),
+			LeftLeg = rot(0, 5),
+		},
+		strike = {
+			Torso = rot(-10, 55),
+			RightArm = limb(82, 90),
+			LeftArm = limb(15, -45),
+			Head = rot(0, -38),
+			RightLeg = rot(0, -50),
+			LeftLeg = rot(0, -50),
+		},
+		settle = {
+			Torso = rot(-8, 42),
+			RightArm = limb(75, 72),
+			LeftArm = limb(22, -40),
+			Head = rot(0, -30),
+			RightLeg = rot(0, -40),
+			LeftLeg = rot(0, -40),
+		},
+	}, HEAVY, { additive = LEGS_ADDITIVE, fadeOut = 0.25 }),
+
+	-- Finisher (jump held): rising vertical slash.
+	Rising = swing({
+		windup = {
+			Torso = rot(-22, -15),
+			RightArm = limb(-30, -10),
+			LeftArm = limb(70, -25),
+			Head = rot(12, 10),
+			RightLeg = rot(-10, 15),
+			LeftLeg = rot(15, 15),
+		},
+		through = {
+			Torso = rot(-5, 0),
+			RightArm = limb(70, 0),
+			LeftArm = limb(50, -25),
+			Head = rot(0, 0),
+			RightLeg = rot(-5, 0),
+			LeftLeg = rot(5, 0),
+		},
+		strike = {
+			Torso = rot(15, 15),
+			RightArm = limb(175, 10),
+			LeftArm = limb(30, -20),
+			Head = rot(-20, -10),
+			RightLeg = rot(0, -15),
+			LeftLeg = rot(0, -15),
+		},
+		settle = {
+			Torso = rot(10, 10),
+			RightArm = limb(158, 10),
+			LeftArm = limb(32, -20),
+			Head = rot(-14, -8),
+			RightLeg = rot(0, -10),
+			LeftLeg = rot(0, -10),
+		},
+	}, HEAVY, { additive = LEGS_ADDITIVE, fadeOut = 0.25 }),
+
+	-- Finisher (in the air): two-handed overhead chop.
+	Chop = swing({
+		windup = {
+			Torso = rot(18),
+			RightArm = limb(175, 8),
+			LeftArm = limb(170, -8),
+			Head = rot(-12),
+		},
+		through = {
+			Torso = rot(0),
+			RightArm = limb(110, 8),
+			LeftArm = limb(110, -8),
+			Head = rot(0),
+		},
+		strike = {
+			Torso = rot(-35),
+			RightArm = limb(35, 8),
+			LeftArm = limb(40, -8),
+			Head = rot(18),
+		},
+		settle = {
+			Torso = rot(-28),
+			RightArm = limb(45, 8),
+			LeftArm = limb(50, -8),
+			Head = rot(14),
+		},
+	}, HEAVY, { fadeOut = 0.25 }),
 }
 
 ---------------------------------------------------------------------------
@@ -364,18 +495,10 @@ function Kit.PlayM1(character: Model, index: number, variant: string)
 	local name = if variant ~= "Normal" then FINISHERS[variant] or "Cleave" else STRING[((index - 1) % #STRING) + 1]
 	local animation = (M1 :: any)[name] :: Animation
 	local heavy = variant ~= "Normal"
+	-- No extra effects on M1s: just the sword moving, with its blade trail.
 	play(character, animation, function(event)
-		if event ~= "Strike" then
-			return
-		end
-		swordTrail(character, if heavy then 0.22 else 0.14)
-		local arc = ARCS[name]
-		slashArc(character, arc[1], arc[2], if heavy then 1.9 else 1.2, if heavy then 0.28 else 0.18)
-		if heavy then
-			local root = U.getRoot(character)
-			if root then
-				blackSmoke(root.Position + root.CFrame.LookVector * 3, 6, 2.5, 14)
-			end
+		if event == "Strike" then
+			swordTrail(character, if heavy then 0.16 else 0.1)
 		end
 	end)
 end

@@ -511,7 +511,7 @@ function CombatService.M1(character: Model, jump: boolean?)
 		variant = variant,
 	})
 
-	task.delay(if finisher then Config.M1.FinisherWindUp else Config.M1.WindUp, function()
+	task.delay(if finisher then m1Value(character, "FinisherWindUp") else m1Value(character, "WindUp"), function()
 		-- Getting hit during wind-up cancels the swing.
 		if not CombatState.CanAct(character) then
 			return
