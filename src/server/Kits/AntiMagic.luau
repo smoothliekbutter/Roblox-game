@@ -63,7 +63,7 @@ local function swordPart(
 	return part
 end
 
--- The Demon-Slayer Sword: a broad black blade about as tall as Asta, with
+-- The Demon-Slayer Sword: a broad black blade a bit taller than Asta, with
 -- a chisel tip, a fuller down the middle, a worn grey edge and a chipped
 -- spine. The blade runs along the handle's +Y axis; built around the
 -- handle at the origin, then welded.
@@ -78,41 +78,36 @@ local function buildSword(): Model
 	local wrap = Color3.fromRGB(42, 31, 26)
 	local metal, cloth = Enum.Material.Metal, Enum.Material.Fabric
 
-	local handle = swordPart("Handle", Vector3.new(0.26, 0.9, 0.26), CFrame.new(), wrap, cloth)
+	local handle = swordPart("Handle", Vector3.new(0.28, 0.95, 0.28), CFrame.new(), wrap, cloth)
 	handle.Parent = model
 	model.PrimaryPart = handle
 
+	local band = Color3.fromRGB(26, 20, 18)
 	local parts = {
 		-- Grip: diamond pommel and wrap bands.
 		swordPart(
 			"Pommel",
-			Vector3.new(0.28, 0.28, 0.28),
-			CFrame.new(0, -0.55, 0) * CFrame.Angles(0, 0, math.rad(45)),
+			Vector3.new(0.3, 0.3, 0.3),
+			CFrame.new(0, -0.6, 0) * CFrame.Angles(0, 0, math.rad(45)),
 			steel,
 			metal
 		),
-		swordPart("WrapA", Vector3.new(0.3, 0.06, 0.3), CFrame.new(0, -0.28, 0), Color3.fromRGB(26, 20, 18), cloth),
-		swordPart("WrapB", Vector3.new(0.3, 0.06, 0.3), CFrame.new(0, 0.02, 0), Color3.fromRGB(26, 20, 18), cloth),
-		swordPart("WrapC", Vector3.new(0.3, 0.06, 0.3), CFrame.new(0, 0.32, 0), Color3.fromRGB(26, 20, 18), cloth),
+		swordPart("WrapA", Vector3.new(0.32, 0.06, 0.32), CFrame.new(0, -0.3, 0), band, cloth),
+		swordPart("WrapB", Vector3.new(0.32, 0.06, 0.32), CFrame.new(0, 0.02, 0), band, cloth),
+		swordPart("WrapC", Vector3.new(0.32, 0.06, 0.32), CFrame.new(0, 0.34, 0), band, cloth),
 		-- Guard and collar.
-		swordPart("Guard", Vector3.new(0.34, 0.2, 1.05), CFrame.new(0, 0.55, 0), steel, metal),
-		swordPart("Collar", Vector3.new(0.22, 0.12, 0.7), CFrame.new(0, 0.7, 0), black, metal),
-		-- Blade (0.76 to 3.86). The thin side faces forward so horizontal
+		swordPart("Guard", Vector3.new(0.36, 0.22, 1.15), CFrame.new(0, 0.6, 0), steel, metal),
+		swordPart("Collar", Vector3.new(0.24, 0.12, 0.78), CFrame.new(0, 0.76, 0), black, metal),
+		-- Blade (0.82 to 4.42). The thin side faces forward so horizontal
 		-- swings lead with the edge.
-		swordPart("Blade", Vector3.new(0.16, 3.1, 0.9), CFrame.new(0, 2.31, 0), black, metal),
-		swordPart(
-			"Fuller",
-			Vector3.new(0.18, 2.5, 0.14),
-			CFrame.new(0, 2.2, 0.08),
-			fuller,
-			Enum.Material.SmoothPlastic
-		),
-		swordPart("Edge", Vector3.new(0.12, 3.0, 0.08), CFrame.new(0, 2.31, -0.47), edge, metal),
+		swordPart("Blade", Vector3.new(0.18, 3.6, 1.05), CFrame.new(0, 2.62, 0), black, metal),
+		swordPart("Fuller", Vector3.new(0.2, 2.9, 0.16), CFrame.new(0, 2.5, 0.09), fuller, Enum.Material.SmoothPlastic),
+		swordPart("Edge", Vector3.new(0.13, 3.5, 0.09), CFrame.new(0, 2.62, -0.55), edge, metal),
 		-- Chisel tip: a wedge sloping from the spine down to the edge.
-		swordPart("Tip", Vector3.new(0.16, 0.6, 0.9), CFrame.new(0, 4.16, 0), black, metal, "WedgePart"),
+		swordPart("Tip", Vector3.new(0.18, 0.7, 1.05), CFrame.new(0, 4.77, 0), black, metal, "WedgePart"),
 		-- Chips along the spine.
-		swordPart("ChipA", Vector3.new(0.18, 0.18, 0.1), CFrame.new(0, 1.6, 0.47), black, metal),
-		swordPart("ChipB", Vector3.new(0.18, 0.14, 0.1), CFrame.new(0, 2.95, 0.47), black, metal),
+		swordPart("ChipA", Vector3.new(0.2, 0.2, 0.12), CFrame.new(0, 1.8, 0.55), black, metal),
+		swordPart("ChipB", Vector3.new(0.2, 0.16, 0.12), CFrame.new(0, 3.4, 0.55), black, metal),
 	}
 	-- Plain Welds with the offset written into C0, not WeldConstraints:
 	-- a WeldConstraint works its offset out from where the parts happen to
@@ -133,11 +128,11 @@ local function buildSword(): Model
 	local blade = model:FindFirstChild("Blade") :: Part
 	local base = Instance.new("Attachment")
 	base.Name = "TrailBase"
-	base.Position = Vector3.new(0, -1.4, 0)
+	base.Position = Vector3.new(0, -1.6, 0)
 	base.Parent = blade
 	local tip = Instance.new("Attachment")
 	tip.Name = "TrailTip"
-	tip.Position = Vector3.new(0, 1.5, 0)
+	tip.Position = Vector3.new(0, 1.7, 0)
 	tip.Parent = blade
 
 	local trail = Instance.new("Trail")

@@ -139,6 +139,17 @@ Kit.Idle = {
 	moveSpeed = 16,
 }
 
+-- Getting hit / blocking, with the sword (see Client/Reactions for the names).
+Kit.Reactions = {
+	FlinchA = ANIMS.FlinchA,
+	FlinchB = ANIMS.FlinchB,
+	FlinchBack = ANIMS.FlinchBack,
+	HitHeavy = ANIMS.HitHeavy,
+	Guard = ANIMS.Guard,
+	GuardHit = ANIMS.GuardHit,
+	Stagger = ANIMS.Stagger,
+}
+
 ---------------------------------------------------------------------------
 -- Effects
 ---------------------------------------------------------------------------
@@ -1224,7 +1235,7 @@ function handlers.Entrance(data, character, root)
 			local sword = getSword(character)
 			local blade = sword and sword:FindFirstChild("Blade")
 			local tip = if blade and blade:IsA("BasePart")
-				then (blade.CFrame * CFrame.new(0, 1.85, 0)).Position
+				then (blade.CFrame * CFrame.new(0, 2.1, 0)).Position
 				else root.Position + root.CFrame.LookVector * 5
 			U.groundRocks(tip, 9, 2, 1.4)
 			blackSmoke(tip, 12, 3.5, 14)
@@ -1251,6 +1262,56 @@ function Kit.OnSkill(data)
 		handler(data, character, root)
 	end
 end
+
+-- Asta's dash: leans into it with the sword trailing, leaving black
+-- afterimages and anti-magic smoke, red sparks streaming off behind.
+local DASH_DIRECTIONS = {
+	Front = Vector3.new(0, 0, -1),
+	Back = Vector3.new(0, 0, 1),
+	Left = Vector3.new(-1, 0, 0),
+	Right = Vector3.new(1, 0, 0),
+}
+
+VFX.RegisterKitEffect("AntiMagic", "Dash", function(data)
+	local character: Model? = data.character
+	local root = U.getRoot(character)
+	if not character or not root then
+		return
+	end
+	local direction = if type(data.direction) == "string" then data.direction else "Front"
+	local animation = ANIMS["Dash" .. direction]
+	if animation then
+		play(character, animation)
+	end
+	swordTrail(character, 0.26)
+
+	U.afterimage(character, BLACK, 0.3)
+	for i = 1, 3 do
+		task.delay(i * 0.05, function()
+			if character.Parent then
+				U.afterimage(character, if i == 3 then DARK_RED else BLACK, 0.25)
+			end
+		end)
+	end
+
+	local ground = U.groundBelow(root.Position, { character })
+	local feet = if ground then ground.Position else root.Position - UP * 3
+	blackSmoke(feet + UP * 0.4, 6, 2.2, 7)
+	U.ringBurst(CFrame.new(feet + UP * 0.1), BLACK, 0.6, 3.5, 0.25, 0.14)
+
+	-- Sparks fly off opposite to the dash.
+	local away = -(root.CFrame:VectorToWorldSpace(DASH_DIRECTIONS[direction] or DASH_DIRECTIONS.Front))
+	U.burst(root.Position - UP * 0.5, {
+		color = RED,
+		count = 7,
+		size = 0.35,
+		speed = NumberRange.new(14, 26),
+		lifetime = NumberRange.new(0.12, 0.25),
+		streaks = true,
+		spread = 30,
+		direction = away,
+	})
+end)
 
 function Kit.SetAwakened(character: Model, on: boolean)
 	setAwakened(character, on)

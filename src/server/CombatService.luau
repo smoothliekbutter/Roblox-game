@@ -353,7 +353,7 @@ local function scheduleCrater(victim: Model, attacker: Model)
 	end
 	local fallTime = math.clamp((root.Position.Y - result.Position.Y - 2) / Config.M1.DownslamForce, 0, 1)
 	task.delay(fallTime, function()
-		CombatService.FireVFX("Crater", { position = result.Position })
+		CombatService.FireVFX("Crater", { position = result.Position, small = true })
 		CombatService.Shake(victim, 0.5)
 		CombatService.Shake(attacker, 0.4)
 	end)

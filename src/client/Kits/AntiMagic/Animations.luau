@@ -624,6 +624,550 @@ Animations.Chop = {
 	},
 }
 
+-- Front dash: leaning hard into it, sword trailing low behind.
+Animations.DashFront = {
+	fadeIn = 0.03,
+	fadeOut = 0.16,
+	delays = { Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.06,
+			{
+				Torso = rot(-28, 6),
+				Head = rot(20, -4),
+				RightArm = limb(-25, 0, 20),
+				Sword = aim(0.2, -0.2, 0.96),
+				LeftArm = limb(30, -20),
+				RightLeg = rot(-32),
+				LeftLeg = rot(36),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.26,
+			{
+				Torso = rot(-28, 6),
+				Head = rot(20, -4),
+				RightArm = limb(-25, 0, 20),
+				Sword = aim(0.2, -0.2, 0.96),
+				LeftArm = limb(30, -20),
+				RightLeg = rot(-32),
+				LeftLeg = rot(36),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Back dash: leaning back, sword held out in front.
+Animations.DashBack = {
+	fadeIn = 0.03,
+	fadeOut = 0.16,
+	delays = { Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.06,
+			{
+				Torso = rot(14),
+				Head = rot(-6),
+				RightArm = limb(70, 25),
+				Sword = aim(0.15, 0.4, -0.9),
+				LeftArm = limb(-20, 0, -25),
+				RightLeg = rot(26),
+				LeftLeg = rot(-8),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.26,
+			{
+				Torso = rot(14),
+				Head = rot(-6),
+				RightArm = limb(70, 25),
+				Sword = aim(0.15, 0.4, -0.9),
+				LeftArm = limb(-20, 0, -25),
+				RightLeg = rot(26),
+				LeftLeg = rot(-8),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Left dash: leaning left, sword trailing to the right.
+Animations.DashLeft = {
+	fadeIn = 0.03,
+	fadeOut = 0.16,
+	delays = { Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.06,
+			{
+				Torso = rot(-8, 15, 14),
+				Head = rot(4, -12),
+				RightArm = limb(35, -35, 20),
+				Sword = aim(0.9, -0.1, 0.42),
+				LeftArm = limb(10, 0, -60),
+				RightLeg = rot(0, 0, 24),
+				LeftLeg = rot(0, 0, -6),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.26,
+			{
+				Torso = rot(-8, 15, 14),
+				Head = rot(4, -12),
+				RightArm = limb(35, -35, 20),
+				Sword = aim(0.9, -0.1, 0.42),
+				LeftArm = limb(10, 0, -60),
+				RightLeg = rot(0, 0, 24),
+				LeftLeg = rot(0, 0, -6),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Right dash: leaning right, sword trailing to the left.
+Animations.DashRight = {
+	fadeIn = 0.03,
+	fadeOut = 0.16,
+	delays = { Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.06,
+			{
+				Torso = rot(-8, -15, -14),
+				Head = rot(4, 12),
+				RightArm = limb(55, -45, 30),
+				Sword = aim(-0.85, -0.1, 0.52),
+				LeftArm = limb(15, 0, -35),
+				RightLeg = rot(0, 0, 6),
+				LeftLeg = rot(0, 0, -24),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.26,
+			{
+				Torso = rot(-8, -15, -14),
+				Head = rot(4, 12),
+				RightArm = limb(55, -45, 30),
+				Sword = aim(-0.85, -0.1, 0.52),
+				LeftArm = limb(15, 0, -35),
+				RightLeg = rot(0, 0, 6),
+				LeftLeg = rot(0, 0, -24),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Hit from the front (alternates with FlinchB).
+Animations.FlinchA = {
+	fadeIn = 0.02,
+	fadeOut = 0.2,
+	additive = { RightLeg = true, LeftLeg = true },
+	delays = { Head = -0.01, Sword = 0.02 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.05,
+			{
+				Torso = rot(14, 14, 5),
+				Head = rot(-20, 18),
+				RightArm = limb(70, 35, 25),
+				Sword = aim(0.584, 0.26, 0.769),
+				LeftArm = limb(20, 0, -40),
+				RightLeg = rot(-6),
+				LeftLeg = rot(6),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.3,
+			{
+				Torso = rot(5, 4),
+				Head = rot(-6, 6),
+				RightArm = limb(84, 25, 10),
+				Sword = aim(0.34, 0.313, 0.887),
+				LeftArm = limb(12, 0, -18),
+				RightLeg = rot(-2),
+				LeftLeg = rot(2),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Hit from the front, other side.
+Animations.FlinchB = {
+	fadeIn = 0.02,
+	fadeOut = 0.2,
+	additive = { RightLeg = true, LeftLeg = true },
+	delays = { Head = -0.01, Sword = 0.02 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.05,
+			{
+				Torso = rot(14, -14, -5),
+				Head = rot(-20, -18),
+				RightArm = limb(78, 15),
+				Sword = aim(0.002, 0.233, 0.972),
+				LeftArm = limb(35, 0, -25),
+				RightLeg = rot(-6),
+				LeftLeg = rot(6),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.3,
+			{
+				Torso = rot(5, -4),
+				Head = rot(-6, -6),
+				RightArm = limb(84, 25, 10),
+				Sword = aim(0.217, 0.31, 0.926),
+				LeftArm = limb(12, 0, -18),
+				RightLeg = rot(-2),
+				LeftLeg = rot(2),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Hit from behind: thrown forward.
+Animations.FlinchBack = {
+	fadeIn = 0.02,
+	fadeOut = 0.2,
+	additive = { RightLeg = true, LeftLeg = true },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.05,
+			{
+				Torso = rot(-16),
+				Head = rot(18),
+				RightArm = limb(95, 25, 10),
+				Sword = aim(0.264, 0.518, 0.814),
+				LeftArm = limb(-20, 0, -25),
+				RightLeg = rot(-6),
+				LeftLeg = rot(6),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.3,
+			{
+				Torso = rot(-5),
+				Head = rot(6),
+				RightArm = limb(84, 25, 10),
+				Sword = aim(0.279, 0.464, 0.841),
+				LeftArm = limb(12, 0, -18),
+				RightLeg = rot(-2),
+				LeftLeg = rot(2),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Big hit that doesn't knock down (e.g. launched by an uppercut).
+Animations.HitHeavy = {
+	fadeIn = 0.02,
+	fadeOut = 0.25,
+	additive = { RightLeg = true, LeftLeg = true },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.06,
+			{
+				Torso = rot(26),
+				Head = rot(-35),
+				RightArm = limb(110, 30, 30),
+				Sword = aim(0.3, 0.8, 0.5),
+				LeftArm = limb(60, 0, -50),
+				RightLeg = rot(20),
+				LeftLeg = rot(-12),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.5,
+			{
+				Torso = rot(8),
+				Head = rot(-10),
+				RightArm = limb(84, 25, 10),
+				Sword = aim(0.279, 0.263, 0.923),
+				LeftArm = limb(12, 0, -18),
+				RightLeg = rot(-2),
+				LeftLeg = rot(2),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Blocking: sword across the chest. Held until the block ends.
+Animations.Guard = {
+	fadeIn = 0.05,
+	fadeOut = 0.15,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = rot(-6, 10),
+				Head = rot(8, -6),
+				RightArm = limb(80, 45),
+				Sword = aim(-0.9, 0.35, -0.25),
+				LeftArm = limb(85, -25),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			60,
+			{
+				Torso = rot(-6, 10),
+				Head = rot(8, -6),
+				RightArm = limb(80, 45),
+				Sword = aim(-0.9, 0.35, -0.25),
+				LeftArm = limb(85, -25),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- A blocked hit pushes the guard back, then it holds again.
+Animations.GuardHit = {
+	fadeIn = 0.02,
+	fadeOut = 0.15,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, 10),
+				Head = rot(8, -6),
+				RightArm = limb(80, 45),
+				Sword = aim(-0.9, 0.35, -0.25),
+				LeftArm = limb(85, -25),
+			},
+		},
+		{
+			0.05,
+			{
+				Torso = rot(6, 14),
+				Head = rot(-6, -10),
+				RightArm = limb(68, 50),
+				Sword = aim(-0.85, 0.5, -0.15),
+				LeftArm = limb(72, -20),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.2,
+			{
+				Torso = rot(-6, 10),
+				Head = rot(8, -6),
+				RightArm = limb(80, 45),
+				Sword = aim(-0.9, 0.35, -0.25),
+				LeftArm = limb(85, -25),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			60,
+			{
+				Torso = rot(-6, 10),
+				Head = rot(8, -6),
+				RightArm = limb(80, 45),
+				Sword = aim(-0.9, 0.35, -0.25),
+				LeftArm = limb(85, -25),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Guard broken or parried: thrown off balance.
+Animations.Stagger = {
+	fadeIn = 0.02,
+	fadeOut = 0.25,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = rot(20, -10),
+				Head = rot(-25, 8),
+				RightArm = limb(140, 20, 20),
+				Sword = aim(0.2, 0.9, 0.35),
+				LeftArm = limb(120, -20, -30),
+				RightLeg = rot(16),
+				LeftLeg = rot(-14),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			1,
+			{
+				Torso = rot(20, -10),
+				Head = rot(-25, 8),
+				RightArm = limb(140, 20, 20),
+				Sword = aim(0.2, 0.9, 0.35),
+				LeftArm = limb(120, -20, -30),
+				RightLeg = rot(16),
+				LeftLeg = rot(-14),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			1.3,
+			{
+				Torso = rot(4),
+				Head = rot(-4),
+				RightArm = limb(84, 25, 10),
+				Sword = aim(0.279, 0.327, 0.903),
+				LeftArm = limb(12, 0, -18),
+				RightLeg = rot(-2),
+				LeftLeg = rot(2),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
 -- Spawn entrance: crouched landing, grimoire appears, sword drawn from it, twirled overhead, slammed into the ground, rested on the shoulder.
 Animations.Entrance = {
 	fadeIn = 0.08,

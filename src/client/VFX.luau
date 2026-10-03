@@ -455,6 +455,24 @@ local function cleanM1Hit(data, heavy: boolean): boolean
 	if data.damage then
 		popup(data.position, string.format("%g", data.damage), Color3.new(1, 1, 1), if heavy then 1.2 else 1)
 	end
+	-- Finishers get a touch of motion: a small burst in the launch direction.
+	local victimRoot = getRoot(data.victim)
+	if victimRoot and (data.variant == "Uppercut" or data.variant == "Downslam") then
+		local up = data.variant == "Uppercut"
+		local direction = if up then Vector3.yAxis else -Vector3.yAxis
+		burst(victimRoot.Position, {
+			color = Color3.new(1, 1, 1),
+			count = 6,
+			size = 0.45,
+			speed = NumberRange.new(18, 30),
+			lifetime = NumberRange.new(0.12, 0.22),
+			streaks = true,
+			spread = 22,
+			direction = direction,
+		})
+		ringBurst(CFrame.new(victimRoot.Position - direction * 1.2), Color3.new(1, 1, 1), 0.6, 2.4, 0.18, 0.08)
+		bodyTrail(data.victim, Color3.new(1, 1, 1), if up then 0.45 else 0.3)
+	end
 	if heavy and (isLocal(data.attacker) or isLocal(data.victim)) then
 		CameraShake.FovKick(4)
 	end
@@ -673,6 +691,12 @@ end
 
 function Effects.Crater(data)
 	local position: Vector3 = data.position
+	if data.small then
+		-- M1 downslams: a modest dent, not a skill-sized crater.
+		groundRocks(position, 6, 2, 1.1)
+		ringBurst(CFrame.new(position + Vector3.new(0, 0.2, 0)), Color3.new(1, 1, 1), 0.6, 5, 0.25, 0.15)
+		return
+	end
 	groundRocks(position, 12, 4, 2.2)
 	ringBurst(CFrame.new(position + Vector3.new(0, 0.2, 0)), Color3.new(1, 1, 1), 1, 10, 0.35, 0.3)
 	flash(position, COLORS.Heavy, 6, 0.2)
@@ -787,6 +811,14 @@ function VFX.Register(name: string, effect: (data: any) -> ())
 	Effects[name] = effect
 end
 
+-- A character-specific version of an effect (e.g. Asta's own dash). Used
+-- when data.character is playing that kit.
+local kitEffects: { [string]: { [string]: (data: any) -> () } } = {}
+function VFX.RegisterKitEffect(kitId: string, name: string, effect: (data: any) -> ())
+	kitEffects[kitId] = kitEffects[kitId] or {}
+	kitEffects[kitId][name] = effect
+end
+
 function VFX.SetPalette(kitId: string, palette: Palette)
 	palettes[kitId] = palette
 end
@@ -794,6 +826,14 @@ end
 -- Plays an effect locally (used for instant feedback on your own actions).
 function VFX.Play(name: string, data: any)
 	local effect = Effects[name]
+	local character = if type(data) == "table" then data.character else nil
+	if typeof(character) == "Instance" then
+		local kitId = character:GetAttribute("Kit")
+		local overrides = if type(kitId) == "string" then kitEffects[kitId] else nil
+		if overrides and overrides[name] then
+			effect = overrides[name]
+		end
+	end
 	if effect then
 		task.spawn(effect, data)
 	end

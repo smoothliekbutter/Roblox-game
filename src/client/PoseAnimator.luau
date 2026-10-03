@@ -90,6 +90,8 @@ type Track = {
 	-- Hit-stop: the animation holds still until this time.
 	freezeUntil: number,
 	frozenAt: number,
+	-- Set when the track is told to stop early (FadeOut).
+	fadeOutOverride: number?,
 }
 
 type Idle = {
@@ -307,7 +309,7 @@ local function step(dt: number)
 		local elapsed = if now < track.freezeUntil then track.frozenAt else now - track.start
 		local animation = track.animation
 		local fadeIn = animation.fadeIn or 0.04
-		local fadeOut = animation.fadeOut or 0.15
+		local fadeOut = track.fadeOutOverride or animation.fadeOut or 0.15
 		local total = track.length + fadeOut
 
 		local dead = not character.Parent or character:GetAttribute("Ragdolled") == true
@@ -392,6 +394,25 @@ function PoseAnimator.Stop(character: Model)
 		tracks[character] = nil
 		release(track, character)
 	end
+end
+
+-- The animation currently playing on a character, if any.
+function PoseAnimator.Current(character: Model): Animation?
+	local track = tracks[character]
+	return if track then track.animation else nil
+end
+
+-- Ends the current animation early, fading out from wherever it is now.
+function PoseAnimator.FadeOut(character: Model, duration: number?)
+	local track = tracks[character]
+	if not track then
+		return
+	end
+	local elapsed = os.clock() - track.start
+	if elapsed < track.length then
+		track.length = math.max(elapsed, 0)
+	end
+	track.fadeOutOverride = duration
 end
 
 -- Hit-stop: holds the character's current animation still for `duration`,

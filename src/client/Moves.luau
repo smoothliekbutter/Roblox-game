@@ -18,6 +18,7 @@ local Remotes = require(ReplicatedStorage:WaitForChild("Shared").Remotes)
 
 local M1Animations = require(script.Parent.M1Animations)
 local PoseAnimator = require(script.Parent.PoseAnimator)
+local Reactions = require(script.Parent.Reactions)
 local VFX = require(script.Parent.VFX)
 
 local localPlayer = Players.LocalPlayer
@@ -67,6 +68,89 @@ function Moves.PlayM1(character: Model, index: number, variant: string)
 	end
 end
 
+---------------------------------------------------------------------------
+-- Getting hit and blocking
+---------------------------------------------------------------------------
+
+-- A character's own reaction (Kit.Reactions) or the default one.
+local function reactionFor(character: Model, name: string): PoseAnimator.Animation?
+	local kit = kitOf(character)
+	local own = kit and kit.Reactions and kit.Reactions[name]
+	return own or Reactions[name]
+end
+
+local function asModel(value: unknown): Model?
+	return if typeof(value) == "Instance" and value:IsA("Model") then value else nil
+end
+
+local function react(character: Model, name: string)
+	if character:GetAttribute("Ragdolled") == true then
+		return -- the ragdoll is the reaction
+	end
+	local animation = reactionFor(character, name)
+	if animation then
+		PoseAnimator.Play(character, animation)
+	end
+end
+
+local GUARD_ANIMS = { Guard = true, GuardHit = true }
+local lastFlinchSide: { [Model]: boolean } = setmetatable({}, { __mode = "k" }) :: any
+
+local function isGuardPlaying(character: Model): boolean
+	local current = PoseAnimator.Current(character)
+	if not current then
+		return false
+	end
+	for name in GUARD_ANIMS do
+		if current == reactionFor(character, name) then
+			return true
+		end
+	end
+	return false
+end
+
+local function onLandedHit(name: string, data)
+	local victim = data.victim
+	if typeof(victim) ~= "Instance" or not victim:IsA("Model") then
+		return
+	end
+	if name == "HeavyHit" or name == "PerfectDivider" then
+		react(victim, "HitHeavy")
+		return
+	end
+	-- Hit from behind throws them forward; otherwise alternate sides.
+	local victimRoot = victim:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local attacker = data.attacker
+	local attackerRoot = if typeof(attacker) == "Instance"
+		then attacker:FindFirstChild("HumanoidRootPart") :: BasePart?
+		else nil
+	if victimRoot and attackerRoot then
+		local toAttacker = attackerRoot.Position - victimRoot.Position
+		if victimRoot.CFrame.LookVector:Dot(Vector3.new(toAttacker.X, 0, toAttacker.Z).Unit) < -0.3 then
+			react(victim, "FlinchBack")
+			return
+		end
+	end
+	local side = not lastFlinchSide[victim]
+	lastFlinchSide[victim] = side
+	react(victim, if side then "FlinchA" else "FlinchB")
+end
+
+-- Holding block shows the guard; letting go fades it out.
+local function watchBlocking(character: Model)
+	local function update()
+		if character:GetAttribute("Blocking") == true then
+			react(character, "Guard")
+		elseif isGuardPlaying(character) then
+			PoseAnimator.FadeOut(character, 0.15)
+		end
+	end
+	character:GetAttributeChangedSignal("Blocking"):Connect(update)
+	if character:GetAttribute("Blocking") == true then
+		update()
+	end
+end
+
 -- Kit stances and Black Form style looks follow the "Kit" and "Awakened"
 -- attributes on every player.
 local function watchCharacter(character: Model)
@@ -90,6 +174,7 @@ local function watchCharacter(character: Model)
 	character:GetAttributeChangedSignal("Kit"):Connect(updateKit)
 	updateAwakened()
 	updateKit()
+	watchBlocking(character)
 end
 
 local function watchPlayer(player: Player)
@@ -106,8 +191,25 @@ function Moves.Start()
 	-- impact feels like it connected.
 	local HEAVY_EFFECTS = { HeavyHit = true, PerfectDivider = true }
 	Remotes.VFX.OnClientEvent:Connect(function(name, data)
-		if type(data) == "table" and HEAVY_EFFECTS[name] and typeof(data.attacker) == "Instance" then
+		if type(data) ~= "table" then
+			return
+		end
+		if HEAVY_EFFECTS[name] and typeof(data.attacker) == "Instance" then
 			PoseAnimator.Freeze(data.attacker :: Model, Config.Physics.HitStop)
+		end
+
+		-- Reactions on whoever got hit.
+		if data.hitConfirm then
+			onLandedHit(name, data)
+		else
+			local victim, attacker = asModel(data.victim), asModel(data.attacker)
+			if name == "Block" and victim then
+				react(victim, "GuardHit")
+			elseif name == "GuardBreak" and victim then
+				react(victim, "Stagger")
+			elseif name == "PerfectBlock" and attacker then
+				react(attacker, "Stagger")
+			end
 		end
 	end)
 
@@ -150,6 +252,23 @@ function Moves.Start()
 	for _, player in Players:GetPlayers() do
 		watchPlayer(player)
 	end
+
+	-- Dummies block too.
+	task.spawn(function()
+		local dummies = workspace:WaitForChild("Dummies", 30)
+		if dummies then
+			dummies.ChildAdded:Connect(function(child)
+				if child:IsA("Model") then
+					watchBlocking(child)
+				end
+			end)
+			for _, child in dummies:GetChildren() do
+				if child:IsA("Model") then
+					watchBlocking(child)
+				end
+			end
+		end
+	end)
 end
 
 return Moves

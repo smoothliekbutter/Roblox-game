@@ -141,7 +141,69 @@ ENTRANCE = [
     (2.45, IDLE[0][1]),
 ]
 
-ALL = {'Idle': IDLE, 'Run': RUN, 'Air': AIR, 'Slash1': SLASH1, 'Slash2': SLASH2, 'Slash3': SLASH3,
+# ---------------- Dashes (0.28s) ----------------
+# Body leans into the dash; the sword trails behind the movement.
+UPPER = {k: v for k, v in READY.items() if k not in ('RightLeg', 'LeftLeg')}
+
+def dash(pose):
+    return [(0.0, UPPER), (0.06, pose), (0.26, pose)]
+
+DASH_FRONT = dash({'Torso': R(-28, 6), 'Head': R(20, -4), 'RightArm': L(-25, 0, 20), 'Sword': A(0.2, -0.2, 0.96),
+                   'LeftArm': L(30, -20), 'RightLeg': R(-32), 'LeftLeg': R(36)})
+DASH_BACK = dash({'Torso': R(14), 'Head': R(-6), 'RightArm': L(70, 25), 'Sword': A(0.15, 0.4, -0.9),
+                  'LeftArm': L(-20, 0, -25), 'RightLeg': R(26), 'LeftLeg': R(-8)})
+DASH_LEFT = dash({'Torso': R(-8, 15, 14), 'Head': R(4, -12), 'RightArm': L(35, -35, 20), 'Sword': A(0.9, -0.1, 0.42),
+                  'LeftArm': L(10, 0, -60), 'RightLeg': R(0, 0, 24), 'LeftLeg': R(0, 0, -6)})
+DASH_RIGHT = dash({'Torso': R(-8, -15, -14), 'Head': R(4, 12), 'RightArm': L(55, -45, 30), 'Sword': A(-0.85, -0.1, 0.52),
+                   'LeftArm': L(15, 0, -35), 'RightLeg': R(0, 0, 6), 'LeftLeg': R(0, 0, -24)})
+
+# ---------------- Getting hit ----------------
+def shoulder(torso, jolt=(0, 0, 0)):
+    d = np.array(SHOULDER) + np.array(jolt)
+    return torso_dir(torso, tuple(d / np.linalg.norm(d)))
+
+def flinch(torso, head, rarm, larm, jolt):
+    t = R(*torso)
+    return {'Torso': t, 'Head': R(*head), 'RightArm': rarm, 'Sword': shoulder(t, jolt), 'LeftArm': larm,
+            'RightLeg': R(-6), 'LeftLeg': R(6)}
+
+def recover(torso, head):
+    t = R(*torso)
+    return {'Torso': t, 'Head': R(*head), 'RightArm': L(84, 25, 10), 'Sword': shoulder(t), 'LeftArm': L(12, 0, -18),
+            'RightLeg': R(-2), 'LeftLeg': R(2)}
+
+FLINCH_A = [(0.0, UPPER | {'RightLeg': R(0), 'LeftLeg': R(0)}),
+            (0.05, flinch((14, 14, 5), (-20, 18), L(70, 35, 25), L(20, 0, -40), (0.2, 0.05, 0))),
+            (0.30, recover((5, 4), (-6, 6)))]
+FLINCH_B = [(0.0, UPPER | {'RightLeg': R(0), 'LeftLeg': R(0)}),
+            (0.05, flinch((14, -14, -5), (-20, -18), L(78, 15, 0), L(35, 0, -25), (-0.1, 0.1, 0))),
+            (0.30, recover((5, -4), (-6, -6)))]
+FLINCH_BACK = [(0.0, UPPER | {'RightLeg': R(0), 'LeftLeg': R(0)}),
+               (0.05, flinch((-16, 0), (18, 0), L(95, 25, 10), L(-20, 0, -25), (0, -0.1, 0.1))),
+               (0.30, recover((-5, 0), (6, 0)))]
+HIT_HEAVY = [(0.0, UPPER | {'RightLeg': R(0), 'LeftLeg': R(0)}),
+             (0.06, {'Torso': R(26), 'Head': R(-35), 'RightArm': L(110, 30, 30), 'Sword': A(0.3, 0.8, 0.5),
+                     'LeftArm': L(60, 0, -50), 'RightLeg': R(20), 'LeftLeg': R(-12)}),
+             (0.50, recover((8, 0), (-10, 0)))]
+
+# Blocking: sword held across the chest, free hand bracing it.
+GUARD_POSE = {'Torso': R(-6, 10), 'Head': R(8, -6), 'RightArm': L(80, 45), 'Sword': A(-0.9, 0.35, -0.25),
+              'LeftArm': L(85, -25)}
+GUARD_PUSHED = {'Torso': R(6, 14), 'Head': R(-6, -10), 'RightArm': L(68, 50), 'Sword': A(-0.85, 0.5, -0.15),
+                'LeftArm': L(72, -20)}
+GUARD = [(0.0, UPPER), (0.08, GUARD_POSE), (60.0, GUARD_POSE)]
+GUARD_HIT = [(0.0, GUARD_POSE), (0.05, GUARD_PUSHED), (0.2, GUARD_POSE), (60.0, GUARD_POSE)]
+
+# Guard broken / parried: thrown off balance, arms flung up.
+STAGGER_POSE = {'Torso': R(20, -10), 'Head': R(-25, 8), 'RightArm': L(140, 20, 20), 'Sword': A(0.2, 0.9, 0.35),
+                'LeftArm': L(120, -20, -30), 'RightLeg': R(16), 'LeftLeg': R(-14)}
+STAGGER = [(0.0, UPPER | {'RightLeg': R(0), 'LeftLeg': R(0)}), (0.08, STAGGER_POSE), (1.0, STAGGER_POSE),
+           (1.3, recover((4, 0), (-4, 0)))]
+
+ALL = {'Idle': IDLE, 'Run': RUN, 'Air': AIR,
+       'DashFront': DASH_FRONT, 'DashBack': DASH_BACK, 'DashLeft': DASH_LEFT, 'DashRight': DASH_RIGHT,
+       'FlinchA': FLINCH_A, 'FlinchB': FLINCH_B, 'FlinchBack': FLINCH_BACK, 'HitHeavy': HIT_HEAVY,
+       'Guard': GUARD, 'GuardHit': GUARD_HIT, 'Stagger': STAGGER, 'Slash1': SLASH1, 'Slash2': SLASH2, 'Slash3': SLASH3,
        'Cleave': CLEAVE, 'Rising': RISING, 'Chop': CHOP, 'Entrance': ENTRANCE}
 
 if __name__ == '__main__':

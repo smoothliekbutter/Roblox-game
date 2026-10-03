@@ -1052,7 +1052,7 @@ local function scheduleCrater(victim: Model, attacker: Model)
 	end
 	local fallTime = math.clamp((root.Position.Y - result.Position.Y - 2) / Config.M1.DownslamForce, 0, 1)
 	task.delay(fallTime, function()
-		CombatService.FireVFX("Crater", { position = result.Position })
+		CombatService.FireVFX("Crater", { position = result.Position, small = true })
 		CombatService.Shake(victim, 0.5)
 		CombatService.Shake(attacker, 0.4)
 	end)
@@ -2055,7 +2055,7 @@ local function swordPart(
 	return part
 end
 
--- The Demon-Slayer Sword: a broad black blade about as tall as Asta, with
+-- The Demon-Slayer Sword: a broad black blade a bit taller than Asta, with
 -- a chisel tip, a fuller down the middle, a worn grey edge and a chipped
 -- spine. The blade runs along the handle's +Y axis; built around the
 -- handle at the origin, then welded.
@@ -2070,41 +2070,36 @@ local function buildSword(): Model
 	local wrap = Color3.fromRGB(42, 31, 26)
 	local metal, cloth = Enum.Material.Metal, Enum.Material.Fabric
 
-	local handle = swordPart("Handle", Vector3.new(0.26, 0.9, 0.26), CFrame.new(), wrap, cloth)
+	local handle = swordPart("Handle", Vector3.new(0.28, 0.95, 0.28), CFrame.new(), wrap, cloth)
 	handle.Parent = model
 	model.PrimaryPart = handle
 
+	local band = Color3.fromRGB(26, 20, 18)
 	local parts = {
 		-- Grip: diamond pommel and wrap bands.
 		swordPart(
 			"Pommel",
-			Vector3.new(0.28, 0.28, 0.28),
-			CFrame.new(0, -0.55, 0) * CFrame.Angles(0, 0, math.rad(45)),
+			Vector3.new(0.3, 0.3, 0.3),
+			CFrame.new(0, -0.6, 0) * CFrame.Angles(0, 0, math.rad(45)),
 			steel,
 			metal
 		),
-		swordPart("WrapA", Vector3.new(0.3, 0.06, 0.3), CFrame.new(0, -0.28, 0), Color3.fromRGB(26, 20, 18), cloth),
-		swordPart("WrapB", Vector3.new(0.3, 0.06, 0.3), CFrame.new(0, 0.02, 0), Color3.fromRGB(26, 20, 18), cloth),
-		swordPart("WrapC", Vector3.new(0.3, 0.06, 0.3), CFrame.new(0, 0.32, 0), Color3.fromRGB(26, 20, 18), cloth),
+		swordPart("WrapA", Vector3.new(0.32, 0.06, 0.32), CFrame.new(0, -0.3, 0), band, cloth),
+		swordPart("WrapB", Vector3.new(0.32, 0.06, 0.32), CFrame.new(0, 0.02, 0), band, cloth),
+		swordPart("WrapC", Vector3.new(0.32, 0.06, 0.32), CFrame.new(0, 0.34, 0), band, cloth),
 		-- Guard and collar.
-		swordPart("Guard", Vector3.new(0.34, 0.2, 1.05), CFrame.new(0, 0.55, 0), steel, metal),
-		swordPart("Collar", Vector3.new(0.22, 0.12, 0.7), CFrame.new(0, 0.7, 0), black, metal),
-		-- Blade (0.76 to 3.86). The thin side faces forward so horizontal
+		swordPart("Guard", Vector3.new(0.36, 0.22, 1.15), CFrame.new(0, 0.6, 0), steel, metal),
+		swordPart("Collar", Vector3.new(0.24, 0.12, 0.78), CFrame.new(0, 0.76, 0), black, metal),
+		-- Blade (0.82 to 4.42). The thin side faces forward so horizontal
 		-- swings lead with the edge.
-		swordPart("Blade", Vector3.new(0.16, 3.1, 0.9), CFrame.new(0, 2.31, 0), black, metal),
-		swordPart(
-			"Fuller",
-			Vector3.new(0.18, 2.5, 0.14),
-			CFrame.new(0, 2.2, 0.08),
-			fuller,
-			Enum.Material.SmoothPlastic
-		),
-		swordPart("Edge", Vector3.new(0.12, 3.0, 0.08), CFrame.new(0, 2.31, -0.47), edge, metal),
+		swordPart("Blade", Vector3.new(0.18, 3.6, 1.05), CFrame.new(0, 2.62, 0), black, metal),
+		swordPart("Fuller", Vector3.new(0.2, 2.9, 0.16), CFrame.new(0, 2.5, 0.09), fuller, Enum.Material.SmoothPlastic),
+		swordPart("Edge", Vector3.new(0.13, 3.5, 0.09), CFrame.new(0, 2.62, -0.55), edge, metal),
 		-- Chisel tip: a wedge sloping from the spine down to the edge.
-		swordPart("Tip", Vector3.new(0.16, 0.6, 0.9), CFrame.new(0, 4.16, 0), black, metal, "WedgePart"),
+		swordPart("Tip", Vector3.new(0.18, 0.7, 1.05), CFrame.new(0, 4.77, 0), black, metal, "WedgePart"),
 		-- Chips along the spine.
-		swordPart("ChipA", Vector3.new(0.18, 0.18, 0.1), CFrame.new(0, 1.6, 0.47), black, metal),
-		swordPart("ChipB", Vector3.new(0.18, 0.14, 0.1), CFrame.new(0, 2.95, 0.47), black, metal),
+		swordPart("ChipA", Vector3.new(0.2, 0.2, 0.12), CFrame.new(0, 1.8, 0.55), black, metal),
+		swordPart("ChipB", Vector3.new(0.2, 0.16, 0.12), CFrame.new(0, 3.4, 0.55), black, metal),
 	}
 	-- Plain Welds with the offset written into C0, not WeldConstraints:
 	-- a WeldConstraint works its offset out from where the parts happen to
@@ -2125,11 +2120,11 @@ local function buildSword(): Model
 	local blade = model:FindFirstChild("Blade") :: Part
 	local base = Instance.new("Attachment")
 	base.Name = "TrailBase"
-	base.Position = Vector3.new(0, -1.4, 0)
+	base.Position = Vector3.new(0, -1.6, 0)
 	base.Parent = blade
 	local tip = Instance.new("Attachment")
 	tip.Name = "TrailTip"
-	tip.Position = Vector3.new(0, 1.5, 0)
+	tip.Position = Vector3.new(0, 1.7, 0)
 	tip.Parent = blade
 
 	local trail = Instance.new("Trail")
@@ -4127,6 +4122,17 @@ Kit.Idle = {
 	moveSpeed = 16,
 }
 
+-- Getting hit / blocking, with the sword (see Client/Reactions for the names).
+Kit.Reactions = {
+	FlinchA = ANIMS.FlinchA,
+	FlinchB = ANIMS.FlinchB,
+	FlinchBack = ANIMS.FlinchBack,
+	HitHeavy = ANIMS.HitHeavy,
+	Guard = ANIMS.Guard,
+	GuardHit = ANIMS.GuardHit,
+	Stagger = ANIMS.Stagger,
+}
+
 ---------------------------------------------------------------------------
 -- Effects
 ---------------------------------------------------------------------------
@@ -5212,7 +5218,7 @@ function handlers.Entrance(data, character, root)
 			local sword = getSword(character)
 			local blade = sword and sword:FindFirstChild("Blade")
 			local tip = if blade and blade:IsA("BasePart")
-				then (blade.CFrame * CFrame.new(0, 1.85, 0)).Position
+				then (blade.CFrame * CFrame.new(0, 2.1, 0)).Position
 				else root.Position + root.CFrame.LookVector * 5
 			U.groundRocks(tip, 9, 2, 1.4)
 			blackSmoke(tip, 12, 3.5, 14)
@@ -5239,6 +5245,56 @@ function Kit.OnSkill(data)
 		handler(data, character, root)
 	end
 end
+
+-- Asta's dash: leans into it with the sword trailing, leaving black
+-- afterimages and anti-magic smoke, red sparks streaming off behind.
+local DASH_DIRECTIONS = {
+	Front = Vector3.new(0, 0, -1),
+	Back = Vector3.new(0, 0, 1),
+	Left = Vector3.new(-1, 0, 0),
+	Right = Vector3.new(1, 0, 0),
+}
+
+VFX.RegisterKitEffect("AntiMagic", "Dash", function(data)
+	local character: Model? = data.character
+	local root = U.getRoot(character)
+	if not character or not root then
+		return
+	end
+	local direction = if type(data.direction) == "string" then data.direction else "Front"
+	local animation = ANIMS["Dash" .. direction]
+	if animation then
+		play(character, animation)
+	end
+	swordTrail(character, 0.26)
+
+	U.afterimage(character, BLACK, 0.3)
+	for i = 1, 3 do
+		task.delay(i * 0.05, function()
+			if character.Parent then
+				U.afterimage(character, if i == 3 then DARK_RED else BLACK, 0.25)
+			end
+		end)
+	end
+
+	local ground = U.groundBelow(root.Position, { character })
+	local feet = if ground then ground.Position else root.Position - UP * 3
+	blackSmoke(feet + UP * 0.4, 6, 2.2, 7)
+	U.ringBurst(CFrame.new(feet + UP * 0.1), BLACK, 0.6, 3.5, 0.25, 0.14)
+
+	-- Sparks fly off opposite to the dash.
+	local away = -(root.CFrame:VectorToWorldSpace(DASH_DIRECTIONS[direction] or DASH_DIRECTIONS.Front))
+	U.burst(root.Position - UP * 0.5, {
+		color = RED,
+		count = 7,
+		size = 0.35,
+		speed = NumberRange.new(14, 26),
+		lifetime = NumberRange.new(0.12, 0.25),
+		streaks = true,
+		spread = 30,
+		direction = away,
+	})
+end)
 
 function Kit.SetAwakened(character: Model, on: boolean)
 	setAwakened(character, on)
@@ -5889,6 +5945,550 @@ Animations.Chop = {
 	},
 }
 
+-- Front dash: leaning hard into it, sword trailing low behind.
+Animations.DashFront = {
+	fadeIn = 0.03,
+	fadeOut = 0.16,
+	delays = { Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.06,
+			{
+				Torso = rot(-28, 6),
+				Head = rot(20, -4),
+				RightArm = limb(-25, 0, 20),
+				Sword = aim(0.2, -0.2, 0.96),
+				LeftArm = limb(30, -20),
+				RightLeg = rot(-32),
+				LeftLeg = rot(36),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.26,
+			{
+				Torso = rot(-28, 6),
+				Head = rot(20, -4),
+				RightArm = limb(-25, 0, 20),
+				Sword = aim(0.2, -0.2, 0.96),
+				LeftArm = limb(30, -20),
+				RightLeg = rot(-32),
+				LeftLeg = rot(36),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Back dash: leaning back, sword held out in front.
+Animations.DashBack = {
+	fadeIn = 0.03,
+	fadeOut = 0.16,
+	delays = { Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.06,
+			{
+				Torso = rot(14),
+				Head = rot(-6),
+				RightArm = limb(70, 25),
+				Sword = aim(0.15, 0.4, -0.9),
+				LeftArm = limb(-20, 0, -25),
+				RightLeg = rot(26),
+				LeftLeg = rot(-8),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.26,
+			{
+				Torso = rot(14),
+				Head = rot(-6),
+				RightArm = limb(70, 25),
+				Sword = aim(0.15, 0.4, -0.9),
+				LeftArm = limb(-20, 0, -25),
+				RightLeg = rot(26),
+				LeftLeg = rot(-8),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Left dash: leaning left, sword trailing to the right.
+Animations.DashLeft = {
+	fadeIn = 0.03,
+	fadeOut = 0.16,
+	delays = { Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.06,
+			{
+				Torso = rot(-8, 15, 14),
+				Head = rot(4, -12),
+				RightArm = limb(35, -35, 20),
+				Sword = aim(0.9, -0.1, 0.42),
+				LeftArm = limb(10, 0, -60),
+				RightLeg = rot(0, 0, 24),
+				LeftLeg = rot(0, 0, -6),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.26,
+			{
+				Torso = rot(-8, 15, 14),
+				Head = rot(4, -12),
+				RightArm = limb(35, -35, 20),
+				Sword = aim(0.9, -0.1, 0.42),
+				LeftArm = limb(10, 0, -60),
+				RightLeg = rot(0, 0, 24),
+				LeftLeg = rot(0, 0, -6),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Right dash: leaning right, sword trailing to the left.
+Animations.DashRight = {
+	fadeIn = 0.03,
+	fadeOut = 0.16,
+	delays = { Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.06,
+			{
+				Torso = rot(-8, -15, -14),
+				Head = rot(4, 12),
+				RightArm = limb(55, -45, 30),
+				Sword = aim(-0.85, -0.1, 0.52),
+				LeftArm = limb(15, 0, -35),
+				RightLeg = rot(0, 0, 6),
+				LeftLeg = rot(0, 0, -24),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.26,
+			{
+				Torso = rot(-8, -15, -14),
+				Head = rot(4, 12),
+				RightArm = limb(55, -45, 30),
+				Sword = aim(-0.85, -0.1, 0.52),
+				LeftArm = limb(15, 0, -35),
+				RightLeg = rot(0, 0, 6),
+				LeftLeg = rot(0, 0, -24),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Hit from the front (alternates with FlinchB).
+Animations.FlinchA = {
+	fadeIn = 0.02,
+	fadeOut = 0.2,
+	additive = { RightLeg = true, LeftLeg = true },
+	delays = { Head = -0.01, Sword = 0.02 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.05,
+			{
+				Torso = rot(14, 14, 5),
+				Head = rot(-20, 18),
+				RightArm = limb(70, 35, 25),
+				Sword = aim(0.584, 0.26, 0.769),
+				LeftArm = limb(20, 0, -40),
+				RightLeg = rot(-6),
+				LeftLeg = rot(6),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.3,
+			{
+				Torso = rot(5, 4),
+				Head = rot(-6, 6),
+				RightArm = limb(84, 25, 10),
+				Sword = aim(0.34, 0.313, 0.887),
+				LeftArm = limb(12, 0, -18),
+				RightLeg = rot(-2),
+				LeftLeg = rot(2),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Hit from the front, other side.
+Animations.FlinchB = {
+	fadeIn = 0.02,
+	fadeOut = 0.2,
+	additive = { RightLeg = true, LeftLeg = true },
+	delays = { Head = -0.01, Sword = 0.02 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.05,
+			{
+				Torso = rot(14, -14, -5),
+				Head = rot(-20, -18),
+				RightArm = limb(78, 15),
+				Sword = aim(0.002, 0.233, 0.972),
+				LeftArm = limb(35, 0, -25),
+				RightLeg = rot(-6),
+				LeftLeg = rot(6),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.3,
+			{
+				Torso = rot(5, -4),
+				Head = rot(-6, -6),
+				RightArm = limb(84, 25, 10),
+				Sword = aim(0.217, 0.31, 0.926),
+				LeftArm = limb(12, 0, -18),
+				RightLeg = rot(-2),
+				LeftLeg = rot(2),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Hit from behind: thrown forward.
+Animations.FlinchBack = {
+	fadeIn = 0.02,
+	fadeOut = 0.2,
+	additive = { RightLeg = true, LeftLeg = true },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.05,
+			{
+				Torso = rot(-16),
+				Head = rot(18),
+				RightArm = limb(95, 25, 10),
+				Sword = aim(0.264, 0.518, 0.814),
+				LeftArm = limb(-20, 0, -25),
+				RightLeg = rot(-6),
+				LeftLeg = rot(6),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.3,
+			{
+				Torso = rot(-5),
+				Head = rot(6),
+				RightArm = limb(84, 25, 10),
+				Sword = aim(0.279, 0.464, 0.841),
+				LeftArm = limb(12, 0, -18),
+				RightLeg = rot(-2),
+				LeftLeg = rot(2),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Big hit that doesn't knock down (e.g. launched by an uppercut).
+Animations.HitHeavy = {
+	fadeIn = 0.02,
+	fadeOut = 0.25,
+	additive = { RightLeg = true, LeftLeg = true },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.06,
+			{
+				Torso = rot(26),
+				Head = rot(-35),
+				RightArm = limb(110, 30, 30),
+				Sword = aim(0.3, 0.8, 0.5),
+				LeftArm = limb(60, 0, -50),
+				RightLeg = rot(20),
+				LeftLeg = rot(-12),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.5,
+			{
+				Torso = rot(8),
+				Head = rot(-10),
+				RightArm = limb(84, 25, 10),
+				Sword = aim(0.279, 0.263, 0.923),
+				LeftArm = limb(12, 0, -18),
+				RightLeg = rot(-2),
+				LeftLeg = rot(2),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Blocking: sword across the chest. Held until the block ends.
+Animations.Guard = {
+	fadeIn = 0.05,
+	fadeOut = 0.15,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = rot(-6, 10),
+				Head = rot(8, -6),
+				RightArm = limb(80, 45),
+				Sword = aim(-0.9, 0.35, -0.25),
+				LeftArm = limb(85, -25),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			60,
+			{
+				Torso = rot(-6, 10),
+				Head = rot(8, -6),
+				RightArm = limb(80, 45),
+				Sword = aim(-0.9, 0.35, -0.25),
+				LeftArm = limb(85, -25),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- A blocked hit pushes the guard back, then it holds again.
+Animations.GuardHit = {
+	fadeIn = 0.02,
+	fadeOut = 0.15,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, 10),
+				Head = rot(8, -6),
+				RightArm = limb(80, 45),
+				Sword = aim(-0.9, 0.35, -0.25),
+				LeftArm = limb(85, -25),
+			},
+		},
+		{
+			0.05,
+			{
+				Torso = rot(6, 14),
+				Head = rot(-6, -10),
+				RightArm = limb(68, 50),
+				Sword = aim(-0.85, 0.5, -0.15),
+				LeftArm = limb(72, -20),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.2,
+			{
+				Torso = rot(-6, 10),
+				Head = rot(8, -6),
+				RightArm = limb(80, 45),
+				Sword = aim(-0.9, 0.35, -0.25),
+				LeftArm = limb(85, -25),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			60,
+			{
+				Torso = rot(-6, 10),
+				Head = rot(8, -6),
+				RightArm = limb(80, 45),
+				Sword = aim(-0.9, 0.35, -0.25),
+				LeftArm = limb(85, -25),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Guard broken or parried: thrown off balance.
+Animations.Stagger = {
+	fadeIn = 0.02,
+	fadeOut = 0.25,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = rot(20, -10),
+				Head = rot(-25, 8),
+				RightArm = limb(140, 20, 20),
+				Sword = aim(0.2, 0.9, 0.35),
+				LeftArm = limb(120, -20, -30),
+				RightLeg = rot(16),
+				LeftLeg = rot(-14),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			1,
+			{
+				Torso = rot(20, -10),
+				Head = rot(-25, 8),
+				RightArm = limb(140, 20, 20),
+				Sword = aim(0.2, 0.9, 0.35),
+				LeftArm = limb(120, -20, -30),
+				RightLeg = rot(16),
+				LeftLeg = rot(-14),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			1.3,
+			{
+				Torso = rot(4),
+				Head = rot(-4),
+				RightArm = limb(84, 25, 10),
+				Sword = aim(0.279, 0.327, 0.903),
+				LeftArm = limb(12, 0, -18),
+				RightLeg = rot(-2),
+				LeftLeg = rot(2),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
 -- Spawn entrance: crouched landing, grimoire appears, sword drawn from it, twirled overhead, slammed into the ground, rested on the shoulder.
 Animations.Entrance = {
 	fadeIn = 0.08,
@@ -6515,6 +7115,7 @@ local Remotes = require(ReplicatedStorage:WaitForChild("Shared").Remotes)
 
 local M1Animations = require(script.Parent.M1Animations)
 local PoseAnimator = require(script.Parent.PoseAnimator)
+local Reactions = require(script.Parent.Reactions)
 local VFX = require(script.Parent.VFX)
 
 local localPlayer = Players.LocalPlayer
@@ -6564,6 +7165,89 @@ function Moves.PlayM1(character: Model, index: number, variant: string)
 	end
 end
 
+---------------------------------------------------------------------------
+-- Getting hit and blocking
+---------------------------------------------------------------------------
+
+-- A character's own reaction (Kit.Reactions) or the default one.
+local function reactionFor(character: Model, name: string): PoseAnimator.Animation?
+	local kit = kitOf(character)
+	local own = kit and kit.Reactions and kit.Reactions[name]
+	return own or Reactions[name]
+end
+
+local function asModel(value: unknown): Model?
+	return if typeof(value) == "Instance" and value:IsA("Model") then value else nil
+end
+
+local function react(character: Model, name: string)
+	if character:GetAttribute("Ragdolled") == true then
+		return -- the ragdoll is the reaction
+	end
+	local animation = reactionFor(character, name)
+	if animation then
+		PoseAnimator.Play(character, animation)
+	end
+end
+
+local GUARD_ANIMS = { Guard = true, GuardHit = true }
+local lastFlinchSide: { [Model]: boolean } = setmetatable({}, { __mode = "k" }) :: any
+
+local function isGuardPlaying(character: Model): boolean
+	local current = PoseAnimator.Current(character)
+	if not current then
+		return false
+	end
+	for name in GUARD_ANIMS do
+		if current == reactionFor(character, name) then
+			return true
+		end
+	end
+	return false
+end
+
+local function onLandedHit(name: string, data)
+	local victim = data.victim
+	if typeof(victim) ~= "Instance" or not victim:IsA("Model") then
+		return
+	end
+	if name == "HeavyHit" or name == "PerfectDivider" then
+		react(victim, "HitHeavy")
+		return
+	end
+	-- Hit from behind throws them forward; otherwise alternate sides.
+	local victimRoot = victim:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local attacker = data.attacker
+	local attackerRoot = if typeof(attacker) == "Instance"
+		then attacker:FindFirstChild("HumanoidRootPart") :: BasePart?
+		else nil
+	if victimRoot and attackerRoot then
+		local toAttacker = attackerRoot.Position - victimRoot.Position
+		if victimRoot.CFrame.LookVector:Dot(Vector3.new(toAttacker.X, 0, toAttacker.Z).Unit) < -0.3 then
+			react(victim, "FlinchBack")
+			return
+		end
+	end
+	local side = not lastFlinchSide[victim]
+	lastFlinchSide[victim] = side
+	react(victim, if side then "FlinchA" else "FlinchB")
+end
+
+-- Holding block shows the guard; letting go fades it out.
+local function watchBlocking(character: Model)
+	local function update()
+		if character:GetAttribute("Blocking") == true then
+			react(character, "Guard")
+		elseif isGuardPlaying(character) then
+			PoseAnimator.FadeOut(character, 0.15)
+		end
+	end
+	character:GetAttributeChangedSignal("Blocking"):Connect(update)
+	if character:GetAttribute("Blocking") == true then
+		update()
+	end
+end
+
 -- Kit stances and Black Form style looks follow the "Kit" and "Awakened"
 -- attributes on every player.
 local function watchCharacter(character: Model)
@@ -6587,6 +7271,7 @@ local function watchCharacter(character: Model)
 	character:GetAttributeChangedSignal("Kit"):Connect(updateKit)
 	updateAwakened()
 	updateKit()
+	watchBlocking(character)
 end
 
 local function watchPlayer(player: Player)
@@ -6603,8 +7288,25 @@ function Moves.Start()
 	-- impact feels like it connected.
 	local HEAVY_EFFECTS = { HeavyHit = true, PerfectDivider = true }
 	Remotes.VFX.OnClientEvent:Connect(function(name, data)
-		if type(data) == "table" and HEAVY_EFFECTS[name] and typeof(data.attacker) == "Instance" then
+		if type(data) ~= "table" then
+			return
+		end
+		if HEAVY_EFFECTS[name] and typeof(data.attacker) == "Instance" then
 			PoseAnimator.Freeze(data.attacker :: Model, Config.Physics.HitStop)
+		end
+
+		-- Reactions on whoever got hit.
+		if data.hitConfirm then
+			onLandedHit(name, data)
+		else
+			local victim, attacker = asModel(data.victim), asModel(data.attacker)
+			if name == "Block" and victim then
+				react(victim, "GuardHit")
+			elseif name == "GuardBreak" and victim then
+				react(victim, "Stagger")
+			elseif name == "PerfectBlock" and attacker then
+				react(attacker, "Stagger")
+			end
 		end
 	end)
 
@@ -6647,6 +7349,23 @@ function Moves.Start()
 	for _, player in Players:GetPlayers() do
 		watchPlayer(player)
 	end
+
+	-- Dummies block too.
+	task.spawn(function()
+		local dummies = workspace:WaitForChild("Dummies", 30)
+		if dummies then
+			dummies.ChildAdded:Connect(function(child)
+				if child:IsA("Model") then
+					watchBlocking(child)
+				end
+			end)
+			for _, child in dummies:GetChildren() do
+				if child:IsA("Model") then
+					watchBlocking(child)
+				end
+			end
+		end
+	end)
 end
 
 return Moves
@@ -6748,6 +7467,8 @@ type Track = {
 	-- Hit-stop: the animation holds still until this time.
 	freezeUntil: number,
 	frozenAt: number,
+	-- Set when the track is told to stop early (FadeOut).
+	fadeOutOverride: number?,
 }
 
 type Idle = {
@@ -6965,7 +7686,7 @@ local function step(dt: number)
 		local elapsed = if now < track.freezeUntil then track.frozenAt else now - track.start
 		local animation = track.animation
 		local fadeIn = animation.fadeIn or 0.04
-		local fadeOut = animation.fadeOut or 0.15
+		local fadeOut = track.fadeOutOverride or animation.fadeOut or 0.15
 		local total = track.length + fadeOut
 
 		local dead = not character.Parent or character:GetAttribute("Ragdolled") == true
@@ -7052,6 +7773,25 @@ function PoseAnimator.Stop(character: Model)
 	end
 end
 
+-- The animation currently playing on a character, if any.
+function PoseAnimator.Current(character: Model): Animation?
+	local track = tracks[character]
+	return if track then track.animation else nil
+end
+
+-- Ends the current animation early, fading out from wherever it is now.
+function PoseAnimator.FadeOut(character: Model, duration: number?)
+	local track = tracks[character]
+	if not track then
+		return
+	end
+	local elapsed = os.clock() - track.start
+	if elapsed < track.length then
+		track.length = math.max(elapsed, 0)
+	end
+	track.fadeOutOverride = duration
+end
+
 -- Hit-stop: holds the character's current animation still for `duration`,
 -- then lets it continue from the same point.
 function PoseAnimator.Freeze(character: Model, duration: number)
@@ -7118,6 +7858,192 @@ return PoseAnimator
           </Properties>
         </Item>
         <Item class="ModuleScript" referent="34">
+          <Properties>
+            <string name="Name">Reactions</string>
+            <string name="Source"><![CDATA[--[[
+	Reactions
+	Default getting-hit and blocking animations, used by characters that
+	don't bring their own (the dummies, and characters until they get custom
+	ones). A kit can override any of these by name in Kit.Reactions.
+
+	  FlinchA / FlinchB  hit from the front (alternating sides)
+	  FlinchBack         hit from behind
+	  HitHeavy           big hit that doesn't knock down
+	  Guard              blocking stance, held until the block ends
+	  GuardHit           a blocked hit pushes the guard back
+	  Stagger            guard broken or parried
+]]
+
+local PoseAnimator = require(script.Parent.PoseAnimator)
+
+type Animation = PoseAnimator.Animation
+
+local rad = math.rad
+local QUART, SINE, LINEAR = Enum.EasingStyle.Quart, Enum.EasingStyle.Sine, Enum.EasingStyle.Linear
+local OUT, IN_OUT = Enum.EasingDirection.Out, Enum.EasingDirection.InOut
+
+local function rot(x: number, y: number?, z: number?): CFrame
+	return CFrame.Angles(rad(x), rad(y or 0), rad(z or 0))
+end
+
+local function limb(pitch: number, yaw: number?, roll: number?): CFrame
+	return CFrame.Angles(0, rad(yaw or 0), 0) * CFrame.Angles(0, 0, rad(roll or 0)) * CFrame.Angles(rad(pitch), 0, 0)
+end
+
+local function clip(keys: { any }, options: { [string]: any }): Animation
+	local keyframes = {}
+	for _, key in keys do
+		table.insert(keyframes, { time = key[1], pose = key[2], easing = key[3], direction = key[4] })
+	end
+	local animation: any = options
+	animation.keyframes = keyframes
+	return animation :: Animation
+end
+
+local LEGS = { RightLeg = true, LeftLeg = true }
+
+local NEUTRAL = {
+	Torso = rot(0),
+	Head = rot(0),
+	RightArm = limb(0),
+	LeftArm = limb(0),
+	RightLeg = rot(0),
+	LeftLeg = rot(0),
+}
+
+local function settle(twist: number)
+	return {
+		Torso = rot(5, twist),
+		Head = rot(-6, twist * 1.5),
+		RightArm = limb(6, 0, 10),
+		LeftArm = limb(6, 0, -12),
+		RightLeg = rot(-2),
+		LeftLeg = rot(2),
+	}
+end
+
+local Reactions: { [string]: Animation } = {}
+
+Reactions.FlinchA = clip({
+	{ 0, NEUTRAL },
+	{
+		0.05,
+		{
+			Torso = rot(14, 14, 5),
+			Head = rot(-20, 18),
+			RightArm = limb(20, 0, 35),
+			LeftArm = limb(15, 0, -40),
+			RightLeg = rot(-6),
+			LeftLeg = rot(6),
+		},
+		QUART,
+		OUT,
+	},
+	{ 0.3, settle(4), SINE, OUT },
+}, { fadeIn = 0.02, fadeOut = 0.2, additive = LEGS })
+
+Reactions.FlinchB = clip({
+	{ 0, NEUTRAL },
+	{
+		0.05,
+		{
+			Torso = rot(14, -14, -5),
+			Head = rot(-20, -18),
+			RightArm = limb(15, 0, 40),
+			LeftArm = limb(20, 0, -35),
+			RightLeg = rot(6),
+			LeftLeg = rot(-6),
+		},
+		QUART,
+		OUT,
+	},
+	{ 0.3, settle(-4), SINE, OUT },
+}, { fadeIn = 0.02, fadeOut = 0.2, additive = LEGS })
+
+Reactions.FlinchBack = clip({
+	{ 0, NEUTRAL },
+	{
+		0.05,
+		{
+			Torso = rot(-16),
+			Head = rot(18),
+			RightArm = limb(-25, 0, 25),
+			LeftArm = limb(-25, 0, -25),
+			RightLeg = rot(-6),
+			LeftLeg = rot(6),
+		},
+		QUART,
+		OUT,
+	},
+	{ 0.3, settle(0), SINE, OUT },
+}, { fadeIn = 0.02, fadeOut = 0.2, additive = LEGS })
+
+Reactions.HitHeavy = clip({
+	{ 0, NEUTRAL },
+	{
+		0.06,
+		{
+			Torso = rot(26),
+			Head = rot(-35),
+			RightArm = limb(110, 0, 40),
+			LeftArm = limb(110, 0, -40),
+			RightLeg = rot(20),
+			LeftLeg = rot(-12),
+		},
+		QUART,
+		OUT,
+	},
+	{ 0.5, settle(0), SINE, IN_OUT },
+}, { fadeIn = 0.02, fadeOut = 0.25, additive = LEGS })
+
+local GUARD = {
+	Torso = rot(-8, 6),
+	Head = rot(12),
+	RightArm = limb(120, 42),
+	LeftArm = limb(118, -42),
+}
+local GUARD_PUSHED = {
+	Torso = rot(6, 10),
+	Head = rot(-4),
+	RightArm = limb(105, 48),
+	LeftArm = limb(100, -36),
+}
+
+-- Held for a minute; the block ending fades it out early.
+Reactions.Guard = clip({
+	{ 0, { Torso = rot(0), Head = rot(0), RightArm = limb(0), LeftArm = limb(0) } },
+	{ 0.08, GUARD, QUART, OUT },
+	{ 60, GUARD, LINEAR },
+}, { fadeIn = 0.05, fadeOut = 0.15 })
+
+Reactions.GuardHit = clip({
+	{ 0, GUARD },
+	{ 0.05, GUARD_PUSHED, QUART, OUT },
+	{ 0.2, GUARD, SINE, OUT },
+	{ 60, GUARD, LINEAR },
+}, { fadeIn = 0.02, fadeOut = 0.15 })
+
+local STAGGER = {
+	Torso = rot(20, -10),
+	Head = rot(-25, 8),
+	RightArm = limb(140, 0, 30),
+	LeftArm = limb(120, 0, -35),
+	RightLeg = rot(16),
+	LeftLeg = rot(-14),
+}
+
+Reactions.Stagger = clip({
+	{ 0, NEUTRAL },
+	{ 0.08, STAGGER, QUART, OUT },
+	{ 1.0, STAGGER, LINEAR },
+	{ 1.3, settle(0), SINE, IN_OUT },
+}, { fadeIn = 0.02, fadeOut = 0.25 })
+
+return Reactions
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="35">
           <Properties>
             <string name="Name">ShiftLock</string>
             <string name="Source"><![CDATA[--[[
@@ -7273,7 +8199,7 @@ return ShiftLock
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="35">
+        <Item class="ModuleScript" referent="36">
           <Properties>
             <string name="Name">TopBar</string>
             <string name="Source"><![CDATA[--[[
@@ -7563,7 +8489,7 @@ return TopBar
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="36">
+        <Item class="ModuleScript" referent="37">
           <Properties>
             <string name="Name">VFX</string>
             <string name="Source"><![CDATA[--[[
@@ -8023,6 +8949,24 @@ local function cleanM1Hit(data, heavy: boolean): boolean
 	if data.damage then
 		popup(data.position, string.format("%g", data.damage), Color3.new(1, 1, 1), if heavy then 1.2 else 1)
 	end
+	-- Finishers get a touch of motion: a small burst in the launch direction.
+	local victimRoot = getRoot(data.victim)
+	if victimRoot and (data.variant == "Uppercut" or data.variant == "Downslam") then
+		local up = data.variant == "Uppercut"
+		local direction = if up then Vector3.yAxis else -Vector3.yAxis
+		burst(victimRoot.Position, {
+			color = Color3.new(1, 1, 1),
+			count = 6,
+			size = 0.45,
+			speed = NumberRange.new(18, 30),
+			lifetime = NumberRange.new(0.12, 0.22),
+			streaks = true,
+			spread = 22,
+			direction = direction,
+		})
+		ringBurst(CFrame.new(victimRoot.Position - direction * 1.2), Color3.new(1, 1, 1), 0.6, 2.4, 0.18, 0.08)
+		bodyTrail(data.victim, Color3.new(1, 1, 1), if up then 0.45 else 0.3)
+	end
 	if heavy and (isLocal(data.attacker) or isLocal(data.victim)) then
 		CameraShake.FovKick(4)
 	end
@@ -8241,6 +9185,12 @@ end
 
 function Effects.Crater(data)
 	local position: Vector3 = data.position
+	if data.small then
+		-- M1 downslams: a modest dent, not a skill-sized crater.
+		groundRocks(position, 6, 2, 1.1)
+		ringBurst(CFrame.new(position + Vector3.new(0, 0.2, 0)), Color3.new(1, 1, 1), 0.6, 5, 0.25, 0.15)
+		return
+	end
 	groundRocks(position, 12, 4, 2.2)
 	ringBurst(CFrame.new(position + Vector3.new(0, 0.2, 0)), Color3.new(1, 1, 1), 1, 10, 0.35, 0.3)
 	flash(position, COLORS.Heavy, 6, 0.2)
@@ -8355,6 +9305,14 @@ function VFX.Register(name: string, effect: (data: any) -> ())
 	Effects[name] = effect
 end
 
+-- A character-specific version of an effect (e.g. Asta's own dash). Used
+-- when data.character is playing that kit.
+local kitEffects: { [string]: { [string]: (data: any) -> () } } = {}
+function VFX.RegisterKitEffect(kitId: string, name: string, effect: (data: any) -> ())
+	kitEffects[kitId] = kitEffects[kitId] or {}
+	kitEffects[kitId][name] = effect
+end
+
 function VFX.SetPalette(kitId: string, palette: Palette)
 	palettes[kitId] = palette
 end
@@ -8362,6 +9320,14 @@ end
 -- Plays an effect locally (used for instant feedback on your own actions).
 function VFX.Play(name: string, data: any)
 	local effect = Effects[name]
+	local character = if type(data) == "table" then data.character else nil
+	if typeof(character) == "Instance" then
+		local kitId = character:GetAttribute("Kit")
+		local overrides = if type(kitId) == "string" then kitEffects[kitId] else nil
+		if overrides and overrides[name] then
+			effect = overrides[name]
+		end
+	end
 	if effect then
 		task.spawn(effect, data)
 	end
@@ -8382,13 +9348,13 @@ return VFX
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="37">
+  <Item class="Workspace" referent="38">
     <Properties>
       <string name="Name">Workspace</string>
       <float name="Gravity">225</float>
       <bool name="NeedsPivotMigration">false</bool>
     </Properties>
-    <Item class="Part" referent="38">
+    <Item class="Part" referent="39">
       <Properties>
         <string name="Name">Baseplate</string>
         <bool name="Anchored">true</bool>
@@ -8407,7 +9373,7 @@ return VFX
         </Vector3>
       </Properties>
     </Item>
-    <Item class="SpawnLocation" referent="39">
+    <Item class="SpawnLocation" referent="40">
       <Properties>
         <string name="Name">SpawnLocation</string>
         <bool name="Anchored">true</bool>
