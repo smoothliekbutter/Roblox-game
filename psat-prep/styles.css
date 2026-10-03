@@ -28,6 +28,11 @@
   --s2: #eb6834;
   --grid: #e8ebef;
   --shadow: 0 1px 2px rgba(20, 28, 40, 0.06), 0 1px 1px rgba(20, 28, 40, 0.03);
+  /* College Board figures are drawn in black, so dark mode gives them a light card
+     and inverts equation images. */
+  --figure-bg: transparent;
+  --figure-pad: 0px;
+  --math-img-filter: none;
 
   --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
   --font-ui: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -67,6 +72,9 @@
     --s2: #d95926;
     --grid: #22262c;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --figure-bg: #f2f3f5;
+    --figure-pad: 8px;
+    --math-img-filter: invert(1) hue-rotate(180deg);
     color-scheme: dark;
   }
 }
@@ -94,6 +102,9 @@
   --s2: #d95926;
   --grid: #22262c;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --figure-bg: #f2f3f5;
+  --figure-pad: 8px;
+  --math-img-filter: invert(1) hue-rotate(180deg);
   color-scheme: dark;
 }
 
@@ -395,13 +406,22 @@ select, input[type="search"], input[type="text"] {
 .reading p + p, .reading p + ul, .reading ul + p { margin-top: 0.8em; }
 .reading ul { padding-left: 1.2em; margin: 0.5em 0 0; }
 .reading li + li { margin-top: 0.3em; }
-.reading img, .reading svg { height: auto; }
+.reading img, .reading svg, .choice-text img, .choice-text svg { height: auto; max-width: 100%; }
+.reading svg, .reading img:not(.math-img), .choice-text svg, .choice-text img:not(.math-img) {
+  background: var(--figure-bg); padding: var(--figure-pad); border-radius: 6px;
+}
+img.math-img { filter: var(--math-img-filter); vertical-align: middle; }
 .reading table, .q-main table { border-collapse: collapse; font-family: var(--font-ui); font-size: var(--step-0); margin: 6px 0; }
 .reading th, .reading td, .q-main th, .q-main td { border: 1px solid var(--rule-strong); padding: 6px 10px; text-align: center; }
 .reading caption { caption-side: top; font-weight: 700; padding-bottom: 6px; }
 .table-scroll, .reading figure, .reading .figure { overflow-x: auto; max-width: 100%; }
 math { font-size: 1.05em; }
-.q-stem { font-weight: 600; }
+.q-stem { font-weight: 400; }
+/* Classes used inside College Board's question markup */
+.sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.italic { font-style: italic; }
+.para_center, .standalone_statement, .standalone_image { text-align: center; }
+.dap_copyright { font-size: var(--step--1); color: var(--ink-3); }
 
 .choices { display: flex; flex-direction: column; gap: 10px; }
 .choice { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: stretch; }

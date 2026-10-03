@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Downloads every question in the College Board SAT Suite Question Bank for one
 // exam, with answers and explanations, and writes the files the website loads:
-//   data/questions-rw.js    Reading and Writing
-//   data/questions-math.js  Math
+//   data/questions-rw-*.js    Reading and Writing, one file per domain
+//   data/questions-math-*.js  Math, one file per domain
 //
 // Usage (Node 18 or newer, no npm install needed):
 //   node scripts/fetch-questions.mjs                 PSAT/NMSQT & PSAT 10 (default)
@@ -17,7 +17,7 @@
 // Downloads are cached in .cache/, so if the script stops partway you can run it
 // again and it picks up where it left off.
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,8 +36,8 @@ const EXAMS = {
   sat: { id: 99, name: "SAT" },
 };
 const TESTS = [
-  { id: 1, section: "rw", name: "Reading and Writing", domains: "INI,CAS,EOI,SEC", file: "questions-rw.js" },
-  { id: 2, section: "math", name: "Math", domains: "H,P,Q,S", file: "questions-math.js" },
+  { id: 1, section: "rw", name: "Reading and Writing", domains: "INI,CAS,EOI,SEC" },
+  { id: 2, section: "math", name: "Math", domains: "H,P,Q,S" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -128,11 +128,20 @@ async function pool(items, worker) {
 // HTML clean-up
 // ---------------------------------------------------------------------------
 function sanitize(html) {
-  return String(html || "")
-    .replace(/<script\b[\s\S]*?<\/script>/gi, "")
-    .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .replace(/(href|src)\s*=\s*(["'])\s*javascript:[^"']*\2/gi, '$1="#"')
-    .trim();
+  return compactMarkup(
+    String(html || "")
+      .replace(/<script\b[\s\S]*?<\/script>/gi, "")
+      .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+      .replace(/(href|src)\s*=\s*(["'])\s*javascript:[^"']*\2/gi, '$1="#"')
+      .trim()
+  );
+}
+// Graphs are verbose SVG; drop the whitespace between tags and trim coordinates
+// to two decimals. MathML only loses whitespace (its numbers are content).
+function compactMarkup(html) {
+  return html
+    .replace(/<svg\b[\s\S]*?<\/svg>/gi, (b) => b.replace(/>\s+</g, "><").replace(/\s{2,}/g, " ").replace(/(\d\.\d{2})\d+/g, "$1"))
+    .replace(/<math\b[\s\S]*?<\/math>/gi, (b) => b.replace(/>\s+</g, "><"));
 }
 const imageCache = new Map();
 async function inlineImages(html, base) {
@@ -166,9 +175,18 @@ async function inlineImages(html, base) {
   return html;
 }
 
-// Plain text from a rationale, with simple MathML fractions turned into a/b.
+// Plain text from a rationale. Simple MathML fractions become a/b, and math
+// drawn as images is replaced by its alt text ("the fraction 3 over 2").
+function altToText(alt) {
+  return String(alt)
+    .replace(/the fraction (negative )?([\d.]+) over ([\d.]+)/gi, (m, neg, a, b) => (neg ? "-" : "") + a + "/" + b)
+    .replace(/negative\s+([\d.])/gi, "-$1")
+    .replace(/,?\s*end fraction/gi, "");
+}
 function rationaleText(html) {
   return String(html || "")
+    .replace(/<img\b[^>]*?\balt\s*=\s*(["'])(.*?)\1[^>]*>/gi, (m, q, alt) => " " + altToText(alt) + " ")
+    .replace(/<math\b[^>]*?\balttext\s*=\s*(["'])(.*?)\1[^>]*>[\s\S]*?<\/math>/gi, (m, q, alt) => " " + altToText(alt.replace(/\bminus\b/g, "-")) + " ")
     .replace(/<mfrac[^>]*>\s*<mn>([^<]*)<\/mn>\s*<mn>([^<]*)<\/mn>\s*<\/mfrac>/gi, "$1/$2")
     .replace(/<mo>\s*(?:−|&minus;|-)\s*<\/mo>/gi, "-")
     .replace(/<[^>]+>/g, "")
@@ -177,22 +195,29 @@ function rationaleText(html) {
     .replace(/\s+/g, " ")
     .trim();
 }
+const NUM = String.raw`-?\s?(?:\d+\.?\d*|\.\d+)(?:\s?\/\s?(?:\d+\.?\d*|\.\d+))?`;
 // Student-produced response answers, read from the explanation when the data
 // doesn't list them ("The correct answer is 3/2. Note that 3/2 and 1.5 are
 // examples of ways to enter a correct answer.").
 function answersFromRationale(html) {
   const text = rationaleText(html);
+  const clean = (v) => v.replace(/\s+/g, "").replace(/\.$/, "");
   const out = [];
-  const main = text.match(/correct answer is\s+(-?[\d.]+(?:\/[\d.]+)?)/i);
-  if (main) out.push(main[1].replace(/\.$/, ""));
+  const main = text.match(new RegExp("correct answer is\\s+(" + NUM + ")", "i"));
+  if (main) out.push(clean(main[1]));
   const note = text.match(/Note that (.+?) (?:are|is) (?:examples?|an example) of ways? to enter a correct answer/i);
   if (note) {
     for (const part of note[1].split(/\s*,\s*(?:and\s+|or\s+)?|\s+(?:and|or)\s+/)) {
-      const v = part.trim().replace(/\.$/, "");
-      if (/^-?[\d.]+(?:\/[\d.]+)?$/.test(v)) out.push(v);
+      const v = clean(part.trim());
+      if (/^-?(?:\d+\.?\d*|\.\d+)(?:\/(?:\d+\.?\d*|\.\d+))?$/.test(v)) out.push(v);
     }
   }
   return [...new Set(out)];
+}
+// Multiple-choice answer from the explanation ("Choice B is correct").
+function letterFromRationale(html) {
+  const m = rationaleText(html).match(/Choice ([A-H]) is (?:the )?(?:correct|best)/i);
+  return m ? [m[1].toUpperCase()] : [];
 }
 function splitAnswers(value) {
   const list = Array.isArray(value) ? value : value == null ? [] : [value];
@@ -207,9 +232,9 @@ function baseRecord(meta, test) {
     id: String(meta.questionId || meta.external_id || meta.ibn),
     section: test.section,
     domainCode: meta.primary_class_cd || "",
-    domain: meta.primary_class_cd_desc || "",
+    domain: String(meta.primary_class_cd_desc || "").trim(),
     skillCode: meta.skill_cd || "",
-    skill: meta.skill_desc || "",
+    skill: String(meta.skill_desc || "").trim(),
     difficulty: meta.difficulty || "",
     scoreBand: meta.score_band_range_cd || null,
     programs: meta.pPcc || meta.program || "",
@@ -236,7 +261,7 @@ async function fromApi(meta, test, d) {
     if (!letters.length && Array.isArray(d.keys)) {
       letters = d.keys.map((k) => options.findIndex((o) => o.id === k)).filter((i) => i >= 0).map((i) => "ABCDEFGH"[i]);
     }
-    rec.answer = letters.slice(0, 1);
+    rec.answer = letters.length ? letters.slice(0, 1) : letterFromRationale(d.rationale);
   }
   return rec;
 }
@@ -265,7 +290,7 @@ async function fromDisclosed(meta, test, raw) {
   } else {
     const k = String(ans.correct_choice || "").toLowerCase();
     const i = keys.indexOf(k);
-    rec.answer = i >= 0 ? ["ABCDEFGH"[i]] : [];
+    rec.answer = i >= 0 ? ["ABCDEFGH"[i]] : letterFromRationale(ans.rationale || d.rationale);
   }
   return rec;
 }
@@ -317,22 +342,38 @@ async function fetchSection(test) {
   return good;
 }
 
+// One file per domain keeps each file small enough to host anywhere.
+const domainFile = (section, code) => `questions-${section}-${String(code || "other").toLowerCase().replace(/[^a-z0-9]/g, "")}.js`;
+const EXPECTED_FILES = TESTS.flatMap((t) => t.domains.split(",").map((c) => domainFile(t.section, c)));
+
 async function main() {
   const info = { exam: exam.name, asmtEventId: exam.id, fetchedAt: new Date().toISOString(), source: SITE };
   await mkdir(DATA_DIR, { recursive: true });
+  const sections = [];
+  for (const test of TESTS) sections.push([test, await fetchSection(test)]);
+  // Only replace the old files once everything downloaded.
+  for (const f of await readdir(DATA_DIR)) if (/^questions-.*\.js$/.test(f)) await rm(path.join(DATA_DIR, f));
   let total = 0;
-  for (const test of TESTS) {
-    const questions = await fetchSection(test);
+  for (const [test, questions] of sections) {
     total += questions.length;
-    const out =
-      `// Generated by scripts/fetch-questions.mjs on ${info.fetchedAt.slice(0, 10)}.\n` +
-      `// Source: College Board SAT Suite Question Bank (${exam.name}), ${test.name}. Questions and explanations are College Board's.\n` +
-      `// Re-run the script to refresh. Don't edit by hand.\n` +
-      `window.PSAT_BANK_INFO = ${JSON.stringify(info)};\n` +
-      `window.PSAT_BANK = window.PSAT_BANK || [];\n` +
-      `window.PSAT_BANK.push.apply(window.PSAT_BANK, ${JSON.stringify(questions)});\n`;
-    await writeFile(path.join(DATA_DIR, test.file), out);
-    console.log(`  wrote data/${test.file} (${(Buffer.byteLength(out) / 1048576).toFixed(1)} MB)`);
+    const groups = new Map();
+    for (const q of questions) {
+      const file = domainFile(test.section, q.domainCode);
+      if (!groups.has(file)) groups.set(file, { domain: q.domain, list: [] });
+      groups.get(file).list.push(q);
+    }
+    for (const [file, { domain, list }] of groups) {
+      const out =
+        `// Generated by scripts/fetch-questions.mjs on ${info.fetchedAt.slice(0, 10)}.\n` +
+        `// Source: College Board SAT Suite Question Bank (${exam.name}), ${test.name}: ${domain}. Questions and explanations are College Board's.\n` +
+        `// Re-run the script to refresh. Don't edit by hand.\n` +
+        `window.PSAT_BANK_INFO = ${JSON.stringify(info)};\n` +
+        `window.PSAT_BANK = window.PSAT_BANK || [];\n` +
+        `window.PSAT_BANK.push.apply(window.PSAT_BANK, ${JSON.stringify(list)});\n`;
+      await writeFile(path.join(DATA_DIR, file), out);
+      console.log(`  wrote data/${file}: ${list.length} questions, ${(Buffer.byteLength(out) / 1048576).toFixed(1)} MB`);
+      if (!EXPECTED_FILES.includes(file)) console.log(`  note: index.html doesn't load ${file} yet; add a <script> tag for it.`);
+    }
   }
   console.log(`\nDone: ${total} questions. Open index.html to start practicing.`);
 }

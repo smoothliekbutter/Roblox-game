@@ -110,6 +110,16 @@
     q._skill = sk;
     sk.qids.push(q.id);
   }
+  // With the real bank loaded, drop SAT-only skills the PSAT bank doesn't cover
+  // (it has no Circles questions, for example).
+  if (BANK_LOADED) {
+    for (const d of DOMAINS) {
+      d.skills = d.skills.filter((s) => {
+        if (!s.qids.length) SKILLS.delete(s.key);
+        return s.qids.length > 0;
+      });
+    }
+  }
   for (const d of DOMAINS) for (const s of d.skills) s.weight = d.weight / Math.max(1, d.skills.length);
   const skillsOf = (section) => [...SKILLS.values()].filter((s) => !section || s.section === section);
 
