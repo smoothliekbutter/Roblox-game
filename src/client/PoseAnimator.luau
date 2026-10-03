@@ -60,6 +60,9 @@ type Track = {
 	-- Where each joint actually was when this track started, so a new swing
 	-- blends from the previous swing's pose instead of snapping to idle.
 	from: { [string]: CFrame },
+	-- Hit-stop: the animation holds still until this time.
+	freezeUntil: number,
+	frozenAt: number,
 }
 
 type Idle = {
@@ -184,7 +187,7 @@ local function step()
 	end
 
 	for character, track in tracks do
-		local elapsed = now - track.start
+		local elapsed = if now < track.freezeUntil then track.frozenAt else now - track.start
 		local animation = track.animation
 		local fadeIn = animation.fadeIn or 0.04
 		local fadeOut = animation.fadeOut or 0.15
@@ -267,6 +270,8 @@ function PoseAnimator.Play(character: Model, animation: Animation, onEvent: ((na
 		onEvent = onEvent,
 		firedEvents = {},
 		from = from,
+		freezeUntil = 0,
+		frozenAt = 0,
 	}
 end
 
@@ -276,6 +281,22 @@ function PoseAnimator.Stop(character: Model)
 		tracks[character] = nil
 		release(track, character)
 	end
+end
+
+-- Hit-stop: holds the character's current animation still for `duration`,
+-- then lets it continue from the same point.
+function PoseAnimator.Freeze(character: Model, duration: number)
+	local track = tracks[character]
+	if not track then
+		return
+	end
+	local now = os.clock()
+	if now < track.freezeUntil then
+		return
+	end
+	track.frozenAt = now - track.start
+	track.freezeUntil = now + duration
+	track.start += duration
 end
 
 -- Sets (or clears, with nil) a persistent stance for some joints.

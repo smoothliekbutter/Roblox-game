@@ -170,14 +170,50 @@ function CombatService.ApplyVelocity(character: Model, velocity: Vector3, durati
 		return
 	end
 	local player = Players:GetPlayerFromCharacter(character)
-	if CombatState.IsRagdolled(character) then
+	if Ragdoll.IsActive(character) then
 		-- Server owns ragdolls, and a ragdoll has no Humanoid fighting the velocity.
-		root.AssemblyLinearVelocity = velocity
+		CombatService.Tumble(root, velocity)
 	elseif player then
 		Remotes.Impulse:FireClient(player, velocity, duration)
 	else
 		Impulse.Apply(root, velocity, duration, "Knockback")
 	end
+end
+
+-- Throws a ragdolled body: velocity plus a head-over-heels spin around the
+-- axis across the direction of travel.
+function CombatService.Tumble(root: BasePart, velocity: Vector3)
+	root.AssemblyLinearVelocity = velocity
+	local across = Vector3.new(velocity.X, 0, velocity.Z):Cross(Vector3.yAxis)
+	if across.Magnitude > 0.1 then
+		local spin = math.min(velocity.Magnitude * Config.Physics.TumbleSpin, Config.Physics.MaxTumble)
+		root.AssemblyAngularVelocity = -across.Unit * spin
+	end
+end
+
+-- Knockback for a hit. Ragdolled victims of heavy hits freeze for a split
+-- second first (hit-stop), then fly.
+function CombatService.Launch(victim: Model, velocity: Vector3, duration: number, hitStop: number?)
+	local root = getRoot(victim)
+	if not root then
+		return
+	end
+	if not hitStop or hitStop <= 0 or not Ragdoll.IsActive(victim) then
+		CombatService.ApplyVelocity(victim, velocity, duration)
+		return
+	end
+	root.Anchored = true
+	task.delay(hitStop, function()
+		if not root.Parent then
+			return
+		end
+		root.Anchored = false
+		if Ragdoll.IsActive(victim) then
+			-- Anchoring resets network ownership; ragdolls stay with the server.
+			pcall(root.SetNetworkOwner, root, nil)
+			CombatService.Tumble(root, velocity)
+		end
+	end)
 end
 
 function CombatService.IsAirborne(character: Model): boolean
@@ -414,17 +450,23 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	local heavy = hit.heavy == true or (variant ~= nil and variant ~= "Normal")
 	if variant == "Knockback" then
 		CombatService.Ragdoll(victim, Config.Ragdoll.Duration)
-		CombatService.ApplyVelocity(
+		CombatService.Launch(
 			victim,
 			look * Config.M1.KnockbackForce + Vector3.new(0, Config.M1.KnockbackLift, 0),
-			0.2
+			0.2,
+			Config.Physics.HitStop
 		)
 	elseif variant == "Uppercut" then
 		-- Only the victim goes up; the attacker stays grounded.
 		CombatService.ApplyVelocity(victim, Vector3.new(0, Config.M1.UppercutForce, 0) + look * 4, 0.25)
 	elseif variant == "Downslam" then
 		CombatService.Ragdoll(victim, Config.Ragdoll.Duration)
-		CombatService.ApplyVelocity(victim, look * 10 + Vector3.new(0, -Config.M1.DownslamForce, 0), 0.2)
+		CombatService.Launch(
+			victim,
+			look * 10 + Vector3.new(0, -Config.M1.DownslamForce, 0),
+			0.2,
+			Config.Physics.HitStop
+		)
 		scheduleCrater(victim, attacker)
 	elseif variant == "Normal" then
 		if hit.airborne then
@@ -440,7 +482,12 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 			CombatService.Ragdoll(victim, hit.ragdoll)
 		end
 		if hit.velocity then
-			CombatService.ApplyVelocity(victim, hit.velocity, hit.velocityTime or 0.2)
+			CombatService.Launch(
+				victim,
+				hit.velocity,
+				hit.velocityTime or 0.2,
+				if heavy then Config.Physics.HitStop else nil
+			)
 		end
 	end
 
@@ -595,7 +642,7 @@ function CombatService.Evasive(character: Model): boolean
 
 	data.ragdollToken += 1
 	character:SetAttribute("Evasive", 0)
-	Ragdoll.Disable(character)
+	Ragdoll.Disable(character, true)
 	CombatState.ClearStun(character)
 	CombatState.ClearCasting(character)
 	CombatState.GiveIFrames(character, Config.Evasive.IFrames)
@@ -910,9 +957,43 @@ end
 function CombatService.Start()
 	Remotes.Action.OnServerEvent:Connect(onAction)
 
+	-- Body impacts: a fast ragdoll that suddenly stops hit the floor or a wall.
+	local lastVelocity: { [Model]: Vector3 } = {}
+	local lastImpact: { [Model]: number } = {}
+	local function detectImpacts()
+		local now = os.clock()
+		for character in registry do
+			local root = getRoot(character)
+			if root and Ragdoll.IsActive(character) and not root.Anchored then
+				local velocity = root.AssemblyLinearVelocity
+				local previous = lastVelocity[character]
+				if
+					previous
+					and previous.Magnitude > Config.Physics.ImpactSpeed
+					and (previous - velocity).Magnitude > previous.Magnitude * 0.5
+					and now - (lastImpact[character] or 0) > 0.35
+				then
+					lastImpact[character] = now
+					local strength = math.clamp(previous.Magnitude / 90, 0.3, 1)
+					CombatService.FireVFX("BodyImpact", { position = root.Position, strength = strength })
+					CombatService.ShakeArea(root.Position, 35, 0.3 * strength)
+				end
+				lastVelocity[character] = velocity
+			else
+				lastVelocity[character] = nil
+			end
+		end
+		for character in lastImpact do
+			if not registry[character] then
+				lastImpact[character] = nil
+			end
+		end
+	end
+
 	local regenTimer = 0
 	RunService.Heartbeat:Connect(function(dt)
 		updateMovement()
+		detectImpacts()
 
 		-- Attribute writes replicate, so the passive regen ticks 4 times a second.
 		regenTimer += dt

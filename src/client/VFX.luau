@@ -622,6 +622,32 @@ function Effects.Evasive(data)
 	end
 end
 
+-- A ragdoll slamming into the floor or a wall.
+function Effects.BodyImpact(data)
+	local position: Vector3 = data.position
+	local strength: number = math.clamp(tonumber(data.strength) or 0.5, 0.2, 1)
+	local ground = groundBelow(position)
+	local spot = if ground then ground.Position else position
+	local dustColor = if ground and ground.Instance:IsA("BasePart") then ground.Instance.Color else COLORS.Dust
+
+	burst(spot, {
+		texture = TEXTURES.Smoke,
+		color = dustColor:Lerp(Color3.new(1, 1, 1), 0.35),
+		count = math.floor(6 + 10 * strength),
+		size = 2 + 2.5 * strength,
+		speed = NumberRange.new(6, 14 * strength + 6),
+		lifetime = NumberRange.new(0.5, 1),
+		lightEmission = 0,
+		transparency = 0.35,
+		drag = 3,
+		spread = 75,
+	})
+	ringBurst(CFrame.new(spot + Vector3.new(0, 0.15, 0)), Color3.new(1, 1, 1), 0.8, 3 + 4 * strength, 0.25, 0.12)
+	if strength > 0.6 and ground then
+		groundRocks(spot, math.floor(4 + 6 * strength), 1.5 + 1.5 * strength, 1 + strength)
+	end
+end
+
 function Effects.Crater(data)
 	local position: Vector3 = data.position
 	groundRocks(position, 12, 4, 2.2)

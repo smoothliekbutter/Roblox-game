@@ -97,12 +97,19 @@ local function buildSword(): Model
 		),
 		swordPart("TipB", Vector3.new(0.2, 0.35, 0.45), CFrame.new(0, 5.6, -0.4), black, Enum.Material.Metal),
 	}
+	-- Plain Welds with the offset written into C0, not WeldConstraints:
+	-- a WeldConstraint works its offset out from where the parts happen to
+	-- be when it switches on, which differs between the server (builds the
+	-- sword) and the client (simulates the character), so pieces ended up
+	-- floating off or falling. C0 replicates, so every machine agrees.
 	for _, part in parts do
-		part.Parent = model
-		local weld = Instance.new("WeldConstraint")
+		local weld = Instance.new("Weld")
+		weld.Name = "Join"
 		weld.Part0 = handle
 		weld.Part1 = part
+		weld.C0 = part.CFrame -- built relative to the handle at the origin
 		weld.Parent = part
+		part.Parent = model
 	end
 
 	-- Swing trail between the blade's base and tip. Clients switch it on during attacks.
@@ -146,25 +153,46 @@ function Kit.Equip(character: Model)
 	weld.Part1 = handle
 	weld.Parent = handle
 
-	local function attach()
+	local function currentArm(): BasePart?
 		local arm = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
-		if arm and arm:IsA("BasePart") then
-			weld.Part0 = arm
-			weld.C0 = CFrame.new(0, -arm.Size.Y / 2, 0) * CFrame.Angles(math.rad(215), 0, 0)
-			handle.CFrame = arm.CFrame * weld.C0
+		return if arm and arm:IsA("BasePart") then arm else nil
+	end
+
+	local function attach()
+		local arm = currentArm()
+		if not arm then
+			return
 		end
+		local grip = CFrame.new(0, -arm.Size.Y / 2, 0) * CFrame.Angles(math.rad(215), 0, 0)
+		-- Place the whole sword at the hand first, then join it.
+		for _, part in sword:GetChildren() do
+			if part:IsA("BasePart") then
+				local join = part:FindFirstChild("Join") :: Weld?
+				part.CFrame = arm.CFrame * grip * (if join then join.C0 else CFrame.identity)
+			end
+		end
+		weld.Part0 = arm
+		weld.C0 = grip
 	end
 	attach()
 	sword.Parent = character
 
-	-- If the arm is ever rebuilt (avatar changes), re-grip instead of
-	-- dropping the sword on the floor.
-	local connection
-	connection = character.ChildAdded:Connect(function(child)
-		if not sword.Parent then
-			connection:Disconnect()
-		elseif child.Name == "Right Arm" or child.Name == "RightHand" then
-			task.defer(attach)
+	-- Watchdog: if the arm gets rebuilt (avatar changes) or the grip breaks,
+	-- re-grip instead of leaving the sword on the floor.
+	task.spawn(function()
+		local warned = false
+		while sword.Parent == character and character.Parent do
+			local arm = currentArm()
+			if arm and (weld.Part0 ~= arm or not weld.Parent) then
+				attach()
+			elseif arm and (handle.Position - arm.Position).Magnitude > 6 then
+				if not warned then
+					warned = true
+					warn("[AntiMagic] Sword drifted away from the hand, re-gripping.", character.Name)
+				end
+				attach()
+			end
+			task.wait(0.5)
 		end
 	end)
 end

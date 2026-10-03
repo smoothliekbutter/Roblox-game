@@ -12,8 +12,9 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Remotes = require(ReplicatedStorage:WaitForChild("Shared").Remotes)
+local Config = require(ReplicatedStorage:WaitForChild("Shared").Config)
 local Kits = require(ReplicatedStorage:WaitForChild("Shared").Kits)
+local Remotes = require(ReplicatedStorage:WaitForChild("Shared").Remotes)
 
 local M1Animations = require(script.Parent.M1Animations)
 local PoseAnimator = require(script.Parent.PoseAnimator)
@@ -100,6 +101,15 @@ end
 
 function Moves.Start()
 	PoseAnimator.Start()
+
+	-- Heavy hits: the attacker's swing also freezes for the hit-stop, so the
+	-- impact feels like it connected.
+	local HEAVY_EFFECTS = { HeavyHit = true, PerfectDivider = true }
+	Remotes.VFX.OnClientEvent:Connect(function(name, data)
+		if type(data) == "table" and HEAVY_EFFECTS[name] and typeof(data.attacker) == "Instance" then
+			PoseAnimator.Freeze(data.attacker :: Model, Config.Physics.HitStop)
+		end
+	end)
 
 	Remotes.VFX.OnClientEvent:Connect(function(name, data)
 		if type(data) ~= "table" then

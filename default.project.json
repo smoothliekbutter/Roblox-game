@@ -33,6 +33,9 @@
     },
 
     "Workspace": {
+      "$properties": {
+        "Gravity": 225
+      },
       "Baseplate": {
         "$className": "Part",
         "$properties": {

@@ -291,6 +291,18 @@ Config.Ragdoll = {
 	Duration = 1.5,
 }
 
+Config.Physics = {
+	-- Heavy hits freeze the victim for a split second before launching
+	-- them, which sells the impact.
+	HitStop = 0.06,
+	-- Launched ragdolls tumble: spin (rad/s) per stud/s of launch speed.
+	TumbleSpin = 0.12,
+	MaxTumble = 10,
+	-- A ragdoll moving at least this fast that suddenly stops (floor, wall)
+	-- kicks up a body impact effect.
+	ImpactSpeed = 35,
+}
+
 -- Evasive: fills as you take damage. When full, Q while stunned or
 -- ragdolled breaks you out of the combo.
 Config.Evasive = {
@@ -856,14 +868,50 @@ function CombatService.ApplyVelocity(character: Model, velocity: Vector3, durati
 		return
 	end
 	local player = Players:GetPlayerFromCharacter(character)
-	if CombatState.IsRagdolled(character) then
+	if Ragdoll.IsActive(character) then
 		-- Server owns ragdolls, and a ragdoll has no Humanoid fighting the velocity.
-		root.AssemblyLinearVelocity = velocity
+		CombatService.Tumble(root, velocity)
 	elseif player then
 		Remotes.Impulse:FireClient(player, velocity, duration)
 	else
 		Impulse.Apply(root, velocity, duration, "Knockback")
 	end
+end
+
+-- Throws a ragdolled body: velocity plus a head-over-heels spin around the
+-- axis across the direction of travel.
+function CombatService.Tumble(root: BasePart, velocity: Vector3)
+	root.AssemblyLinearVelocity = velocity
+	local across = Vector3.new(velocity.X, 0, velocity.Z):Cross(Vector3.yAxis)
+	if across.Magnitude > 0.1 then
+		local spin = math.min(velocity.Magnitude * Config.Physics.TumbleSpin, Config.Physics.MaxTumble)
+		root.AssemblyAngularVelocity = -across.Unit * spin
+	end
+end
+
+-- Knockback for a hit. Ragdolled victims of heavy hits freeze for a split
+-- second first (hit-stop), then fly.
+function CombatService.Launch(victim: Model, velocity: Vector3, duration: number, hitStop: number?)
+	local root = getRoot(victim)
+	if not root then
+		return
+	end
+	if not hitStop or hitStop <= 0 or not Ragdoll.IsActive(victim) then
+		CombatService.ApplyVelocity(victim, velocity, duration)
+		return
+	end
+	root.Anchored = true
+	task.delay(hitStop, function()
+		if not root.Parent then
+			return
+		end
+		root.Anchored = false
+		if Ragdoll.IsActive(victim) then
+			-- Anchoring resets network ownership; ragdolls stay with the server.
+			pcall(root.SetNetworkOwner, root, nil)
+			CombatService.Tumble(root, velocity)
+		end
+	end)
 end
 
 function CombatService.IsAirborne(character: Model): boolean
@@ -1100,17 +1148,23 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	local heavy = hit.heavy == true or (variant ~= nil and variant ~= "Normal")
 	if variant == "Knockback" then
 		CombatService.Ragdoll(victim, Config.Ragdoll.Duration)
-		CombatService.ApplyVelocity(
+		CombatService.Launch(
 			victim,
 			look * Config.M1.KnockbackForce + Vector3.new(0, Config.M1.KnockbackLift, 0),
-			0.2
+			0.2,
+			Config.Physics.HitStop
 		)
 	elseif variant == "Uppercut" then
 		-- Only the victim goes up; the attacker stays grounded.
 		CombatService.ApplyVelocity(victim, Vector3.new(0, Config.M1.UppercutForce, 0) + look * 4, 0.25)
 	elseif variant == "Downslam" then
 		CombatService.Ragdoll(victim, Config.Ragdoll.Duration)
-		CombatService.ApplyVelocity(victim, look * 10 + Vector3.new(0, -Config.M1.DownslamForce, 0), 0.2)
+		CombatService.Launch(
+			victim,
+			look * 10 + Vector3.new(0, -Config.M1.DownslamForce, 0),
+			0.2,
+			Config.Physics.HitStop
+		)
 		scheduleCrater(victim, attacker)
 	elseif variant == "Normal" then
 		if hit.airborne then
@@ -1126,7 +1180,12 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 			CombatService.Ragdoll(victim, hit.ragdoll)
 		end
 		if hit.velocity then
-			CombatService.ApplyVelocity(victim, hit.velocity, hit.velocityTime or 0.2)
+			CombatService.Launch(
+				victim,
+				hit.velocity,
+				hit.velocityTime or 0.2,
+				if heavy then Config.Physics.HitStop else nil
+			)
 		end
 	end
 
@@ -1281,7 +1340,7 @@ function CombatService.Evasive(character: Model): boolean
 
 	data.ragdollToken += 1
 	character:SetAttribute("Evasive", 0)
-	Ragdoll.Disable(character)
+	Ragdoll.Disable(character, true)
 	CombatState.ClearStun(character)
 	CombatState.ClearCasting(character)
 	CombatState.GiveIFrames(character, Config.Evasive.IFrames)
@@ -1596,9 +1655,43 @@ end
 function CombatService.Start()
 	Remotes.Action.OnServerEvent:Connect(onAction)
 
+	-- Body impacts: a fast ragdoll that suddenly stops hit the floor or a wall.
+	local lastVelocity: { [Model]: Vector3 } = {}
+	local lastImpact: { [Model]: number } = {}
+	local function detectImpacts()
+		local now = os.clock()
+		for character in registry do
+			local root = getRoot(character)
+			if root and Ragdoll.IsActive(character) and not root.Anchored then
+				local velocity = root.AssemblyLinearVelocity
+				local previous = lastVelocity[character]
+				if
+					previous
+					and previous.Magnitude > Config.Physics.ImpactSpeed
+					and (previous - velocity).Magnitude > previous.Magnitude * 0.5
+					and now - (lastImpact[character] or 0) > 0.35
+				then
+					lastImpact[character] = now
+					local strength = math.clamp(previous.Magnitude / 90, 0.3, 1)
+					CombatService.FireVFX("BodyImpact", { position = root.Position, strength = strength })
+					CombatService.ShakeArea(root.Position, 35, 0.3 * strength)
+				end
+				lastVelocity[character] = velocity
+			else
+				lastVelocity[character] = nil
+			end
+		end
+		for character in lastImpact do
+			if not registry[character] then
+				lastImpact[character] = nil
+			end
+		end
+	end
+
 	local regenTimer = 0
 	RunService.Heartbeat:Connect(function(dt)
 		updateMovement()
+		detectImpacts()
 
 		-- Attribute writes replicate, so the passive regen ticks 4 times a second.
 		regenTimer += dt
@@ -1980,12 +2073,19 @@ local function buildSword(): Model
 		),
 		swordPart("TipB", Vector3.new(0.2, 0.35, 0.45), CFrame.new(0, 5.6, -0.4), black, Enum.Material.Metal),
 	}
+	-- Plain Welds with the offset written into C0, not WeldConstraints:
+	-- a WeldConstraint works its offset out from where the parts happen to
+	-- be when it switches on, which differs between the server (builds the
+	-- sword) and the client (simulates the character), so pieces ended up
+	-- floating off or falling. C0 replicates, so every machine agrees.
 	for _, part in parts do
-		part.Parent = model
-		local weld = Instance.new("WeldConstraint")
+		local weld = Instance.new("Weld")
+		weld.Name = "Join"
 		weld.Part0 = handle
 		weld.Part1 = part
+		weld.C0 = part.CFrame -- built relative to the handle at the origin
 		weld.Parent = part
+		part.Parent = model
 	end
 
 	-- Swing trail between the blade's base and tip. Clients switch it on during attacks.
@@ -2029,25 +2129,46 @@ function Kit.Equip(character: Model)
 	weld.Part1 = handle
 	weld.Parent = handle
 
-	local function attach()
+	local function currentArm(): BasePart?
 		local arm = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
-		if arm and arm:IsA("BasePart") then
-			weld.Part0 = arm
-			weld.C0 = CFrame.new(0, -arm.Size.Y / 2, 0) * CFrame.Angles(math.rad(215), 0, 0)
-			handle.CFrame = arm.CFrame * weld.C0
+		return if arm and arm:IsA("BasePart") then arm else nil
+	end
+
+	local function attach()
+		local arm = currentArm()
+		if not arm then
+			return
 		end
+		local grip = CFrame.new(0, -arm.Size.Y / 2, 0) * CFrame.Angles(math.rad(215), 0, 0)
+		-- Place the whole sword at the hand first, then join it.
+		for _, part in sword:GetChildren() do
+			if part:IsA("BasePart") then
+				local join = part:FindFirstChild("Join") :: Weld?
+				part.CFrame = arm.CFrame * grip * (if join then join.C0 else CFrame.identity)
+			end
+		end
+		weld.Part0 = arm
+		weld.C0 = grip
 	end
 	attach()
 	sword.Parent = character
 
-	-- If the arm is ever rebuilt (avatar changes), re-grip instead of
-	-- dropping the sword on the floor.
-	local connection
-	connection = character.ChildAdded:Connect(function(child)
-		if not sword.Parent then
-			connection:Disconnect()
-		elseif child.Name == "Right Arm" or child.Name == "RightHand" then
-			task.defer(attach)
+	-- Watchdog: if the arm gets rebuilt (avatar changes) or the grip breaks,
+	-- re-grip instead of leaving the sword on the floor.
+	task.spawn(function()
+		local warned = false
+		while sword.Parent == character and character.Parent do
+			local arm = currentArm()
+			if arm and (weld.Part0 ~= arm or not weld.Parent) then
+				attach()
+			elseif arm and (handle.Position - arm.Position).Magnitude > 6 then
+				if not warned then
+					warned = true
+					warn("[AntiMagic] Sword drifted away from the hand, re-gripping.", character.Name)
+				end
+				attach()
+			end
+			task.wait(0.5)
 		end
 	end)
 end
@@ -2657,10 +2778,17 @@ return Projectile
 	Swaps a character's Motor6Ds for BallSocketConstraints so it flops. The
 	server takes network ownership while ragdolled so knockback is smooth and
 	can't be ignored by the client. Works with R6 and R15.
+
+	Physics tuning:
+	  - Per-joint limits so limbs bend like a body, not like rope.
+	  - Joint friction damps flailing without making limbs stiff.
+	  - No bounce and decent friction, so bodies skid and settle.
+	  - Getting up is a short smooth rise instead of a teleport.
 ]]
 
 local PhysicsService = game:GetService("PhysicsService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local GROUP = "Ragdoll"
 if not PhysicsService:IsCollisionGroupRegistered(GROUP) then
@@ -2675,19 +2803,46 @@ local KEEP_JOINTS = {
 	Root = true,
 }
 
+type JointSettings = { upper: number, twistLower: number, twistUpper: number, friction: number }
+
+-- Degrees. The cone (upper) is the forward/back swing, twist the sideways
+-- swing for limbs (nod for the neck). Friction is a fraction of what it
+-- takes to hold the limb up against gravity, so limbs still fall naturally.
+local JOINT_SETTINGS: { [string]: JointSettings } = {
+	Neck = { upper = 35, twistLower = -30, twistUpper = 30, friction = 15 },
+	["Right Shoulder"] = { upper = 100, twistLower = -55, twistUpper = 55, friction = 25 },
+	["Left Shoulder"] = { upper = 100, twistLower = -55, twistUpper = 55, friction = 25 },
+	["Right Hip"] = { upper = 70, twistLower = -20, twistUpper = 20, friction = 40 },
+	["Left Hip"] = { upper = 70, twistLower = -20, twistUpper = 20, friction = 40 },
+}
+local DEFAULT_SETTINGS: JointSettings = { upper = 60, twistLower = -35, twistUpper = 35, friction = 20 }
+
+-- Density, friction, elasticity, frictionWeight, elasticityWeight. The huge
+-- elasticity weight makes "no bounce" win against whatever the floor is.
+local BODY_PHYSICS = PhysicalProperties.new(0.9, 0.6, 0, 1, 100)
+
+local GET_UP_TIME = 0.25
+
 type Record = {
 	created: { Instance },
 	motors: { Motor6D },
 	groups: { [BasePart]: string },
+	physics: { [BasePart]: PhysicalProperties? },
 }
 
 local active: { [Model]: Record } = {}
+local gettingUp: { [Model]: RBXScriptConnection } = {}
 
 local Ragdoll = {}
 
--- The Humanoid's own "get up" can fail on a body lying flat, so snap it
--- upright, standing on the ground, facing the way the body was lying.
-local function standUp(character: Model, humanoid: Humanoid, root: BasePart)
+local function smooth(x: number): number
+	x = math.clamp(x, 0, 1)
+	return x * x * (3 - 2 * x)
+end
+
+-- Where the character should stand when it gets up: upright, on the
+-- ground, facing the way the body was lying.
+local function standingCFrame(character: Model, humanoid: Humanoid, root: BasePart): CFrame
 	local facing = root.CFrame.LookVector * Vector3.new(1, 0, 1)
 	if facing.Magnitude < 0.2 then
 		-- Lying on its back/front: the head direction is the best guess.
@@ -2706,10 +2861,19 @@ local function standUp(character: Model, humanoid: Humanoid, root: BasePart)
 		local legLength = if humanoid.RigType == Enum.HumanoidRigType.R6 then 2 else humanoid.HipHeight
 		position = Vector3.new(position.X, ground.Position.Y + legLength + root.Size.Y / 2, position.Z)
 	end
+	return CFrame.lookAt(position, position + facing.Unit)
+end
 
-	root.AssemblyLinearVelocity = Vector3.zero
-	root.AssemblyAngularVelocity = Vector3.zero
-	root.CFrame = CFrame.lookAt(position, position + facing.Unit)
+local function cancelGetUp(character: Model)
+	local connection = gettingUp[character]
+	if connection then
+		connection:Disconnect()
+		gettingUp[character] = nil
+		local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if root then
+			root.Anchored = false
+		end
+	end
 end
 
 function Ragdoll.IsActive(character: Model): boolean
@@ -2720,17 +2884,20 @@ function Ragdoll.Enable(character: Model)
 	if active[character] then
 		return
 	end
+	cancelGetUp(character)
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
 	if not humanoid or not root then
 		return
 	end
 
-	local record: Record = { created = {}, motors = {}, groups = {} }
+	local record: Record = { created = {}, motors = {}, groups = {}, physics = {} }
 	active[character] = record
 
 	for _, joint in character:GetDescendants() do
 		if joint:IsA("Motor6D") and not KEEP_JOINTS[joint.Name] and joint.Part0 and joint.Part1 then
+			local settings = JOINT_SETTINGS[joint.Name] or DEFAULT_SETTINGS
+
 			local a0 = Instance.new("Attachment")
 			a0.Name = "RagdollAttachment"
 			a0.CFrame = joint.C0
@@ -2746,10 +2913,12 @@ function Ragdoll.Enable(character: Model)
 			socket.Attachment0 = a0
 			socket.Attachment1 = a1
 			socket.LimitsEnabled = true
-			socket.UpperAngle = 70
+			socket.UpperAngle = settings.upper
 			socket.TwistLimitsEnabled = true
-			socket.TwistLowerAngle = -45
-			socket.TwistUpperAngle = 45
+			socket.TwistLowerAngle = settings.twistLower
+			socket.TwistUpperAngle = settings.twistUpper
+			socket.MaxFrictionTorque = settings.friction
+			socket.Restitution = 0
 			socket.Parent = joint.Parent
 
 			joint.Enabled = false
@@ -2764,20 +2933,23 @@ function Ragdoll.Enable(character: Model)
 	for _, part in character:GetChildren() do
 		if part:IsA("BasePart") then
 			record.groups[part] = part.CollisionGroup
+			record.physics[part] = part.CustomPhysicalProperties
 			part.CollisionGroup = GROUP
+			part.CustomPhysicalProperties = BODY_PHYSICS
 
 			if part ~= root then
 				local collider = Instance.new("Part")
 				collider.Name = "RagdollCollider"
-				collider.Size = part.Size * 0.85
+				collider.Size = part.Size * 0.95
 				collider.CFrame = part.CFrame
 				collider.Transparency = 1
 				collider.Massless = true
 				collider.CanQuery = false
 				collider.CanTouch = false
 				collider.CollisionGroup = GROUP
+				collider.CustomPhysicalProperties = BODY_PHYSICS
 
-				local weld = Instance.new("WeldConstraint")
+				local weld = Instance.new("Weld")
 				weld.Part0 = part
 				weld.Part1 = collider
 				weld.Parent = collider
@@ -2795,7 +2967,18 @@ function Ragdoll.Enable(character: Model)
 	character:SetAttribute("Ragdolled", true)
 end
 
-function Ragdoll.Disable(character: Model)
+local function finishGettingUp(character: Model, humanoid: Humanoid, root: BasePart)
+	character:SetAttribute("Ragdolled", false)
+	humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+	local player = Players:GetPlayerFromCharacter(character)
+	if player then
+		pcall(root.SetNetworkOwner, root, player)
+	end
+end
+
+-- Ends the ragdoll. By default the body rises smoothly to its feet over a
+-- quarter second; `instant` snaps upright (used by the Evasive breakout).
+function Ragdoll.Disable(character: Model, instant: boolean?)
 	local record = active[character]
 	if not record then
 		return
@@ -2813,27 +2996,59 @@ function Ragdoll.Disable(character: Model)
 	for part, group in record.groups do
 		if part.Parent then
 			part.CollisionGroup = group
+			part.CustomPhysicalProperties = record.physics[part]
 		end
 	end
-	character:SetAttribute("Ragdolled", false)
 
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
-	if humanoid and humanoid.Health > 0 then
-		if root then
-			standUp(character, humanoid, root)
-		end
-		humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-		local player = Players:GetPlayerFromCharacter(character)
-		if player and root then
-			pcall(root.SetNetworkOwner, root, player)
-		end
+	if not humanoid or not root or humanoid.Health <= 0 then
+		character:SetAttribute("Ragdolled", false)
+		return
 	end
+
+	local target = standingCFrame(character, humanoid, root)
+	root.AssemblyLinearVelocity = Vector3.zero
+	root.AssemblyAngularVelocity = Vector3.zero
+
+	if instant then
+		root.CFrame = target
+		finishGettingUp(character, humanoid, root)
+		return
+	end
+
+	-- Rise smoothly: the root is held (anchored) and eased from how the
+	-- body was lying to standing. Still counts as ragdolled until done, so
+	-- people can't be hit while getting up.
+	local from = root.CFrame
+	local start = os.clock()
+	root.Anchored = true
+	gettingUp[character] = RunService.Heartbeat:Connect(function()
+		local alpha = smooth((os.clock() - start) / GET_UP_TIME)
+		if root.Parent then
+			root.CFrame = from:Lerp(target, alpha)
+		end
+		if alpha >= 1 or not root.Parent or humanoid.Health <= 0 then
+			gettingUp[character]:Disconnect()
+			gettingUp[character] = nil
+			root.Anchored = false
+			if humanoid.Health > 0 then
+				finishGettingUp(character, humanoid, root)
+			else
+				character:SetAttribute("Ragdolled", false)
+			end
+		end
+	end)
 end
 
 -- Drops bookkeeping for a character that was removed from the game.
 function Ragdoll.Forget(character: Model)
 	active[character] = nil
+	local connection = gettingUp[character]
+	if connection then
+		connection:Disconnect()
+		gettingUp[character] = nil
+	end
 end
 
 return Ragdoll
@@ -5394,8 +5609,9 @@ return M1Animations
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Remotes = require(ReplicatedStorage:WaitForChild("Shared").Remotes)
+local Config = require(ReplicatedStorage:WaitForChild("Shared").Config)
 local Kits = require(ReplicatedStorage:WaitForChild("Shared").Kits)
+local Remotes = require(ReplicatedStorage:WaitForChild("Shared").Remotes)
 
 local M1Animations = require(script.Parent.M1Animations)
 local PoseAnimator = require(script.Parent.PoseAnimator)
@@ -5482,6 +5698,15 @@ end
 
 function Moves.Start()
 	PoseAnimator.Start()
+
+	-- Heavy hits: the attacker's swing also freezes for the hit-stop, so the
+	-- impact feels like it connected.
+	local HEAVY_EFFECTS = { HeavyHit = true, PerfectDivider = true }
+	Remotes.VFX.OnClientEvent:Connect(function(name, data)
+		if type(data) == "table" and HEAVY_EFFECTS[name] and typeof(data.attacker) == "Instance" then
+			PoseAnimator.Freeze(data.attacker :: Model, Config.Physics.HitStop)
+		end
+	end)
 
 	Remotes.VFX.OnClientEvent:Connect(function(name, data)
 		if type(data) ~= "table" then
@@ -5593,6 +5818,9 @@ type Track = {
 	-- Where each joint actually was when this track started, so a new swing
 	-- blends from the previous swing's pose instead of snapping to idle.
 	from: { [string]: CFrame },
+	-- Hit-stop: the animation holds still until this time.
+	freezeUntil: number,
+	frozenAt: number,
 }
 
 type Idle = {
@@ -5717,7 +5945,7 @@ local function step()
 	end
 
 	for character, track in tracks do
-		local elapsed = now - track.start
+		local elapsed = if now < track.freezeUntil then track.frozenAt else now - track.start
 		local animation = track.animation
 		local fadeIn = animation.fadeIn or 0.04
 		local fadeOut = animation.fadeOut or 0.15
@@ -5800,6 +6028,8 @@ function PoseAnimator.Play(character: Model, animation: Animation, onEvent: ((na
 		onEvent = onEvent,
 		firedEvents = {},
 		from = from,
+		freezeUntil = 0,
+		frozenAt = 0,
 	}
 end
 
@@ -5809,6 +6039,22 @@ function PoseAnimator.Stop(character: Model)
 		tracks[character] = nil
 		release(track, character)
 	end
+end
+
+-- Hit-stop: holds the character's current animation still for `duration`,
+-- then lets it continue from the same point.
+function PoseAnimator.Freeze(character: Model, duration: number)
+	local track = tracks[character]
+	if not track then
+		return
+	end
+	local now = os.clock()
+	if now < track.freezeUntil then
+		return
+	end
+	track.frozenAt = now - track.start
+	track.freezeUntil = now + duration
+	track.start += duration
 end
 
 -- Sets (or clears, with nil) a persistent stance for some joints.
@@ -6921,6 +7167,32 @@ function Effects.Evasive(data)
 	end
 end
 
+-- A ragdoll slamming into the floor or a wall.
+function Effects.BodyImpact(data)
+	local position: Vector3 = data.position
+	local strength: number = math.clamp(tonumber(data.strength) or 0.5, 0.2, 1)
+	local ground = groundBelow(position)
+	local spot = if ground then ground.Position else position
+	local dustColor = if ground and ground.Instance:IsA("BasePart") then ground.Instance.Color else COLORS.Dust
+
+	burst(spot, {
+		texture = TEXTURES.Smoke,
+		color = dustColor:Lerp(Color3.new(1, 1, 1), 0.35),
+		count = math.floor(6 + 10 * strength),
+		size = 2 + 2.5 * strength,
+		speed = NumberRange.new(6, 14 * strength + 6),
+		lifetime = NumberRange.new(0.5, 1),
+		lightEmission = 0,
+		transparency = 0.35,
+		drag = 3,
+		spread = 75,
+	})
+	ringBurst(CFrame.new(spot + Vector3.new(0, 0.15, 0)), Color3.new(1, 1, 1), 0.8, 3 + 4 * strength, 0.25, 0.12)
+	if strength > 0.6 and ground then
+		groundRocks(spot, math.floor(4 + 6 * strength), 1.5 + 1.5 * strength, 1 + strength)
+	end
+end
+
 function Effects.Crater(data)
 	local position: Vector3 = data.position
 	groundRocks(position, 12, 4, 2.2)
@@ -7067,6 +7339,7 @@ return VFX
   <Item class="Workspace" referent="36">
     <Properties>
       <string name="Name">Workspace</string>
+      <float name="Gravity">225</float>
       <bool name="NeedsPivotMigration">false</bool>
     </Properties>
     <Item class="Part" referent="37">

@@ -86,6 +86,18 @@ Config.Ragdoll = {
 	Duration = 1.5,
 }
 
+Config.Physics = {
+	-- Heavy hits freeze the victim for a split second before launching
+	-- them, which sells the impact.
+	HitStop = 0.06,
+	-- Launched ragdolls tumble: spin (rad/s) per stud/s of launch speed.
+	TumbleSpin = 0.12,
+	MaxTumble = 10,
+	-- A ragdoll moving at least this fast that suddenly stops (floor, wall)
+	-- kicks up a body impact effect.
+	ImpactSpeed = 35,
+}
+
 -- Evasive: fills as you take damage. When full, Q while stunned or
 -- ragdolled breaks you out of the combo.
 Config.Evasive = {

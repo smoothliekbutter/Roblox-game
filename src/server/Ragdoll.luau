@@ -3,10 +3,17 @@
 	Swaps a character's Motor6Ds for BallSocketConstraints so it flops. The
 	server takes network ownership while ragdolled so knockback is smooth and
 	can't be ignored by the client. Works with R6 and R15.
+
+	Physics tuning:
+	  - Per-joint limits so limbs bend like a body, not like rope.
+	  - Joint friction damps flailing without making limbs stiff.
+	  - No bounce and decent friction, so bodies skid and settle.
+	  - Getting up is a short smooth rise instead of a teleport.
 ]]
 
 local PhysicsService = game:GetService("PhysicsService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local GROUP = "Ragdoll"
 if not PhysicsService:IsCollisionGroupRegistered(GROUP) then
@@ -21,19 +28,46 @@ local KEEP_JOINTS = {
 	Root = true,
 }
 
+type JointSettings = { upper: number, twistLower: number, twistUpper: number, friction: number }
+
+-- Degrees. The cone (upper) is the forward/back swing, twist the sideways
+-- swing for limbs (nod for the neck). Friction is a fraction of what it
+-- takes to hold the limb up against gravity, so limbs still fall naturally.
+local JOINT_SETTINGS: { [string]: JointSettings } = {
+	Neck = { upper = 35, twistLower = -30, twistUpper = 30, friction = 15 },
+	["Right Shoulder"] = { upper = 100, twistLower = -55, twistUpper = 55, friction = 25 },
+	["Left Shoulder"] = { upper = 100, twistLower = -55, twistUpper = 55, friction = 25 },
+	["Right Hip"] = { upper = 70, twistLower = -20, twistUpper = 20, friction = 40 },
+	["Left Hip"] = { upper = 70, twistLower = -20, twistUpper = 20, friction = 40 },
+}
+local DEFAULT_SETTINGS: JointSettings = { upper = 60, twistLower = -35, twistUpper = 35, friction = 20 }
+
+-- Density, friction, elasticity, frictionWeight, elasticityWeight. The huge
+-- elasticity weight makes "no bounce" win against whatever the floor is.
+local BODY_PHYSICS = PhysicalProperties.new(0.9, 0.6, 0, 1, 100)
+
+local GET_UP_TIME = 0.25
+
 type Record = {
 	created: { Instance },
 	motors: { Motor6D },
 	groups: { [BasePart]: string },
+	physics: { [BasePart]: PhysicalProperties? },
 }
 
 local active: { [Model]: Record } = {}
+local gettingUp: { [Model]: RBXScriptConnection } = {}
 
 local Ragdoll = {}
 
--- The Humanoid's own "get up" can fail on a body lying flat, so snap it
--- upright, standing on the ground, facing the way the body was lying.
-local function standUp(character: Model, humanoid: Humanoid, root: BasePart)
+local function smooth(x: number): number
+	x = math.clamp(x, 0, 1)
+	return x * x * (3 - 2 * x)
+end
+
+-- Where the character should stand when it gets up: upright, on the
+-- ground, facing the way the body was lying.
+local function standingCFrame(character: Model, humanoid: Humanoid, root: BasePart): CFrame
 	local facing = root.CFrame.LookVector * Vector3.new(1, 0, 1)
 	if facing.Magnitude < 0.2 then
 		-- Lying on its back/front: the head direction is the best guess.
@@ -52,10 +86,19 @@ local function standUp(character: Model, humanoid: Humanoid, root: BasePart)
 		local legLength = if humanoid.RigType == Enum.HumanoidRigType.R6 then 2 else humanoid.HipHeight
 		position = Vector3.new(position.X, ground.Position.Y + legLength + root.Size.Y / 2, position.Z)
 	end
+	return CFrame.lookAt(position, position + facing.Unit)
+end
 
-	root.AssemblyLinearVelocity = Vector3.zero
-	root.AssemblyAngularVelocity = Vector3.zero
-	root.CFrame = CFrame.lookAt(position, position + facing.Unit)
+local function cancelGetUp(character: Model)
+	local connection = gettingUp[character]
+	if connection then
+		connection:Disconnect()
+		gettingUp[character] = nil
+		local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if root then
+			root.Anchored = false
+		end
+	end
 end
 
 function Ragdoll.IsActive(character: Model): boolean
@@ -66,17 +109,20 @@ function Ragdoll.Enable(character: Model)
 	if active[character] then
 		return
 	end
+	cancelGetUp(character)
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
 	if not humanoid or not root then
 		return
 	end
 
-	local record: Record = { created = {}, motors = {}, groups = {} }
+	local record: Record = { created = {}, motors = {}, groups = {}, physics = {} }
 	active[character] = record
 
 	for _, joint in character:GetDescendants() do
 		if joint:IsA("Motor6D") and not KEEP_JOINTS[joint.Name] and joint.Part0 and joint.Part1 then
+			local settings = JOINT_SETTINGS[joint.Name] or DEFAULT_SETTINGS
+
 			local a0 = Instance.new("Attachment")
 			a0.Name = "RagdollAttachment"
 			a0.CFrame = joint.C0
@@ -92,10 +138,12 @@ function Ragdoll.Enable(character: Model)
 			socket.Attachment0 = a0
 			socket.Attachment1 = a1
 			socket.LimitsEnabled = true
-			socket.UpperAngle = 70
+			socket.UpperAngle = settings.upper
 			socket.TwistLimitsEnabled = true
-			socket.TwistLowerAngle = -45
-			socket.TwistUpperAngle = 45
+			socket.TwistLowerAngle = settings.twistLower
+			socket.TwistUpperAngle = settings.twistUpper
+			socket.MaxFrictionTorque = settings.friction
+			socket.Restitution = 0
 			socket.Parent = joint.Parent
 
 			joint.Enabled = false
@@ -110,20 +158,23 @@ function Ragdoll.Enable(character: Model)
 	for _, part in character:GetChildren() do
 		if part:IsA("BasePart") then
 			record.groups[part] = part.CollisionGroup
+			record.physics[part] = part.CustomPhysicalProperties
 			part.CollisionGroup = GROUP
+			part.CustomPhysicalProperties = BODY_PHYSICS
 
 			if part ~= root then
 				local collider = Instance.new("Part")
 				collider.Name = "RagdollCollider"
-				collider.Size = part.Size * 0.85
+				collider.Size = part.Size * 0.95
 				collider.CFrame = part.CFrame
 				collider.Transparency = 1
 				collider.Massless = true
 				collider.CanQuery = false
 				collider.CanTouch = false
 				collider.CollisionGroup = GROUP
+				collider.CustomPhysicalProperties = BODY_PHYSICS
 
-				local weld = Instance.new("WeldConstraint")
+				local weld = Instance.new("Weld")
 				weld.Part0 = part
 				weld.Part1 = collider
 				weld.Parent = collider
@@ -141,7 +192,18 @@ function Ragdoll.Enable(character: Model)
 	character:SetAttribute("Ragdolled", true)
 end
 
-function Ragdoll.Disable(character: Model)
+local function finishGettingUp(character: Model, humanoid: Humanoid, root: BasePart)
+	character:SetAttribute("Ragdolled", false)
+	humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+	local player = Players:GetPlayerFromCharacter(character)
+	if player then
+		pcall(root.SetNetworkOwner, root, player)
+	end
+end
+
+-- Ends the ragdoll. By default the body rises smoothly to its feet over a
+-- quarter second; `instant` snaps upright (used by the Evasive breakout).
+function Ragdoll.Disable(character: Model, instant: boolean?)
 	local record = active[character]
 	if not record then
 		return
@@ -159,27 +221,59 @@ function Ragdoll.Disable(character: Model)
 	for part, group in record.groups do
 		if part.Parent then
 			part.CollisionGroup = group
+			part.CustomPhysicalProperties = record.physics[part]
 		end
 	end
-	character:SetAttribute("Ragdolled", false)
 
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
-	if humanoid and humanoid.Health > 0 then
-		if root then
-			standUp(character, humanoid, root)
-		end
-		humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-		local player = Players:GetPlayerFromCharacter(character)
-		if player and root then
-			pcall(root.SetNetworkOwner, root, player)
-		end
+	if not humanoid or not root or humanoid.Health <= 0 then
+		character:SetAttribute("Ragdolled", false)
+		return
 	end
+
+	local target = standingCFrame(character, humanoid, root)
+	root.AssemblyLinearVelocity = Vector3.zero
+	root.AssemblyAngularVelocity = Vector3.zero
+
+	if instant then
+		root.CFrame = target
+		finishGettingUp(character, humanoid, root)
+		return
+	end
+
+	-- Rise smoothly: the root is held (anchored) and eased from how the
+	-- body was lying to standing. Still counts as ragdolled until done, so
+	-- people can't be hit while getting up.
+	local from = root.CFrame
+	local start = os.clock()
+	root.Anchored = true
+	gettingUp[character] = RunService.Heartbeat:Connect(function()
+		local alpha = smooth((os.clock() - start) / GET_UP_TIME)
+		if root.Parent then
+			root.CFrame = from:Lerp(target, alpha)
+		end
+		if alpha >= 1 or not root.Parent or humanoid.Health <= 0 then
+			gettingUp[character]:Disconnect()
+			gettingUp[character] = nil
+			root.Anchored = false
+			if humanoid.Health > 0 then
+				finishGettingUp(character, humanoid, root)
+			else
+				character:SetAttribute("Ragdolled", false)
+			end
+		end
+	end)
 end
 
 -- Drops bookkeeping for a character that was removed from the game.
 function Ragdoll.Forget(character: Model)
 	active[character] = nil
+	local connection = gettingUp[character]
+	if connection then
+		connection:Disconnect()
+		gettingUp[character] = nil
+	end
 end
 
 return Ragdoll
