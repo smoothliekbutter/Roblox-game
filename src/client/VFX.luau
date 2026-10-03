@@ -9,6 +9,7 @@
 local Debris = game:GetService("Debris")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local Remotes = require(ReplicatedStorage:WaitForChild("Shared").Remotes)
@@ -565,6 +566,352 @@ local function speedLines(root: BasePart, direction: Vector3, duration: number, 
 	end)
 end
 
+-- Expanding sphere shell; centered on the ground it reads as a dome.
+-- ForceField material gives a shimmering wave, Glass a solid-looking shell.
+local function shockwave(
+	position: Vector3,
+	color: Color3,
+	fromSize: number,
+	toSize: number,
+	duration: number,
+	material: Enum.Material?,
+	transparency: number?
+)
+	local ball = newPart({
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.one * fromSize,
+		CFrame = CFrame.new(position),
+		Color = color,
+		Material = material or Enum.Material.ForceField,
+		Transparency = transparency or 0,
+	})
+	tween(ball, duration, { Size = Vector3.one * toSize, Transparency = 1 }, Enum.EasingStyle.Quart)
+	Debris:AddItem(ball, duration + 0.05)
+end
+
+--[[
+	Jagged cracks splitting outward across the ground from `position`. Each
+	crack grows segment by segment, glows `glow` inside for a moment, then
+	stays dark for `duration` before fading.
+]]
+local function groundCracks(position: Vector3, count: number, length: number, glow: Color3?, duration: number?)
+	local ground = groundBelow(position)
+	if not ground then
+		return
+	end
+	local floor = ground.Position + Vector3.new(0, 0.04, 0)
+	local life = duration or 2.5
+	local dark = Color3.fromRGB(14, 13, 13)
+
+	for i = 1, count do
+		local angle = (i / count) * math.pi * 2 + (math.random() - 0.5) * 0.7
+		local direction = Vector3.new(math.cos(angle), 0, math.sin(angle))
+		local point = floor + direction * (0.5 + math.random() * 0.8)
+		local remaining = length * (0.6 + math.random() * 0.5)
+		local width = 0.42
+		local delay = 0
+		while remaining > 0.3 do
+			local segment = math.min(remaining, 1.1 + math.random() * 1.5)
+			direction = CFrame.Angles(0, (math.random() - 0.5) * 1.1, 0):VectorToWorldSpace(direction)
+			local nextPoint = point + direction * segment
+			local from, to, w = point, nextPoint, width
+			task.delay(delay, function()
+				local look = CFrame.lookAt(from, to)
+				local crack = newPart({
+					Size = Vector3.new(w, 0.06, 0.05),
+					CFrame = look,
+					Color = dark,
+					Material = Enum.Material.SmoothPlastic,
+				})
+				tween(crack, 0.06, {
+					Size = Vector3.new(w, 0.06, segment + w * 0.5),
+					CFrame = look * CFrame.new(0, 0, -segment / 2),
+				}, Enum.EasingStyle.Linear)
+				if glow then
+					local hot = newPart({
+						Size = Vector3.new(w * 0.45, 0.08, segment + w * 0.4),
+						CFrame = look * CFrame.new(0, 0.01, -segment / 2),
+						Color = glow,
+						Transparency = 0.05,
+					})
+					tween(hot, 0.9, { Transparency = 1, Size = Vector3.new(0.02, 0.08, segment) })
+					Debris:AddItem(hot, 0.95)
+				end
+				task.delay(life, function()
+					tween(crack, 0.6, { Transparency = 1 })
+				end)
+				Debris:AddItem(crack, life + 0.65)
+			end)
+			point = nextPoint
+			remaining -= segment
+			width *= 0.72
+			delay += 0.03
+		end
+	end
+end
+
+--[[
+	Chunks of the ground blasted out of `position`: they fly out, fall,
+	bounce once and settle, then sink away. Simulated here (no physics
+	parts), so they never shove characters around.
+]]
+local function debris(position: Vector3, count: number, speed: number, size: number)
+	local ground = groundBelow(position)
+	local color = if ground and ground.Instance:IsA("BasePart") then ground.Instance.Color else COLORS.Dust
+	local material = if ground then ground.Material else Enum.Material.Slate
+	local floorY = if ground then ground.Position.Y else position.Y - 3
+	local gravity = workspace.Gravity * 0.8
+
+	local chunks = {}
+	for _ = 1, count do
+		local s = size * (0.35 + math.random() * 0.65)
+		local angle = math.random() * math.pi * 2
+		local out = Vector3.new(math.cos(angle), 0, math.sin(angle))
+		local part = newPart({
+			Size = Vector3.new(s, s * (0.55 + math.random() * 0.5), s * (0.7 + math.random() * 0.4)),
+			CFrame = CFrame.new(Vector3.new(position.X, floorY + s / 2, position.Z) + out * 0.8) * randomAngles(),
+			Color = color,
+			Material = material,
+		})
+		part.CastShadow = true
+		table.insert(chunks, {
+			part = part,
+			velocity = out * speed * (0.45 + math.random() * 0.6)
+				+ Vector3.new(0, speed * (0.55 + math.random() * 0.7), 0),
+			spin = randomUnit() * (5 + math.random() * 10),
+			bounced = false,
+			resting = false,
+		})
+	end
+
+	local start = os.clock()
+	local connection
+	connection = RunService.Heartbeat:Connect(function(dt)
+		for _, chunk in chunks do
+			if not chunk.resting then
+				chunk.velocity -= Vector3.new(0, gravity * dt, 0)
+				local cframe = chunk.part.CFrame
+				local nextPosition = cframe.Position + chunk.velocity * dt
+				local half = chunk.part.Size.Y / 2
+				if chunk.velocity.Y < 0 and nextPosition.Y - half < floorY then
+					nextPosition = Vector3.new(nextPosition.X, floorY + half * 0.6, nextPosition.Z)
+					if chunk.bounced or chunk.velocity.Y > -20 then
+						chunk.resting = true
+					else
+						chunk.bounced = true
+						chunk.velocity =
+							Vector3.new(chunk.velocity.X * 0.35, -chunk.velocity.Y * 0.28, chunk.velocity.Z * 0.35)
+						chunk.spin *= 0.4
+					end
+				end
+				local spin = chunk.spin * dt
+				chunk.part.CFrame = CFrame.new(nextPosition) * cframe.Rotation * CFrame.Angles(spin.X, spin.Y, spin.Z)
+			end
+		end
+		if os.clock() - start > 2.2 then
+			connection:Disconnect()
+			for _, chunk in chunks do
+				local part = chunk.part
+				tween(part, 0.6, { CFrame = part.CFrame - Vector3.new(0, part.Size.Y, 0), Transparency = 1 })
+				Debris:AddItem(part, 0.65)
+			end
+		end
+	end)
+end
+
+-- A column of energy shooting up out of the ground, then thinning out.
+local function pillar(
+	position: Vector3,
+	color: Color3,
+	radius: number,
+	height: number,
+	duration: number,
+	material: Enum.Material?,
+	transparency: number?
+)
+	-- Cylinders run along X; turn X up.
+	local base = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
+	local column = newPart({
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(0.2, radius * 2, radius * 2),
+		CFrame = base,
+		Color = color,
+		Material = material or Enum.Material.Neon,
+		Transparency = transparency or 0.05,
+	})
+	local rise = duration * 0.25
+	tween(column, rise, {
+		Size = Vector3.new(height, radius * 2, radius * 2),
+		CFrame = base * CFrame.new(height / 2, 0, 0),
+	}, Enum.EasingStyle.Quart)
+	task.delay(rise, function()
+		tween(column, duration - rise, {
+			Size = Vector3.new(height * 1.15, 0.1, 0.1),
+			CFrame = base * CFrame.new(height * 0.58, 0, 0),
+			Transparency = 1,
+		}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	end)
+	Debris:AddItem(column, duration + 0.05)
+end
+
+--[[
+	Ribbons spiralling around `anchor` (following it) for `duration`: they
+	climb from `height` below to `height` above (negative height spirals
+	down) while the radius closes in by `tighten` (0 to 1).
+]]
+local function spiral(
+	anchor: BasePart,
+	color: Color3,
+	radius: number,
+	height: number,
+	duration: number,
+	strands: number?,
+	width: number?,
+	tighten: number?
+)
+	local count = strands or 3
+	local w = width or 0.45
+	local glows = color.R + color.G + color.B > 0.3
+	local ribbons: { BasePart } = {}
+	for _ = 1, count do
+		local part = newPart({ Size = Vector3.one * 0.1, Transparency = 1, CFrame = anchor.CFrame })
+		local a0 = Instance.new("Attachment")
+		a0.Position = Vector3.new(0, w / 2, 0)
+		a0.Parent = part
+		local a1 = Instance.new("Attachment")
+		a1.Position = Vector3.new(0, -w / 2, 0)
+		a1.Parent = part
+		local trail = Instance.new("Trail")
+		trail.Attachment0 = a0
+		trail.Attachment1 = a1
+		trail.Color = ColorSequence.new(color)
+		trail.LightEmission = if glows then 1 else 0
+		trail.LightInfluence = 0
+		trail.Lifetime = 0.22
+		trail.MinLength = 0
+		trail.FaceCamera = true
+		trail.Transparency = NumberSequence.new(if glows then 0.15 else 0.05, 1)
+		trail.WidthScale = NumberSequence.new(1, 0)
+		trail.Parent = part
+		table.insert(ribbons, part)
+	end
+	local close = tighten or 0.5
+	local turns = 2.2
+	local start = os.clock()
+	local connection
+	connection = RunService.RenderStepped:Connect(function()
+		local t = (os.clock() - start) / duration
+		if t >= 1 or not anchor.Parent then
+			connection:Disconnect()
+			for _, part in ribbons do
+				for _, child in part:GetChildren() do
+					if child:IsA("Trail") then
+						child.Enabled = false
+					end
+				end
+				Debris:AddItem(part, 0.3)
+			end
+			return
+		end
+		local r = radius * (1 - t * close)
+		for i, part in ribbons do
+			local angle = t * math.pi * 2 * turns + (i / count) * math.pi * 2
+			part.CFrame = CFrame.new(
+				anchor.Position + Vector3.new(math.cos(angle) * r, -height + height * 2 * t, math.sin(angle) * r)
+			)
+		end
+	end)
+end
+
+--[[
+	A jagged lightning bolt from `from` to `to`: a `color` core inside a
+	wider `glow` sheath (optional), with a side branch, flickering out over
+	`duration`. Dark colors use a matte core so black lightning stays black.
+]]
+local function lightning(
+	from: Vector3,
+	to: Vector3,
+	color: Color3,
+	glow: Color3?,
+	thickness: number?,
+	duration: number?,
+	branch: boolean?
+)
+	local width = thickness or 0.16
+	local life = duration or 0.2
+	local offset = to - from
+	local length = offset.Magnitude
+	if length < 0.1 then
+		return
+	end
+	local segments = math.clamp(math.floor(length / 1.1), 3, 12)
+	local points = { from }
+	for i = 1, segments - 1 do
+		table.insert(points, from + offset * (i / segments) + randomUnit() * length * 0.09)
+	end
+	table.insert(points, to)
+
+	local matte = color.R + color.G + color.B < 0.3
+	for i = 1, #points - 1 do
+		local a, b = points[i], points[i + 1]
+		local segment = (b - a).Magnitude
+		local cframe = CFrame.lookAt((a + b) / 2, b)
+		local core = newPart({
+			Size = Vector3.new(width, width, segment + width),
+			CFrame = cframe,
+			Color = color,
+			Material = if matte then Enum.Material.SmoothPlastic else Enum.Material.Neon,
+		})
+		tween(
+			core,
+			life,
+			{ Transparency = 1, Size = Vector3.new(width * 0.3, width * 0.3, segment) },
+			Enum.EasingStyle.Quad,
+			Enum.EasingDirection.In
+		)
+		Debris:AddItem(core, life + 0.05)
+		if glow then
+			local sheath = newPart({
+				Size = Vector3.new(width * 3.2, width * 3.2, segment + width * 2),
+				CFrame = cframe,
+				Color = glow,
+				Transparency = 0.55,
+			})
+			tween(sheath, life * 0.8, { Transparency = 1, Size = Vector3.new(width, width, segment) })
+			Debris:AddItem(sheath, life + 0.05)
+		end
+	end
+
+	if branch ~= false and length > 3 and #points > 3 then
+		local fork = points[math.random(2, #points - 2)]
+		local direction = (offset.Unit + randomUnit() * 1.2).Unit
+		lightning(fork, fork + direction * length * 0.4, color, glow, width * 0.7, life * 0.85, false)
+	end
+end
+
+-- A full-screen color grade for the local camera: eases into `goal`
+-- (ColorCorrectionEffect properties), holds, then eases back out.
+local function colorGrade(goal: { [string]: any }, fadeIn: number, hold: number, fadeOut: number)
+	local correction = Instance.new("ColorCorrectionEffect")
+	correction.Parent = workspace.CurrentCamera
+	if fadeIn <= 0 then
+		for key, value in goal do
+			(correction :: any)[key] = value
+		end
+	else
+		tween(correction, fadeIn, goal, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+	end
+	task.delay(fadeIn + hold, function()
+		tween(correction, fadeOut, {
+			Brightness = 0,
+			Contrast = 0,
+			Saturation = 0,
+			TintColor = Color3.new(1, 1, 1),
+		})
+	end)
+	Debris:AddItem(correction, fadeIn + hold + fadeOut + 0.05)
+end
+
 ---------------------------------------------------------------------------
 -- Effects (names match what the server sends)
 ---------------------------------------------------------------------------
@@ -931,6 +1278,13 @@ VFX.Util = {
 	glint = glint,
 	sparks = sparks,
 	speedLines = speedLines,
+	shockwave = shockwave,
+	groundCracks = groundCracks,
+	debris = debris,
+	pillar = pillar,
+	spiral = spiral,
+	lightning = lightning,
+	colorGrade = colorGrade,
 }
 
 -- Adds (or replaces) a named effect the server can trigger.

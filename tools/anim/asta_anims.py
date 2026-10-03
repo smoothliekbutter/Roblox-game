@@ -227,7 +227,71 @@ BARRAGE_END = len(BARRAGE_STEPS) * BARRAGE_STEP
 BARRAGE.append((round(BARRAGE_END + 0.12, 3), B_PUSH))
 BARRAGE.append((round(BARRAGE_END + 0.32, 3), B_PUSH))
 
+# ---------------- Black Meteorite (grab, rise, slam) ----------------
+M_LUNGE = {'Torso': R(-28, -8), 'Head': R(22, 6), 'RightArm': L(-15, -10, 30), 'Sword': A(0.3, 0.15, 0.94),
+           'LeftArm': L(95, -8), 'RightLeg': R(-35), 'LeftLeg': R(32)}
+M_HOLD = {'Torso': R(-12, 10), 'Head': R(8, -6), 'RightArm': L(-10, -10, 30), 'Sword': A(0.3, 0.2, 0.93),
+          'LeftArm': L(92, -5), 'RightLeg': R(-10), 'LeftLeg': R(12)}
+M_RISE = {'Torso': R(14, 5), 'Head': R(-12), 'RightArm': L(165, 15), 'Sword': A(0.15, 0.55, 0.82),
+          'LeftArm': L(90, -5), 'RightLeg': R(-25), 'LeftLeg': R(35)}
+M_APEX = {'Torso': R(24), 'Head': R(-18), 'RightArm': L(178, 10), 'Sword': A(0.1, 0.2, 0.97),
+          'LeftArm': L(90, -5), 'RightLeg': R(-15), 'LeftLeg': R(30)}
+M_SLAM = {'Torso': R(-38), 'Head': R(18), 'RightArm': L(40, 8), 'Sword': A(0, -0.32, -0.95),
+          'LeftArm': L(50, -10), 'RightLeg': R(-28), 'LeftLeg': R(30)}
+M_RECOVER = {'Torso': R(-20), 'Head': R(8), 'RightArm': L(55, 8), 'Sword': A(0, -0.4, -0.92),
+             'LeftArm': L(25, 0, -25), 'RightLeg': R(-18), 'LeftLeg': R(22)}
+METEOR_LUNGE = [(0.0, UPPER), (0.07, M_LUNGE), (0.35, M_LUNGE)]
+METEOR_RISE = [(0.0, M_HOLD), (0.2, M_RISE), (0.55, M_APEX)]
+METEOR_SLAM = [(0.0, M_APEX), (0.12, M_SLAM), (0.6, M_SLAM)]
+METEOR_IMPACT = [(0.0, M_SLAM), (0.25, M_RECOVER), (0.5, M_RECOVER)]
+
+# ---------------- Black Divider (charge, release) ----------------
+LEGS_TWIST = lambda y: {'RightLeg': R(0, y), 'LeftLeg': R(0, y)}
+def d_charge(twist, lean):
+    return {'Torso': R(lean, twist), 'Head': R(0, -twist * 0.75), 'RightArm': L(-40, -35), 'Sword': A(0.55, -0.2, 0.8),
+            'LeftArm': L(80, -30), **LEGS_TWIST(-twist * 0.95)}
+D_THROUGH = {'Torso': R(-6, 5), 'Head': R(0, -4), 'RightArm': L(86, -10), 'Sword': A(0.3, 0, -0.95),
+             'LeftArm': L(40, -35), **LEGS_TWIST(-5)}
+D_STRIKE = {'Torso': R(-12, 60), 'Head': R(0, -45), 'RightArm': L(84, 95), 'Sword': A(-0.8, -0.05, 0.6),
+            'LeftArm': L(15, -45), **LEGS_TWIST(-55)}
+D_SETTLE = {'Torso': R(-10, 48), 'Head': R(0, -36), 'RightArm': L(75, 78), 'Sword': A(-0.7, -0.35, 0.6),
+            'LeftArm': L(22, -40), **LEGS_TWIST(-44)}
+DIVIDER_CHARGE = [(0.0, UPPER | LEGS_TWIST(0)), (0.15, d_charge(-50, 6)), (0.3, d_charge(-53, 8)),
+                  (0.45, d_charge(-49, 5)), (0.62, d_charge(-54, 9))]
+DIVIDER_RELEASE = [(0.0, d_charge(-54, 9)), (0.05, D_THROUGH), (0.11, D_STRIKE), (0.42, D_SETTLE)]
+
+# ---------------- Anti-Magic Deflect ----------------
+F_STANCE = {'Torso': R(-6, 12), 'Head': R(8, -8), 'RightArm': L(40, 40), 'Sword': A(-0.1, 0.97, -0.2),
+            'LeftArm': L(70, -10), 'RightLeg': R(-10), 'LeftLeg': R(12)}
+F_WIND = {'Torso': R(-4, 30), 'Head': R(4, -20), 'RightArm': L(150, 50), 'Sword': A(-0.5, 0.75, 0.4),
+          'LeftArm': L(50, -10), 'RightLeg': R(-10), 'LeftLeg': R(12)}
+F_COUNTER = {'Torso': R(-12, -45), 'Head': R(4, 35), 'RightArm': L(55, -95), 'Sword': A(0.85, -0.3, 0.4),
+             'LeftArm': L(20, 0, -40), 'RightLeg': R(-14, 30), 'LeftLeg': R(16, 30)}
+F_R_WIND = {'Torso': R(-6, 40), 'Head': R(4, -30), 'RightArm': L(84, 85), 'Sword': A(-0.9, 0.1, 0.35),
+            'LeftArm': L(45, -20), 'RightLeg': R(-10, -30), 'LeftLeg': R(12, -30)}
+F_R_STRIKE = {'Torso': R(-14, -40), 'Head': R(6, 30), 'RightArm': L(84, -90), 'Sword': A(0.9, 0.05, -0.4),
+              'LeftArm': L(20, 0, -45), 'RightLeg': R(-10, 30), 'LeftLeg': R(12, 30)}
+DEFLECT_STANCE = [(0.0, UPPER), (0.08, F_STANCE), (0.82, F_STANCE)]
+DEFLECT_COUNTER = [(0.0, F_STANCE), (0.06, F_WIND), (0.13, F_COUNTER), (0.42, F_COUNTER)]
+DEFLECT_REFLECT = [(0.0, F_STANCE), (0.08, F_R_WIND), (0.15, F_R_STRIKE), (0.42, F_R_STRIKE)]
+
+# ---------------- Awakening: Black Form ----------------
+def a_gather(lean, twist):
+    return {'Torso': R(lean, twist), 'Head': R(25, -twist), 'RightArm': L(40, 10), 'Sword': A(0, -0.42, -0.91),
+            'LeftArm': L(60, -55), 'RightLeg': R(-15), 'LeftLeg': R(20)}
+A_ROAR = {'Torso': R(22), 'Head': R(-30), 'RightArm': L(40, -10, 70), 'Sword': A(0.85, 0.45, 0.25),
+          'LeftArm': L(40, 10, -75), 'RightLeg': R(-12, 0, 10), 'LeftLeg': R(14, 0, -10)}
+A_STANCE = {'Torso': R(-12, -15), 'Head': R(8, 12), 'RightArm': L(70, 5), 'Sword': A(0.2, -0.3, -0.93),
+            'LeftArm': L(20, 0, -25), 'RightLeg': R(-8, 0, 9), 'LeftLeg': R(12, 0, -10)}
+AWAKEN = [(0.0, UPPER | {'RightLeg': R(0), 'LeftLeg': R(0)}), (0.25, a_gather(-32, 0)), (0.45, a_gather(-30, 3)),
+          (0.65, a_gather(-34, -3)), (0.85, a_gather(-33, 0)), (0.95, A_ROAR), (1.4, A_ROAR), (1.7, A_STANCE),
+          (2.0, A_STANCE)]
+
 ALL = {'Idle': IDLE, 'Run': RUN, 'Air': AIR, 'Propel': PROPEL, 'Barrage': BARRAGE,
+       'MeteorLunge': METEOR_LUNGE, 'MeteorRise': METEOR_RISE, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
+       'DividerCharge': DIVIDER_CHARGE, 'DividerRelease': DIVIDER_RELEASE,
+       'DeflectStance': DEFLECT_STANCE, 'DeflectCounter': DEFLECT_COUNTER, 'DeflectReflect': DEFLECT_REFLECT,
+       'Awaken': AWAKEN,
        'DashFront': DASH_FRONT, 'DashBack': DASH_BACK, 'DashLeft': DASH_LEFT, 'DashRight': DASH_RIGHT,
        'FlinchA': FLINCH_A, 'FlinchB': FLINCH_B, 'FlinchBack': FLINCH_BACK, 'HitHeavy': HIT_HEAVY,
        'Guard': GUARD, 'GuardHit': GUARD_HIT, 'Stagger': STAGGER, 'Slash1': SLASH1, 'Slash2': SLASH2, 'Slash3': SLASH3,
@@ -236,7 +300,9 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Air': AIR, 'Propel': PROPEL, 'Barrage': BARRAG
 if __name__ == '__main__':
     # Intentional floor contact: the air chop's tip grazes the floor, the
     # entrance slam plants it. The entrance sword is hidden until the draw.
-    rules = {'Chop': dict(floor=-3.1), 'Entrance': dict(floor=-3.5, hidden_until=0.88)}
+    rules = {'Chop': dict(floor=-3.1), 'Entrance': dict(floor=-3.5, hidden_until=0.88),
+             # These plant the blade on purpose.
+             'MeteorSlam': dict(floor=-3.6), 'MeteorImpact': dict(floor=-3.6), 'Awaken': dict(floor=-3.6)}
     ok = True
     for name, keys in ALL.items():
         ok &= verify(name, keys, **rules.get(name, {}))

@@ -58,10 +58,10 @@ A close-range rushdown character built like Vessel (Jujutsu Shenanigans) and Her
 | Key | Base | Black Form (after G) |
 |---|---|---|
 | 1 | **Bull Thrust**: rockets forward on anti-magic, catches the target in an 8-hit slash barrage, then pushes them back still stunned so you can M1 straight into them. In the air it's a diving thrust. | **Black Hurricane**: spinning charge that drags enemies along |
-| 2 | **Black Meteorite**: unblockable lunge grab, carries them up, crater slam | **Black Slash**: piercing anti-magic slash wave |
-| 3 | **Black Divider**: charged cleave. Press **3** again on the red flash for a Perfect Divider. | **Grand Divider**: huge guard-breaking cleave plus a giant slash wave |
-| 4 | **Anti-Magic Deflect**: counters every attack type. Slashes melee attackers aside and sends projectiles back. | **Demon-Destroyer**: grab, carve, explosive finisher that heals 30% |
-| G | **Black Form**: black aura, devil wing, +25% damage, faster, new moves for 40s | |
+| 2 | **Black Meteorite**: unblockable lunge grab that rockets you both into the sky, charges the blade at the top, then slams down like a meteor into a huge crater (shockwave dome, ground cracks, flying debris, black lightning) | **Black Slash**: piercing anti-magic slash wave |
+| 3 | **Black Divider**: anti-magic streams into the blade, then a huge sweeping crescent cleave. Press **3** again on the red glint for a Perfect Divider: bigger cut, impact frame, and a black crescent that keeps flying. | **Grand Divider**: huge guard-breaking cleave plus a giant slash wave |
+| 4 | **Anti-Magic Deflect**: raises an anti-magic barrier on the blade that counters every attack type. Melee attackers get a frozen impact frame, then a diagonal slash that throws them aside. Projectiles get sent back. | **Demon-Destroyer**: grab, carve, explosive finisher that heals 30% |
+| G | **Black Form**: a 2-second transformation. Anti-magic gathers as the world darkens, then explodes into a black pillar that blows everyone away, and he drops into his stance. For 40s you get +25% damage, more speed and new moves, plus the look: black flames, a horn, a black arm and sword, and a devil wing with its own idle (it breathes, stretches, tucks back when you run and beats in the air). | |
 
 More grimoires are listed as "coming soon" in the picker.
 

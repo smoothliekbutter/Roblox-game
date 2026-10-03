@@ -437,9 +437,9 @@ local function blackMeteorite(ctx)
 	waitForGround(ctx, 0.6)
 	release()
 
+	-- The client draws its own (much bigger) crater for this one.
 	local impact = groundBelow(ctx) + forward * 3
-	c.FireVFX("Crater", { position = impact })
-	fx(ctx, "BlackMeteorite", "Impact", { position = impact })
+	fx(ctx, "BlackMeteorite", "Impact", { position = impact, target = target })
 	c.ShakeArea(impact, 45, 0.6)
 	c.Hit(character, target, {
 		damage = 9,
@@ -718,23 +718,37 @@ Kit.AwakenedSkills = { blackHurricane, blackSlashMove, grandDivider, demonDestro
 -- Awakening: Black Form (Devil Union)
 ---------------------------------------------------------------------------
 
+-- Matches the client's Awaken animation (tools/anim): anti-magic gathers
+-- while he crouches, bursts out on the roar at 0.92s, then he drops into
+-- his Black Form stance. Rooted and untouchable the whole time.
+local AWAKEN_BURST = 0.92
+local AWAKEN_TIME = 2.0
+
 function Kit.Awaken(ctx)
 	local c, character = ctx.combat, ctx.character
-	CombatState.SetCasting(character, 1.4)
-	CombatState.GiveIFrames(character, 1.6)
+	CombatState.SetCasting(character, AWAKEN_TIME)
+	CombatState.GiveIFrames(character, AWAKEN_TIME + 0.1)
+	character:SetAttribute("Rooted", true)
 	fx(ctx, "Awaken", "Start")
-	c.ShakeArea(ctx.root.Position, 60, 0.4)
-	task.wait(0.9)
+	c.ShakeArea(ctx.root.Position, 40, 0.25)
+	task.wait(AWAKEN_BURST)
 
-	fx(ctx, "Awaken", "Burst")
-	c.ShakeArea(ctx.root.Position, 90, 0.9)
-	-- The anti-magic burst blows everyone nearby away.
-	for _, victim in c.Sphere(character, ctx.root.Position, 16) do
-		local victimRoot = victim:FindFirstChild("HumanoidRootPart") :: BasePart?
-		if victimRoot and not CombatState.HasIFrames(victim) and not CombatState.IsRagdolled(victim) then
-			c.Ragdoll(victim, 1)
-			c.ApplyVelocity(victim, c.Flat(victimRoot.Position - ctx.root.Position) * 60 + UP * 22, 0.2)
+	if CombatState.IsAlive(character) then
+		fx(ctx, "Awaken", "Burst")
+		c.ShakeArea(ctx.root.Position, 90, 0.9)
+		-- The anti-magic burst blows everyone nearby away.
+		for _, victim in c.Sphere(character, ctx.root.Position, 18) do
+			local victimRoot = victim:FindFirstChild("HumanoidRootPart") :: BasePart?
+			if victimRoot and not CombatState.HasIFrames(victim) and not CombatState.IsRagdolled(victim) then
+				c.Ragdoll(victim, 1)
+				c.ApplyVelocity(victim, c.Flat(victimRoot.Position - ctx.root.Position) * 65 + UP * 24, 0.2)
+			end
 		end
+	end
+
+	task.wait(AWAKEN_TIME - AWAKEN_BURST)
+	if character.Parent then
+		character:SetAttribute("Rooted", false)
 	end
 end
 

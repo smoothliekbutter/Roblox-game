@@ -1377,6 +1377,649 @@ Animations.Barrage = {
 	},
 }
 
+-- Black Meteorite: lunging grab, free hand reaching out.
+Animations.MeteorLunge = {
+	fadeIn = 0.03,
+	fadeOut = 0.1,
+	delays = { Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.07,
+			{
+				Torso = rot(-28, -8),
+				Head = rot(22, 6),
+				RightArm = limb(-15, -10, 30),
+				Sword = aim(0.3, 0.15, 0.94),
+				LeftArm = limb(95, -8),
+				RightLeg = rot(-35),
+				LeftLeg = rot(32),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.35,
+			{
+				Torso = rot(-28, -8),
+				Head = rot(22, 6),
+				RightArm = limb(-15, -10, 30),
+				Sword = aim(0.3, 0.15, 0.94),
+				LeftArm = limb(95, -8),
+				RightLeg = rot(-35),
+				LeftLeg = rot(32),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Black Meteorite: rising with the victim, sword drawn back overhead.
+Animations.MeteorRise = {
+	fadeIn = 0.05,
+	fadeOut = 0.1,
+	delays = { Sword = 0.04 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-12, 10),
+				Head = rot(8, -6),
+				RightArm = limb(-10, -10, 30),
+				Sword = aim(0.3, 0.2, 0.93),
+				LeftArm = limb(92, -5),
+				RightLeg = rot(-10),
+				LeftLeg = rot(12),
+			},
+		},
+		{
+			0.2,
+			{
+				Torso = rot(14, 5),
+				Head = rot(-12),
+				RightArm = limb(165, 15),
+				Sword = aim(0.15, 0.55, 0.82),
+				LeftArm = limb(90, -5),
+				RightLeg = rot(-25),
+				LeftLeg = rot(35),
+			},
+			"Quad",
+			"Out",
+		},
+		{
+			0.55,
+			{
+				Torso = rot(24),
+				Head = rot(-18),
+				RightArm = limb(178, 10),
+				Sword = aim(0.1, 0.2, 0.97),
+				LeftArm = limb(90, -5),
+				RightLeg = rot(-15),
+				LeftLeg = rot(30),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Black Meteorite: crashing down, sword driven into the ground.
+Animations.MeteorSlam = {
+	fadeIn = 0.02,
+	fadeOut = 0.1,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(24),
+				Head = rot(-18),
+				RightArm = limb(178, 10),
+				Sword = aim(0.1, 0.2, 0.97),
+				LeftArm = limb(90, -5),
+				RightLeg = rot(-15),
+				LeftLeg = rot(30),
+			},
+		},
+		{
+			0.12,
+			{
+				Torso = rot(-38),
+				Head = rot(18),
+				RightArm = limb(40, 8),
+				Sword = aim(0, -0.32, -0.95),
+				LeftArm = limb(50, -10),
+				RightLeg = rot(-28),
+				LeftLeg = rot(30),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.6,
+			{
+				Torso = rot(-38),
+				Head = rot(18),
+				RightArm = limb(40, 8),
+				Sword = aim(0, -0.32, -0.95),
+				LeftArm = limb(50, -10),
+				RightLeg = rot(-28),
+				LeftLeg = rot(30),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Black Meteorite: rising out of the crater.
+Animations.MeteorImpact = {
+	fadeIn = 0.02,
+	fadeOut = 0.3,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-38),
+				Head = rot(18),
+				RightArm = limb(40, 8),
+				Sword = aim(0, -0.32, -0.95),
+				LeftArm = limb(50, -10),
+				RightLeg = rot(-28),
+				LeftLeg = rot(30),
+			},
+		},
+		{
+			0.25,
+			{
+				Torso = rot(-20),
+				Head = rot(8),
+				RightArm = limb(55, 8),
+				Sword = aim(0, -0.4, -0.92),
+				LeftArm = limb(25, 0, -25),
+				RightLeg = rot(-18),
+				LeftLeg = rot(22),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.5,
+			{
+				Torso = rot(-20),
+				Head = rot(8),
+				RightArm = limb(55, 8),
+				Sword = aim(0, -0.4, -0.92),
+				LeftArm = limb(25, 0, -25),
+				RightLeg = rot(-18),
+				LeftLeg = rot(22),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Black Divider: coiled, sword drawn back low, trembling with anti-magic.
+Animations.DividerCharge = {
+	fadeIn = 0.05,
+	fadeOut = 0.05,
+	additive = { RightLeg = true, LeftLeg = true },
+	delays = { Sword = 0.02 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.15,
+			{
+				Torso = rot(6, -50),
+				Head = rot(0, 37.5),
+				RightArm = limb(-40, -35),
+				Sword = aim(0.55, -0.2, 0.8),
+				LeftArm = limb(80, -30),
+				RightLeg = rot(0, 47.5),
+				LeftLeg = rot(0, 47.5),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.3,
+			{
+				Torso = rot(8, -53),
+				Head = rot(0, 39.75),
+				RightArm = limb(-40, -35),
+				Sword = aim(0.55, -0.2, 0.8),
+				LeftArm = limb(80, -30),
+				RightLeg = rot(0, 50.35),
+				LeftLeg = rot(0, 50.35),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.45,
+			{
+				Torso = rot(5, -49),
+				Head = rot(0, 36.75),
+				RightArm = limb(-40, -35),
+				Sword = aim(0.55, -0.2, 0.8),
+				LeftArm = limb(80, -30),
+				RightLeg = rot(0, 46.55),
+				LeftLeg = rot(0, 46.55),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.62,
+			{
+				Torso = rot(9, -54),
+				Head = rot(0, 40.5),
+				RightArm = limb(-40, -35),
+				Sword = aim(0.55, -0.2, 0.8),
+				LeftArm = limb(80, -30),
+				RightLeg = rot(0, 51.3),
+				LeftLeg = rot(0, 51.3),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Black Divider: the cleave, wrapping all the way around.
+Animations.DividerRelease = {
+	fadeIn = 0.01,
+	fadeOut = 0.28,
+	additive = { RightLeg = true, LeftLeg = true },
+	delays = { Sword = 0.02, Head = -0.01 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(9, -54),
+				Head = rot(0, 40.5),
+				RightArm = limb(-40, -35),
+				Sword = aim(0.55, -0.2, 0.8),
+				LeftArm = limb(80, -30),
+				RightLeg = rot(0, 51.3),
+				LeftLeg = rot(0, 51.3),
+			},
+		},
+		{
+			0.05,
+			{
+				Torso = rot(-6, 5),
+				Head = rot(0, -4),
+				RightArm = limb(86, -10),
+				Sword = aim(0.3, 0, -0.95),
+				LeftArm = limb(40, -35),
+				RightLeg = rot(0, -5),
+				LeftLeg = rot(0, -5),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.11,
+			{
+				Torso = rot(-12, 60),
+				Head = rot(0, -45),
+				RightArm = limb(84, 95),
+				Sword = aim(-0.8, -0.05, 0.6),
+				LeftArm = limb(15, -45),
+				RightLeg = rot(0, -55),
+				LeftLeg = rot(0, -55),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.42,
+			{
+				Torso = rot(-10, 48),
+				Head = rot(0, -36),
+				RightArm = limb(75, 78),
+				Sword = aim(-0.7, -0.35, 0.6),
+				LeftArm = limb(22, -40),
+				RightLeg = rot(0, -44),
+				LeftLeg = rot(0, -44),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Anti-Magic Deflect: blade held upright in front, braced.
+Animations.DeflectStance = {
+	fadeIn = 0.03,
+	fadeOut = 0.15,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = rot(-6, 12),
+				Head = rot(8, -8),
+				RightArm = limb(40, 40),
+				Sword = aim(-0.1, 0.97, -0.2),
+				LeftArm = limb(70, -10),
+				RightLeg = rot(-10),
+				LeftLeg = rot(12),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.82,
+			{
+				Torso = rot(-6, 12),
+				Head = rot(8, -8),
+				RightArm = limb(40, 40),
+				Sword = aim(-0.1, 0.97, -0.2),
+				LeftArm = limb(70, -10),
+				RightLeg = rot(-10),
+				LeftLeg = rot(12),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Anti-Magic Deflect: the counter slash, down and across.
+Animations.DeflectCounter = {
+	fadeIn = 0.01,
+	fadeOut = 0.25,
+	delays = { Sword = 0.015 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, 12),
+				Head = rot(8, -8),
+				RightArm = limb(40, 40),
+				Sword = aim(-0.1, 0.97, -0.2),
+				LeftArm = limb(70, -10),
+				RightLeg = rot(-10),
+				LeftLeg = rot(12),
+			},
+		},
+		{
+			0.06,
+			{
+				Torso = rot(-4, 30),
+				Head = rot(4, -20),
+				RightArm = limb(150, 50),
+				Sword = aim(-0.5, 0.75, 0.4),
+				LeftArm = limb(50, -10),
+				RightLeg = rot(-10),
+				LeftLeg = rot(12),
+			},
+			"Quad",
+			"Out",
+		},
+		{
+			0.13,
+			{
+				Torso = rot(-12, -45),
+				Head = rot(4, 35),
+				RightArm = limb(55, -95),
+				Sword = aim(0.85, -0.3, 0.4),
+				LeftArm = limb(20, 0, -40),
+				RightLeg = rot(-14, 30),
+				LeftLeg = rot(16, 30),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.42,
+			{
+				Torso = rot(-12, -45),
+				Head = rot(4, 35),
+				RightArm = limb(55, -95),
+				Sword = aim(0.85, -0.3, 0.4),
+				LeftArm = limb(20, 0, -40),
+				RightLeg = rot(-14, 30),
+				LeftLeg = rot(16, 30),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Anti-Magic Deflect: swatting a projectile back.
+Animations.DeflectReflect = {
+	fadeIn = 0.01,
+	fadeOut = 0.25,
+	delays = { Sword = 0.015 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, 12),
+				Head = rot(8, -8),
+				RightArm = limb(40, 40),
+				Sword = aim(-0.1, 0.97, -0.2),
+				LeftArm = limb(70, -10),
+				RightLeg = rot(-10),
+				LeftLeg = rot(12),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = rot(-6, 40),
+				Head = rot(4, -30),
+				RightArm = limb(84, 85),
+				Sword = aim(-0.9, 0.1, 0.35),
+				LeftArm = limb(45, -20),
+				RightLeg = rot(-10, -30),
+				LeftLeg = rot(12, -30),
+			},
+			"Quad",
+			"Out",
+		},
+		{
+			0.15,
+			{
+				Torso = rot(-14, -40),
+				Head = rot(6, 30),
+				RightArm = limb(84, -90),
+				Sword = aim(0.9, 0.05, -0.4),
+				LeftArm = limb(20, 0, -45),
+				RightLeg = rot(-10, 30),
+				LeftLeg = rot(12, 30),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.42,
+			{
+				Torso = rot(-14, -40),
+				Head = rot(6, 30),
+				RightArm = limb(84, -90),
+				Sword = aim(0.9, 0.05, -0.4),
+				LeftArm = limb(20, 0, -45),
+				RightLeg = rot(-10, 30),
+				LeftLeg = rot(12, 30),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Black Form: hunched over the planted sword, trembling, then a roar and the burst, ending in a stance.
+Animations.Awaken = {
+	fadeIn = 0.05,
+	fadeOut = 0.3,
+	delays = { Head = 0.03, Sword = 0.04 },
+	events = {
+		{ time = 0.92, name = "Burst" },
+		{ time = 1.55, name = "Stance" },
+	},
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.25,
+			{
+				Torso = rot(-32),
+				Head = rot(25),
+				RightArm = limb(40, 10),
+				Sword = aim(0, -0.42, -0.91),
+				LeftArm = limb(60, -55),
+				RightLeg = rot(-15),
+				LeftLeg = rot(20),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.45,
+			{
+				Torso = rot(-30, 3),
+				Head = rot(25, -3),
+				RightArm = limb(40, 10),
+				Sword = aim(0, -0.42, -0.91),
+				LeftArm = limb(60, -55),
+				RightLeg = rot(-15),
+				LeftLeg = rot(20),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.65,
+			{
+				Torso = rot(-34, -3),
+				Head = rot(25, 3),
+				RightArm = limb(40, 10),
+				Sword = aim(0, -0.42, -0.91),
+				LeftArm = limb(60, -55),
+				RightLeg = rot(-15),
+				LeftLeg = rot(20),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.85,
+			{
+				Torso = rot(-33),
+				Head = rot(25),
+				RightArm = limb(40, 10),
+				Sword = aim(0, -0.42, -0.91),
+				LeftArm = limb(60, -55),
+				RightLeg = rot(-15),
+				LeftLeg = rot(20),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.95,
+			{
+				Torso = rot(22),
+				Head = rot(-30),
+				RightArm = limb(40, -10, 70),
+				Sword = aim(0.85, 0.45, 0.25),
+				LeftArm = limb(40, 10, -75),
+				RightLeg = rot(-12, 0, 10),
+				LeftLeg = rot(14, 0, -10),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			1.4,
+			{
+				Torso = rot(22),
+				Head = rot(-30),
+				RightArm = limb(40, -10, 70),
+				Sword = aim(0.85, 0.45, 0.25),
+				LeftArm = limb(40, 10, -75),
+				RightLeg = rot(-12, 0, 10),
+				LeftLeg = rot(14, 0, -10),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			1.7,
+			{
+				Torso = rot(-12, -15),
+				Head = rot(8, 12),
+				RightArm = limb(70, 5),
+				Sword = aim(0.2, -0.3, -0.93),
+				LeftArm = limb(20, 0, -25),
+				RightLeg = rot(-8, 0, 9),
+				LeftLeg = rot(12, 0, -10),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			2,
+			{
+				Torso = rot(-12, -15),
+				Head = rot(8, 12),
+				RightArm = limb(70, 5),
+				Sword = aim(0.2, -0.3, -0.93),
+				LeftArm = limb(20, 0, -25),
+				RightLeg = rot(-8, 0, 9),
+				LeftLeg = rot(12, 0, -10),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
 -- Spawn entrance: crouched landing, grimoire appears, sword drawn from it, twirled overhead, slammed into the ground, rested on the shoulder.
 Animations.Entrance = {
 	fadeIn = 0.08,
