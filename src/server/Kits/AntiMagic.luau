@@ -324,6 +324,13 @@ end
 -- Base moves
 ---------------------------------------------------------------------------
 
+-- Bull Thrust: propels himself forward on a burst of anti-magic, catches
+-- the first person in the way and unloads a slash barrage, finishing with
+-- a push that leaves them stunned in range so he can M1 straight into a
+-- string (a combo starter, like Vessel's Cursed Strikes).
+local BARRAGE_HITS = 8
+local BARRAGE_STEP = 0.1 -- matches the Barrage animation (tools/anim)
+
 local function bullThrust(ctx)
 	local c, character = ctx.combat, ctx.character
 	local forward = look(ctx)
@@ -331,53 +338,64 @@ local function bullThrust(ctx)
 	local direction = if airborne then (forward + UP * -0.6).Unit else forward
 
 	CombatState.SetCasting(character, 0.6)
-	fx(ctx, "BullThrust", "Charge", { airborne = airborne })
-	local target = lunge(ctx, direction * 85, 0.35, Vector3.new(5, 6, 6))
+	fx(ctx, "BullThrust", "Propel", { airborne = airborne, direction = direction })
+	local target = lunge(ctx, direction * 95, 0.32, Vector3.new(6, 6, 7))
 	if not target then
 		if airborne then
 			waitForGround(ctx, 0.5)
 			fx(ctx, "BullThrust", "Land", { position = groundBelow(ctx) })
 		end
+		fx(ctx, "BullThrust", "Whiff")
 		CombatState.SetCasting(character, 0.3)
 		return
 	end
 
-	if c.Hit(character, target, { damage = 3, stun = 1.4, attackType = "Melee" }) ~= "Hit" then
+	local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local contact = if targetRoot then targetRoot.Position else ctx.root.Position + forward * 3
+	if c.Hit(character, target, { damage = 2.5, stun = 1.6, attackType = "Melee" }) ~= "Hit" then
 		CombatState.SetCasting(character, 0.4)
 		return
 	end
+	fx(ctx, "BullThrust", "Catch", { target = target, position = contact })
 
-	-- The flurry: quick slashes that keep them pinned, then a launcher.
-	CombatState.SetCasting(character, 1.1)
-	fx(ctx, "BullThrust", "Flurry", { target = target })
-	for _ = 1, 4 do
-		task.wait(0.11)
-		if interrupted(ctx) then
+	-- The barrage: rapid slashes that keep them pinned in front of him.
+	CombatState.SetCasting(character, BARRAGE_HITS * BARRAGE_STEP + 0.2)
+	fx(ctx, "BullThrust", "Barrage", { target = target })
+	for index = 1, BARRAGE_HITS do
+		task.wait(BARRAGE_STEP)
+		if interrupted(ctx) or not CombatState.IsAlive(target) then
+			fx(ctx, "BullThrust", "Interrupted")
 			return
 		end
 		c.Hit(character, target, {
-			damage = 1.5,
-			stun = 0.9,
+			damage = 1,
+			stun = 1,
 			attackType = "Melee",
 			velocity = forward * 6,
-			velocityTime = 0.12,
+			velocityTime = BARRAGE_STEP,
 		})
-		c.ApplyVelocity(character, forward * 6, 0.12)
+		c.ApplyVelocity(character, forward * 6, BARRAGE_STEP)
+		fx(ctx, "BullThrust", "BarrageHit", { target = target, index = index })
 	end
-	task.wait(0.14)
+
+	-- Pushing thrust: shoves them back a few studs, still stunned, so an M1
+	-- string connects right after.
+	task.wait(0.12)
 	if interrupted(ctx) then
 		return
 	end
-	fx(ctx, "BullThrust", "Launch", { target = target })
+	fx(ctx, "BullThrust", "Push", { target = target })
 	c.Hit(character, target, {
-		damage = 4,
-		stun = 1,
+		damage = 3,
+		stun = 1.1,
 		attackType = "Melee",
-		heavy = true,
-		ragdoll = 1.3,
-		velocity = forward * 55 + UP * 30,
+		velocity = forward * 22 + UP * 4,
+		velocityTime = 0.15,
 	})
-	CombatState.SetCasting(character, 0.25)
+	CombatState.ClearCasting(character)
+	-- Start a fresh M1 string.
+	ctx.data.combo = 0
+	ctx.data.nextM1 = 0
 end
 
 -- Shared by Black Meteorite and Demon-Destroyer: lunge, and if someone is

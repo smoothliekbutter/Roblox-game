@@ -200,7 +200,34 @@ STAGGER_POSE = {'Torso': R(20, -10), 'Head': R(-25, 8), 'RightArm': L(140, 20, 2
 STAGGER = [(0.0, UPPER | {'RightLeg': R(0), 'LeftLeg': R(0)}), (0.08, STAGGER_POSE), (1.0, STAGGER_POSE),
            (1.3, recover((4, 0), (-4, 0)))]
 
-ALL = {'Idle': IDLE, 'Run': RUN, 'Air': AIR,
+# ---------------- Bull Thrust ----------------
+# Propel: low and long, sword thrust straight ahead, free arm back.
+PROPEL_POSE = {'Torso': R(-30, 10), 'Head': R(22, -8), 'RightArm': L(60, 5), 'Sword': A(0, -0.05, -1),
+               'LeftArm': L(-35, 0, -25), 'RightLeg': R(-38), 'LeftLeg': R(32)}
+PROPEL = [(0.0, UPPER), (0.07, PROPEL_POSE), (0.4, PROPEL_POSE)]
+
+# Barrage: a rapid flurry, side to side with an overhead chop thrown in,
+# finishing with a straight thrust that pushes them away.
+B_RIGHT = {'Torso': R(-6, -25), 'Head': R(6, 18), 'RightArm': L(82, -70), 'Sword': A(0.85, 0.05, -0.5),
+           'LeftArm': L(40, -25), 'RightLeg': R(0, 22), 'LeftLeg': R(0, 22)}
+B_LEFT = {'Torso': R(-6, 25), 'Head': R(6, -18), 'RightArm': L(82, 70), 'Sword': A(-0.85, 0.05, -0.5),
+          'LeftArm': L(35, -30), 'RightLeg': R(0, -22), 'LeftLeg': R(0, -22)}
+B_UP = {'Torso': R(4, 0), 'Head': R(-4, 0), 'RightArm': L(150, 10), 'Sword': A(0, 0.85, -0.52),
+        'LeftArm': L(45, -25), 'RightLeg': R(0, 0), 'LeftLeg': R(0, 0)}
+B_DOWN = {'Torso': R(-14, 0), 'Head': R(10, 0), 'RightArm': L(55, 5), 'Sword': A(0, -0.3, -0.95),
+          'LeftArm': L(40, -25), 'RightLeg': R(0, 0), 'LeftLeg': R(0, 0)}
+B_PUSH = {'Torso': R(-16, 6), 'Head': R(12, -4), 'RightArm': L(85, 0), 'Sword': A(0, 0, -1),
+          'LeftArm': L(-20, 0, -30), 'RightLeg': R(0, 0), 'LeftLeg': R(0, 0)}
+BARRAGE_STEPS = [B_RIGHT, B_LEFT, B_RIGHT, B_UP, B_DOWN, B_LEFT, B_RIGHT, B_LEFT]
+BARRAGE_STEP = 0.1
+BARRAGE = [(0.0, PROPEL_POSE | {'RightLeg': R(0), 'LeftLeg': R(0)})]
+for i, pose in enumerate(BARRAGE_STEPS):
+    BARRAGE.append((round((i + 1) * BARRAGE_STEP, 3), pose))
+BARRAGE_END = len(BARRAGE_STEPS) * BARRAGE_STEP
+BARRAGE.append((round(BARRAGE_END + 0.12, 3), B_PUSH))
+BARRAGE.append((round(BARRAGE_END + 0.32, 3), B_PUSH))
+
+ALL = {'Idle': IDLE, 'Run': RUN, 'Air': AIR, 'Propel': PROPEL, 'Barrage': BARRAGE,
        'DashFront': DASH_FRONT, 'DashBack': DASH_BACK, 'DashLeft': DASH_LEFT, 'DashRight': DASH_RIGHT,
        'FlinchA': FLINCH_A, 'FlinchB': FLINCH_B, 'FlinchBack': FLINCH_BACK, 'HitHeavy': HIT_HEAVY,
        'Guard': GUARD, 'GuardHit': GUARD_HIT, 'Stagger': STAGGER, 'Slash1': SLASH1, 'Slash2': SLASH2, 'Slash3': SLASH3,

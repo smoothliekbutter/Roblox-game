@@ -1099,6 +1099,14 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	local toAttacker = flat(attackerRoot.Position - victimRoot.Position)
 	local look = flat(attackerRoot.CFrame.LookVector)
 	local contact = victimRoot.Position + toAttacker * 1.2
+	-- Whose weapons met, so clients can draw the right clash (sword sparks...).
+	local clash = {
+		position = contact,
+		victim = victim,
+		attacker = attacker,
+		kit = attacker:GetAttribute("Kit"),
+		victimKit = victim:GetAttribute("Kit"),
+	}
 
 	local facing = victimRoot.CFrame.LookVector:Dot(toAttacker) > Config.Block.FacingDot
 	if CombatState.IsBlocking(victim) and facing and not hit.unblockable then
@@ -1106,7 +1114,7 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 
 		if blockAge <= Config.Block.PerfectWindow then
 			CombatState.Stun(attacker, Config.Block.ParryStun)
-			CombatService.FireVFX("PerfectBlock", { position = contact, attacker = attacker, victim = victim })
+			CombatService.FireVFX("PerfectBlock", clash)
 			CombatService.Shake(attacker, 0.6)
 			CombatService.Shake(victim, 0.35)
 			return "Parried"
@@ -1115,13 +1123,13 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 		if hit.guardBreak then
 			CombatState.SetBlocking(victim, false)
 			CombatState.Stun(victim, Config.Block.GuardBreakStun)
-			CombatService.FireVFX("GuardBreak", { position = contact, victim = victim })
+			CombatService.FireVFX("GuardBreak", clash)
 			CombatService.Shake(attacker, 0.4)
 			CombatService.Shake(victim, 0.6)
 			return "GuardBreak"
 		end
 
-		CombatService.FireVFX("Block", { position = contact, victim = victim })
+		CombatService.FireVFX("Block", clash)
 		CombatService.ApplyVelocity(victim, -toAttacker * Config.Block.Pushback, 0.12)
 		CombatService.Shake(victim, 0.12)
 		return "Blocked"
@@ -2316,6 +2324,13 @@ end
 -- Base moves
 ---------------------------------------------------------------------------
 
+-- Bull Thrust: propels himself forward on a burst of anti-magic, catches
+-- the first person in the way and unloads a slash barrage, finishing with
+-- a push that leaves them stunned in range so he can M1 straight into a
+-- string (a combo starter, like Vessel's Cursed Strikes).
+local BARRAGE_HITS = 8
+local BARRAGE_STEP = 0.1 -- matches the Barrage animation (tools/anim)
+
 local function bullThrust(ctx)
 	local c, character = ctx.combat, ctx.character
 	local forward = look(ctx)
@@ -2323,53 +2338,64 @@ local function bullThrust(ctx)
 	local direction = if airborne then (forward + UP * -0.6).Unit else forward
 
 	CombatState.SetCasting(character, 0.6)
-	fx(ctx, "BullThrust", "Charge", { airborne = airborne })
-	local target = lunge(ctx, direction * 85, 0.35, Vector3.new(5, 6, 6))
+	fx(ctx, "BullThrust", "Propel", { airborne = airborne, direction = direction })
+	local target = lunge(ctx, direction * 95, 0.32, Vector3.new(6, 6, 7))
 	if not target then
 		if airborne then
 			waitForGround(ctx, 0.5)
 			fx(ctx, "BullThrust", "Land", { position = groundBelow(ctx) })
 		end
+		fx(ctx, "BullThrust", "Whiff")
 		CombatState.SetCasting(character, 0.3)
 		return
 	end
 
-	if c.Hit(character, target, { damage = 3, stun = 1.4, attackType = "Melee" }) ~= "Hit" then
+	local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local contact = if targetRoot then targetRoot.Position else ctx.root.Position + forward * 3
+	if c.Hit(character, target, { damage = 2.5, stun = 1.6, attackType = "Melee" }) ~= "Hit" then
 		CombatState.SetCasting(character, 0.4)
 		return
 	end
+	fx(ctx, "BullThrust", "Catch", { target = target, position = contact })
 
-	-- The flurry: quick slashes that keep them pinned, then a launcher.
-	CombatState.SetCasting(character, 1.1)
-	fx(ctx, "BullThrust", "Flurry", { target = target })
-	for _ = 1, 4 do
-		task.wait(0.11)
-		if interrupted(ctx) then
+	-- The barrage: rapid slashes that keep them pinned in front of him.
+	CombatState.SetCasting(character, BARRAGE_HITS * BARRAGE_STEP + 0.2)
+	fx(ctx, "BullThrust", "Barrage", { target = target })
+	for index = 1, BARRAGE_HITS do
+		task.wait(BARRAGE_STEP)
+		if interrupted(ctx) or not CombatState.IsAlive(target) then
+			fx(ctx, "BullThrust", "Interrupted")
 			return
 		end
 		c.Hit(character, target, {
-			damage = 1.5,
-			stun = 0.9,
+			damage = 1,
+			stun = 1,
 			attackType = "Melee",
 			velocity = forward * 6,
-			velocityTime = 0.12,
+			velocityTime = BARRAGE_STEP,
 		})
-		c.ApplyVelocity(character, forward * 6, 0.12)
+		c.ApplyVelocity(character, forward * 6, BARRAGE_STEP)
+		fx(ctx, "BullThrust", "BarrageHit", { target = target, index = index })
 	end
-	task.wait(0.14)
+
+	-- Pushing thrust: shoves them back a few studs, still stunned, so an M1
+	-- string connects right after.
+	task.wait(0.12)
 	if interrupted(ctx) then
 		return
 	end
-	fx(ctx, "BullThrust", "Launch", { target = target })
+	fx(ctx, "BullThrust", "Push", { target = target })
 	c.Hit(character, target, {
-		damage = 4,
-		stun = 1,
+		damage = 3,
+		stun = 1.1,
 		attackType = "Melee",
-		heavy = true,
-		ragdoll = 1.3,
-		velocity = forward * 55 + UP * 30,
+		velocity = forward * 22 + UP * 4,
+		velocityTime = 0.15,
 	})
-	CombatState.SetCasting(character, 0.25)
+	CombatState.ClearCasting(character)
+	-- Start a fresh M1 string.
+	ctx.data.combo = 0
+	ctx.data.nextM1 = 0
 end
 
 -- Shared by Black Meteorite and Demon-Destroyer: lunge, and if someone is
@@ -4779,30 +4805,212 @@ end
 
 local handlers: { [string]: (data: any, character: Model, root: BasePart) -> () } = {}
 
+---------------------------------------------------------------------------
+-- Bull Thrust: propel, catch, barrage, push
+---------------------------------------------------------------------------
+
+-- Attaches a short-lived particle emitter to a part (a continuous trail).
+local function trailEmitter(part: BasePart, props: { [string]: any }, duration: number)
+	local attachment = Instance.new("Attachment")
+	attachment.Parent = part
+	local emitter = Instance.new("ParticleEmitter")
+	for key, value in props do
+		(emitter :: any)[key] = value
+	end
+	emitter.Parent = attachment
+	task.delay(duration, function()
+		emitter.Enabled = false
+		task.wait(1)
+		attachment:Destroy()
+	end)
+end
+
+-- A slash mark drawn on the target: black blade core with a red glow,
+-- slicing in fast and thinning out. Faces the camera.
+local function slashMark(position: Vector3, angle: number, length: number, duration: number)
+	local camera = workspace.CurrentCamera
+	local base = CFrame.lookAt(position, camera.CFrame.Position) * CFrame.Angles(0, 0, angle)
+	local glow = U.newPart({ Size = Vector3.new(0.1, 0.32, 0.03), CFrame = base, Color = RED, Transparency = 0.2 })
+	local core = U.newPart({
+		Size = Vector3.new(0.1, 0.14, 0.03),
+		CFrame = base * CFrame.new(0, 0, 0.02),
+		Color = BLACK,
+		Material = Enum.Material.SmoothPlastic,
+	})
+	U.tween(glow, duration * 0.35, { Size = Vector3.new(length * 1.08, 0.32, 0.03) })
+	U.tween(core, duration * 0.35, { Size = Vector3.new(length, 0.14, 0.03) })
+	task.delay(duration * 0.35, function()
+		U.tween(glow, duration * 0.65, { Size = Vector3.new(length * 1.1, 0.02, 0.02), Transparency = 1 })
+		U.tween(core, duration * 0.65, { Size = Vector3.new(length, 0.01, 0.01), Transparency = 1 })
+	end)
+	task.delay(duration + 0.05, function()
+		glow:Destroy()
+		core:Destroy()
+	end)
+end
+
+local function feetOf(character: Model, root: BasePart): Vector3
+	local ground = U.groundBelow(root.Position, { character })
+	return if ground then ground.Position else root.Position - UP * 3
+end
+
+local barrageAngles = { 0.35, -0.5, 1.2, -1.25, 0.05, 2.6, -0.9, 0.7 }
+
 function handlers.BullThrust(data, character, root)
 	local phase = data.phase
-	if phase == "Charge" then
-		play(character, CLIPS.Thrust)
+	if phase == "Propel" then
+		local direction: Vector3 = if typeof(data.direction) == "Vector3"
+			then data.direction
+			else root.CFrame.LookVector
+		play(character, ANIMS.Propel)
 		swordTrail(character, 0.4)
-		U.afterimage(character, DARK_RED, 0.3)
+
+		-- Ignition: an anti-magic blast behind him.
+		local back = root.Position - direction * 1.5
+		U.flash(back, BLACK, 6, 0.18)
+		U.impactRing(back, direction, BLACK, 0.8, 5.5, 0.25)
+		task.delay(0.05, U.impactRing, back, direction, RED, 0.6, 4, 0.22)
+		blackSmoke(back, 14, 3.2, 16)
+		U.burst(back, {
+			color = RED,
+			count = 14,
+			size = 0.5,
+			speed = NumberRange.new(25, 45),
+			lifetime = NumberRange.new(0.15, 0.35),
+			streaks = true,
+			spread = 35,
+			direction = -direction,
+		})
+		U.light(back, RED, 6, 14, 0.3)
+		U.ringBurst(CFrame.new(feetOf(character, root) + UP * 0.1), BLACK, 0.8, 5, 0.3, 0.2)
+
+		-- The jet: smoke and embers streaming off his back, afterimages,
+		-- speed lines, dust kicked up along the ground.
+		trailEmitter(root, {
+			Texture = U.textures.Smoke,
+			Color = ColorSequence.new(BLACK),
+			LightEmission = 0,
+			Size = NumberSequence.new(1.4, 3.2),
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.25),
+				NumberSequenceKeypoint.new(1, 1),
+			}),
+			Lifetime = NumberRange.new(0.35, 0.6),
+			Rate = 110,
+			Speed = NumberRange.new(2, 6),
+			EmissionDirection = Enum.NormalId.Back,
+			SpreadAngle = Vector2.new(25, 25),
+			Drag = 3,
+		}, 0.34)
+		trailEmitter(root, {
+			Texture = U.textures.Spark,
+			Color = ColorSequence.new(RED, DARK_RED),
+			LightEmission = 1,
+			Size = NumberSequence.new(0.35, 0),
+			Lifetime = NumberRange.new(0.15, 0.3),
+			Rate = 60,
+			Speed = NumberRange.new(10, 18),
+			EmissionDirection = Enum.NormalId.Back,
+			SpreadAngle = Vector2.new(30, 30),
+			Orientation = Enum.ParticleOrientation.VelocityParallel,
+			Squash = NumberSequence.new(1.5),
+		}, 0.34)
 		U.bodyTrail(character, BLACK, 0.4)
-		blackSmoke(root.Position, 6, 2.5, 8)
-	elseif phase == "Flurry" then
-		play(character, CLIPS.Flurry)
-		swordTrail(character, 0.45)
-		for i = 0, 3 do
-			task.delay(0.02 + i * 0.08, function()
+		U.speedLines(root, direction, 0.32)
+		for i = 0, 4 do
+			task.delay(i * 0.06, function()
 				if character.Parent then
-					local from = if i % 2 == 0 then CFrame.new(3, 1, -1.2) else CFrame.new(-3, 0.8, -1.2)
-					local to = if i % 2 == 0 then CFrame.new(-3, -0.4, -1.2) else CFrame.new(3, -0.4, -1.2)
-					slashArc(character, from, to, 1.1, 0.14)
+					U.afterimage(character, if i % 2 == 0 then BLACK else DARK_RED, 0.28)
+					blackSmoke(feetOf(character, root) + UP * 0.3, 2, 1.6, 4)
 				end
 			end)
 		end
-	elseif phase == "Launch" then
-		play(character, CLIPS.Launch)
-		swordTrail(character, 0.25)
-		slashArc(character, CFrame.new(0.4, -2.4, -1.6), CFrame.new(-0.4, 4.5, -1.6), 2, 0.3)
+		if U.isLocal(character) then
+			CameraShake.FovKick(10)
+			CameraShake.Add(0.15)
+		end
+	elseif phase == "Catch" then
+		local position: Vector3 = data.position
+		local direction = root.CFrame.LookVector
+		U.flash(position, BLACK, 5, 0.15)
+		U.flash(position, WHITE, 3, 0.08)
+		U.impactRing(position, direction, RED, 0.6, 4.5, 0.22)
+		redSparks(position, 12, 0.8, direction)
+		blackLightning(position, 3, 3)
+		U.light(position, RED, 8, 14, 0.25)
+		if U.isLocal(character) or U.isLocal(data.target) then
+			CameraShake.Add(0.25)
+		end
+	elseif phase == "Barrage" then
+		play(character, ANIMS.Barrage)
+		swordTrail(character, 0.95)
+		local target = data.target
+		for i = 0, 7 do
+			task.delay(i * 0.11, function()
+				if character.Parent then
+					blackSmoke(feetOf(character, root) + UP * 0.2, 2, 1.4, 3)
+					if typeof(target) == "Instance" and target:IsA("Model") then
+						local targetRoot = U.getRoot(target)
+						if targetRoot then
+							blackSmoke(feetOf(target, targetRoot) + UP * 0.2, 2, 1.4, 3)
+						end
+					end
+				end
+			end)
+		end
+	elseif phase == "BarrageHit" then
+		local targetRoot = U.getRoot(data.target)
+		if not targetRoot then
+			return
+		end
+		local index = data.index or 1
+		local center = targetRoot.Position + UP * 0.6
+		local jitter = U.randomUnit() * Vector3.new(0.8, 0.9, 0.8)
+		local angle = barrageAngles[((index - 1) % #barrageAngles) + 1]
+		-- Two crossing phantom slashes on the target, then sparks.
+		slashMark(center + jitter, angle, 5, 0.16)
+		task.delay(0.03, slashMark, center - jitter * 0.5, angle + 1.4, 4, 0.14)
+		redSparks(center, 6, 0.6)
+		U.burst(center, {
+			color = WHITE,
+			count = 4,
+			size = 0.4,
+			speed = NumberRange.new(25, 40),
+			lifetime = NumberRange.new(0.08, 0.16),
+			streaks = true,
+		})
+		U.light(center, RED, 4, 9, 0.1)
+		if index % 2 == 0 then
+			U.afterimage(character, DARK_RED, 0.15)
+		end
+		if U.isLocal(character) or U.isLocal(data.target) then
+			CameraShake.Add(0.08)
+		end
+	elseif phase == "Push" then
+		local direction = root.CFrame.LookVector
+		local front = root.Position + direction * 3
+		U.flash(front, WHITE, 4, 0.1)
+		U.flash(front, BLACK, 7, 0.2)
+		U.impactRing(front, direction, WHITE, 0.8, 6, 0.25)
+		task.delay(0.05, U.impactRing, front + direction, direction, RED, 0.6, 5, 0.25)
+		blackSmoke(front, 12, 3, 18)
+		U.burst(front, {
+			color = RED,
+			count = 16,
+			size = 0.6,
+			speed = NumberRange.new(30, 55),
+			lifetime = NumberRange.new(0.15, 0.35),
+			streaks = true,
+			spread = 30,
+			direction = direction,
+		})
+		blackLightning(front, 4, 4)
+		U.light(front, RED, 10, 18, 0.3)
+		U.bodyTrail(data.target, WHITE, 0.3)
+		if U.isLocal(character) or U.isLocal(data.target) then
+			CameraShake.Add(0.3)
+			CameraShake.FovKick(5)
+		end
 	elseif phase == "Land" then
 		U.groundRocks(data.position, 8, 3, 1.6)
 		blackSmoke(data.position, 10, 3, 12)
@@ -5294,6 +5502,47 @@ VFX.RegisterKitEffect("AntiMagic", "Dash", function(data)
 		spread = 30,
 		direction = away,
 	})
+end)
+
+-- Sword clashes: whenever Asta's sword is blocked, or he blocks with it,
+-- molten orange sparks fly off the contact point.
+local function clashDirection(data): Vector3
+	local victimRoot = U.getRoot(data.victim)
+	local attackerRoot = U.getRoot(data.attacker)
+	if victimRoot and attackerRoot then
+		local toward = attackerRoot.Position - victimRoot.Position
+		return (Vector3.new(toward.X, 0, toward.Z).Unit + UP * 0.7).Unit
+	end
+	return UP
+end
+
+VFX.RegisterKitEffect("AntiMagic", "Block", function(data)
+	local position: Vector3 = data.position
+	U.sparks(position, clashDirection(data), 1)
+	U.highlight(data.victim, Color3.fromRGB(255, 170, 80), 0.1)
+	if U.isLocal(data.attacker) or U.isLocal(data.victim) then
+		CameraShake.Add(0.12)
+	end
+end)
+
+VFX.RegisterKitEffect("AntiMagic", "GuardBreak", function(data)
+	local position: Vector3 = data.position
+	local direction = clashDirection(data)
+	U.sparks(position, direction, 1.8)
+	task.delay(0.05, U.sparks, position, (direction + U.randomUnit() * 0.4).Unit, 1.2)
+	U.shards(position, Color3.fromRGB(255, 160, 60), 12)
+	U.flash(position, Color3.fromRGB(255, 190, 110), 6, 0.2)
+	U.light(position, Color3.fromRGB(255, 140, 50), 10, 18, 0.35)
+	U.highlight(data.victim, Color3.fromRGB(255, 140, 50), 0.35)
+	U.popup(position + UP * 2, "GUARD BREAK", Color3.fromRGB(255, 170, 60), 1.5)
+	if U.isLocal(data.attacker) or U.isLocal(data.victim) then
+		CameraShake.Add(0.4)
+	end
+end)
+
+VFX.RegisterKitEffect("AntiMagic", "PerfectBlock", function(data)
+	VFX.PlayDefault("PerfectBlock", data)
+	U.sparks(data.position, clashDirection(data), 1.4)
 end)
 
 function Kit.SetAwakened(character: Model, on: boolean)
@@ -6485,6 +6734,215 @@ Animations.Stagger = {
 			},
 			"Sine",
 			"InOut",
+		},
+	},
+}
+
+-- Bull Thrust: propelling forward, sword thrust ahead.
+Animations.Propel = {
+	fadeIn = 0.03,
+	fadeOut = 0.1,
+	delays = { Sword = 0.02 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.07,
+			{
+				Torso = rot(-30, 10),
+				Head = rot(22, -8),
+				RightArm = limb(60, 5),
+				Sword = aim(0, -0.05, -1),
+				LeftArm = limb(-35, 0, -25),
+				RightLeg = rot(-38),
+				LeftLeg = rot(32),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.4,
+			{
+				Torso = rot(-30, 10),
+				Head = rot(22, -8),
+				RightArm = limb(60, 5),
+				Sword = aim(0, -0.05, -1),
+				LeftArm = limb(-35, 0, -25),
+				RightLeg = rot(-38),
+				LeftLeg = rot(32),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Bull Thrust: rapid slash flurry ending in a pushing thrust.
+Animations.Barrage = {
+	fadeIn = 0.03,
+	fadeOut = 0.2,
+	additive = { RightLeg = true, LeftLeg = true },
+	delays = { Sword = 0.015, Head = -0.01 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-30, 10),
+				Head = rot(22, -8),
+				RightArm = limb(60, 5),
+				Sword = aim(0, -0.05, -1),
+				LeftArm = limb(-35, 0, -25),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.1,
+			{
+				Torso = rot(-6, -25),
+				Head = rot(6, 18),
+				RightArm = limb(82, -70),
+				Sword = aim(0.85, 0.05, -0.5),
+				LeftArm = limb(40, -25),
+				RightLeg = rot(0, 22),
+				LeftLeg = rot(0, 22),
+			},
+			"Quad",
+			"InOut",
+		},
+		{
+			0.2,
+			{
+				Torso = rot(-6, 25),
+				Head = rot(6, -18),
+				RightArm = limb(82, 70),
+				Sword = aim(-0.85, 0.05, -0.5),
+				LeftArm = limb(35, -30),
+				RightLeg = rot(0, -22),
+				LeftLeg = rot(0, -22),
+			},
+			"Quad",
+			"InOut",
+		},
+		{
+			0.3,
+			{
+				Torso = rot(-6, -25),
+				Head = rot(6, 18),
+				RightArm = limb(82, -70),
+				Sword = aim(0.85, 0.05, -0.5),
+				LeftArm = limb(40, -25),
+				RightLeg = rot(0, 22),
+				LeftLeg = rot(0, 22),
+			},
+			"Quad",
+			"InOut",
+		},
+		{
+			0.4,
+			{
+				Torso = rot(4),
+				Head = rot(-4),
+				RightArm = limb(150, 10),
+				Sword = aim(0, 0.85, -0.52),
+				LeftArm = limb(45, -25),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+			"Quad",
+			"InOut",
+		},
+		{
+			0.5,
+			{
+				Torso = rot(-14),
+				Head = rot(10),
+				RightArm = limb(55, 5),
+				Sword = aim(0, -0.3, -0.95),
+				LeftArm = limb(40, -25),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+			"Quad",
+			"InOut",
+		},
+		{
+			0.6,
+			{
+				Torso = rot(-6, 25),
+				Head = rot(6, -18),
+				RightArm = limb(82, 70),
+				Sword = aim(-0.85, 0.05, -0.5),
+				LeftArm = limb(35, -30),
+				RightLeg = rot(0, -22),
+				LeftLeg = rot(0, -22),
+			},
+			"Quad",
+			"InOut",
+		},
+		{
+			0.7,
+			{
+				Torso = rot(-6, -25),
+				Head = rot(6, 18),
+				RightArm = limb(82, -70),
+				Sword = aim(0.85, 0.05, -0.5),
+				LeftArm = limb(40, -25),
+				RightLeg = rot(0, 22),
+				LeftLeg = rot(0, 22),
+			},
+			"Quad",
+			"InOut",
+		},
+		{
+			0.8,
+			{
+				Torso = rot(-6, 25),
+				Head = rot(6, -18),
+				RightArm = limb(82, 70),
+				Sword = aim(-0.85, 0.05, -0.5),
+				LeftArm = limb(35, -30),
+				RightLeg = rot(0, -22),
+				LeftLeg = rot(0, -22),
+			},
+			"Quad",
+			"InOut",
+		},
+		{
+			0.92,
+			{
+				Torso = rot(-16, 6),
+				Head = rot(12, -4),
+				RightArm = limb(85),
+				Sword = aim(0, 0, -1),
+				LeftArm = limb(-20, 0, -30),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			1.12,
+			{
+				Torso = rot(-16, 6),
+				Head = rot(12, -4),
+				RightArm = limb(85),
+				Sword = aim(0, 0, -1),
+				LeftArm = limb(-20, 0, -30),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+			"Linear",
+			"Out",
 		},
 	},
 }
@@ -8935,6 +9393,130 @@ local function screenFlash(color: Color3, duration: number)
 	Debris:AddItem(correction, duration + 0.05)
 end
 
+-- Four-point star glint facing the camera (metal catching the light).
+local function glint(position: Vector3, scale: number, color: Color3?)
+	local camera = workspace.CurrentCamera
+	local base = CFrame.lookAt(position, camera.CFrame.Position)
+	local tint = color or Color3.fromRGB(255, 236, 190)
+	for i = 0, 1 do
+		local bar = newPart({
+			Size = Vector3.new(0.1, 0.1, 0.04),
+			CFrame = base * CFrame.Angles(0, 0, math.rad(45 + i * 90)),
+			Color = tint,
+		})
+		tween(bar, 0.05, { Size = Vector3.new((if i == 0 then 3.4 else 2.2) * scale, 0.14 * scale, 0.04) })
+		task.delay(0.05, function()
+			tween(
+				bar,
+				0.14,
+				{ Size = Vector3.new(0.2, 0.02, 0.02), Transparency = 1 },
+				Enum.EasingStyle.Quad,
+				Enum.EasingDirection.In
+			)
+		end)
+		Debris:AddItem(bar, 0.22)
+	end
+	flash(position, tint, 1.4 * scale, 0.1)
+end
+
+local SPARK_COLORS = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 250, 225)),
+	ColorSequenceKeypoint.new(0.2, Color3.fromRGB(255, 205, 90)),
+	ColorSequenceKeypoint.new(0.65, Color3.fromRGB(255, 125, 25)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(170, 35, 10)),
+})
+
+--[[
+	Molten metal sparks, for sword clashes: hot streaks that fly out along
+	`direction` and arc down under gravity, slower embers that linger, a
+	glint, a flash of orange light and a puff of metal dust.
+]]
+local function sparks(position: Vector3, direction: Vector3, scale: number?)
+	local k = scale or 1
+	local aim = if direction.Magnitude > 1e-3 then direction.Unit else Vector3.yAxis
+	local holder =
+		newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.lookAt(position, position + aim) })
+	local attachment = Instance.new("Attachment")
+	attachment.Parent = holder
+
+	local streaks = Instance.new("ParticleEmitter")
+	streaks.Texture = TEXTURES.Spark
+	streaks.Color = SPARK_COLORS
+	streaks.LightEmission = 1
+	streaks.LightInfluence = 0
+	streaks.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.24 * k), NumberSequenceKeypoint.new(1, 0) })
+	streaks.Squash = NumberSequence.new(2.5)
+	streaks.Orientation = Enum.ParticleOrientation.VelocityParallel
+	streaks.EmissionDirection = Enum.NormalId.Front
+	streaks.SpreadAngle = Vector2.new(55, 55)
+	streaks.Speed = NumberRange.new(30 * k, 62 * k)
+	streaks.Acceleration = Vector3.new(0, -95, 0)
+	streaks.Drag = 1.5
+	streaks.Lifetime = NumberRange.new(0.25, 0.55)
+	streaks.Enabled = false
+	streaks.Parent = attachment
+	streaks:Emit(math.floor(26 * k))
+
+	local embers = Instance.new("ParticleEmitter")
+	embers.Texture = TEXTURES.Spark
+	embers.Color = SPARK_COLORS
+	embers.LightEmission = 1
+	embers.LightInfluence = 0
+	embers.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.3 * k), NumberSequenceKeypoint.new(1, 0) })
+	embers.EmissionDirection = Enum.NormalId.Front
+	embers.SpreadAngle = Vector2.new(85, 85)
+	embers.Speed = NumberRange.new(6 * k, 16 * k)
+	embers.Acceleration = Vector3.new(0, -45, 0)
+	embers.Drag = 2
+	embers.Lifetime = NumberRange.new(0.5, 1)
+	embers.Rotation = NumberRange.new(0, 360)
+	embers.RotSpeed = NumberRange.new(-300, 300)
+	embers.Enabled = false
+	embers.Parent = attachment
+	embers:Emit(math.floor(10 * k))
+
+	glint(position, k)
+	light(position, Color3.fromRGB(255, 160, 60), 7 * k, 12 * k, 0.22)
+	burst(position, {
+		texture = TEXTURES.Smoke,
+		color = Color3.fromRGB(150, 140, 130),
+		count = 3,
+		size = 1.2 * k,
+		speed = NumberRange.new(2, 5),
+		lifetime = NumberRange.new(0.3, 0.6),
+		lightEmission = 0,
+		transparency = 0.6,
+		drag = 3,
+	})
+	Debris:AddItem(holder, 1.2)
+end
+
+-- Thin white speed lines rushing past a moving character for `duration`.
+local function speedLines(root: BasePart, direction: Vector3, duration: number, color: Color3?)
+	local aim = if direction.Magnitude > 1e-3 then direction.Unit else root.CFrame.LookVector
+	local start = os.clock()
+	task.spawn(function()
+		while os.clock() - start < duration and root.Parent do
+			for _ = 1, 3 do
+				local offset = randomUnit() * Vector3.new(2.6, 2.2, 2.6)
+				local from = root.Position + offset + aim * 4
+				local line = newPart({
+					Size = Vector3.new(0.05, 0.05, 2.5 + math.random() * 2),
+					CFrame = CFrame.lookAt(from, from + aim),
+					Color = color or Color3.new(1, 1, 1),
+					Transparency = 0.25,
+				})
+				tween(line, 0.16, {
+					CFrame = CFrame.lookAt(from - aim * 9, from - aim * 8),
+					Transparency = 1,
+				}, Enum.EasingStyle.Linear)
+				Debris:AddItem(line, 0.18)
+			end
+			task.wait(0.035)
+		end
+	end)
+end
+
 ---------------------------------------------------------------------------
 -- Effects (names match what the server sends)
 ---------------------------------------------------------------------------
@@ -9298,6 +9880,9 @@ VFX.Util = {
 	groundRocks = groundRocks,
 	popup = popup,
 	screenFlash = screenFlash,
+	glint = glint,
+	sparks = sparks,
+	speedLines = speedLines,
 }
 
 -- Adds (or replaces) a named effect the server can trigger.
@@ -9318,16 +9903,38 @@ function VFX.SetPalette(kitId: string, palette: Palette)
 end
 
 -- Plays an effect locally (used for instant feedback on your own actions).
-function VFX.Play(name: string, data: any)
-	local effect = Effects[name]
-	local character = if type(data) == "table" then data.character else nil
-	if typeof(character) == "Instance" then
-		local kitId = character:GetAttribute("Kit")
+-- The kit whose version of `name` should play: the attacker's (data.kit),
+-- then the acting character's, then the defender's (data.victimKit), so a
+-- block against Asta's sword, or by it, makes sword sparks.
+local function overrideFor(name: string, data: any): ((data: any) -> ())?
+	if type(data) ~= "table" then
+		return nil
+	end
+	local candidates = { data.kit }
+	if typeof(data.character) == "Instance" then
+		table.insert(candidates, data.character:GetAttribute("Kit"))
+	end
+	table.insert(candidates, data.victimKit)
+	for _, kitId in candidates do
 		local overrides = if type(kitId) == "string" then kitEffects[kitId] else nil
 		if overrides and overrides[name] then
-			effect = overrides[name]
+			return overrides[name]
 		end
 	end
+	return nil
+end
+
+-- Plays the built-in version of an effect, ignoring kit overrides (lets an
+-- override add to the default instead of replacing it).
+function VFX.PlayDefault(name: string, data: any)
+	local effect = Effects[name]
+	if effect then
+		task.spawn(effect, data)
+	end
+end
+
+function VFX.Play(name: string, data: any)
+	local effect = overrideFor(name, data) or Effects[name]
 	if effect then
 		task.spawn(effect, data)
 	end

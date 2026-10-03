@@ -441,6 +441,130 @@ local function screenFlash(color: Color3, duration: number)
 	Debris:AddItem(correction, duration + 0.05)
 end
 
+-- Four-point star glint facing the camera (metal catching the light).
+local function glint(position: Vector3, scale: number, color: Color3?)
+	local camera = workspace.CurrentCamera
+	local base = CFrame.lookAt(position, camera.CFrame.Position)
+	local tint = color or Color3.fromRGB(255, 236, 190)
+	for i = 0, 1 do
+		local bar = newPart({
+			Size = Vector3.new(0.1, 0.1, 0.04),
+			CFrame = base * CFrame.Angles(0, 0, math.rad(45 + i * 90)),
+			Color = tint,
+		})
+		tween(bar, 0.05, { Size = Vector3.new((if i == 0 then 3.4 else 2.2) * scale, 0.14 * scale, 0.04) })
+		task.delay(0.05, function()
+			tween(
+				bar,
+				0.14,
+				{ Size = Vector3.new(0.2, 0.02, 0.02), Transparency = 1 },
+				Enum.EasingStyle.Quad,
+				Enum.EasingDirection.In
+			)
+		end)
+		Debris:AddItem(bar, 0.22)
+	end
+	flash(position, tint, 1.4 * scale, 0.1)
+end
+
+local SPARK_COLORS = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 250, 225)),
+	ColorSequenceKeypoint.new(0.2, Color3.fromRGB(255, 205, 90)),
+	ColorSequenceKeypoint.new(0.65, Color3.fromRGB(255, 125, 25)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(170, 35, 10)),
+})
+
+--[[
+	Molten metal sparks, for sword clashes: hot streaks that fly out along
+	`direction` and arc down under gravity, slower embers that linger, a
+	glint, a flash of orange light and a puff of metal dust.
+]]
+local function sparks(position: Vector3, direction: Vector3, scale: number?)
+	local k = scale or 1
+	local aim = if direction.Magnitude > 1e-3 then direction.Unit else Vector3.yAxis
+	local holder =
+		newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.lookAt(position, position + aim) })
+	local attachment = Instance.new("Attachment")
+	attachment.Parent = holder
+
+	local streaks = Instance.new("ParticleEmitter")
+	streaks.Texture = TEXTURES.Spark
+	streaks.Color = SPARK_COLORS
+	streaks.LightEmission = 1
+	streaks.LightInfluence = 0
+	streaks.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.24 * k), NumberSequenceKeypoint.new(1, 0) })
+	streaks.Squash = NumberSequence.new(2.5)
+	streaks.Orientation = Enum.ParticleOrientation.VelocityParallel
+	streaks.EmissionDirection = Enum.NormalId.Front
+	streaks.SpreadAngle = Vector2.new(55, 55)
+	streaks.Speed = NumberRange.new(30 * k, 62 * k)
+	streaks.Acceleration = Vector3.new(0, -95, 0)
+	streaks.Drag = 1.5
+	streaks.Lifetime = NumberRange.new(0.25, 0.55)
+	streaks.Enabled = false
+	streaks.Parent = attachment
+	streaks:Emit(math.floor(26 * k))
+
+	local embers = Instance.new("ParticleEmitter")
+	embers.Texture = TEXTURES.Spark
+	embers.Color = SPARK_COLORS
+	embers.LightEmission = 1
+	embers.LightInfluence = 0
+	embers.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.3 * k), NumberSequenceKeypoint.new(1, 0) })
+	embers.EmissionDirection = Enum.NormalId.Front
+	embers.SpreadAngle = Vector2.new(85, 85)
+	embers.Speed = NumberRange.new(6 * k, 16 * k)
+	embers.Acceleration = Vector3.new(0, -45, 0)
+	embers.Drag = 2
+	embers.Lifetime = NumberRange.new(0.5, 1)
+	embers.Rotation = NumberRange.new(0, 360)
+	embers.RotSpeed = NumberRange.new(-300, 300)
+	embers.Enabled = false
+	embers.Parent = attachment
+	embers:Emit(math.floor(10 * k))
+
+	glint(position, k)
+	light(position, Color3.fromRGB(255, 160, 60), 7 * k, 12 * k, 0.22)
+	burst(position, {
+		texture = TEXTURES.Smoke,
+		color = Color3.fromRGB(150, 140, 130),
+		count = 3,
+		size = 1.2 * k,
+		speed = NumberRange.new(2, 5),
+		lifetime = NumberRange.new(0.3, 0.6),
+		lightEmission = 0,
+		transparency = 0.6,
+		drag = 3,
+	})
+	Debris:AddItem(holder, 1.2)
+end
+
+-- Thin white speed lines rushing past a moving character for `duration`.
+local function speedLines(root: BasePart, direction: Vector3, duration: number, color: Color3?)
+	local aim = if direction.Magnitude > 1e-3 then direction.Unit else root.CFrame.LookVector
+	local start = os.clock()
+	task.spawn(function()
+		while os.clock() - start < duration and root.Parent do
+			for _ = 1, 3 do
+				local offset = randomUnit() * Vector3.new(2.6, 2.2, 2.6)
+				local from = root.Position + offset + aim * 4
+				local line = newPart({
+					Size = Vector3.new(0.05, 0.05, 2.5 + math.random() * 2),
+					CFrame = CFrame.lookAt(from, from + aim),
+					Color = color or Color3.new(1, 1, 1),
+					Transparency = 0.25,
+				})
+				tween(line, 0.16, {
+					CFrame = CFrame.lookAt(from - aim * 9, from - aim * 8),
+					Transparency = 1,
+				}, Enum.EasingStyle.Linear)
+				Debris:AddItem(line, 0.18)
+			end
+			task.wait(0.035)
+		end
+	end)
+end
+
 ---------------------------------------------------------------------------
 -- Effects (names match what the server sends)
 ---------------------------------------------------------------------------
@@ -804,6 +928,9 @@ VFX.Util = {
 	groundRocks = groundRocks,
 	popup = popup,
 	screenFlash = screenFlash,
+	glint = glint,
+	sparks = sparks,
+	speedLines = speedLines,
 }
 
 -- Adds (or replaces) a named effect the server can trigger.
@@ -824,16 +951,38 @@ function VFX.SetPalette(kitId: string, palette: Palette)
 end
 
 -- Plays an effect locally (used for instant feedback on your own actions).
-function VFX.Play(name: string, data: any)
-	local effect = Effects[name]
-	local character = if type(data) == "table" then data.character else nil
-	if typeof(character) == "Instance" then
-		local kitId = character:GetAttribute("Kit")
+-- The kit whose version of `name` should play: the attacker's (data.kit),
+-- then the acting character's, then the defender's (data.victimKit), so a
+-- block against Asta's sword, or by it, makes sword sparks.
+local function overrideFor(name: string, data: any): ((data: any) -> ())?
+	if type(data) ~= "table" then
+		return nil
+	end
+	local candidates = { data.kit }
+	if typeof(data.character) == "Instance" then
+		table.insert(candidates, data.character:GetAttribute("Kit"))
+	end
+	table.insert(candidates, data.victimKit)
+	for _, kitId in candidates do
 		local overrides = if type(kitId) == "string" then kitEffects[kitId] else nil
 		if overrides and overrides[name] then
-			effect = overrides[name]
+			return overrides[name]
 		end
 	end
+	return nil
+end
+
+-- Plays the built-in version of an effect, ignoring kit overrides (lets an
+-- override add to the default instead of replacing it).
+function VFX.PlayDefault(name: string, data: any)
+	local effect = Effects[name]
+	if effect then
+		task.spawn(effect, data)
+	end
+end
+
+function VFX.Play(name: string, data: any)
+	local effect = overrideFor(name, data) or Effects[name]
 	if effect then
 		task.spawn(effect, data)
 	end

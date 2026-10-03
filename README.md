@@ -57,7 +57,7 @@ A close-range rushdown character built like Vessel (Jujutsu Shenanigans) and Her
 
 | Key | Base | Black Form (after G) |
 |---|---|---|
-| 1 | **Bull Thrust**: charge in, slash flurry, launcher. In the air it's a diving thrust. | **Black Hurricane**: spinning charge that drags enemies along |
+| 1 | **Bull Thrust**: rockets forward on anti-magic, catches the target in an 8-hit slash barrage, then pushes them back still stunned so you can M1 straight into them. In the air it's a diving thrust. | **Black Hurricane**: spinning charge that drags enemies along |
 | 2 | **Black Meteorite**: unblockable lunge grab, carries them up, crater slam | **Black Slash**: piercing anti-magic slash wave |
 | 3 | **Black Divider**: charged cleave. Press **3** again on the red flash for a Perfect Divider. | **Grand Divider**: huge guard-breaking cleave plus a giant slash wave |
 | 4 | **Anti-Magic Deflect**: counters every attack type. Slashes melee attackers aside and sends projectiles back. | **Demon-Destroyer**: grab, carve, explosive finisher that heals 30% |

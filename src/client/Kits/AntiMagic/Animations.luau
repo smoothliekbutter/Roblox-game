@@ -1168,6 +1168,215 @@ Animations.Stagger = {
 	},
 }
 
+-- Bull Thrust: propelling forward, sword thrust ahead.
+Animations.Propel = {
+	fadeIn = 0.03,
+	fadeOut = 0.1,
+	delays = { Sword = 0.02 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.07,
+			{
+				Torso = rot(-30, 10),
+				Head = rot(22, -8),
+				RightArm = limb(60, 5),
+				Sword = aim(0, -0.05, -1),
+				LeftArm = limb(-35, 0, -25),
+				RightLeg = rot(-38),
+				LeftLeg = rot(32),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.4,
+			{
+				Torso = rot(-30, 10),
+				Head = rot(22, -8),
+				RightArm = limb(60, 5),
+				Sword = aim(0, -0.05, -1),
+				LeftArm = limb(-35, 0, -25),
+				RightLeg = rot(-38),
+				LeftLeg = rot(32),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Bull Thrust: rapid slash flurry ending in a pushing thrust.
+Animations.Barrage = {
+	fadeIn = 0.03,
+	fadeOut = 0.2,
+	additive = { RightLeg = true, LeftLeg = true },
+	delays = { Sword = 0.015, Head = -0.01 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-30, 10),
+				Head = rot(22, -8),
+				RightArm = limb(60, 5),
+				Sword = aim(0, -0.05, -1),
+				LeftArm = limb(-35, 0, -25),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.1,
+			{
+				Torso = rot(-6, -25),
+				Head = rot(6, 18),
+				RightArm = limb(82, -70),
+				Sword = aim(0.85, 0.05, -0.5),
+				LeftArm = limb(40, -25),
+				RightLeg = rot(0, 22),
+				LeftLeg = rot(0, 22),
+			},
+			"Quad",
+			"InOut",
+		},
+		{
+			0.2,
+			{
+				Torso = rot(-6, 25),
+				Head = rot(6, -18),
+				RightArm = limb(82, 70),
+				Sword = aim(-0.85, 0.05, -0.5),
+				LeftArm = limb(35, -30),
+				RightLeg = rot(0, -22),
+				LeftLeg = rot(0, -22),
+			},
+			"Quad",
+			"InOut",
+		},
+		{
+			0.3,
+			{
+				Torso = rot(-6, -25),
+				Head = rot(6, 18),
+				RightArm = limb(82, -70),
+				Sword = aim(0.85, 0.05, -0.5),
+				LeftArm = limb(40, -25),
+				RightLeg = rot(0, 22),
+				LeftLeg = rot(0, 22),
+			},
+			"Quad",
+			"InOut",
+		},
+		{
+			0.4,
+			{
+				Torso = rot(4),
+				Head = rot(-4),
+				RightArm = limb(150, 10),
+				Sword = aim(0, 0.85, -0.52),
+				LeftArm = limb(45, -25),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+			"Quad",
+			"InOut",
+		},
+		{
+			0.5,
+			{
+				Torso = rot(-14),
+				Head = rot(10),
+				RightArm = limb(55, 5),
+				Sword = aim(0, -0.3, -0.95),
+				LeftArm = limb(40, -25),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+			"Quad",
+			"InOut",
+		},
+		{
+			0.6,
+			{
+				Torso = rot(-6, 25),
+				Head = rot(6, -18),
+				RightArm = limb(82, 70),
+				Sword = aim(-0.85, 0.05, -0.5),
+				LeftArm = limb(35, -30),
+				RightLeg = rot(0, -22),
+				LeftLeg = rot(0, -22),
+			},
+			"Quad",
+			"InOut",
+		},
+		{
+			0.7,
+			{
+				Torso = rot(-6, -25),
+				Head = rot(6, 18),
+				RightArm = limb(82, -70),
+				Sword = aim(0.85, 0.05, -0.5),
+				LeftArm = limb(40, -25),
+				RightLeg = rot(0, 22),
+				LeftLeg = rot(0, 22),
+			},
+			"Quad",
+			"InOut",
+		},
+		{
+			0.8,
+			{
+				Torso = rot(-6, 25),
+				Head = rot(6, -18),
+				RightArm = limb(82, 70),
+				Sword = aim(-0.85, 0.05, -0.5),
+				LeftArm = limb(35, -30),
+				RightLeg = rot(0, -22),
+				LeftLeg = rot(0, -22),
+			},
+			"Quad",
+			"InOut",
+		},
+		{
+			0.92,
+			{
+				Torso = rot(-16, 6),
+				Head = rot(12, -4),
+				RightArm = limb(85),
+				Sword = aim(0, 0, -1),
+				LeftArm = limb(-20, 0, -30),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			1.12,
+			{
+				Torso = rot(-16, 6),
+				Head = rot(12, -4),
+				RightArm = limb(85),
+				Sword = aim(0, 0, -1),
+				LeftArm = limb(-20, 0, -30),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
 -- Spawn entrance: crouched landing, grimoire appears, sword drawn from it, twirled overhead, slammed into the ground, rested on the shoulder.
 Animations.Entrance = {
 	fadeIn = 0.08,

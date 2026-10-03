@@ -400,6 +400,14 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	local toAttacker = flat(attackerRoot.Position - victimRoot.Position)
 	local look = flat(attackerRoot.CFrame.LookVector)
 	local contact = victimRoot.Position + toAttacker * 1.2
+	-- Whose weapons met, so clients can draw the right clash (sword sparks...).
+	local clash = {
+		position = contact,
+		victim = victim,
+		attacker = attacker,
+		kit = attacker:GetAttribute("Kit"),
+		victimKit = victim:GetAttribute("Kit"),
+	}
 
 	local facing = victimRoot.CFrame.LookVector:Dot(toAttacker) > Config.Block.FacingDot
 	if CombatState.IsBlocking(victim) and facing and not hit.unblockable then
@@ -407,7 +415,7 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 
 		if blockAge <= Config.Block.PerfectWindow then
 			CombatState.Stun(attacker, Config.Block.ParryStun)
-			CombatService.FireVFX("PerfectBlock", { position = contact, attacker = attacker, victim = victim })
+			CombatService.FireVFX("PerfectBlock", clash)
 			CombatService.Shake(attacker, 0.6)
 			CombatService.Shake(victim, 0.35)
 			return "Parried"
@@ -416,13 +424,13 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 		if hit.guardBreak then
 			CombatState.SetBlocking(victim, false)
 			CombatState.Stun(victim, Config.Block.GuardBreakStun)
-			CombatService.FireVFX("GuardBreak", { position = contact, victim = victim })
+			CombatService.FireVFX("GuardBreak", clash)
 			CombatService.Shake(attacker, 0.4)
 			CombatService.Shake(victim, 0.6)
 			return "GuardBreak"
 		end
 
-		CombatService.FireVFX("Block", { position = contact, victim = victim })
+		CombatService.FireVFX("Block", clash)
 		CombatService.ApplyVelocity(victim, -toAttacker * Config.Block.Pushback, 0.12)
 		CombatService.Shake(victim, 0.12)
 		return "Blocked"
