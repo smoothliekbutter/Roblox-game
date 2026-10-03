@@ -30,6 +30,8 @@ Config.M1 = {
 	Busy = 0.25, -- slowed while swinging
 	FinisherBusy = 0.45,
 	WindUp = 0.08, -- delay between the swing starting and the hitbox
+	FinisherWindUp = 0.15, -- the 4th hit winds up longer (matches its animation)
+	InputTolerance = 0.06, -- accept swings this early to absorb network jitter
 
 	HitStun = 0.6, -- longer than SwingCooldown + WindUp, so strings are true combos
 	UppercutStun = 1.1,

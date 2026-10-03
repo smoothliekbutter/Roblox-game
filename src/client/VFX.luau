@@ -9,7 +9,6 @@
 local Debris = game:GetService("Debris")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local Remotes = require(ReplicatedStorage:WaitForChild("Shared").Remotes)
@@ -75,19 +74,6 @@ local function tween(
 	return t
 end
 
--- Calls step(alpha) every frame with alpha going 0 -> 1 over `duration`.
-local function animate(duration: number, step: (alpha: number) -> ())
-	local start = os.clock()
-	local connection
-	connection = RunService.RenderStepped:Connect(function()
-		local alpha = math.min((os.clock() - start) / duration, 1)
-		step(alpha)
-		if alpha >= 1 then
-			connection:Disconnect()
-		end
-	end)
-end
-
 local function randomUnit(): Vector3
 	local v = Vector3.new(math.random() - 0.5, math.random() - 0.5, math.random() - 0.5)
 	return if v.Magnitude > 1e-3 then v.Unit else Vector3.yAxis
@@ -140,11 +126,15 @@ type BurstOptions = {
 	acceleration: Vector3?,
 	spread: number?,
 	streaks: boolean?,
+	direction: Vector3?, -- aim the spread cone this way (default: straight up)
 }
 
 -- One-shot particle burst at a point.
 local function burst(position: Vector3, options: BurstOptions)
-	local holder = newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.new(position) })
+	local cframe = if options.direction
+		then CFrame.lookAt(position, position + options.direction)
+		else CFrame.new(position)
+	local holder = newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = cframe })
 	local attachment = Instance.new("Attachment")
 	attachment.Parent = holder
 
@@ -166,6 +156,9 @@ local function burst(position: Vector3, options: BurstOptions)
 	emitter.SpreadAngle = Vector2.one * (options.spread or 180)
 	emitter.Drag = options.drag or 5
 	emitter.Acceleration = options.acceleration or Vector3.zero
+	if options.direction then
+		emitter.EmissionDirection = Enum.NormalId.Front
+	end
 	emitter.Rotation = NumberRange.new(0, 360)
 	emitter.RotSpeed = NumberRange.new(-180, 180)
 	if options.streaks then
@@ -442,73 +435,6 @@ end
 -- Effects (names match what the server sends)
 ---------------------------------------------------------------------------
 
--- Slash arc in front of the attacker. Alternates sides through the string;
--- finishers are big vertical arcs.
-function Effects.Swing(data)
-	local root = getRoot(data.character)
-	if not root then
-		return
-	end
-	local finisher = data.finisher == true
-	local duration = if finisher then 0.28 else 0.18
-
-	local holder = newPart({ Size = Vector3.one * 0.1, Transparency = 1, CFrame = root.CFrame })
-	local a0 = Instance.new("Attachment")
-	local a1 = Instance.new("Attachment")
-	-- Rotating the attachments makes their X axis point forward, so the
-	-- beam's curve bulges out in front of the character.
-	local forward = CFrame.Angles(0, math.rad(90), 0)
-	if data.variant == "Uppercut" then
-		a0.CFrame = CFrame.new(0.6, -2.2, -1.5) * forward
-		a1.CFrame = CFrame.new(-0.6, 4, -1.5) * forward
-	elseif finisher then
-		a0.CFrame = CFrame.new(0, 4, -1.5) * forward
-		a1.CFrame = CFrame.new(0, -2.2, -1.5) * forward
-	elseif data.index % 2 == 1 then
-		a0.CFrame = CFrame.new(-3, 0.9, -1) * forward
-		a1.CFrame = CFrame.new(3, -0.5, -1) * forward
-	else
-		a0.CFrame = CFrame.new(3, 0.7, -1) * forward
-		a1.CFrame = CFrame.new(-3, -0.7, -1) * forward
-	end
-	a0.Parent = holder
-	a1.Parent = holder
-
-	local curve = if finisher then 5 else 3.5
-	local width = if finisher then 1.8 else 1.1
-	local beam = Instance.new("Beam")
-	beam.Attachment0 = a0
-	beam.Attachment1 = a1
-	beam.CurveSize0 = curve
-	beam.CurveSize1 = -curve
-	beam.Segments = 24
-	beam.FaceCamera = true
-	beam.LightEmission = 1
-	beam.LightInfluence = 0
-	beam.Color = ColorSequence.new(if finisher then COLORS.Heavy:Lerp(COLORS.Swing, 0.5) else COLORS.Swing)
-	beam.Width0 = 0.1
-	beam.Width1 = width
-	beam.Parent = holder
-
-	local follow = RunService.RenderStepped:Connect(function()
-		if root.Parent then
-			holder.CFrame = root.CFrame
-		end
-	end)
-	animate(duration, function(alpha)
-		beam.Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 1),
-			NumberSequenceKeypoint.new(0.35, 0.15 + 0.85 * alpha),
-			NumberSequenceKeypoint.new(1, alpha),
-		})
-		beam.Width1 = width * (1 - alpha * 0.5)
-	end)
-	task.delay(duration, function()
-		follow:Disconnect()
-		holder:Destroy()
-	end)
-end
-
 function Effects.Hit(data)
 	local position: Vector3 = data.position
 	local direction: Vector3 = data.direction or Vector3.zAxis
@@ -703,6 +629,73 @@ function Effects.Crater(data)
 end
 
 ---------------------------------------------------------------------------
+
+---------------------------------------------------------------------------
+-- Public helpers used by the move animations
+---------------------------------------------------------------------------
+
+-- Streak behind a striking limb (fist or foot) for `duration` seconds.
+function VFX.LimbTrail(character: Model, limbName: string, duration: number, color: Color3?)
+	local limbPart = character:FindFirstChild(limbName)
+	if not limbPart or not limbPart:IsA("BasePart") then
+		return
+	end
+	-- Two points near the end of the limb (R6 limbs are 2 studs long).
+	local tip = Instance.new("Attachment")
+	tip.Position = Vector3.new(0, -1.1, 0)
+	tip.Parent = limbPart
+	local mid = Instance.new("Attachment")
+	mid.Position = Vector3.new(0, -0.3, 0)
+	mid.Parent = limbPart
+
+	local trail = Instance.new("Trail")
+	trail.Attachment0 = tip
+	trail.Attachment1 = mid
+	trail.Color = ColorSequence.new(color or COLORS.Swing)
+	trail.LightEmission = 1
+	trail.LightInfluence = 0
+	trail.Lifetime = 0.12
+	trail.MinLength = 0
+	trail.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.25),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	trail.WidthScale = NumberSequence.new(1, 0.2)
+	trail.FaceCamera = true
+	trail.Parent = limbPart
+
+	task.delay(duration, function()
+		trail.Enabled = false
+		task.wait(trail.Lifetime)
+		trail:Destroy()
+		tip:Destroy()
+		mid:Destroy()
+	end)
+end
+
+-- Burst of displaced air in front of a punch or kick.
+function VFX.AirPop(character: Model, heavy: boolean)
+	local root = getRoot(character)
+	if not root then
+		return
+	end
+	local look = root.CFrame.LookVector
+	local position = root.Position + look * (if heavy then 3.5 else 3) + Vector3.new(0, 0.5, 0)
+	impactRing(position, look, COLORS.Swing, 0.3, if heavy then 3.2 else 1.8, if heavy then 0.2 else 0.14)
+	burst(position, {
+		color = COLORS.Swing,
+		count = if heavy then 8 else 4,
+		size = 0.5,
+		speed = NumberRange.new(10, 20),
+		lifetime = NumberRange.new(0.1, 0.2),
+		streaks = true,
+		spread = 35,
+		direction = look,
+	})
+	if heavy then
+		flash(position, COLORS.Swing, 2.5, 0.1)
+	end
+end
 
 -- Plays an effect locally (used for instant feedback on your own actions).
 function VFX.Play(name: string, data: any)

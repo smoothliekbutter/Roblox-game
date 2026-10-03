@@ -92,7 +92,7 @@ local function isAirborne(character: Model): boolean
 end
 
 local function addEvasive(character: Model, amount: number)
-	local current = character:GetAttribute("Evasive") or 0
+	local current = tonumber(character:GetAttribute("Evasive")) or 0
 	local value = math.clamp(current + amount, 0, Config.Evasive.Max)
 	if value ~= current then
 		character:SetAttribute("Evasive", value)
@@ -153,6 +153,10 @@ function CombatService.Register(character: Model)
 	CombatState.Setup(character)
 	humanoid.BreakJointsOnDeath = false
 	humanoid.UseJumpPower = false
+	-- Only our ragdoll should knock people over. (For players this has to be
+	-- repeated on their client, see Input.)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
 
 	local data: CharData = {
 		humanoid = humanoid,
@@ -201,7 +205,7 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 
 	local facing = victimRoot.CFrame.LookVector:Dot(toAttacker) > Config.Block.FacingDot
 	if CombatState.IsBlocking(victim) and facing then
-		local blockAge = CombatState.Now() - (victim:GetAttribute("BlockStart") or 0)
+		local blockAge = CombatState.Now() - (tonumber(victim:GetAttribute("BlockStart")) or 0)
 
 		if blockAge <= Config.Block.PerfectWindow then
 			CombatState.Stun(attacker, Config.Block.ParryStun)
@@ -277,7 +281,7 @@ function CombatService.M1(character: Model, jump: boolean?)
 		return
 	end
 	local t = os.clock()
-	if t < data.nextM1 then
+	if t < data.nextM1 - Config.M1.InputTolerance then
 		return
 	end
 	if t - data.lastM1 > Config.M1.ResetTime then
@@ -308,7 +312,7 @@ function CombatService.M1(character: Model, jump: boolean?)
 
 	fireVFX("Swing", { character = character, index = index, finisher = finisher, variant = variant })
 
-	task.delay(Config.M1.WindUp, function()
+	task.delay(if finisher then Config.M1.FinisherWindUp else Config.M1.WindUp, function()
 		-- Getting hit during wind-up cancels the swing.
 		if not CombatState.CanAct(character) then
 			return
@@ -374,7 +378,7 @@ function CombatService.Evasive(character: Model): boolean
 	if not (CombatState.IsStunned(character) or CombatState.IsRagdolled(character)) then
 		return false
 	end
-	if (character:GetAttribute("Evasive") or 0) < Config.Evasive.Max then
+	if (tonumber(character:GetAttribute("Evasive")) or 0) < Config.Evasive.Max then
 		return false
 	end
 

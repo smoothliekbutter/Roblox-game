@@ -188,7 +188,7 @@ local function update(dt: number)
 		healthFill.BackgroundColor3 = COLORS.HealthLow:Lerp(COLORS.Health, ratio)
 		healthText.Text = string.format("%d / %d", math.ceil(humanoid.Health), humanoid.MaxHealth)
 
-		local evasive = (character :: Model):GetAttribute("Evasive") or 0
+		local evasive = tonumber((character :: Model):GetAttribute("Evasive")) or 0
 		local evasiveRatio = math.clamp(evasive / Config.Evasive.Max, 0, 1)
 		evasiveFill.Size = UDim2.fromScale(evasiveRatio, 1)
 		-- Pulse the outline when Evasive is ready.

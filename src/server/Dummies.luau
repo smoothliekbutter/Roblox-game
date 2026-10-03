@@ -119,7 +119,7 @@ local function spawnDummy(spec: Spec)
 	description.LeftLegColor = spec.color
 	description.RightLegColor = spec.color
 
-	local model = Players:CreateHumanoidModelFromDescription(description, Enum.HumanoidRigType.R6)
+	local model = Players:CreateHumanoidModelFromDescriptionAsync(description, Enum.HumanoidRigType.R6)
 	model.Name = spec.name
 
 	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid

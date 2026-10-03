@@ -31,6 +31,33 @@ local active: { [Model]: Record } = {}
 
 local Ragdoll = {}
 
+-- The Humanoid's own "get up" can fail on a body lying flat, so snap it
+-- upright, standing on the ground, facing the way the body was lying.
+local function standUp(character: Model, humanoid: Humanoid, root: BasePart)
+	local facing = root.CFrame.LookVector * Vector3.new(1, 0, 1)
+	if facing.Magnitude < 0.2 then
+		-- Lying on its back/front: the head direction is the best guess.
+		facing = root.CFrame.UpVector * Vector3.new(1, 0, 1)
+	end
+	if facing.Magnitude < 0.01 then
+		facing = Vector3.new(0, 0, -1)
+	end
+
+	local position = root.Position
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { character }
+	local ground = workspace:Raycast(position + Vector3.new(0, 2, 0), Vector3.new(0, -8, 0), params)
+	if ground then
+		local legLength = if humanoid.RigType == Enum.HumanoidRigType.R6 then 2 else humanoid.HipHeight
+		position = Vector3.new(position.X, ground.Position.Y + legLength + root.Size.Y / 2, position.Z)
+	end
+
+	root.AssemblyLinearVelocity = Vector3.zero
+	root.AssemblyAngularVelocity = Vector3.zero
+	root.CFrame = CFrame.lookAt(position, position + facing.Unit)
+end
+
 function Ragdoll.IsActive(character: Model): boolean
 	return active[character] ~= nil
 end
@@ -139,6 +166,9 @@ function Ragdoll.Disable(character: Model)
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
 	if humanoid and humanoid.Health > 0 then
+		if root then
+			standUp(character, humanoid, root)
+		end
 		humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
 		local player = Players:GetPlayerFromCharacter(character)
 		if player and root then

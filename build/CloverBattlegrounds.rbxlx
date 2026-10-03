@@ -44,15 +44,21 @@
       </Properties>
     </Item>
   </Item>
-  <Item class="ReplicatedStorage" referent="4">
+  <Item class="Players" referent="4">
+    <Properties>
+      <string name="Name">Players</string>
+      <bool name="CharacterAutoLoads">false</bool>
+    </Properties>
+  </Item>
+  <Item class="ReplicatedStorage" referent="5">
     <Properties>
       <string name="Name">ReplicatedStorage</string>
     </Properties>
-    <Item class="Folder" referent="5">
+    <Item class="Folder" referent="6">
       <Properties>
         <string name="Name">Shared</string>
       </Properties>
-      <Item class="ModuleScript" referent="6">
+      <Item class="ModuleScript" referent="7">
         <Properties>
           <string name="Name">CombatState</string>
           <string name="Source"><![CDATA[--[[
@@ -94,11 +100,11 @@ function CombatState.IsAlive(character: Model?): boolean
 end
 
 function CombatState.IsStunned(character: Model): boolean
-	return (character:GetAttribute("StunUntil") or 0) > now()
+	return (tonumber(character:GetAttribute("StunUntil")) or 0) > now()
 end
 
 function CombatState.IsBusy(character: Model): boolean
-	return (character:GetAttribute("BusyUntil") or 0) > now()
+	return (tonumber(character:GetAttribute("BusyUntil")) or 0) > now()
 end
 
 function CombatState.IsRagdolled(character: Model): boolean
@@ -110,7 +116,7 @@ function CombatState.IsBlocking(character: Model): boolean
 end
 
 function CombatState.HasIFrames(character: Model): boolean
-	return (character:GetAttribute("IFrameUntil") or 0) > now()
+	return (tonumber(character:GetAttribute("IFrameUntil")) or 0) > now()
 end
 
 -- Alive, not stunned and not ragdolled. Busy (mid-swing) is checked separately.
@@ -123,7 +129,7 @@ end
 -- Setters below are only meaningful on the server.
 
 function CombatState.Stun(character: Model, duration: number)
-	local untilTime = math.max(character:GetAttribute("StunUntil") or 0, now() + duration)
+	local untilTime = math.max(tonumber(character:GetAttribute("StunUntil")) or 0, now() + duration)
 	character:SetAttribute("StunUntil", untilTime)
 end
 
@@ -150,7 +156,7 @@ return CombatState
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="7">
+      <Item class="ModuleScript" referent="8">
         <Properties>
           <string name="Name">Config</string>
           <string name="Source"><![CDATA[--[[
@@ -185,6 +191,8 @@ Config.M1 = {
 	Busy = 0.25, -- slowed while swinging
 	FinisherBusy = 0.45,
 	WindUp = 0.08, -- delay between the swing starting and the hitbox
+	FinisherWindUp = 0.15, -- the 4th hit winds up longer (matches its animation)
+	InputTolerance = 0.06, -- accept swings this early to absorb network jitter
 
 	HitStun = 0.6, -- longer than SwingCooldown + WindUp, so strings are true combos
 	UppercutStun = 1.1,
@@ -242,7 +250,7 @@ return Config
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="8">
+      <Item class="ModuleScript" referent="9">
         <Properties>
           <string name="Name">Impulse</string>
           <string name="Source"><![CDATA[--[[
@@ -299,7 +307,7 @@ return Impulse
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="9">
+      <Item class="ModuleScript" referent="10">
         <Properties>
           <string name="Name">Remotes</string>
           <string name="Source"><![CDATA[--[[
@@ -348,11 +356,11 @@ return Remotes
       </Item>
     </Item>
   </Item>
-  <Item class="ServerScriptService" referent="10">
+  <Item class="ServerScriptService" referent="11">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Script" referent="11">
+    <Item class="Script" referent="12">
       <Properties>
         <string name="Name">Server</string>
         <token name="RunContext">0</token>
@@ -362,6 +370,7 @@ return Remotes
 
 local Players = game:GetService("Players")
 
+local CharacterLoader = require(script.CharacterLoader)
 local CombatService = require(script.CombatService)
 local Dummies = require(script.Dummies)
 
@@ -379,10 +388,105 @@ for _, player in Players:GetPlayers() do
 	task.spawn(onPlayerAdded, player)
 end
 
+-- After combat hooks are in place, so the first spawn gets registered.
+CharacterLoader.Start()
+
 Dummies.Start()
 ]]></string>
       </Properties>
-      <Item class="ModuleScript" referent="12">
+      <Item class="ModuleScript" referent="13">
+        <Properties>
+          <string name="Name">CharacterLoader</string>
+          <string name="Source"><![CDATA[--[[
+	CharacterLoader
+	Puts every player in an R6 body while keeping their own avatar look
+	(skin colors, clothes, face, accessories). Battlegrounds animations and
+	ragdolls are built for R6, and this works without publishing the place
+	or changing Game Settings.
+
+	How: an R6 rig named "StarterCharacter" in StarterPlayer makes Roblox
+	spawn everyone as that rig. We spawn players ourselves and then dress
+	the rig in their avatar.
+]]
+
+local Players = game:GetService("Players")
+local StarterPlayer = game:GetService("StarterPlayer")
+
+local CharacterLoader = {}
+
+local descriptions: { [Player]: HumanoidDescription } = {}
+
+local function getDescription(player: Player): HumanoidDescription
+	local cached = descriptions[player]
+	if cached then
+		return cached
+	end
+	local ok, description = pcall(function()
+		return Players:GetHumanoidDescriptionFromUserIdAsync(player.UserId)
+	end)
+	if not ok or not description then
+		-- Local test servers use fake negative user ids with no avatar.
+		description = Instance.new("HumanoidDescription")
+	end
+	descriptions[player] = description
+	return description
+end
+
+local function spawnCharacter(player: Player)
+	if not player.Parent then
+		return
+	end
+	player:LoadCharacterAsync()
+
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not character or not humanoid then
+		return
+	end
+
+	local ok, err = pcall(function()
+		humanoid:ApplyDescriptionAsync(getDescription(player))
+	end)
+	if not ok then
+		warn("[CharacterLoader] Couldn't apply avatar for", player.Name, err)
+	end
+
+	humanoid.Died:Connect(function()
+		task.delay(Players.RespawnTime, function()
+			if player.Parent and player.Character == character then
+				spawnCharacter(player)
+			end
+		end)
+	end)
+end
+
+function CharacterLoader.Start()
+	Players.CharacterAutoLoads = false
+
+	if not StarterPlayer:FindFirstChild("StarterCharacter") then
+		local rig = Players:CreateHumanoidModelFromDescriptionAsync(
+			Instance.new("HumanoidDescription"),
+			Enum.HumanoidRigType.R6
+		)
+		rig.Name = "StarterCharacter"
+		rig.Parent = StarterPlayer
+	end
+
+	Players.PlayerAdded:Connect(spawnCharacter)
+	Players.PlayerRemoving:Connect(function(player)
+		descriptions[player] = nil
+	end)
+	-- Anyone who joined before this ran may have auto-spawned as R15: respawn them.
+	for _, player in Players:GetPlayers() do
+		task.spawn(spawnCharacter, player)
+	end
+end
+
+return CharacterLoader
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="14">
         <Properties>
           <string name="Name">CombatService</string>
           <string name="Source"><![CDATA[--[[
@@ -479,7 +583,7 @@ local function isAirborne(character: Model): boolean
 end
 
 local function addEvasive(character: Model, amount: number)
-	local current = character:GetAttribute("Evasive") or 0
+	local current = tonumber(character:GetAttribute("Evasive")) or 0
 	local value = math.clamp(current + amount, 0, Config.Evasive.Max)
 	if value ~= current then
 		character:SetAttribute("Evasive", value)
@@ -540,6 +644,10 @@ function CombatService.Register(character: Model)
 	CombatState.Setup(character)
 	humanoid.BreakJointsOnDeath = false
 	humanoid.UseJumpPower = false
+	-- Only our ragdoll should knock people over. (For players this has to be
+	-- repeated on their client, see Input.)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
 
 	local data: CharData = {
 		humanoid = humanoid,
@@ -588,7 +696,7 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 
 	local facing = victimRoot.CFrame.LookVector:Dot(toAttacker) > Config.Block.FacingDot
 	if CombatState.IsBlocking(victim) and facing then
-		local blockAge = CombatState.Now() - (victim:GetAttribute("BlockStart") or 0)
+		local blockAge = CombatState.Now() - (tonumber(victim:GetAttribute("BlockStart")) or 0)
 
 		if blockAge <= Config.Block.PerfectWindow then
 			CombatState.Stun(attacker, Config.Block.ParryStun)
@@ -664,7 +772,7 @@ function CombatService.M1(character: Model, jump: boolean?)
 		return
 	end
 	local t = os.clock()
-	if t < data.nextM1 then
+	if t < data.nextM1 - Config.M1.InputTolerance then
 		return
 	end
 	if t - data.lastM1 > Config.M1.ResetTime then
@@ -695,7 +803,7 @@ function CombatService.M1(character: Model, jump: boolean?)
 
 	fireVFX("Swing", { character = character, index = index, finisher = finisher, variant = variant })
 
-	task.delay(Config.M1.WindUp, function()
+	task.delay(if finisher then Config.M1.FinisherWindUp else Config.M1.WindUp, function()
 		-- Getting hit during wind-up cancels the swing.
 		if not CombatState.CanAct(character) then
 			return
@@ -761,7 +869,7 @@ function CombatService.Evasive(character: Model): boolean
 	if not (CombatState.IsStunned(character) or CombatState.IsRagdolled(character)) then
 		return false
 	end
-	if (character:GetAttribute("Evasive") or 0) < Config.Evasive.Max then
+	if (tonumber(character:GetAttribute("Evasive")) or 0) < Config.Evasive.Max then
 		return false
 	end
 
@@ -852,7 +960,7 @@ return CombatService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="13">
+      <Item class="ModuleScript" referent="15">
         <Properties>
           <string name="Name">Dummies</string>
           <string name="Source"><![CDATA[--[[
@@ -976,7 +1084,7 @@ local function spawnDummy(spec: Spec)
 	description.LeftLegColor = spec.color
 	description.RightLegColor = spec.color
 
-	local model = Players:CreateHumanoidModelFromDescription(description, Enum.HumanoidRigType.R6)
+	local model = Players:CreateHumanoidModelFromDescriptionAsync(description, Enum.HumanoidRigType.R6)
 	model.Name = spec.name
 
 	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
@@ -1010,7 +1118,7 @@ return Dummies
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="14">
+      <Item class="ModuleScript" referent="16">
         <Properties>
           <string name="Name">Hitbox</string>
           <string name="Source"><![CDATA[--[[
@@ -1079,7 +1187,7 @@ return Hitbox
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="15">
+      <Item class="ModuleScript" referent="17">
         <Properties>
           <string name="Name">Ragdoll</string>
           <string name="Source"><![CDATA[--[[
@@ -1114,6 +1222,33 @@ type Record = {
 local active: { [Model]: Record } = {}
 
 local Ragdoll = {}
+
+-- The Humanoid's own "get up" can fail on a body lying flat, so snap it
+-- upright, standing on the ground, facing the way the body was lying.
+local function standUp(character: Model, humanoid: Humanoid, root: BasePart)
+	local facing = root.CFrame.LookVector * Vector3.new(1, 0, 1)
+	if facing.Magnitude < 0.2 then
+		-- Lying on its back/front: the head direction is the best guess.
+		facing = root.CFrame.UpVector * Vector3.new(1, 0, 1)
+	end
+	if facing.Magnitude < 0.01 then
+		facing = Vector3.new(0, 0, -1)
+	end
+
+	local position = root.Position
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { character }
+	local ground = workspace:Raycast(position + Vector3.new(0, 2, 0), Vector3.new(0, -8, 0), params)
+	if ground then
+		local legLength = if humanoid.RigType == Enum.HumanoidRigType.R6 then 2 else humanoid.HipHeight
+		position = Vector3.new(position.X, ground.Position.Y + legLength + root.Size.Y / 2, position.Z)
+	end
+
+	root.AssemblyLinearVelocity = Vector3.zero
+	root.AssemblyAngularVelocity = Vector3.zero
+	root.CFrame = CFrame.lookAt(position, position + facing.Unit)
+end
 
 function Ragdoll.IsActive(character: Model): boolean
 	return active[character] ~= nil
@@ -1223,6 +1358,9 @@ function Ragdoll.Disable(character: Model)
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
 	if humanoid and humanoid.Health > 0 then
+		if root then
+			standUp(character, humanoid, root)
+		end
 		humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
 		local player = Players:GetPlayerFromCharacter(character)
 		if player and root then
@@ -1242,15 +1380,15 @@ return Ragdoll
       </Item>
     </Item>
   </Item>
-  <Item class="StarterPlayer" referent="16">
+  <Item class="StarterPlayer" referent="18">
     <Properties>
       <string name="Name">StarterPlayer</string>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="17">
+    <Item class="StarterPlayerScripts" referent="19">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="LocalScript" referent="18">
+      <Item class="LocalScript" referent="20">
         <Properties>
           <string name="Name">Client</string>
           <string name="Source"><![CDATA[--[[
@@ -1262,6 +1400,7 @@ local StarterGui = game:GetService("StarterGui")
 local CameraShake = require(script.CameraShake)
 local HUD = require(script.HUD)
 local Input = require(script.Input)
+local Moves = require(script.Moves)
 local VFX = require(script.VFX)
 
 -- Our HUD replaces the default health bar.
@@ -1271,11 +1410,12 @@ end)
 
 CameraShake.Start()
 VFX.Start()
+Moves.Start()
 HUD.Start()
 Input.Start()
 ]]></string>
         </Properties>
-        <Item class="ModuleScript" referent="19">
+        <Item class="ModuleScript" referent="21">
           <Properties>
             <string name="Name">CameraShake</string>
             <string name="Source"><![CDATA[--[[
@@ -1341,7 +1481,7 @@ return CameraShake
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="20">
+        <Item class="ModuleScript" referent="22">
           <Properties>
             <string name="Name">HUD</string>
             <string name="Source"><![CDATA[--[[
@@ -1534,7 +1674,7 @@ local function update(dt: number)
 		healthFill.BackgroundColor3 = COLORS.HealthLow:Lerp(COLORS.Health, ratio)
 		healthText.Text = string.format("%d / %d", math.ceil(humanoid.Health), humanoid.MaxHealth)
 
-		local evasive = (character :: Model):GetAttribute("Evasive") or 0
+		local evasive = tonumber((character :: Model):GetAttribute("Evasive")) or 0
 		local evasiveRatio = math.clamp(evasive / Config.Evasive.Max, 0, 1)
 		evasiveFill.Size = UDim2.fromScale(evasiveRatio, 1)
 		-- Pulse the outline when Evasive is ready.
@@ -1569,7 +1709,7 @@ return HUD
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="21">
+        <Item class="ModuleScript" referent="23">
           <Properties>
             <string name="Name">Input</string>
             <string name="Source"><![CDATA[--[[
@@ -1594,6 +1734,7 @@ local Remotes = require(Shared.Remotes)
 
 local CameraShake = require(script.Parent.CameraShake)
 local HUD = require(script.Parent.HUD)
+local Moves = require(script.Parent.Moves)
 local VFX = require(script.Parent.VFX)
 
 local localPlayer = Players.LocalPlayer
@@ -1611,9 +1752,14 @@ local Input = {}
 
 local m1Held = false
 local blockHeld = false
-local lastM1Sent = 0
 local lastBlockSent = 0
 local dashReadyAt = 0
+
+-- Mirror of the server's combo counter so our animation plays instantly.
+-- The server still decides what actually hits.
+local predictedCombo = 0
+local lastM1 = 0
+local nextM1 = 0
 
 local function getCharacter(): (Model?, Humanoid?, BasePart?)
 	local character = localPlayer.Character
@@ -1662,12 +1808,34 @@ local function tryM1()
 		return
 	end
 	local t = os.clock()
-	if t - lastM1Sent < Config.M1.SwingCooldown then
+	if t < nextM1 then
 		return
 	end
-	lastM1Sent = t
+	if t - lastM1 > Config.M1.ResetTime then
+		predictedCombo = 0
+	end
+	predictedCombo += 1
+	lastM1 = t
 
-	Remotes.Action:FireServer("M1", { jump = jumpHeld(humanoid) })
+	local index = predictedCombo
+	local jump = jumpHeld(humanoid)
+	local variant = "Normal"
+	if index >= Config.M1.ComboLength then
+		predictedCombo = 0
+		nextM1 = t + Config.M1.EndLag
+		if jump then
+			variant = "Uppercut"
+		elseif humanoid.FloorMaterial == Enum.Material.Air then
+			variant = "Downslam"
+		else
+			variant = "Knockback"
+		end
+	else
+		nextM1 = t + Config.M1.SwingCooldown
+	end
+
+	Remotes.Action:FireServer("M1", { jump = jump })
+	Moves.PlayM1(character, index, variant)
 
 	-- Step into the swing a little so strings stay connected.
 	local look = root.CFrame.LookVector
@@ -1712,7 +1880,7 @@ local function tryDash()
 
 	-- While stunned or ragdolled, Q is the Evasive breakout instead.
 	if CombatState.IsStunned(character) or CombatState.IsRagdolled(character) then
-		if (character:GetAttribute("Evasive") or 0) >= Config.Evasive.Max then
+		if (tonumber(character:GetAttribute("Evasive")) or 0) >= Config.Evasive.Max then
 			Remotes.Action:FireServer("Evasive")
 		end
 		return
@@ -1814,7 +1982,694 @@ return Input
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="22">
+        <Item class="ModuleScript" referent="24">
+          <Properties>
+            <string name="Name">M1Animations</string>
+            <string name="Source"><![CDATA[--[[
+	M1Animations
+	R6 punch/kick animations for the M1 string, built for PoseAnimator.
+
+	The string is: right jab, left cross, right hook, then a finisher:
+	  Knockback  spinning front kick
+	  Uppercut   rising right uppercut (jump held)
+	  Downslam   double-fist hammer (in the air)
+
+	Timing lines up with the server: normal hits land ~0.08s after input
+	(Config.M1.WindUp), finishers ~0.15s (Config.M1.FinisherWindUp).
+	The "Strike" event is when the limb starts moving fast (trails turn on).
+]]
+
+local PoseAnimator = require(script.Parent.PoseAnimator)
+
+type Animation = PoseAnimator.Animation
+
+local rad = math.rad
+
+-- Torso / head / leg rotation. x leans back (+) or forward (-), y twists left (+).
+local function rot(x: number, y: number?, z: number?): CFrame
+	return CFrame.Angles(rad(x), rad(y or 0), rad(z or 0))
+end
+
+-- Arm/leg aim. pitch raises the limb forward (90 = straight ahead, 180 = up),
+-- yaw swings it horizontally (+ = toward the left), roll swings it out sideways
+-- (+ = to the right).
+local function limb(pitch: number, yaw: number?, roll: number?): CFrame
+	return CFrame.Angles(0, rad(yaw or 0), 0) * CFrame.Angles(0, 0, rad(roll or 0)) * CFrame.Angles(rad(pitch), 0, 0)
+end
+
+-- The legs twist against the torso so the feet stay planted. They're
+-- additive, so walking still plays underneath.
+local LEGS_ADDITIVE = { RightLeg = true, LeftLeg = true }
+
+local Clips: { [string]: Animation } = {}
+
+local M1Animations = {}
+M1Animations.Clips = Clips
+
+Clips.Jab = {
+	fadeIn = 0.03,
+	fadeOut = 0.16,
+	additive = LEGS_ADDITIVE,
+	events = { { time = 0.04, name = "Strike" } },
+	keyframes = {
+		{
+			time = 0,
+			pose = {
+				Torso = rot(0, -6),
+				RightArm = limb(60, 20),
+				LeftArm = limb(75, -25),
+				RightLeg = rot(0, 6),
+				LeftLeg = rot(0, 6),
+			},
+		},
+		{
+			time = 0.04,
+			pose = {
+				Torso = rot(0, -16),
+				RightArm = limb(45, 10),
+				LeftArm = limb(80, -28),
+				Head = rot(0, 14),
+				RightLeg = rot(0, 16),
+				LeftLeg = rot(0, 16),
+			},
+		},
+		{
+			time = 0.1,
+			easing = Enum.EasingStyle.Back,
+			pose = {
+				Torso = rot(-5, 22),
+				RightArm = limb(94, 12),
+				LeftArm = limb(62, -30),
+				Head = rot(0, -18),
+				RightLeg = rot(0, -22),
+				LeftLeg = rot(0, -22),
+			},
+		},
+		{
+			time = 0.2,
+			pose = {
+				Torso = rot(-4, 18),
+				RightArm = limb(90, 12),
+				LeftArm = limb(62, -30),
+				Head = rot(0, -15),
+				RightLeg = rot(0, -18),
+				LeftLeg = rot(0, -18),
+			},
+		},
+	},
+}
+
+Clips.Cross = {
+	fadeIn = 0.03,
+	fadeOut = 0.16,
+	additive = LEGS_ADDITIVE,
+	events = { { time = 0.04, name = "Strike" } },
+	keyframes = {
+		{
+			time = 0,
+			pose = {
+				Torso = rot(0, 10),
+				RightArm = limb(80, 28),
+				LeftArm = limb(60, -18),
+				RightLeg = rot(0, -10),
+				LeftLeg = rot(0, -10),
+			},
+		},
+		{
+			time = 0.04,
+			pose = {
+				Torso = rot(0, 18),
+				RightArm = limb(80, 28),
+				LeftArm = limb(42, -10),
+				Head = rot(0, -14),
+				RightLeg = rot(0, -18),
+				LeftLeg = rot(0, -18),
+			},
+		},
+		{
+			time = 0.1,
+			easing = Enum.EasingStyle.Back,
+			pose = {
+				Torso = rot(-6, -24),
+				RightArm = limb(62, 30),
+				LeftArm = limb(94, -12),
+				Head = rot(0, 20),
+				RightLeg = rot(0, 24),
+				LeftLeg = rot(0, 24),
+			},
+		},
+		{
+			time = 0.2,
+			pose = {
+				Torso = rot(-5, -20),
+				RightArm = limb(62, 30),
+				LeftArm = limb(90, -12),
+				Head = rot(0, 16),
+				RightLeg = rot(0, 20),
+				LeftLeg = rot(0, 20),
+			},
+		},
+	},
+}
+
+Clips.Hook = {
+	fadeIn = 0.03,
+	fadeOut = 0.18,
+	additive = LEGS_ADDITIVE,
+	events = { { time = 0.05, name = "Strike" } },
+	keyframes = {
+		{
+			time = 0,
+			pose = {
+				Torso = rot(0, -10),
+				RightArm = limb(70, -10),
+				LeftArm = limb(75, -25),
+				RightLeg = rot(0, 10),
+				LeftLeg = rot(0, 10),
+			},
+		},
+		{
+			-- Arm swings out wide to the right.
+			time = 0.05,
+			pose = {
+				Torso = rot(0, -28),
+				RightArm = limb(75, -55),
+				LeftArm = limb(80, -28),
+				Head = rot(0, 22),
+				RightLeg = rot(0, 26),
+				LeftLeg = rot(0, 26),
+			},
+		},
+		{
+			-- ...and sweeps across the body.
+			time = 0.12,
+			easing = Enum.EasingStyle.Back,
+			pose = {
+				Torso = rot(-7, 32),
+				RightArm = limb(88, 40),
+				LeftArm = limb(65, -30),
+				Head = rot(0, -26),
+				RightLeg = rot(0, -30),
+				LeftLeg = rot(0, -30),
+			},
+		},
+		{
+			time = 0.22,
+			pose = {
+				Torso = rot(-6, 28),
+				RightArm = limb(85, 38),
+				LeftArm = limb(65, -30),
+				Head = rot(0, -22),
+				RightLeg = rot(0, -26),
+				LeftLeg = rot(0, -26),
+			},
+		},
+	},
+}
+
+-- Knockback finisher: chambered front kick. Legs are fully posed here.
+Clips.Kick = {
+	fadeIn = 0.04,
+	fadeOut = 0.22,
+	events = { { time = 0.09, name = "Strike" } },
+	keyframes = {
+		{
+			time = 0,
+			pose = {
+				Torso = rot(0, -8),
+				RightArm = limb(70, 20),
+				LeftArm = limb(75, -25),
+			},
+		},
+		{
+			-- Chamber: knee comes back, body coils.
+			time = 0.09,
+			pose = {
+				Torso = rot(8, -14),
+				RightArm = limb(25, 0, 25),
+				LeftArm = limb(60, -20),
+				Head = rot(-6, 10),
+				RightLeg = rot(-30),
+				LeftLeg = rot(5),
+			},
+		},
+		{
+			-- Snap the leg straight out.
+			time = 0.16,
+			easing = Enum.EasingStyle.Back,
+			pose = {
+				Torso = rot(20, 16),
+				RightArm = limb(-20, 0, 45),
+				LeftArm = limb(10, 0, -70),
+				Head = rot(-18, -12),
+				RightLeg = rot(98),
+				LeftLeg = rot(-20), -- cancels the torso lean so the standing leg stays vertical
+			},
+		},
+		{
+			time = 0.32,
+			pose = {
+				Torso = rot(18, 14),
+				RightArm = limb(-15, 0, 40),
+				LeftArm = limb(10, 0, -65),
+				Head = rot(-16, -10),
+				RightLeg = rot(92),
+				LeftLeg = rot(-18),
+			},
+		},
+	},
+}
+
+Clips.Uppercut = {
+	fadeIn = 0.04,
+	fadeOut = 0.22,
+	additive = LEGS_ADDITIVE,
+	events = { { time = 0.09, name = "Strike" } },
+	keyframes = {
+		{
+			time = 0,
+			pose = {
+				Torso = rot(0, -8),
+				RightArm = limb(60, 15),
+				LeftArm = limb(75, -25),
+			},
+		},
+		{
+			-- Dip down and load the right arm low.
+			time = 0.09,
+			pose = {
+				Torso = rot(-18, -18),
+				RightArm = limb(-25, 5),
+				LeftArm = limb(80, -28),
+				Head = rot(12, 12),
+				RightLeg = rot(-8, 18),
+				LeftLeg = rot(15, 18),
+			},
+		},
+		{
+			-- Rip upward.
+			time = 0.16,
+			easing = Enum.EasingStyle.Back,
+			pose = {
+				Torso = rot(14, 22),
+				RightArm = limb(168, 10),
+				LeftArm = limb(35, -20),
+				Head = rot(-20, -16),
+				RightLeg = rot(0, -20),
+				LeftLeg = rot(0, -20),
+			},
+		},
+		{
+			time = 0.32,
+			pose = {
+				Torso = rot(12, 18),
+				RightArm = limb(165, 10),
+				LeftArm = limb(35, -20),
+				Head = rot(-18, -14),
+				RightLeg = rot(0, -16),
+				LeftLeg = rot(0, -16),
+			},
+		},
+	},
+}
+
+Clips.Downslam = {
+	fadeIn = 0.04,
+	fadeOut = 0.22,
+	events = { { time = 0.09, name = "Strike" } },
+	keyframes = {
+		{
+			time = 0,
+			pose = {
+				Torso = rot(0),
+				RightArm = limb(80, 10),
+				LeftArm = limb(80, -10),
+			},
+		},
+		{
+			-- Both fists raised overhead, body arched back.
+			time = 0.09,
+			pose = {
+				Torso = rot(18),
+				RightArm = limb(172, 12),
+				LeftArm = limb(172, -12),
+				Head = rot(-15),
+				RightLeg = rot(-20),
+				LeftLeg = rot(10),
+			},
+		},
+		{
+			-- Hammer down.
+			time = 0.16,
+			easing = Enum.EasingStyle.Back,
+			pose = {
+				Torso = rot(-32),
+				RightArm = limb(45, 15),
+				LeftArm = limb(45, -15),
+				Head = rot(18),
+				RightLeg = rot(30),
+				LeftLeg = rot(20),
+			},
+		},
+		{
+			time = 0.32,
+			pose = {
+				Torso = rot(-28),
+				RightArm = limb(50, 15),
+				LeftArm = limb(50, -15),
+				Head = rot(15),
+				RightLeg = rot(25),
+				LeftLeg = rot(18),
+			},
+		},
+	},
+}
+
+-- Which limbs leave a trail on each move.
+M1Animations.Strikers = {
+	Jab = { "Right Arm" },
+	Cross = { "Left Arm" },
+	Hook = { "Right Arm" },
+	Kick = { "Right Leg" },
+	Uppercut = { "Right Arm" },
+	Downslam = { "Right Arm", "Left Arm" },
+}
+
+local STRING = { "Jab", "Cross", "Hook" }
+local FINISHERS = { Knockback = "Kick", Uppercut = "Uppercut", Downslam = "Downslam" }
+
+-- Animation name for combo hit `index` with finisher `variant`.
+function M1Animations.NameFor(index: number, variant: string): string
+	if variant ~= "Normal" then
+		return FINISHERS[variant] or "Kick"
+	end
+	return STRING[((index - 1) % #STRING) + 1]
+end
+
+return M1Animations
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="25">
+          <Properties>
+            <string name="Name">Moves</string>
+            <string name="Source"><![CDATA[--[[
+	Moves
+	Plays move animations + their VFX on characters.
+
+	Your own swings play instantly when you click (predicted by Input), so
+	they feel responsive at any ping. Everyone else's play when the server's
+	"Swing" event arrives.
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Remotes = require(ReplicatedStorage:WaitForChild("Shared").Remotes)
+
+local M1Animations = require(script.Parent.M1Animations)
+local PoseAnimator = require(script.Parent.PoseAnimator)
+local VFX = require(script.Parent.VFX)
+
+local localPlayer = Players.LocalPlayer
+
+local TRAIL_TIME = 0.14
+
+local Moves = {}
+
+function Moves.PlayM1(character: Model, index: number, variant: string)
+	local name = M1Animations.NameFor(index, variant)
+	local animation = M1Animations.Clips[name]
+	if not animation then
+		return
+	end
+	local heavy = variant ~= "Normal"
+	local strikers = M1Animations.Strikers[name] or {}
+
+	PoseAnimator.Play(character, animation, function(event)
+		if event == "Strike" then
+			for _, limbName in strikers do
+				VFX.LimbTrail(character, limbName, if heavy then TRAIL_TIME * 1.5 else TRAIL_TIME)
+			end
+			VFX.AirPop(character, heavy)
+		end
+	end)
+end
+
+function Moves.Start()
+	PoseAnimator.Start()
+
+	Remotes.VFX.OnClientEvent:Connect(function(name, data)
+		if name ~= "Swing" or type(data) ~= "table" then
+			return
+		end
+		local character = data.character
+		-- Our own swing already played the moment we clicked.
+		if typeof(character) ~= "Instance" or character == localPlayer.Character then
+			return
+		end
+		Moves.PlayM1(character :: Model, data.index or 1, data.variant or "Normal")
+	end)
+end
+
+return Moves
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="26">
+          <Properties>
+            <string name="Name">PoseAnimator</string>
+            <string name="Source"><![CDATA[--[[
+	PoseAnimator
+	Keyframe animations defined in code, played by overriding Motor6D.Transform
+	every frame. No uploaded animation assets needed, so they work in any place
+	without animation permissions.
+
+	Runs on every client for every character: the server tells clients
+	"this character swung", each client animates it locally.
+
+	Poses rotate a limb around its joint in the PARENT part's space:
+	  Torso       RootJoint, relative to HumanoidRootPart
+	  Head        Neck, relative to Torso
+	  RightArm    Right Shoulder, relative to Torso
+	  LeftArm     Left Shoulder
+	  RightLeg    Right Hip
+	  LeftLeg     Left Hip
+	Axes: X = right, Y = up, Z = back. So for a limb hanging down,
+	  +X rotation swings it forward, +Y turns it to the left,
+	  +Z swings it out to the right. For the Torso, +X leans back.
+]]
+
+local RunService = game:GetService("RunService")
+
+export type Pose = { [string]: CFrame }
+
+export type Keyframe = {
+	time: number,
+	pose: Pose,
+	easing: Enum.EasingStyle?, -- easing INTO this keyframe
+}
+
+export type Animation = {
+	keyframes: { Keyframe },
+	fadeIn: number?,
+	fadeOut: number?,
+	-- Joints whose pose is layered on top of the default walk/idle animation
+	-- instead of replacing it (e.g. legs counter-twisting while still walking).
+	additive: { [string]: boolean }?,
+	events: { { time: number, name: string } }?,
+}
+
+local JOINTS = {
+	Torso = "RootJoint",
+	Head = "Neck",
+	RightArm = "Right Shoulder",
+	LeftArm = "Left Shoulder",
+	RightLeg = "Right Hip",
+	LeftLeg = "Left Hip",
+}
+
+type Track = {
+	animation: Animation,
+	joints: { [string]: Motor6D },
+	start: number,
+	length: number,
+	onEvent: ((name: string) -> ())?,
+	firedEvents: { [number]: boolean },
+}
+
+local tracks: { [Model]: Track } = {}
+-- What we wrote to each joint last frame. If the default Animator didn't
+-- overwrite it, the joint has no base animation and its base is identity.
+local lastWritten: { [Motor6D]: CFrame } = {}
+
+local PoseAnimator = {}
+
+local function findJoints(character: Model): { [string]: Motor6D }
+	local found = {}
+	for poseName, jointName in JOINTS do
+		local joint = character:FindFirstChild(jointName, true)
+		if joint and joint:IsA("Motor6D") then
+			found[poseName] = joint
+		end
+	end
+	return found
+end
+
+local function ease(alpha: number, style: Enum.EasingStyle?): number
+	if style == Enum.EasingStyle.Linear then
+		return alpha
+	elseif style == Enum.EasingStyle.Back then
+		local c1 = 1.70158
+		local c3 = c1 + 1
+		return 1 + c3 * (alpha - 1) ^ 3 + c1 * (alpha - 1) ^ 2
+	elseif style == Enum.EasingStyle.Sine then
+		return math.sin(alpha * math.pi / 2)
+	end
+	return 1 - (1 - alpha) * (1 - alpha) -- Quad out
+end
+
+-- The animation's pose for one joint at time t (identity if never posed).
+local function sample(animation: Animation, poseName: string, t: number): CFrame
+	local keyframes = animation.keyframes
+	local previous = keyframes[1]
+	if t <= previous.time then
+		return previous.pose[poseName] or CFrame.identity
+	end
+	for i = 2, #keyframes do
+		local nextFrame = keyframes[i]
+		if t <= nextFrame.time then
+			local span = nextFrame.time - previous.time
+			local alpha = if span > 0 then (t - previous.time) / span else 1
+			local from = previous.pose[poseName] or CFrame.identity
+			local to = nextFrame.pose[poseName] or CFrame.identity
+			return from:Lerp(to, ease(alpha, nextFrame.easing))
+		end
+		previous = nextFrame
+	end
+	return previous.pose[poseName] or CFrame.identity
+end
+
+local function posedJoints(animation: Animation): { [string]: boolean }
+	local set = {}
+	for _, keyframe in animation.keyframes do
+		for poseName in keyframe.pose do
+			set[poseName] = true
+		end
+	end
+	return set
+end
+
+local function release(track: Track)
+	-- Hand the joints back; the default Animator overwrites them next frame
+	-- if it's animating them.
+	for _, joint in track.joints do
+		if lastWritten[joint] then
+			lastWritten[joint] = nil
+			if joint.Parent then
+				joint.Transform = CFrame.identity
+			end
+		end
+	end
+end
+
+local function step()
+	local now = os.clock()
+	for character, track in tracks do
+		local elapsed = now - track.start
+		local animation = track.animation
+		local fadeIn = animation.fadeIn or 0.04
+		local fadeOut = animation.fadeOut or 0.15
+		local total = track.length + fadeOut
+
+		local dead = not character.Parent or character:GetAttribute("Ragdolled") == true
+		if dead or elapsed >= total then
+			tracks[character] = nil
+			release(track)
+			continue
+		end
+
+		if animation.events and track.onEvent then
+			for index, event in animation.events do
+				if not track.firedEvents[index] and elapsed >= event.time then
+					track.firedEvents[index] = true
+					task.spawn(track.onEvent, event.name)
+				end
+			end
+		end
+
+		local weight = 1
+		if elapsed < fadeIn then
+			weight = elapsed / fadeIn
+		elseif elapsed > track.length then
+			weight = 1 - (elapsed - track.length) / fadeOut
+		end
+
+		local additive = animation.additive or {}
+		for poseName, joint in track.joints do
+			local current = joint.Transform
+			local base = if lastWritten[joint] == current then CFrame.identity else current
+			-- Convert from parent-part space into the joint's own space.
+			local c0 = joint.C0.Rotation
+			local local_ = c0:Inverse() * sample(animation, poseName, elapsed) * c0
+			local target = if additive[poseName] then base * local_ else local_
+			local final = base:Lerp(target, weight)
+			joint.Transform = final
+			lastWritten[joint] = final
+		end
+	end
+end
+
+-- Plays `animation` on `character`, replacing whatever this module was playing on it.
+function PoseAnimator.Play(character: Model, animation: Animation, onEvent: ((name: string) -> ())?)
+	local existing = tracks[character]
+	if existing then
+		tracks[character] = nil
+		release(existing)
+	end
+
+	local posed = posedJoints(animation)
+	local all = findJoints(character)
+	local joints = {}
+	for poseName, joint in all do
+		if posed[poseName] then
+			joints[poseName] = joint
+		end
+	end
+	if next(joints) == nil then
+		return -- not an R6 rig
+	end
+
+	local keyframes = animation.keyframes
+	tracks[character] = {
+		animation = animation,
+		joints = joints,
+		start = os.clock(),
+		length = keyframes[#keyframes].time,
+		onEvent = onEvent,
+		firedEvents = {},
+	}
+end
+
+function PoseAnimator.Stop(character: Model)
+	local track = tracks[character]
+	if track then
+		tracks[character] = nil
+		release(track)
+	end
+end
+
+function PoseAnimator.Start()
+	-- PreSimulation runs after the default Animator has written its pose, so
+	-- whatever we set here is what gets rendered.
+	RunService.PreSimulation:Connect(step)
+end
+
+return PoseAnimator
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="27">
           <Properties>
             <string name="Name">VFX</string>
             <string name="Source"><![CDATA[--[[
@@ -1828,7 +2683,6 @@ return Input
 local Debris = game:GetService("Debris")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local Remotes = require(ReplicatedStorage:WaitForChild("Shared").Remotes)
@@ -1894,19 +2748,6 @@ local function tween(
 	return t
 end
 
--- Calls step(alpha) every frame with alpha going 0 -> 1 over `duration`.
-local function animate(duration: number, step: (alpha: number) -> ())
-	local start = os.clock()
-	local connection
-	connection = RunService.RenderStepped:Connect(function()
-		local alpha = math.min((os.clock() - start) / duration, 1)
-		step(alpha)
-		if alpha >= 1 then
-			connection:Disconnect()
-		end
-	end)
-end
-
 local function randomUnit(): Vector3
 	local v = Vector3.new(math.random() - 0.5, math.random() - 0.5, math.random() - 0.5)
 	return if v.Magnitude > 1e-3 then v.Unit else Vector3.yAxis
@@ -1959,11 +2800,15 @@ type BurstOptions = {
 	acceleration: Vector3?,
 	spread: number?,
 	streaks: boolean?,
+	direction: Vector3?, -- aim the spread cone this way (default: straight up)
 }
 
 -- One-shot particle burst at a point.
 local function burst(position: Vector3, options: BurstOptions)
-	local holder = newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.new(position) })
+	local cframe = if options.direction
+		then CFrame.lookAt(position, position + options.direction)
+		else CFrame.new(position)
+	local holder = newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = cframe })
 	local attachment = Instance.new("Attachment")
 	attachment.Parent = holder
 
@@ -1985,6 +2830,9 @@ local function burst(position: Vector3, options: BurstOptions)
 	emitter.SpreadAngle = Vector2.one * (options.spread or 180)
 	emitter.Drag = options.drag or 5
 	emitter.Acceleration = options.acceleration or Vector3.zero
+	if options.direction then
+		emitter.EmissionDirection = Enum.NormalId.Front
+	end
 	emitter.Rotation = NumberRange.new(0, 360)
 	emitter.RotSpeed = NumberRange.new(-180, 180)
 	if options.streaks then
@@ -2261,73 +3109,6 @@ end
 -- Effects (names match what the server sends)
 ---------------------------------------------------------------------------
 
--- Slash arc in front of the attacker. Alternates sides through the string;
--- finishers are big vertical arcs.
-function Effects.Swing(data)
-	local root = getRoot(data.character)
-	if not root then
-		return
-	end
-	local finisher = data.finisher == true
-	local duration = if finisher then 0.28 else 0.18
-
-	local holder = newPart({ Size = Vector3.one * 0.1, Transparency = 1, CFrame = root.CFrame })
-	local a0 = Instance.new("Attachment")
-	local a1 = Instance.new("Attachment")
-	-- Rotating the attachments makes their X axis point forward, so the
-	-- beam's curve bulges out in front of the character.
-	local forward = CFrame.Angles(0, math.rad(90), 0)
-	if data.variant == "Uppercut" then
-		a0.CFrame = CFrame.new(0.6, -2.2, -1.5) * forward
-		a1.CFrame = CFrame.new(-0.6, 4, -1.5) * forward
-	elseif finisher then
-		a0.CFrame = CFrame.new(0, 4, -1.5) * forward
-		a1.CFrame = CFrame.new(0, -2.2, -1.5) * forward
-	elseif data.index % 2 == 1 then
-		a0.CFrame = CFrame.new(-3, 0.9, -1) * forward
-		a1.CFrame = CFrame.new(3, -0.5, -1) * forward
-	else
-		a0.CFrame = CFrame.new(3, 0.7, -1) * forward
-		a1.CFrame = CFrame.new(-3, -0.7, -1) * forward
-	end
-	a0.Parent = holder
-	a1.Parent = holder
-
-	local curve = if finisher then 5 else 3.5
-	local width = if finisher then 1.8 else 1.1
-	local beam = Instance.new("Beam")
-	beam.Attachment0 = a0
-	beam.Attachment1 = a1
-	beam.CurveSize0 = curve
-	beam.CurveSize1 = -curve
-	beam.Segments = 24
-	beam.FaceCamera = true
-	beam.LightEmission = 1
-	beam.LightInfluence = 0
-	beam.Color = ColorSequence.new(if finisher then COLORS.Heavy:Lerp(COLORS.Swing, 0.5) else COLORS.Swing)
-	beam.Width0 = 0.1
-	beam.Width1 = width
-	beam.Parent = holder
-
-	local follow = RunService.RenderStepped:Connect(function()
-		if root.Parent then
-			holder.CFrame = root.CFrame
-		end
-	end)
-	animate(duration, function(alpha)
-		beam.Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 1),
-			NumberSequenceKeypoint.new(0.35, 0.15 + 0.85 * alpha),
-			NumberSequenceKeypoint.new(1, alpha),
-		})
-		beam.Width1 = width * (1 - alpha * 0.5)
-	end)
-	task.delay(duration, function()
-		follow:Disconnect()
-		holder:Destroy()
-	end)
-end
-
 function Effects.Hit(data)
 	local position: Vector3 = data.position
 	local direction: Vector3 = data.direction or Vector3.zAxis
@@ -2523,6 +3304,73 @@ end
 
 ---------------------------------------------------------------------------
 
+---------------------------------------------------------------------------
+-- Public helpers used by the move animations
+---------------------------------------------------------------------------
+
+-- Streak behind a striking limb (fist or foot) for `duration` seconds.
+function VFX.LimbTrail(character: Model, limbName: string, duration: number, color: Color3?)
+	local limbPart = character:FindFirstChild(limbName)
+	if not limbPart or not limbPart:IsA("BasePart") then
+		return
+	end
+	-- Two points near the end of the limb (R6 limbs are 2 studs long).
+	local tip = Instance.new("Attachment")
+	tip.Position = Vector3.new(0, -1.1, 0)
+	tip.Parent = limbPart
+	local mid = Instance.new("Attachment")
+	mid.Position = Vector3.new(0, -0.3, 0)
+	mid.Parent = limbPart
+
+	local trail = Instance.new("Trail")
+	trail.Attachment0 = tip
+	trail.Attachment1 = mid
+	trail.Color = ColorSequence.new(color or COLORS.Swing)
+	trail.LightEmission = 1
+	trail.LightInfluence = 0
+	trail.Lifetime = 0.12
+	trail.MinLength = 0
+	trail.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.25),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	trail.WidthScale = NumberSequence.new(1, 0.2)
+	trail.FaceCamera = true
+	trail.Parent = limbPart
+
+	task.delay(duration, function()
+		trail.Enabled = false
+		task.wait(trail.Lifetime)
+		trail:Destroy()
+		tip:Destroy()
+		mid:Destroy()
+	end)
+end
+
+-- Burst of displaced air in front of a punch or kick.
+function VFX.AirPop(character: Model, heavy: boolean)
+	local root = getRoot(character)
+	if not root then
+		return
+	end
+	local look = root.CFrame.LookVector
+	local position = root.Position + look * (if heavy then 3.5 else 3) + Vector3.new(0, 0.5, 0)
+	impactRing(position, look, COLORS.Swing, 0.3, if heavy then 3.2 else 1.8, if heavy then 0.2 else 0.14)
+	burst(position, {
+		color = COLORS.Swing,
+		count = if heavy then 8 else 4,
+		size = 0.5,
+		speed = NumberRange.new(10, 20),
+		lifetime = NumberRange.new(0.1, 0.2),
+		streaks = true,
+		spread = 35,
+		direction = look,
+	})
+	if heavy then
+		flash(position, COLORS.Swing, 2.5, 0.1)
+	end
+end
+
 -- Plays an effect locally (used for instant feedback on your own actions).
 function VFX.Play(name: string, data: any)
 	local effect = Effects[name]
@@ -2546,12 +3394,12 @@ return VFX
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="23">
+  <Item class="Workspace" referent="28">
     <Properties>
       <string name="Name">Workspace</string>
       <bool name="NeedsPivotMigration">false</bool>
     </Properties>
-    <Item class="Part" referent="24">
+    <Item class="Part" referent="29">
       <Properties>
         <string name="Name">Baseplate</string>
         <bool name="Anchored">true</bool>
@@ -2570,7 +3418,7 @@ return VFX
         </Vector3>
       </Properties>
     </Item>
-    <Item class="SpawnLocation" referent="25">
+    <Item class="SpawnLocation" referent="30">
       <Properties>
         <string name="Name">SpawnLocation</string>
         <bool name="Anchored">true</bool>

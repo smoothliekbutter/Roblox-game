@@ -20,6 +20,7 @@ local Remotes = require(Shared.Remotes)
 
 local CameraShake = require(script.Parent.CameraShake)
 local HUD = require(script.Parent.HUD)
+local Moves = require(script.Parent.Moves)
 local VFX = require(script.Parent.VFX)
 
 local localPlayer = Players.LocalPlayer
@@ -37,9 +38,14 @@ local Input = {}
 
 local m1Held = false
 local blockHeld = false
-local lastM1Sent = 0
 local lastBlockSent = 0
 local dashReadyAt = 0
+
+-- Mirror of the server's combo counter so our animation plays instantly.
+-- The server still decides what actually hits.
+local predictedCombo = 0
+local lastM1 = 0
+local nextM1 = 0
 
 local function getCharacter(): (Model?, Humanoid?, BasePart?)
 	local character = localPlayer.Character
@@ -88,12 +94,34 @@ local function tryM1()
 		return
 	end
 	local t = os.clock()
-	if t - lastM1Sent < Config.M1.SwingCooldown then
+	if t < nextM1 then
 		return
 	end
-	lastM1Sent = t
+	if t - lastM1 > Config.M1.ResetTime then
+		predictedCombo = 0
+	end
+	predictedCombo += 1
+	lastM1 = t
 
-	Remotes.Action:FireServer("M1", { jump = jumpHeld(humanoid) })
+	local index = predictedCombo
+	local jump = jumpHeld(humanoid)
+	local variant = "Normal"
+	if index >= Config.M1.ComboLength then
+		predictedCombo = 0
+		nextM1 = t + Config.M1.EndLag
+		if jump then
+			variant = "Uppercut"
+		elseif humanoid.FloorMaterial == Enum.Material.Air then
+			variant = "Downslam"
+		else
+			variant = "Knockback"
+		end
+	else
+		nextM1 = t + Config.M1.SwingCooldown
+	end
+
+	Remotes.Action:FireServer("M1", { jump = jump })
+	Moves.PlayM1(character, index, variant)
 
 	-- Step into the swing a little so strings stay connected.
 	local look = root.CFrame.LookVector
@@ -138,7 +166,7 @@ local function tryDash()
 
 	-- While stunned or ragdolled, Q is the Evasive breakout instead.
 	if CombatState.IsStunned(character) or CombatState.IsRagdolled(character) then
-		if (character:GetAttribute("Evasive") or 0) >= Config.Evasive.Max then
+		if (tonumber(character:GetAttribute("Evasive")) or 0) >= Config.Evasive.Max then
 			Remotes.Action:FireServer("Evasive")
 		end
 		return

@@ -37,11 +37,11 @@ function CombatState.IsAlive(character: Model?): boolean
 end
 
 function CombatState.IsStunned(character: Model): boolean
-	return (character:GetAttribute("StunUntil") or 0) > now()
+	return (tonumber(character:GetAttribute("StunUntil")) or 0) > now()
 end
 
 function CombatState.IsBusy(character: Model): boolean
-	return (character:GetAttribute("BusyUntil") or 0) > now()
+	return (tonumber(character:GetAttribute("BusyUntil")) or 0) > now()
 end
 
 function CombatState.IsRagdolled(character: Model): boolean
@@ -53,7 +53,7 @@ function CombatState.IsBlocking(character: Model): boolean
 end
 
 function CombatState.HasIFrames(character: Model): boolean
-	return (character:GetAttribute("IFrameUntil") or 0) > now()
+	return (tonumber(character:GetAttribute("IFrameUntil")) or 0) > now()
 end
 
 -- Alive, not stunned and not ragdolled. Busy (mid-swing) is checked separately.
@@ -66,7 +66,7 @@ end
 -- Setters below are only meaningful on the server.
 
 function CombatState.Stun(character: Model, duration: number)
-	local untilTime = math.max(character:GetAttribute("StunUntil") or 0, now() + duration)
+	local untilTime = math.max(tonumber(character:GetAttribute("StunUntil")) or 0, now() + duration)
 	character:SetAttribute("StunUntil", untilTime)
 end
 
