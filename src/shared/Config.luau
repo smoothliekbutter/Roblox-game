@@ -73,10 +73,11 @@ Config.Dash = {
 }
 
 -- Awakening: fills by dealing (and a bit by taking) damage. G when full.
+-- About 90 damage dealt (or 200 taken) fills it: it should take a real fight.
 Config.Awakening = {
 	Max = 100,
-	GainPerDamageDealt = 3,
-	GainPerDamageTaken = 1.2,
+	GainPerDamageDealt = 1.1,
+	GainPerDamageTaken = 0.5,
 }
 
 -- Switching characters is blocked this long after dealing or taking damage.

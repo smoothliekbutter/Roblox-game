@@ -131,12 +131,15 @@ local READY = {
 
 -- Signature stance: wide footing, the greatsword resting on the right
 -- shoulder, slow breathing. Runs leaning forward with the sword bobbing on
--- his shoulder; knee up and free arm out in the air.
+-- his shoulder, walks upright when slowed down; knee up and free arm out
+-- in the air.
 Kit.Idle = {
 	stand = ANIMS.Idle,
 	move = ANIMS.Run,
+	walk = ANIMS.Walk,
 	air = ANIMS.Air,
 	moveSpeed = 16,
+	walkSpeed = 8,
 }
 
 -- Getting hit / blocking, with the sword (see Client/Reactions for the names).
@@ -522,8 +525,10 @@ function handlers.BullThrust(data, character, root)
 		local direction: Vector3 = if typeof(data.direction) == "Vector3"
 			then data.direction
 			else root.CFrame.LookVector
+		-- The server says how long the (steerable) propel lasts.
+		local duration = if type(data.duration) == "number" then data.duration else 0.55
 		play(character, ANIMS.Propel)
-		swordTrail(character, 0.4)
+		swordTrail(character, duration + 0.05)
 
 		-- Ignition: an anti-magic blast behind him.
 		local back = root.Position - direction * 1.5
@@ -561,7 +566,7 @@ function handlers.BullThrust(data, character, root)
 			EmissionDirection = Enum.NormalId.Back,
 			SpreadAngle = Vector2.new(25, 25),
 			Drag = 3,
-		}, 0.34)
+		}, duration)
 		trailEmitter(root, {
 			Texture = U.textures.Spark,
 			Color = ColorSequence.new(RED, DARK_RED),
@@ -574,10 +579,10 @@ function handlers.BullThrust(data, character, root)
 			SpreadAngle = Vector2.new(30, 30),
 			Orientation = Enum.ParticleOrientation.VelocityParallel,
 			Squash = NumberSequence.new(1.5),
-		}, 0.34)
-		U.bodyTrail(character, BLACK, 0.4)
-		U.speedLines(root, direction, 0.32)
-		for i = 0, 4 do
+		}, duration)
+		U.bodyTrail(character, BLACK, duration + 0.05)
+		U.speedLines(root, nil, duration)
+		for i = 0, math.floor(duration / 0.06) do
 			task.delay(i * 0.06, function()
 				if character.Parent then
 					U.afterimage(character, if i % 2 == 0 then BLACK else DARK_RED, 0.28)
@@ -1094,6 +1099,17 @@ function handlers.BlackMeteorite(data, character, root)
 		end
 	elseif phase == "Slam" then
 		play(character, ANIMS.MeteorSlam)
+		-- Air version: caught mid-dive and spiked straight down.
+		local grabbed = U.getRoot(data.target)
+		if data.airGrab and grabbed then
+			U.flash(grabbed.Position, RED, 4, 0.12)
+			U.highlight(data.target, RED, 0.3)
+			blackLightning(grabbed.Position, 5, 3.5)
+			redSparks(grabbed.Position, 10, 0.7)
+			if involves(data, character) then
+				CameraShake.Add(0.3)
+			end
+		end
 		heavyTrail(character, 0.5)
 		U.bodyTrail(character, RED, 0.5)
 		U.bodyTrail(data.target, BLACK, 0.5)
@@ -1205,16 +1221,18 @@ function handlers.BlackDivider(data, character, root)
 	local phase = data.phase
 	local token = bump(character)
 	if phase == "Charge" then
-		play(character, ANIMS.DividerCharge)
+		play(character, if data.airborne then ANIMS.AirDividerCharge else ANIMS.DividerCharge)
 		local flashAt = data.flashAt or 0.38
 		swordGlow(character, BLACK, 0.62, 0.35)
 		swordAura(character, 0.62, 30)
-		local feet = feetOf(character, root)
-		-- The air gets pulled in toward him.
-		U.ringBurst(CFrame.new(feet + UP * 0.1), BLACK, 9, 1.5, 0.6, 0.25)
-		task.delay(0.2, U.ringBurst, CFrame.new(feet + UP * 0.12), DARK_RED, 7, 1, 0.42, 0.15)
-		blackSmoke(feet + UP * 0.3, 8, 2.4, 6)
-		task.delay(0.15, U.groundCracks, feet, 5, 3.5, RED, 1.2)
+		-- The air gets pulled in toward him (around him when he's hanging in the air).
+		local center = if data.airborne then root.Position else feetOf(character, root) + UP * 0.1
+		U.ringBurst(CFrame.new(center), BLACK, 9, 1.5, 0.6, 0.25)
+		task.delay(0.2, U.ringBurst, CFrame.new(center + UP * 0.02), DARK_RED, 7, 1, 0.42, 0.15)
+		blackSmoke(center + UP * 0.2, 8, 2.4, 6)
+		if not data.airborne then
+			task.delay(0.15, U.groundCracks, center, 5, 3.5, RED, 1.2)
+		end
 
 		-- Anti-magic streaming into the blade, crackling as it builds.
 		local start = os.clock()
@@ -1256,6 +1274,64 @@ function handlers.BlackDivider(data, character, root)
 		local blade = bladeOf(character)
 		if blade then
 			blackSmoke(blade.Position, 6, 2, 5)
+		end
+	elseif phase == "Release" and data.airborne then
+		-- Air version: a front flip, the blade going all the way round and
+		-- down onto whoever is below.
+		local perfect = data.perfect == true
+		local look = root.CFrame.LookVector
+		play(character, ANIMS.AirDividerRelease)
+		heavyTrail(character, 0.35)
+		crescent(character, {
+			center = CFrame.new(0, 0.3, 0),
+			radius = if perfect then 6.4 else 5.6,
+			from = 150,
+			to = -170,
+			tilt = 90,
+			width = if perfect then 2.8 else 2,
+			sweep = 0.18,
+			fade = 0.3,
+		})
+		blackSmoke(root.Position, if perfect then 16 else 8, 3.5, 14)
+		U.burst(root.Position - UP * 2 + look * 2, {
+			color = RED,
+			count = if perfect then 24 else 12,
+			size = 0.7,
+			speed = NumberRange.new(35, 65),
+			lifetime = NumberRange.new(0.15, 0.35),
+			streaks = true,
+			spread = 35,
+			direction = (look - UP * 1.4).Unit,
+		})
+		-- The blow lands on the ground below.
+		task.delay(0.16, function()
+			local ground = U.groundBelow(root.Position + look * 3, { character })
+			if not ground then
+				return
+			end
+			local spot = ground.Position
+			U.flash(spot + UP, BLACK, if perfect then 12 else 7, 0.25)
+			U.ringBurst(CFrame.new(spot + UP * 0.2), BLACK, 1, if perfect then 14 else 9, 0.35, 0.4)
+			task.delay(0.04, U.ringBurst, CFrame.new(spot + UP * 0.3), RED, 0.8, if perfect then 10 else 6, 0.3, 0.2)
+			U.groundCracks(spot, if perfect then 10 else 6, if perfect then 9 else 5, RED, 2)
+			U.groundRocks(spot, if perfect then 10 else 6, 3, 1.6)
+			blackSmoke(spot + UP, if perfect then 16 else 8, 4, 18)
+			U.light(spot + UP, RED, if perfect then 12 else 6, 22, 0.35)
+			if perfect then
+				U.shockwave(spot, RED, 2, 18, 0.4)
+				U.debris(spot, 12, 40, 1.1)
+				blackLightning(spot + UP, 8, 7, 0.28)
+			end
+		end)
+		if perfect then
+			U.popup(root.Position + UP * 4.5, "PERFECT DIVIDER", RED, 1.8)
+			if U.isLocal(character) then
+				impactFrame()
+				U.screenFlash(RED, 0.35)
+				CameraShake.FovKick(14)
+			end
+		elseif U.isLocal(character) then
+			CameraShake.FovKick(7)
 		end
 	elseif phase == "Release" then
 		local perfect = data.perfect == true
@@ -1674,6 +1750,153 @@ function handlers.DemonDestroyer(data, character, root)
 	elseif phase == "Heal" then
 		U.popup(root.Position + UP * 4, "+30% HP", Color3.fromRGB(120, 255, 140), 1.3)
 		U.highlight(character, Color3.fromRGB(120, 255, 140), 0.5)
+	end
+end
+
+---------------------------------------------------------------------------
+-- Special (R): Anti-Magic Leap / Meteor Plunge
+---------------------------------------------------------------------------
+
+-- The black meteor tail and air rings while diving (Meteorite slam, Plunge).
+local function meteorTail(root: BasePart, duration: number)
+	trailEmitter(root, {
+		Texture = U.textures.Smoke,
+		Color = ColorSequence.new(BLACK),
+		LightEmission = 0,
+		Size = NumberSequence.new(1.8, 4),
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.2),
+			NumberSequenceKeypoint.new(1, 1),
+		}),
+		Lifetime = NumberRange.new(0.3, 0.55),
+		Rate = 140,
+		Speed = NumberRange.new(4, 10),
+		EmissionDirection = Enum.NormalId.Top,
+		SpreadAngle = Vector2.new(30, 30),
+		Drag = 3,
+	}, duration)
+	trailEmitter(root, {
+		Texture = U.textures.Spark,
+		Color = ColorSequence.new(RED, DARK_RED),
+		LightEmission = 1,
+		Size = NumberSequence.new(0.4, 0),
+		Lifetime = NumberRange.new(0.15, 0.3),
+		Rate = 70,
+		Speed = NumberRange.new(14, 24),
+		EmissionDirection = Enum.NormalId.Top,
+		SpreadAngle = Vector2.new(25, 25),
+		Orientation = Enum.ParticleOrientation.VelocityParallel,
+		Squash = NumberSequence.new(1.6),
+	}, duration)
+	for i = 0, math.floor(duration / 0.06) do
+		task.delay(i * 0.06, function()
+			if root.Parent then
+				U.ringBurst(
+					CFrame.new(root.Position - UP * 3.4),
+					if i % 2 == 0 then BLACK else RED,
+					1.2,
+					3.8,
+					0.18,
+					0.15
+				)
+			end
+		end)
+	end
+end
+
+function handlers.Special(data, character, root)
+	local phase = data.phase
+	if phase == "Leap" then
+		play(character, ANIMS.Leap)
+		local feet = feetOf(character, root)
+		-- Blasting off a burst of anti-magic.
+		U.flash(feet + UP * 0.5, BLACK, 8, 0.22)
+		U.shockwave(feet, RED, 2, 12, 0.3)
+		U.ringBurst(CFrame.new(feet + UP * 0.15), BLACK, 1, 9, 0.32, 0.4)
+		task.delay(0.04, U.ringBurst, CFrame.new(feet + UP * 0.2), RED, 0.8, 6, 0.28, 0.18)
+		U.groundCracks(feet, 6, 4.5, RED, 1.6)
+		U.debris(feet, 7, 34, 0.9)
+		blackSmoke(feet + UP * 0.4, 14, 3.2, 16)
+		U.burst(feet, {
+			texture = U.textures.Smoke,
+			color = Color3.fromRGB(150, 140, 130),
+			count = 10,
+			size = 3.5,
+			speed = NumberRange.new(10, 20),
+			lifetime = NumberRange.new(0.5, 0.9),
+			lightEmission = 0,
+			transparency = 0.45,
+			drag = 3,
+			spread = 75,
+		})
+		U.light(feet, RED, 7, 16, 0.3)
+		U.bodyTrail(character, BLACK, 0.6)
+		U.speedLines(root, nil, 0.3)
+		swordTrail(character, 0.5)
+		for i = 0, 3 do
+			task.delay(i * 0.06, function()
+				if character.Parent then
+					U.afterimage(character, if i % 2 == 0 then BLACK else DARK_RED, 0.25)
+				end
+			end)
+		end
+		if U.isLocal(character) then
+			CameraShake.FovKick(10)
+			CameraShake.Add(0.15)
+		end
+	elseif phase == "Plunge" then
+		play(character, ANIMS.Plunge)
+		swordGlow(character, BLACK, 0.4, 0.1)
+		swordAura(character, 0.6, 40)
+		crackle(root, 0.15, 0.04, 2.5)
+		U.ringBurst(CFrame.new(root.Position), BLACK, 1, 5, 0.2, 0.15)
+		task.delay(0.08, function()
+			local tip = bladePoint(character, 2.1)
+			if tip and character.Parent then
+				U.glint(tip, 1.6, RED)
+			end
+		end)
+	elseif phase == "Dive" then
+		heavyTrail(character, 0.6)
+		U.bodyTrail(character, RED, 0.6)
+		U.speedLines(root, nil, 0.6)
+		meteorTail(root, 0.5)
+		if U.isLocal(character) then
+			CameraShake.FovKick(10)
+		end
+	elseif phase == "Impact" then
+		local position: Vector3 = data.position
+		play(character, ANIMS.PlungeImpact)
+		U.flash(position + UP, WHITE, 4, 0.07)
+		U.flash(position + UP, BLACK, 11, 0.28)
+		U.flash(position + UP, RED, 7, 0.2)
+		U.shockwave(position, RED, 2, 17, 0.35)
+		U.shockwave(position, BLACK, 3, 20, 0.4, Enum.Material.Glass, 0.45)
+		U.ringBurst(CFrame.new(position + UP * 0.2), BLACK, 1, 13, 0.4, 0.5)
+		task.delay(0.05, U.ringBurst, CFrame.new(position + UP * 0.3), RED, 0.8, 9, 0.32, 0.25)
+		U.groundCracks(position, 9, 8, RED, 2.2)
+		U.groundRocks(position, 10, 4, 2)
+		U.debris(position, 12, 45, 1.1)
+		U.pillar(position, BLACK, 1.6, 14, 0.4, Enum.Material.SmoothPlastic, 0.2)
+		blackSmoke(position + UP, 18, 4.5, 24)
+		for i = 1, 6 do
+			local angle = (i / 6) * math.pi * 2 + math.random() * 0.5
+			local out = Vector3.new(math.cos(angle), 0, math.sin(angle))
+			U.lightning(
+				position + UP * 0.4,
+				position + out * (6 + math.random() * 5) + UP * 0.3,
+				BLACK,
+				RED,
+				0.16,
+				0.25
+			)
+		end
+		redSparks(position + UP, 18, 1)
+		U.light(position + UP * 2, RED, 10, 26, 0.45)
+		lingerSmoke(position, 1, 5)
+		if U.isLocal(character) then
+			CameraShake.FovKick(10)
+		end
 	end
 end
 

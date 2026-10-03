@@ -55,11 +55,13 @@ export type Animation = {
 
 export type IdleSet = {
 	stand: Animation?, -- played while standing still
-	move: Animation?, -- played while moving (a walk/run cycle)
+	move: Animation?, -- played while moving (a run cycle)
+	walk: Animation?, -- played while moving slowly; blends into `move` as speed picks up
 	air: Animation?, -- played while jumping or falling
-	-- The speed the move cycle is animated for; it plays faster or slower
-	-- with the character's actual speed so feet don't slide.
+	-- The speeds the run and walk cycles are animated for; they play faster
+	-- or slower with the character's actual speed so feet don't slide.
 	moveSpeed: number?,
+	walkSpeed: number?,
 }
 
 local JOINTS = {
@@ -74,8 +76,9 @@ local JOINTS = {
 
 local STAND_SPEED = 1.5 -- studs/s; slower than this counts as standing still
 local STANCE_BLEND = 8 -- how fast the idle switches between stand and move
-local AIR_SPEED = 6 -- vertical studs/s; faster than this counts as airborne
+local AIR_HEIGHT = 3.6 -- no ground this far under the root counts as airborne (R6 stands at 3)
 local AIR_BLEND = 10
+local TURN_BLEND = 10 -- how fast the legs swing round to a new movement direction
 
 type Track = {
 	animation: Animation,
@@ -101,7 +104,16 @@ type Idle = {
 	start: number,
 	standWeight: number,
 	airWeight: number,
-	moveClock: number,
+	-- Where in the step cycle the legs are (0 to 1), shared by walk and run
+	-- so they blend without the legs fighting.
+	phase: number,
+	-- Movement direction relative to facing (degrees, + is right), folded
+	-- into -75..75; backWeight says it's actually backwards.
+	moveYaw: number,
+	backWeight: number,
+	airborne: boolean,
+	nextGroundCheck: number,
+	rayParams: RaycastParams,
 	nextJointScan: number,
 }
 
@@ -249,20 +261,53 @@ local function idleValues(character: Model, idle: Idle, now: number, dt: number)
 	end
 
 	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
-	local speed, verticalSpeed = 0, 0
-	if root then
-		local velocity = root.AssemblyLinearVelocity
-		speed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
-		verticalSpeed = math.abs(velocity.Y)
-	end
+	local velocity = if root then root.AssemblyLinearVelocity else Vector3.zero
+	local flat = Vector3.new(velocity.X, 0, velocity.Z)
+	local speed = flat.Magnitude
 	local set = idle.set
+
+	-- Airborne means nothing under the feet. Unlike checking vertical
+	-- speed, this holds through the top of a jump.
+	if root and now >= idle.nextGroundCheck then
+		idle.nextGroundCheck = now + 0.05
+		idle.airborne = workspace:Raycast(root.Position, Vector3.new(0, -AIR_HEIGHT, 0), idle.rayParams) == nil
+	end
+
 	local standTarget = if speed < STAND_SPEED then 1 else 0
 	idle.standWeight += (standTarget - idle.standWeight) * math.min(dt * STANCE_BLEND, 1)
-	local airTarget = if set.air and verticalSpeed > AIR_SPEED then 1 else 0
+	local airTarget = if set.air and idle.airborne then 1 else 0
 	idle.airWeight += (airTarget - idle.airWeight) * math.min(dt * AIR_BLEND, 1)
-	-- The run cycle keeps pace with the actual movement speed.
-	idle.moveClock += dt * math.clamp(speed / (set.moveSpeed or 16), 0.5, 2)
+
+	-- Which way he's moving compared to where he faces (shift lock strafing,
+	-- backpedalling). Backwards runs the cycle in reverse.
+	local yawTarget, backTarget = 0, 0
+	if root and speed > STAND_SPEED then
+		local direction = root.CFrame:VectorToObjectSpace(flat / speed)
+		local angle = math.deg(math.atan2(direction.X, -direction.Z))
+		local backLimit = if idle.backWeight > 0.5 then 95 else 115
+		if math.abs(angle) > backLimit then
+			backTarget = 1
+			angle -= 180 * math.sign(angle)
+		end
+		yawTarget = math.clamp(angle, -75, 75)
+	end
+	local turn = math.min(dt * TURN_BLEND, 1)
+	idle.moveYaw += (yawTarget - idle.moveYaw) * turn
+	idle.backWeight += (backTarget - idle.backWeight) * turn
+
+	-- Walk when slow, run when fast, both on the same step phase.
+	local runLength = if set.move then lengthOf(set.move) else 1
+	local walkLength = if set.walk then lengthOf(set.walk) else runLength
+	local runSpeed = set.moveSpeed or 16
+	local walkSpeed = set.walkSpeed or 8
+	local runWeight = if set.walk then smooth((speed - walkSpeed * 1.2) / (runSpeed * 0.85 - walkSpeed * 1.2)) else 1
+	local walkRate = math.clamp(speed / walkSpeed, 0.5, 1.8) / walkLength
+	local runRate = math.clamp(speed / runSpeed, 0.5, 2) / runLength
+	local rate = walkRate + (runRate - walkRate) * runWeight
+	idle.phase = (idle.phase + dt * rate * (if backTarget == 1 then -1 else 1)) % 1
+
 	local standW, airW = smooth(idle.standWeight), smooth(idle.airWeight)
+	local yaw, back = math.rad(idle.moveYaw), idle.backWeight
 
 	local t = now - idle.start
 	local values = {}
@@ -272,7 +317,27 @@ local function idleValues(character: Model, idle: Idle, now: number, dt: number)
 		end
 		local base = animatorBase(joint)
 		-- Moving (or the default walk), blended toward standing, then air.
-		local value = layer(set.move, poseName, joint, idle.moveClock) or base
+		local value = base
+		local run = if set.move and posed(set.move)[poseName]
+			then sample(set.move, poseName, idle.phase * runLength)
+			else nil
+		local walk = if set.walk and posed(set.walk)[poseName]
+			then sample(set.walk, poseName, idle.phase * walkLength)
+			else nil
+		local move = if run and walk then walk:Lerp(run, runWeight) else run or walk
+		if move then
+			-- Turn the stride toward the movement direction: hips most, the
+			-- torso a little, the head back to facing forward. Lean back less
+			-- when backpedalling.
+			if poseName == "Torso" then
+				move = CFrame.Angles(0, -yaw * 0.4, 0) * CFrame.Angles(math.rad(14) * back, 0, 0) * move
+			elseif poseName == "Head" then
+				move = CFrame.Angles(0, yaw * 0.4, 0) * move
+			elseif poseName == "RightLeg" or poseName == "LeftLeg" then
+				move = CFrame.Angles(0, -yaw * 0.6, 0) * move
+			end
+			value = toJointSpace(joint, move)
+		end
 		value = value:Lerp(layer(set.stand, poseName, joint, t) or base, standW)
 		local air = layer(set.air, poseName, joint, t)
 		if air and airW > 0 then
@@ -447,9 +512,11 @@ function PoseAnimator.SetIdle(character: Model, set: IdleSet?)
 		return
 	end
 	local covered: { [string]: boolean } = {}
-	for _, animation in { set.stand, set.move, set.air } do
-		for poseName in posed(animation :: Animation) do
-			covered[poseName] = true
+	for _, animation in { set.stand, set.move, set.walk, set.air } :: { Animation? } do
+		if animation then
+			for poseName in posed(animation) do
+				covered[poseName] = true
+			end
 		end
 	end
 	local joints = {}
@@ -458,6 +525,9 @@ function PoseAnimator.SetIdle(character: Model, set: IdleSet?)
 			joints[poseName] = joint
 		end
 	end
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	rayParams.FilterDescendantsInstances = { character }
 	idles[character] = {
 		set = set,
 		covered = covered,
@@ -465,7 +535,12 @@ function PoseAnimator.SetIdle(character: Model, set: IdleSet?)
 		start = os.clock(),
 		standWeight = 1,
 		airWeight = 0,
-		moveClock = 0,
+		phase = 0,
+		moveYaw = 0,
+		backWeight = 0,
+		airborne = false,
+		nextGroundCheck = 0,
+		rayParams = rayParams,
 		nextJointScan = 0,
 	}
 end

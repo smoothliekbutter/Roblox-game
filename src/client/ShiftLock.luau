@@ -131,7 +131,8 @@ function ShiftLock.Start()
 			return
 		end
 		local character = localPlayer.Character :: Model
-		if CombatState.IsRagdolled(character) then
+		-- Ragdolled, or a skill is steering the body (Bull Thrust).
+		if CombatState.IsRagdolled(character) or character:GetAttribute("Steering") == true then
 			return
 		end
 		local look = workspace.CurrentCamera.CFrame.LookVector

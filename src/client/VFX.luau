@@ -541,11 +541,13 @@ local function sparks(position: Vector3, direction: Vector3, scale: number?)
 end
 
 -- Thin white speed lines rushing past a moving character for `duration`.
-local function speedLines(root: BasePart, direction: Vector3, duration: number, color: Color3?)
-	local aim = if direction.Magnitude > 1e-3 then direction.Unit else root.CFrame.LookVector
+-- Without a direction they follow the way it's actually moving (curves).
+local function speedLines(root: BasePart, direction: Vector3?, duration: number, color: Color3?)
 	local start = os.clock()
 	task.spawn(function()
 		while os.clock() - start < duration and root.Parent do
+			local heading = direction or root.AssemblyLinearVelocity
+			local aim = if heading.Magnitude > 1 then heading.Unit else root.CFrame.LookVector
 			for _ = 1, 3 do
 				local offset = randomUnit() * Vector3.new(2.6, 2.2, 2.6)
 				local from = root.Position + offset + aim * 4

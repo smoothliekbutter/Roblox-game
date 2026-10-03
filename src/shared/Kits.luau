@@ -25,6 +25,8 @@ export type KitInfo = {
 	-- Overrides for Config.M1 (hitbox, damage, ...). Missing keys use Config.M1.
 	m1: { [string]: any },
 	skills: { SkillInfo },
+	-- The R special: one per character, kept through awakening.
+	special: SkillInfo?,
 	-- Awakening swaps the move set (like Vessel -> Sukuna, Hero Hunter -> Rampage).
 	awakenedSkills: { SkillInfo }?,
 	awakening: {
@@ -80,6 +82,8 @@ Kits.List = {
 			{ name = "Black Divider", cooldown = 10, type = "Melee" },
 			{ name = "Anti-Magic Deflect", cooldown = 15, type = "Counter" },
 		},
+		-- Leap off a blast of anti-magic; R again in the air to plunge.
+		special = { name = "Anti-Magic Leap", cooldown = 9, type = "Melee" },
 		awakenedSkills = {
 			{ name = "Black Hurricane", cooldown = 9, type = "Melee" },
 			{ name = "Black Slash", cooldown = 7, type = "Bolt" },

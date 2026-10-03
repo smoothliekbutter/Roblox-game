@@ -39,8 +39,9 @@ With live sync, every code change shows up in Studio instantly, without re-downl
 | Left click (hold to chain) | M1 combo, 4 hits. The 4th hit ragdolls and guard-breaks. |
 | Hold **Space** on the 4th hit | Uppercut finisher that launches the target into the air |
 | 4th hit while in the air | Downslam finisher with a crater |
-| **1 2 3 4** | Character skills |
-| **G** | Awaken when the red meter is full (it fills as you fight) |
+| **1 2 3 4** | Character skills. Most have an air version: use them mid-jump. |
+| **R** | Character special (each character has their own) |
+| **G** | Awaken when the red meter is full. It fills as you fight: about 90 damage dealt. |
 | **Q** + WASD | Dash: front, back, left or right |
 | Hold **F** | Block. Only works facing the attacker. |
 | Tap **F** right before a hit | Perfect block: stuns the attacker |
@@ -57,10 +58,11 @@ A close-range rushdown character built like Vessel (Jujutsu Shenanigans) and Her
 
 | Key | Base | Black Form (after G) |
 |---|---|---|
-| 1 | **Bull Thrust**: rockets forward on anti-magic, catches the target in an 8-hit slash barrage, then pushes them back still stunned so you can M1 straight into them. In the air it's a diving thrust. | **Black Hurricane**: spinning charge that drags enemies along |
-| 2 | **Black Meteorite**: unblockable lunge grab that rockets you both into the sky, charges the blade at the top, then slams down like a meteor into a huge crater (shockwave dome, ground cracks, flying debris, black lightning) | **Black Slash**: piercing anti-magic slash wave |
-| 3 | **Black Divider**: anti-magic streams into the blade, then a huge sweeping crescent cleave. Press **3** again on the red glint for a Perfect Divider: bigger cut, impact frame, and a black crescent that keeps flying. | **Grand Divider**: huge guard-breaking cleave plus a giant slash wave |
-| 4 | **Anti-Magic Deflect**: raises an anti-magic barrier on the blade that counters every attack type. Melee attackers get a frozen impact frame, then a diagonal slash that throws them aside. Projectiles get sent back. | **Demon-Destroyer**: grab, carve, explosive finisher that heals 30% |
+| 1 | **Bull Thrust**: rockets forward on anti-magic. **Steer it mid-move** with WASD or the camera to curve around and chase people. Catches the target in an 8-hit slash barrage, then pushes them back still stunned so you can M1 straight into them. **Air:** a diving thrust (also steerable). | **Black Hurricane**: spinning charge that drags enemies along |
+| 2 | **Black Meteorite**: unblockable lunge grab that rockets you both into the sky, charges the blade at the top, then slams down like a meteor into a huge crater (shockwave dome, ground cracks, flying debris, black lightning). **Air:** dives down at them and spikes them straight into the ground. | **Black Slash**: piercing anti-magic slash wave |
+| 3 | **Black Divider**: anti-magic streams into the blade, then a huge sweeping crescent cleave. Press **3** again on the red glint for a Perfect Divider: bigger cut, impact frame, and a black crescent that keeps flying. **Air:** hangs in the air while charging, then front-flips the blade down onto whoever's below and spikes them into the ground. | **Grand Divider**: huge guard-breaking cleave plus a giant slash wave |
+| 4 | **Anti-Magic Deflect**: raises an anti-magic barrier on the blade that counters every attack type. Melee attackers get a frozen impact frame, then a diagonal slash that throws them aside. Projectiles get sent back. **Air:** hangs in the air with the guard up. | **Demon-Destroyer**: grab, carve, explosive finisher that heals 30% |
+| R | **Anti-Magic Leap**: blasts off the ground in a big steerable leap. Press **R** again in the air (or use it while already airborne) for **Meteor Plunge**: hangs for a beat, then dives behind the sword and stabs it into the ground, blasting everyone nearby away. | (same) |
 | G | **Black Form**: a 2-second transformation. Anti-magic gathers as the world darkens, then explodes into a black pillar that blows everyone away, and he drops into his stance. For 40s you get +25% damage, more speed and new moves, plus the look: black flames, a horn, a black arm and sword, and a devil wing with its own idle (it breathes, stretches, tucks back when you run and beats in the air). | |
 
 More grimoires are listed as "coming soon" in the picker.

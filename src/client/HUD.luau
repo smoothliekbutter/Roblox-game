@@ -1,7 +1,8 @@
 --[[
 	HUD
 	Top right (in the top bar): small health + Evasive bars.
-	Bottom:    awakening bar over the move icons (skills 1-4) with cooldowns.
+	Bottom:    awakening bar over the move icons (skills 1-4, then the R
+	           special) with cooldowns.
 	Right:     combo counter.
 	Top:       toast messages from the server.
 	Built in code so it can be restyled without touching Studio.
@@ -36,6 +37,7 @@ local COLORS = {
 local COMBO_TIMEOUT = 1.6
 local SLOT_SIZE = 54
 local SLOT_GAP = 6
+local SPECIAL_GAP = 14 -- extra room before the R slot
 local STATUS_WIDTH = 190
 
 type Slot = {
@@ -58,6 +60,7 @@ local ui: {
 	awakeningStroke: UIStroke,
 	awakeningLabel: TextLabel,
 	skills: { Slot },
+	special: Slot,
 	comboLabel: TextLabel,
 	comboScale: UIScale,
 	toast: TextLabel,
@@ -233,7 +236,8 @@ local function buildStatus(playerGui: Instance)
 end
 
 local function buildMoves(gui: ScreenGui)
-	local width = 4 * SLOT_SIZE + 3 * SLOT_GAP
+	-- Skills 1-4, a little gap, then the R special.
+	local width = 5 * SLOT_SIZE + 4 * SLOT_GAP + SPECIAL_GAP
 
 	local holder = Instance.new("Frame")
 	holder.Name = "Moves"
@@ -283,6 +287,12 @@ local function buildMoves(gui: ScreenGui)
 	for i = 1, CombatState.SkillSlots do
 		ui.skills[i] = slot(row, tostring(i), i)
 	end
+	local spacer = Instance.new("Frame")
+	spacer.BackgroundTransparency = 1
+	spacer.Size = UDim2.fromOffset(SPECIAL_GAP - SLOT_GAP, SLOT_SIZE)
+	spacer.LayoutOrder = CombatState.SkillSlots + 1
+	spacer.Parent = row
+	ui.special = slot(row, "R", CombatState.SkillSlots + 2)
 end
 
 local function build()
@@ -342,6 +352,10 @@ local function refreshKit(character: Model?)
 		s.stroke.Color = if skill and kit then kit.color else COLORS.Locked
 		s.frame.BackgroundTransparency = if skill then 0.35 else 0.7
 	end
+	local special = kit and kit.special
+	ui.special.name.Text = if special then special.name else ""
+	ui.special.stroke.Color = if special and kit then kit.color else COLORS.Locked
+	ui.special.frame.BackgroundTransparency = if special then 0.35 else 0.7
 	local awakening = kit and kit.awakening
 	ui.awakening.Visible = awakening ~= nil
 	ui.awakeningLabel.Text = if awakening then "[G]  " .. string.upper(awakening.name) else ""
@@ -389,6 +403,7 @@ local function update(dt: number)
 		for i, s in ui.skills do
 			setSlotCooldown(s, CombatState.Cooldown(character, i))
 		end
+		setSlotCooldown(ui.special, CombatState.Cooldown(character, CombatState.SpecialSlot))
 	end
 
 	if comboCount > 0 and os.clock() - lastComboHit > COMBO_TIMEOUT then

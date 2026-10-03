@@ -87,6 +87,9 @@ local DEFAULTS = {
 -- Skill slots 1-4. "CD<n>" is the server time the skill is ready again,
 -- "CDLen<n>" how long that cooldown was (for drawing the HUD sweep).
 CombatState.SkillSlots = 4
+-- The R special uses the same attributes as slot 5. It isn't part of the
+-- move set, so awakening doesn't reset it.
+CombatState.SpecialSlot = 5
 
 local function now(): number
 	return workspace:GetServerTimeNow()
@@ -98,6 +101,7 @@ function CombatState.Setup(character: Model)
 		character:SetAttribute(name, value)
 	end
 	CombatState.ResetCooldowns(character)
+	CombatState.ResetSpecial(character)
 end
 
 function CombatState.ResetCooldowns(character: Model)
@@ -105,6 +109,11 @@ function CombatState.ResetCooldowns(character: Model)
 		character:SetAttribute("CD" .. slot, 0)
 		character:SetAttribute("CDLen" .. slot, 1)
 	end
+end
+
+function CombatState.ResetSpecial(character: Model)
+	character:SetAttribute("CD" .. CombatState.SpecialSlot, 0)
+	character:SetAttribute("CDLen" .. CombatState.SpecialSlot, 1)
 end
 
 function CombatState.IsAlive(character: Model?): boolean
@@ -279,10 +288,11 @@ Config.Dash = {
 }
 
 -- Awakening: fills by dealing (and a bit by taking) damage. G when full.
+-- About 90 damage dealt (or 200 taken) fills it: it should take a real fight.
 Config.Awakening = {
 	Max = 100,
-	GainPerDamageDealt = 3,
-	GainPerDamageTaken = 1.2,
+	GainPerDamageDealt = 1.1,
+	GainPerDamageTaken = 0.5,
 }
 
 -- Switching characters is blocked this long after dealing or taking damage.
@@ -405,6 +415,8 @@ export type KitInfo = {
 	-- Overrides for Config.M1 (hitbox, damage, ...). Missing keys use Config.M1.
 	m1: { [string]: any },
 	skills: { SkillInfo },
+	-- The R special: one per character, kept through awakening.
+	special: SkillInfo?,
 	-- Awakening swaps the move set (like Vessel -> Sukuna, Hero Hunter -> Rampage).
 	awakenedSkills: { SkillInfo }?,
 	awakening: {
@@ -460,6 +472,8 @@ Kits.List = {
 			{ name = "Black Divider", cooldown = 10, type = "Melee" },
 			{ name = "Anti-Magic Deflect", cooldown = 15, type = "Counter" },
 		},
+		-- Leap off a blast of anti-magic; R again in the air to plunge.
+		special = { name = "Anti-Magic Leap", cooldown = 9, type = "Melee" },
 		awakenedSkills = {
 			{ name = "Black Hurricane", cooldown = 9, type = "Melee" },
 			{ name = "Black Slash", cooldown = 7, type = "Bolt" },
@@ -518,10 +532,10 @@ return Kits
 	The server creates every RemoteEvent; clients wait for them.
 
 	Action       client -> server   ("M1", {jump}) | ("Block", bool) | ("Dash", dir) | ("Evasive")
-	                                | ("Skill", slot) | ("Awaken") | ("SelectKit", kitId)
+	                                | ("Skill", slot) | ("Special") | ("Awaken") | ("SelectKit", kitId)
 	VFX          server -> clients  (effectName, data)
 	CameraShake  server -> client   (intensity 0-1)
-	Impulse      server -> client   (velocity, duration) applied to your own character
+	Impulse      server -> client   (velocity, duration, {steer?}) applied to your own character
 	Notify       server -> client   (text, color?) toast message
 ]]
 
@@ -863,7 +877,14 @@ function CombatService.Notify(character: Model, text: string, color: Color3?)
 end
 
 -- Moves a character, routing to whoever owns its physics.
-function CombatService.ApplyVelocity(character: Model, velocity: Vector3, duration: number)
+-- `options.steer` (degrees per second) lets a player curve the push with
+-- their camera / movement keys while it lasts (e.g. Bull Thrust).
+function CombatService.ApplyVelocity(
+	character: Model,
+	velocity: Vector3,
+	duration: number,
+	options: { steer: number? }?
+)
 	local root = getRoot(character)
 	if not root then
 		return
@@ -873,7 +894,7 @@ function CombatService.ApplyVelocity(character: Model, velocity: Vector3, durati
 		-- Server owns ragdolls, and a ragdoll has no Humanoid fighting the velocity.
 		CombatService.Tumble(root, velocity)
 	elseif player then
-		Remotes.Impulse:FireClient(player, velocity, duration)
+		Remotes.Impulse:FireClient(player, velocity, duration, options)
 	else
 		Impulse.Apply(root, velocity, duration, "Knockback")
 	end
@@ -1416,6 +1437,34 @@ function CombatService.UseSkill(character: Model, slot: number)
 	task.spawn(run, ctx)
 end
 
+-- The R special (Kits.special, run by the server kit's Special). Presses
+-- while it's on cooldown are recorded like skill presses (PressedSince with
+-- CombatState.SpecialSlot), so a special can have a follow-up.
+function CombatService.UseSpecial(character: Model)
+	local ctx = makeContext(character)
+	if not ctx then
+		return
+	end
+	local info = ctx.kit.special
+	local serverKit = serverKits[ctx.kit.id]
+	if not info or not serverKit or not serverKit.Special then
+		return
+	end
+	local slot = CombatState.SpecialSlot
+	if CombatState.Cooldown(character, slot) > 0.1 then
+		ctx.data.skillInputs[slot] = os.clock()
+		return
+	end
+	if not CombatState.CanAct(character) or CombatState.IsCasting(character) then
+		return
+	end
+	ctx.data.skillInputs[slot] = nil
+	local awakening = awakeningOf(character)
+	CombatState.StartCooldown(character, slot, info.cooldown * (if awakening then awakening.cooldownMultiplier else 1))
+	CombatState.SetBlocking(character, false)
+	task.spawn(serverKit.Special, ctx)
+end
+
 local function endAwakening(character: Model)
 	local data = registry[character]
 	if data then
@@ -1483,6 +1532,7 @@ function CombatService.EquipKit(character: Model, kitId: string)
 	endAwakening(character)
 	character:SetAttribute("Awakening", 0)
 	CombatState.ResetCooldowns(character)
+	CombatState.ResetSpecial(character)
 	CombatService.ClearCounter(character)
 
 	-- Weapon first, then the attribute: clients react to "Kit" by animating
@@ -1642,6 +1692,8 @@ local function onAction(player: Player, action: unknown, payload: unknown)
 		if type(payload) == "number" and payload >= 1 and payload <= CombatState.SkillSlots then
 			CombatService.UseSkill(character, math.floor(payload))
 		end
+	elseif action == "Special" then
+		CombatService.UseSpecial(character)
 	elseif action == "Awaken" then
 		CombatService.Awaken(character)
 	end
@@ -2032,6 +2084,9 @@ local KIT_ID = "AntiMagic"
 local UP = Vector3.yAxis
 
 -- Anti-magic cuts through everything.
+-- Holds a character in the air (a tiny upward velocity switches on the
+-- vertical force, so gravity stops pulling).
+local HOVER = Vector3.new(0, 0.05, 0)
 local ALL_TYPES = { Melee = true, Bolt = true, Explosion = true, Swarm = true, Zone = true }
 
 local Kit = {}
@@ -2241,8 +2296,10 @@ local function interrupted(ctx): boolean
 end
 
 -- Charges forward for `duration`, returning the first character caught.
-local function lunge(ctx, velocity: Vector3, duration: number, reach: Vector3): Model?
-	ctx.combat.ApplyVelocity(ctx.character, velocity, duration)
+-- With `steer` (degrees per second) the player can curve it as it goes; the
+-- hitbox follows their root, so it catches whatever they curve into.
+local function lunge(ctx, velocity: Vector3, duration: number, reach: Vector3, steer: number?): Model?
+	ctx.combat.ApplyVelocity(ctx.character, velocity, duration, if steer then { steer = steer } else nil)
 	local start = os.clock()
 	while os.clock() - start < duration + 0.05 do
 		if interrupted(ctx) then
@@ -2330,6 +2387,9 @@ end
 -- string (a combo starter, like Vessel's Cursed Strikes).
 local BARRAGE_HITS = 8
 local BARRAGE_STEP = 0.1 -- matches the Barrage animation (tools/anim)
+local PROPEL_SPEED = 85
+local PROPEL_TIME = 0.55 -- the Propel animation holds for this long
+local PROPEL_STEER = 240 -- degrees per second: up to a ~130 degree curve
 
 local function bullThrust(ctx)
 	local c, character = ctx.combat, ctx.character
@@ -2337,9 +2397,9 @@ local function bullThrust(ctx)
 	local airborne = c.IsAirborne(character)
 	local direction = if airborne then (forward + UP * -0.6).Unit else forward
 
-	CombatState.SetCasting(character, 0.6)
-	fx(ctx, "BullThrust", "Propel", { airborne = airborne, direction = direction })
-	local target = lunge(ctx, direction * 95, 0.32, Vector3.new(6, 6, 7))
+	CombatState.SetCasting(character, PROPEL_TIME + 0.25)
+	fx(ctx, "BullThrust", "Propel", { airborne = airborne, direction = direction, duration = PROPEL_TIME })
+	local target = lunge(ctx, direction * PROPEL_SPEED, PROPEL_TIME, Vector3.new(6, 6, 7), PROPEL_STEER)
 	if not target then
 		if airborne then
 			waitForGround(ctx, 0.5)
@@ -2350,6 +2410,8 @@ local function bullThrust(ctx)
 		return
 	end
 
+	-- Wherever they curved to is forward now.
+	forward = look(ctx)
 	local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
 	local contact = if targetRoot then targetRoot.Position else ctx.root.Position + forward * 3
 	if c.Hit(character, target, { damage = 2.5, stun = 1.6, attackType = "Melee" }) ~= "Hit" then
@@ -2400,11 +2462,11 @@ end
 
 -- Shared by Black Meteorite and Demon-Destroyer: lunge, and if someone is
 -- caught (and not countering/immune), grab them.
-local function lungeGrab(ctx, skill: string, grabTime: number): (Model?, (() -> ())?)
+local function lungeGrab(ctx, skill: string, grabTime: number, velocity: Vector3?): (Model?, (() -> ())?)
 	local c, character = ctx.combat, ctx.character
 	CombatState.SetCasting(character, 0.55)
 	fx(ctx, skill, "Lunge")
-	local target = lunge(ctx, look(ctx) * 72, 0.3, Vector3.new(4.5, 6, 5))
+	local target = lunge(ctx, velocity or look(ctx) * 72, 0.3, Vector3.new(4.5, 6, 5))
 	if not target then
 		CombatState.SetCasting(character, 0.35)
 		return nil, nil
@@ -2420,19 +2482,26 @@ local function lungeGrab(ctx, skill: string, grabTime: number): (Model?, (() -> 
 	return target, release
 end
 
+-- On the ground: grab, carry them up, slam. In the air: dive down at them
+-- and spike them straight into the ground.
 local function blackMeteorite(ctx)
 	local c, character = ctx.combat, ctx.character
-	local target, release = lungeGrab(ctx, "BlackMeteorite", 1.7)
+	local airborne = c.IsAirborne(character)
+	local forward = look(ctx)
+	local velocity = if airborne then (forward + UP * -0.55).Unit * 80 else forward * 72
+	local target, release = lungeGrab(ctx, "BlackMeteorite", if airborne then 1.2 else 1.7, velocity)
 	if not target or not release then
 		return
 	end
-	local forward = look(ctx)
+	forward = look(ctx)
 
-	fx(ctx, "BlackMeteorite", "Rise", { target = target })
-	c.ApplyVelocity(character, UP * 75 + forward * 6, 0.3)
-	task.wait(0.55)
+	if not airborne then
+		fx(ctx, "BlackMeteorite", "Rise", { target = target })
+		c.ApplyVelocity(character, UP * 75 + forward * 6, 0.3)
+		task.wait(0.55)
+	end
 
-	fx(ctx, "BlackMeteorite", "Slam", { target = target })
+	fx(ctx, "BlackMeteorite", "Slam", { target = target, airGrab = airborne })
 	c.ApplyVelocity(character, UP * -125 + forward * 8, 0.4)
 	waitForGround(ctx, 0.6)
 	release()
@@ -2442,7 +2511,7 @@ local function blackMeteorite(ctx)
 	fx(ctx, "BlackMeteorite", "Impact", { position = impact, target = target })
 	c.ShakeArea(impact, 45, 0.6)
 	c.Hit(character, target, {
-		damage = 9,
+		damage = if airborne then 8 else 9,
 		stun = 1,
 		attackType = "Melee",
 		unblockable = true,
@@ -2456,13 +2525,19 @@ end
 local DIVIDER_CHARGE = 0.62
 local PERFECT_FROM, PERFECT_TO = 0.36, 0.66 -- generous for ping; client shows the flash at 0.38
 
+-- In the air he hangs while it charges, then front-flips the blade down
+-- onto whatever's below and in front, spiking them into the ground.
 local function blackDivider(ctx)
 	local c, character = ctx.combat, ctx.character
 	local data = ctx.data
+	local airborne = c.IsAirborne(character)
 	CombatState.SetCasting(character, DIVIDER_CHARGE + 0.45)
+	if airborne then
+		c.ApplyVelocity(character, HOVER, DIVIDER_CHARGE + 0.05)
+	end
 
 	local start = os.clock()
-	fx(ctx, "BlackDivider", "Charge", { flashAt = 0.38 })
+	fx(ctx, "BlackDivider", "Charge", { flashAt = 0.38, airborne = airborne })
 
 	-- Only the FIRST press after starting counts, so mashing doesn't work.
 	local firstPress: number? = nil
@@ -2480,7 +2555,28 @@ local function blackDivider(ctx)
 	local perfect = firstPress ~= nil and firstPress - start >= PERFECT_FROM and firstPress - start <= PERFECT_TO
 
 	local forward = look(ctx)
-	fx(ctx, "BlackDivider", "Release", { perfect = perfect })
+	fx(ctx, "BlackDivider", "Release", { perfect = perfect, airborne = airborne })
+	if airborne then
+		local below = ctx.root.CFrame * CFrame.new(0, -2.5, -3)
+		for _, victim in c.Box(character, below, Vector3.new(10, 11, 10)) do
+			c.Hit(character, victim, {
+				damage = if perfect then 13 else 7,
+				stun = if perfect then 1.2 else 1,
+				attackType = "Melee",
+				unblockable = perfect,
+				guardBreak = not perfect,
+				heavy = true,
+				ragdoll = if perfect then 1.6 else 1.3,
+				velocity = forward * 18 + UP * -85,
+				effect = if perfect then "PerfectDivider" else nil,
+			})
+		end
+		-- The flip carries him up a touch before he drops.
+		c.ApplyVelocity(character, UP * 22 + forward * 6, 0.12)
+		c.ShakeArea(ctx.root.Position, if perfect then 60 else 25, if perfect then 0.8 else 0.35)
+		CombatState.SetCasting(character, 0.35)
+		return
+	end
 	local box = ctx.root.CFrame * CFrame.new(0, 0, -4.5)
 	for _, victim in c.Box(character, box, Vector3.new(9, 7, 9)) do
 		if perfect then
@@ -2514,7 +2610,12 @@ local function antiMagicDeflect(ctx)
 	local c, character = ctx.combat, ctx.character
 	local countered = false
 	CombatState.SetCasting(character, 0.9)
-	fx(ctx, "Deflect", "Stance")
+	-- In the air he hangs there, guard up.
+	local airborne = c.IsAirborne(character)
+	if airborne then
+		c.ApplyVelocity(character, HOVER, 0.82)
+	end
+	fx(ctx, "Deflect", "Stance", { airborne = airborne })
 
 	c.SetCounter(character, 0.8, ALL_TYPES, function(attacker: Model)
 		countered = true
@@ -2709,6 +2810,86 @@ function Kit.Entrance(ctx)
 	end
 	task.wait(ENTRANCE_TIME - 1.7)
 	character:SetAttribute("Rooted", false)
+end
+
+---------------------------------------------------------------------------
+-- Special (R): Anti-Magic Leap / Meteor Plunge
+---------------------------------------------------------------------------
+
+local SPECIAL = CombatState.SpecialSlot
+local LEAP_TIME = 0.22
+local PLUNGE_HANG = 0.12 -- the Plunge animation's wind-up
+
+-- Meteor Plunge: hangs for a beat with the sword raised, dives behind it
+-- (steerable) and stabs it into the ground, blasting everyone around away.
+local function plunge(ctx)
+	local c, character = ctx.combat, ctx.character
+	CombatState.SetCasting(character, 1.2)
+	fx(ctx, "Special", "Plunge")
+	c.ApplyVelocity(character, HOVER, PLUNGE_HANG)
+	task.wait(PLUNGE_HANG)
+	if interrupted(ctx) then
+		return
+	end
+	fx(ctx, "Special", "Dive")
+	c.ApplyVelocity(character, look(ctx) * 40 + UP * -140, 1, { steer = 140 })
+	waitForGround(ctx, 1)
+	if interrupted(ctx) or c.IsAirborne(character) then
+		CombatState.SetCasting(character, 0.2)
+		return
+	end
+	c.ApplyVelocity(character, Vector3.zero, 0.05)
+	local impact = groundBelow(ctx)
+	fx(ctx, "Special", "Impact", { position = impact })
+	c.ShakeArea(impact, 35, 0.45)
+	for _, victim in c.Sphere(character, impact + UP * 2, 9) do
+		local victimRoot = victim:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if victimRoot then
+			c.Hit(character, victim, {
+				damage = 6,
+				stun = 0.9,
+				attackType = "Melee",
+				heavy = true,
+				velocity = c.Flat(victimRoot.Position - impact) * 34 + UP * 30,
+				velocityTime = 0.2,
+			})
+		end
+	end
+	CombatState.SetCasting(character, 0.35)
+end
+
+-- Anti-Magic Leap: blasts off the ground toward where he's heading
+-- (steerable). Press R again in the air to turn it into the plunge.
+local function leap(ctx)
+	local c, character = ctx.combat, ctx.character
+	local start = os.clock()
+	CombatState.SetCasting(character, 0.25)
+	fx(ctx, "Special", "Leap")
+	c.ApplyVelocity(character, look(ctx) * 60 + UP * 62, LEAP_TIME, { steer = 200 })
+	task.wait(0.15)
+	while os.clock() - start < 1.6 do
+		if interrupted(ctx) then
+			return
+		end
+		if c.PressedSince(character, SPECIAL, start + 0.1) then
+			if c.IsAirborne(character) then
+				plunge(ctx)
+			end
+			return
+		end
+		if os.clock() - start > 0.35 and not c.IsAirborne(character) then
+			return -- landed without plunging
+		end
+		task.wait()
+	end
+end
+
+function Kit.Special(ctx)
+	if ctx.combat.IsAirborne(ctx.character) then
+		plunge(ctx)
+	else
+		leap(ctx)
+	end
 end
 
 Kit.Skills = { bullThrust, blackMeteorite, blackDivider, antiMagicDeflect }
@@ -3263,7 +3444,8 @@ return CameraShake
             <string name="Source"><![CDATA[--[[
 	HUD
 	Top right (in the top bar): small health + Evasive bars.
-	Bottom:    awakening bar over the move icons (skills 1-4) with cooldowns.
+	Bottom:    awakening bar over the move icons (skills 1-4, then the R
+	           special) with cooldowns.
 	Right:     combo counter.
 	Top:       toast messages from the server.
 	Built in code so it can be restyled without touching Studio.
@@ -3298,6 +3480,7 @@ local COLORS = {
 local COMBO_TIMEOUT = 1.6
 local SLOT_SIZE = 54
 local SLOT_GAP = 6
+local SPECIAL_GAP = 14 -- extra room before the R slot
 local STATUS_WIDTH = 190
 
 type Slot = {
@@ -3320,6 +3503,7 @@ local ui: {
 	awakeningStroke: UIStroke,
 	awakeningLabel: TextLabel,
 	skills: { Slot },
+	special: Slot,
 	comboLabel: TextLabel,
 	comboScale: UIScale,
 	toast: TextLabel,
@@ -3495,7 +3679,8 @@ local function buildStatus(playerGui: Instance)
 end
 
 local function buildMoves(gui: ScreenGui)
-	local width = 4 * SLOT_SIZE + 3 * SLOT_GAP
+	-- Skills 1-4, a little gap, then the R special.
+	local width = 5 * SLOT_SIZE + 4 * SLOT_GAP + SPECIAL_GAP
 
 	local holder = Instance.new("Frame")
 	holder.Name = "Moves"
@@ -3545,6 +3730,12 @@ local function buildMoves(gui: ScreenGui)
 	for i = 1, CombatState.SkillSlots do
 		ui.skills[i] = slot(row, tostring(i), i)
 	end
+	local spacer = Instance.new("Frame")
+	spacer.BackgroundTransparency = 1
+	spacer.Size = UDim2.fromOffset(SPECIAL_GAP - SLOT_GAP, SLOT_SIZE)
+	spacer.LayoutOrder = CombatState.SkillSlots + 1
+	spacer.Parent = row
+	ui.special = slot(row, "R", CombatState.SkillSlots + 2)
 end
 
 local function build()
@@ -3604,6 +3795,10 @@ local function refreshKit(character: Model?)
 		s.stroke.Color = if skill and kit then kit.color else COLORS.Locked
 		s.frame.BackgroundTransparency = if skill then 0.35 else 0.7
 	end
+	local special = kit and kit.special
+	ui.special.name.Text = if special then special.name else ""
+	ui.special.stroke.Color = if special and kit then kit.color else COLORS.Locked
+	ui.special.frame.BackgroundTransparency = if special then 0.35 else 0.7
 	local awakening = kit and kit.awakening
 	ui.awakening.Visible = awakening ~= nil
 	ui.awakeningLabel.Text = if awakening then "[G]  " .. string.upper(awakening.name) else ""
@@ -3651,6 +3846,7 @@ local function update(dt: number)
 		for i, s in ui.skills do
 			setSlotCooldown(s, CombatState.Cooldown(character, i))
 		end
+		setSlotCooldown(ui.special, CombatState.Cooldown(character, CombatState.SpecialSlot))
 	end
 
 	if comboCount > 0 and os.clock() - lastComboHit > COMBO_TIMEOUT then
@@ -3704,6 +3900,7 @@ return HUD
 	  F (hold)                    block, press right before a hit to perfect block
 	  1-4                         character skills (sent even on cooldown: some skills
 	                              read follow-up presses, like timing Black Divider)
+	  R                           the character's special (also sent on cooldown)
 	  G                           awaken when the meter is full
 ]]
 
@@ -3896,6 +4093,55 @@ local function tryDash()
 	performDash(direction)
 end
 
+-- A steerable push from a skill (Bull Thrust): it turns toward where you're
+-- heading (movement keys, or the camera when none are held) at up to
+-- `turnRate` degrees per second, keeping its speed, and you face the way
+-- you're going. Shift lock lets go of your facing meanwhile.
+local function steerImpulse(
+	mover: LinearVelocity,
+	character: Model,
+	humanoid: Humanoid,
+	root: BasePart,
+	turnRate: number
+)
+	local autoRotate = humanoid.AutoRotate
+	humanoid.AutoRotate = false
+	character:SetAttribute("Steering", true)
+	local connection
+	connection = RunService.Heartbeat:Connect(function(dt)
+		if not mover.Parent or not root.Parent then
+			connection:Disconnect()
+			character:SetAttribute("Steering", nil)
+			humanoid.AutoRotate = autoRotate
+			return
+		end
+		local velocity = mover.VectorVelocity
+		local flat = Vector3.new(velocity.X, 0, velocity.Z)
+		local speed = flat.Magnitude
+		if speed < 1 then
+			return
+		end
+		local want = humanoid.MoveDirection
+		if want.Magnitude < 0.1 then
+			want = cameraBasis().LookVector
+		end
+		want = Vector3.new(want.X, 0, want.Z)
+		if want.Magnitude < 1e-3 then
+			return
+		end
+		want = want.Unit
+		local current = flat / speed
+		local angle = math.acos(math.clamp(current:Dot(want), -1, 1))
+		if angle > 1e-3 then
+			local turn = math.min(angle, math.rad(turnRate) * dt)
+			local sign = if current:Cross(want).Y > 0 then 1 else -1
+			current = CFrame.Angles(0, turn * sign, 0):VectorToWorldSpace(current)
+		end
+		mover.VectorVelocity = current * speed + Vector3.new(0, velocity.Y, 0)
+		root.CFrame = CFrame.lookAt(root.Position, root.Position + current)
+	end)
+end
+
 local function setBlock(held: boolean)
 	blockHeld = held
 	lastBlockSent = os.clock()
@@ -3962,6 +4208,13 @@ function Input.Start()
 		end, true, key)
 		ContextActionService:SetTitle(action, tostring(slot))
 	end
+	ContextActionService:BindAction("CloverSpecial", function(_, state)
+		if state == Enum.UserInputState.Begin and getCharacter() then
+			Remotes.Action:FireServer("Special")
+		end
+		return Enum.ContextActionResult.Sink
+	end, true, Enum.KeyCode.R, Enum.KeyCode.ButtonY)
+	ContextActionService:SetTitle("CloverSpecial", "R")
 	ContextActionService:BindAction("CloverAwaken", function(_, state)
 		if state == Enum.UserInputState.Begin and getCharacter() then
 			Remotes.Action:FireServer("Awaken")
@@ -3997,10 +4250,14 @@ function Input.Start()
 		end
 	end)
 
-	Remotes.Impulse.OnClientEvent:Connect(function(velocity, duration)
-		local _, _, root = getCharacter()
-		if root and typeof(velocity) == "Vector3" and type(duration) == "number" then
-			Impulse.Apply(root, velocity, math.clamp(duration, 0, 1), "Knockback")
+	Remotes.Impulse.OnClientEvent:Connect(function(velocity, duration, options)
+		local character, humanoid, root = getCharacter()
+		if not (character and humanoid and root) or typeof(velocity) ~= "Vector3" or type(duration) ~= "number" then
+			return
+		end
+		local mover = Impulse.Apply(root, velocity, math.clamp(duration, 0, 1), "Knockback")
+		if type(options) == "table" and type(options.steer) == "number" then
+			steerImpulse(mover, character, humanoid, root, options.steer)
 		end
 	end)
 
@@ -4154,12 +4411,15 @@ local READY = {
 
 -- Signature stance: wide footing, the greatsword resting on the right
 -- shoulder, slow breathing. Runs leaning forward with the sword bobbing on
--- his shoulder; knee up and free arm out in the air.
+-- his shoulder, walks upright when slowed down; knee up and free arm out
+-- in the air.
 Kit.Idle = {
 	stand = ANIMS.Idle,
 	move = ANIMS.Run,
+	walk = ANIMS.Walk,
 	air = ANIMS.Air,
 	moveSpeed = 16,
+	walkSpeed = 8,
 }
 
 -- Getting hit / blocking, with the sword (see Client/Reactions for the names).
@@ -4545,8 +4805,10 @@ function handlers.BullThrust(data, character, root)
 		local direction: Vector3 = if typeof(data.direction) == "Vector3"
 			then data.direction
 			else root.CFrame.LookVector
+		-- The server says how long the (steerable) propel lasts.
+		local duration = if type(data.duration) == "number" then data.duration else 0.55
 		play(character, ANIMS.Propel)
-		swordTrail(character, 0.4)
+		swordTrail(character, duration + 0.05)
 
 		-- Ignition: an anti-magic blast behind him.
 		local back = root.Position - direction * 1.5
@@ -4584,7 +4846,7 @@ function handlers.BullThrust(data, character, root)
 			EmissionDirection = Enum.NormalId.Back,
 			SpreadAngle = Vector2.new(25, 25),
 			Drag = 3,
-		}, 0.34)
+		}, duration)
 		trailEmitter(root, {
 			Texture = U.textures.Spark,
 			Color = ColorSequence.new(RED, DARK_RED),
@@ -4597,10 +4859,10 @@ function handlers.BullThrust(data, character, root)
 			SpreadAngle = Vector2.new(30, 30),
 			Orientation = Enum.ParticleOrientation.VelocityParallel,
 			Squash = NumberSequence.new(1.5),
-		}, 0.34)
-		U.bodyTrail(character, BLACK, 0.4)
-		U.speedLines(root, direction, 0.32)
-		for i = 0, 4 do
+		}, duration)
+		U.bodyTrail(character, BLACK, duration + 0.05)
+		U.speedLines(root, nil, duration)
+		for i = 0, math.floor(duration / 0.06) do
 			task.delay(i * 0.06, function()
 				if character.Parent then
 					U.afterimage(character, if i % 2 == 0 then BLACK else DARK_RED, 0.28)
@@ -5117,6 +5379,17 @@ function handlers.BlackMeteorite(data, character, root)
 		end
 	elseif phase == "Slam" then
 		play(character, ANIMS.MeteorSlam)
+		-- Air version: caught mid-dive and spiked straight down.
+		local grabbed = U.getRoot(data.target)
+		if data.airGrab and grabbed then
+			U.flash(grabbed.Position, RED, 4, 0.12)
+			U.highlight(data.target, RED, 0.3)
+			blackLightning(grabbed.Position, 5, 3.5)
+			redSparks(grabbed.Position, 10, 0.7)
+			if involves(data, character) then
+				CameraShake.Add(0.3)
+			end
+		end
 		heavyTrail(character, 0.5)
 		U.bodyTrail(character, RED, 0.5)
 		U.bodyTrail(data.target, BLACK, 0.5)
@@ -5228,16 +5501,18 @@ function handlers.BlackDivider(data, character, root)
 	local phase = data.phase
 	local token = bump(character)
 	if phase == "Charge" then
-		play(character, ANIMS.DividerCharge)
+		play(character, if data.airborne then ANIMS.AirDividerCharge else ANIMS.DividerCharge)
 		local flashAt = data.flashAt or 0.38
 		swordGlow(character, BLACK, 0.62, 0.35)
 		swordAura(character, 0.62, 30)
-		local feet = feetOf(character, root)
-		-- The air gets pulled in toward him.
-		U.ringBurst(CFrame.new(feet + UP * 0.1), BLACK, 9, 1.5, 0.6, 0.25)
-		task.delay(0.2, U.ringBurst, CFrame.new(feet + UP * 0.12), DARK_RED, 7, 1, 0.42, 0.15)
-		blackSmoke(feet + UP * 0.3, 8, 2.4, 6)
-		task.delay(0.15, U.groundCracks, feet, 5, 3.5, RED, 1.2)
+		-- The air gets pulled in toward him (around him when he's hanging in the air).
+		local center = if data.airborne then root.Position else feetOf(character, root) + UP * 0.1
+		U.ringBurst(CFrame.new(center), BLACK, 9, 1.5, 0.6, 0.25)
+		task.delay(0.2, U.ringBurst, CFrame.new(center + UP * 0.02), DARK_RED, 7, 1, 0.42, 0.15)
+		blackSmoke(center + UP * 0.2, 8, 2.4, 6)
+		if not data.airborne then
+			task.delay(0.15, U.groundCracks, center, 5, 3.5, RED, 1.2)
+		end
 
 		-- Anti-magic streaming into the blade, crackling as it builds.
 		local start = os.clock()
@@ -5279,6 +5554,64 @@ function handlers.BlackDivider(data, character, root)
 		local blade = bladeOf(character)
 		if blade then
 			blackSmoke(blade.Position, 6, 2, 5)
+		end
+	elseif phase == "Release" and data.airborne then
+		-- Air version: a front flip, the blade going all the way round and
+		-- down onto whoever is below.
+		local perfect = data.perfect == true
+		local look = root.CFrame.LookVector
+		play(character, ANIMS.AirDividerRelease)
+		heavyTrail(character, 0.35)
+		crescent(character, {
+			center = CFrame.new(0, 0.3, 0),
+			radius = if perfect then 6.4 else 5.6,
+			from = 150,
+			to = -170,
+			tilt = 90,
+			width = if perfect then 2.8 else 2,
+			sweep = 0.18,
+			fade = 0.3,
+		})
+		blackSmoke(root.Position, if perfect then 16 else 8, 3.5, 14)
+		U.burst(root.Position - UP * 2 + look * 2, {
+			color = RED,
+			count = if perfect then 24 else 12,
+			size = 0.7,
+			speed = NumberRange.new(35, 65),
+			lifetime = NumberRange.new(0.15, 0.35),
+			streaks = true,
+			spread = 35,
+			direction = (look - UP * 1.4).Unit,
+		})
+		-- The blow lands on the ground below.
+		task.delay(0.16, function()
+			local ground = U.groundBelow(root.Position + look * 3, { character })
+			if not ground then
+				return
+			end
+			local spot = ground.Position
+			U.flash(spot + UP, BLACK, if perfect then 12 else 7, 0.25)
+			U.ringBurst(CFrame.new(spot + UP * 0.2), BLACK, 1, if perfect then 14 else 9, 0.35, 0.4)
+			task.delay(0.04, U.ringBurst, CFrame.new(spot + UP * 0.3), RED, 0.8, if perfect then 10 else 6, 0.3, 0.2)
+			U.groundCracks(spot, if perfect then 10 else 6, if perfect then 9 else 5, RED, 2)
+			U.groundRocks(spot, if perfect then 10 else 6, 3, 1.6)
+			blackSmoke(spot + UP, if perfect then 16 else 8, 4, 18)
+			U.light(spot + UP, RED, if perfect then 12 else 6, 22, 0.35)
+			if perfect then
+				U.shockwave(spot, RED, 2, 18, 0.4)
+				U.debris(spot, 12, 40, 1.1)
+				blackLightning(spot + UP, 8, 7, 0.28)
+			end
+		end)
+		if perfect then
+			U.popup(root.Position + UP * 4.5, "PERFECT DIVIDER", RED, 1.8)
+			if U.isLocal(character) then
+				impactFrame()
+				U.screenFlash(RED, 0.35)
+				CameraShake.FovKick(14)
+			end
+		elseif U.isLocal(character) then
+			CameraShake.FovKick(7)
 		end
 	elseif phase == "Release" then
 		local perfect = data.perfect == true
@@ -5697,6 +6030,153 @@ function handlers.DemonDestroyer(data, character, root)
 	elseif phase == "Heal" then
 		U.popup(root.Position + UP * 4, "+30% HP", Color3.fromRGB(120, 255, 140), 1.3)
 		U.highlight(character, Color3.fromRGB(120, 255, 140), 0.5)
+	end
+end
+
+---------------------------------------------------------------------------
+-- Special (R): Anti-Magic Leap / Meteor Plunge
+---------------------------------------------------------------------------
+
+-- The black meteor tail and air rings while diving (Meteorite slam, Plunge).
+local function meteorTail(root: BasePart, duration: number)
+	trailEmitter(root, {
+		Texture = U.textures.Smoke,
+		Color = ColorSequence.new(BLACK),
+		LightEmission = 0,
+		Size = NumberSequence.new(1.8, 4),
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.2),
+			NumberSequenceKeypoint.new(1, 1),
+		}),
+		Lifetime = NumberRange.new(0.3, 0.55),
+		Rate = 140,
+		Speed = NumberRange.new(4, 10),
+		EmissionDirection = Enum.NormalId.Top,
+		SpreadAngle = Vector2.new(30, 30),
+		Drag = 3,
+	}, duration)
+	trailEmitter(root, {
+		Texture = U.textures.Spark,
+		Color = ColorSequence.new(RED, DARK_RED),
+		LightEmission = 1,
+		Size = NumberSequence.new(0.4, 0),
+		Lifetime = NumberRange.new(0.15, 0.3),
+		Rate = 70,
+		Speed = NumberRange.new(14, 24),
+		EmissionDirection = Enum.NormalId.Top,
+		SpreadAngle = Vector2.new(25, 25),
+		Orientation = Enum.ParticleOrientation.VelocityParallel,
+		Squash = NumberSequence.new(1.6),
+	}, duration)
+	for i = 0, math.floor(duration / 0.06) do
+		task.delay(i * 0.06, function()
+			if root.Parent then
+				U.ringBurst(
+					CFrame.new(root.Position - UP * 3.4),
+					if i % 2 == 0 then BLACK else RED,
+					1.2,
+					3.8,
+					0.18,
+					0.15
+				)
+			end
+		end)
+	end
+end
+
+function handlers.Special(data, character, root)
+	local phase = data.phase
+	if phase == "Leap" then
+		play(character, ANIMS.Leap)
+		local feet = feetOf(character, root)
+		-- Blasting off a burst of anti-magic.
+		U.flash(feet + UP * 0.5, BLACK, 8, 0.22)
+		U.shockwave(feet, RED, 2, 12, 0.3)
+		U.ringBurst(CFrame.new(feet + UP * 0.15), BLACK, 1, 9, 0.32, 0.4)
+		task.delay(0.04, U.ringBurst, CFrame.new(feet + UP * 0.2), RED, 0.8, 6, 0.28, 0.18)
+		U.groundCracks(feet, 6, 4.5, RED, 1.6)
+		U.debris(feet, 7, 34, 0.9)
+		blackSmoke(feet + UP * 0.4, 14, 3.2, 16)
+		U.burst(feet, {
+			texture = U.textures.Smoke,
+			color = Color3.fromRGB(150, 140, 130),
+			count = 10,
+			size = 3.5,
+			speed = NumberRange.new(10, 20),
+			lifetime = NumberRange.new(0.5, 0.9),
+			lightEmission = 0,
+			transparency = 0.45,
+			drag = 3,
+			spread = 75,
+		})
+		U.light(feet, RED, 7, 16, 0.3)
+		U.bodyTrail(character, BLACK, 0.6)
+		U.speedLines(root, nil, 0.3)
+		swordTrail(character, 0.5)
+		for i = 0, 3 do
+			task.delay(i * 0.06, function()
+				if character.Parent then
+					U.afterimage(character, if i % 2 == 0 then BLACK else DARK_RED, 0.25)
+				end
+			end)
+		end
+		if U.isLocal(character) then
+			CameraShake.FovKick(10)
+			CameraShake.Add(0.15)
+		end
+	elseif phase == "Plunge" then
+		play(character, ANIMS.Plunge)
+		swordGlow(character, BLACK, 0.4, 0.1)
+		swordAura(character, 0.6, 40)
+		crackle(root, 0.15, 0.04, 2.5)
+		U.ringBurst(CFrame.new(root.Position), BLACK, 1, 5, 0.2, 0.15)
+		task.delay(0.08, function()
+			local tip = bladePoint(character, 2.1)
+			if tip and character.Parent then
+				U.glint(tip, 1.6, RED)
+			end
+		end)
+	elseif phase == "Dive" then
+		heavyTrail(character, 0.6)
+		U.bodyTrail(character, RED, 0.6)
+		U.speedLines(root, nil, 0.6)
+		meteorTail(root, 0.5)
+		if U.isLocal(character) then
+			CameraShake.FovKick(10)
+		end
+	elseif phase == "Impact" then
+		local position: Vector3 = data.position
+		play(character, ANIMS.PlungeImpact)
+		U.flash(position + UP, WHITE, 4, 0.07)
+		U.flash(position + UP, BLACK, 11, 0.28)
+		U.flash(position + UP, RED, 7, 0.2)
+		U.shockwave(position, RED, 2, 17, 0.35)
+		U.shockwave(position, BLACK, 3, 20, 0.4, Enum.Material.Glass, 0.45)
+		U.ringBurst(CFrame.new(position + UP * 0.2), BLACK, 1, 13, 0.4, 0.5)
+		task.delay(0.05, U.ringBurst, CFrame.new(position + UP * 0.3), RED, 0.8, 9, 0.32, 0.25)
+		U.groundCracks(position, 9, 8, RED, 2.2)
+		U.groundRocks(position, 10, 4, 2)
+		U.debris(position, 12, 45, 1.1)
+		U.pillar(position, BLACK, 1.6, 14, 0.4, Enum.Material.SmoothPlastic, 0.2)
+		blackSmoke(position + UP, 18, 4.5, 24)
+		for i = 1, 6 do
+			local angle = (i / 6) * math.pi * 2 + math.random() * 0.5
+			local out = Vector3.new(math.cos(angle), 0, math.sin(angle))
+			U.lightning(
+				position + UP * 0.4,
+				position + out * (6 + math.random() * 5) + UP * 0.3,
+				BLACK,
+				RED,
+				0.16,
+				0.25
+			)
+		end
+		redSparks(position + UP, 18, 1)
+		U.light(position + UP * 2, RED, 10, 26, 0.45)
+		lingerSmoke(position, 1, 5)
+		if U.isLocal(character) then
+			CameraShake.FovKick(10)
+		end
 	end
 end
 
@@ -6879,39 +7359,101 @@ Animations.Run = {
 		{
 			0,
 			{
-				Torso = rot(-14, 6),
-				Head = rot(8, -6),
-				RightArm = limb(84, 25, 10),
-				Sword = aim(0.37, 0.582, 0.725),
-				LeftArm = limb(42, -12),
-				RightLeg = rot(34),
-				LeftLeg = rot(-30),
+				Torso = rot(-18, 8),
+				Head = rot(12, -8),
+				RightArm = limb(82, 25, 10),
+				Sword = aim(0.399, 0.627, 0.67),
+				LeftArm = limb(55, -14, -6),
+				RightLeg = rot(50),
+				LeftLeg = rot(-42),
 			},
 		},
 		{
-			0.15,
+			0.125,
 			{
-				Torso = rot(-16),
-				Head = rot(10),
+				Torso = rot(-20),
+				Head = rot(14),
 				RightArm = limb(88, 25, 10),
-				Sword = aim(0.279, 0.616, 0.737),
-				LeftArm = limb(5, -5),
-				RightLeg = rot(2),
-				LeftLeg = rot(2),
+				Sword = aim(0.279, 0.666, 0.692),
+				LeftArm = limb(8, -6, -8),
+				RightLeg = rot(4),
+				LeftLeg = rot(4),
 			},
 			"Sine",
 			"InOut",
 		},
 		{
-			0.3,
+			0.25,
 			{
-				Torso = rot(-14, -6),
-				Head = rot(8, 6),
-				RightArm = limb(84, 25, 10),
-				Sword = aim(0.186, 0.596, 0.781),
-				LeftArm = limb(-38, 4),
-				RightLeg = rot(-30),
-				LeftLeg = rot(34),
+				Torso = rot(-18, -8),
+				Head = rot(12, 8),
+				RightArm = limb(82, 25, 10),
+				Sword = aim(0.154, 0.651, 0.744),
+				LeftArm = limb(-45, 6, -10),
+				RightLeg = rot(-42),
+				LeftLeg = rot(50),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.375,
+			{
+				Torso = rot(-20),
+				Head = rot(14),
+				RightArm = limb(88, 25, 10),
+				Sword = aim(0.279, 0.666, 0.692),
+				LeftArm = limb(8, -6, -8),
+				RightLeg = rot(4),
+				LeftLeg = rot(4),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.5,
+			{
+				Torso = rot(-18, 8),
+				Head = rot(12, -8),
+				RightArm = limb(82, 25, 10),
+				Sword = aim(0.399, 0.627, 0.67),
+				LeftArm = limb(55, -14, -6),
+				RightLeg = rot(50),
+				LeftLeg = rot(-42),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Moving slowly (attacking, blocking, casting): upright walk, same step timing as the run.
+Animations.Walk = {
+	loop = true,
+	delays = { Head = 0.05, Sword = 0.07, LeftArm = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-5, 4),
+				Head = rot(4, -4),
+				RightArm = limb(86, 25, 10),
+				Sword = aim(0.34, 0.462, 0.819),
+				LeftArm = limb(22, -8, -6),
+				RightLeg = rot(24),
+				LeftLeg = rot(-22),
+			},
+		},
+		{
+			0.225,
+			{
+				Torso = rot(-4),
+				Head = rot(3),
+				RightArm = limb(87, 25, 10),
+				Sword = aim(0.279, 0.449, 0.849),
+				LeftArm = limb(4, -4, -8),
+				RightLeg = rot(1),
+				LeftLeg = rot(1),
 			},
 			"Sine",
 			"InOut",
@@ -6919,27 +7461,41 @@ Animations.Run = {
 		{
 			0.45,
 			{
-				Torso = rot(-16),
-				Head = rot(10),
-				RightArm = limb(88, 25, 10),
-				Sword = aim(0.279, 0.616, 0.737),
-				LeftArm = limb(5, -5),
-				RightLeg = rot(2),
-				LeftLeg = rot(2),
+				Torso = rot(-5, -4),
+				Head = rot(4, 4),
+				RightArm = limb(86, 25, 10),
+				Sword = aim(0.217, 0.466, 0.858),
+				LeftArm = limb(-16, 2, -10),
+				RightLeg = rot(-22),
+				LeftLeg = rot(24),
 			},
 			"Sine",
 			"InOut",
 		},
 		{
-			0.6,
+			0.675,
 			{
-				Torso = rot(-14, 6),
-				Head = rot(8, -6),
-				RightArm = limb(84, 25, 10),
-				Sword = aim(0.37, 0.582, 0.725),
-				LeftArm = limb(42, -12),
-				RightLeg = rot(34),
-				LeftLeg = rot(-30),
+				Torso = rot(-4),
+				Head = rot(3),
+				RightArm = limb(87, 25, 10),
+				Sword = aim(0.279, 0.449, 0.849),
+				LeftArm = limb(4, -4, -8),
+				RightLeg = rot(1),
+				LeftLeg = rot(1),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.9,
+			{
+				Torso = rot(-5, 4),
+				Head = rot(4, -4),
+				RightArm = limb(86, 25, 10),
+				Sword = aim(0.34, 0.462, 0.819),
+				LeftArm = limb(22, -8, -6),
+				RightLeg = rot(24),
+				LeftLeg = rot(-22),
 			},
 			"Sine",
 			"InOut",
@@ -7992,7 +8548,7 @@ Animations.Propel = {
 			"Out",
 		},
 		{
-			0.4,
+			0.62,
 			{
 				Torso = rot(-30, 10),
 				Head = rot(22, -8),
@@ -8806,6 +9362,344 @@ Animations.Awaken = {
 				LeftArm = limb(20, 0, -25),
 				RightLeg = rot(-8, 0, 9),
 				LeftLeg = rot(12, 0, -10),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Anti-Magic Leap (R): coiled crouch, then launching, free arm reaching ahead.
+Animations.Leap = {
+	fadeIn = 0.03,
+	fadeOut = 0.25,
+	delays = { Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = rot(-28, 6),
+				Head = rot(20, -4),
+				RightArm = limb(-25, 0, 22),
+				Sword = aim(0.3, -0.15, 0.94),
+				LeftArm = limb(-20, 0, -25),
+				RightLeg = rot(30),
+				LeftLeg = rot(-18),
+			},
+			"Quad",
+			"Out",
+		},
+		{
+			0.2,
+			{
+				Torso = rot(-12, -4),
+				Head = rot(6),
+				RightArm = limb(-45, 0, 25),
+				Sword = aim(0.25, -0.3, 0.92),
+				LeftArm = limb(150, -10),
+				RightLeg = rot(-40),
+				LeftLeg = rot(32),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.6,
+			{
+				Torso = rot(-12, -4),
+				Head = rot(6),
+				RightArm = limb(-45, 0, 25),
+				Sword = aim(0.25, -0.3, 0.92),
+				LeftArm = limb(150, -10),
+				RightLeg = rot(-40),
+				LeftLeg = rot(32),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Meteor Plunge (R in the air): sword raised overhead, then diving behind it.
+Animations.Plunge = {
+	fadeIn = 0.03,
+	fadeOut = 0.1,
+	delays = { Sword = 0.02 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+				RightLeg = rot(10),
+				LeftLeg = rot(-5),
+			},
+		},
+		{
+			0.12,
+			{
+				Torso = rot(14),
+				Head = rot(-10),
+				RightArm = limb(172, 5),
+				Sword = aim(0.05, 0.35, 0.94),
+				LeftArm = limb(60, -20, -25),
+				RightLeg = rot(45),
+				LeftLeg = rot(25),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.22,
+			{
+				Torso = rot(-50),
+				Head = rot(30),
+				RightArm = limb(75, 4),
+				Sword = aim(0, -0.72, -0.69),
+				LeftArm = limb(-30, 0, -30),
+				RightLeg = rot(-20),
+				LeftLeg = rot(-5),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.9,
+			{
+				Torso = rot(-50),
+				Head = rot(30),
+				RightArm = limb(75, 4),
+				Sword = aim(0, -0.72, -0.69),
+				LeftArm = limb(-30, 0, -30),
+				RightLeg = rot(-20),
+				LeftLeg = rot(-5),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Meteor Plunge: the sword stabbed into the ground.
+Animations.PlungeImpact = {
+	fadeIn = 0.03,
+	fadeOut = 0.3,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-30, 8),
+				Head = rot(20, -6),
+				RightArm = limb(55, 4),
+				Sword = aim(0, -0.5, -0.87),
+				LeftArm = limb(15, 0, -40),
+				RightLeg = rot(28),
+				LeftLeg = rot(-26),
+			},
+		},
+		{
+			0.1,
+			{
+				Torso = rot(-30, 8),
+				Head = rot(20, -6),
+				RightArm = limb(55, 4),
+				Sword = aim(0, -0.5, -0.87),
+				LeftArm = limb(15, 0, -40),
+				RightLeg = rot(28),
+				LeftLeg = rot(-26),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.45,
+			{
+				Torso = rot(-22, 8),
+				Head = rot(14, -6),
+				RightArm = limb(62, 4),
+				Sword = aim(0, -0.5, -0.87),
+				LeftArm = limb(10, 0, -35),
+				RightLeg = rot(20),
+				LeftLeg = rot(-18),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Air Black Divider: hanging in the air, sword cocked overhead.
+Animations.AirDividerCharge = {
+	fadeIn = 0.05,
+	fadeOut = 0.05,
+	delays = { Sword = 0.02 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.15,
+			{
+				Torso = rot(12),
+				Head = rot(-6),
+				RightArm = limb(168, -15),
+				Sword = aim(0.15, -0.1, 0.98),
+				LeftArm = limb(70, -30, -20),
+				RightLeg = rot(48),
+				LeftLeg = rot(24),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.3,
+			{
+				Torso = rot(16),
+				Head = rot(-6),
+				RightArm = limb(168, -15),
+				Sword = aim(0.15, -0.1, 0.98),
+				LeftArm = limb(70, -30, -20),
+				RightLeg = rot(48),
+				LeftLeg = rot(24),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.45,
+			{
+				Torso = rot(11),
+				Head = rot(-6),
+				RightArm = limb(168, -15),
+				Sword = aim(0.15, -0.1, 0.98),
+				LeftArm = limb(70, -30, -20),
+				RightLeg = rot(48),
+				LeftLeg = rot(24),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.62,
+			{
+				Torso = rot(17),
+				Head = rot(-6),
+				RightArm = limb(168, -15),
+				Sword = aim(0.15, -0.1, 0.98),
+				LeftArm = limb(70, -30, -20),
+				RightLeg = rot(48),
+				LeftLeg = rot(24),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Air Black Divider: a front flip carrying the blade in a full circle, down onto them.
+Animations.AirDividerRelease = {
+	fadeIn = 0.01,
+	fadeOut = 0.3,
+	delays = { Sword = 0.01 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(17),
+				Head = rot(-6),
+				RightArm = limb(168, -15),
+				Sword = aim(0.15, -0.1, 0.98),
+				LeftArm = limb(70, -30, -20),
+				RightLeg = rot(48),
+				LeftLeg = rot(24),
+			},
+		},
+		{
+			0.05,
+			{
+				Torso = rot(-70),
+				Head = rot(12),
+				RightArm = limb(172),
+				Sword = aim(0, 0.034, -0.999),
+				LeftArm = limb(140, -10, -15),
+				RightLeg = rot(60),
+				LeftLeg = rot(50),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.1,
+			{
+				Torso = rot(-180),
+				Head = rot(12),
+				RightArm = limb(172),
+				Sword = aim(0, -0.951, 0.31),
+				LeftArm = limb(140, -10, -15),
+				RightLeg = rot(60),
+				LeftLeg = rot(50),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.15,
+			{
+				Torso = rot(-280),
+				Head = rot(12),
+				RightArm = limb(172),
+				Sword = aim(0, 0.471, 0.882),
+				LeftArm = limb(140, -10, -15),
+				RightLeg = rot(60),
+				LeftLeg = rot(50),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.2,
+			{
+				Torso = rot(-30),
+				Head = rot(18),
+				RightArm = limb(62, 4),
+				Sword = aim(0, -0.6, -0.8),
+				LeftArm = limb(20, 0, -35),
+				RightLeg = rot(22),
+				LeftLeg = rot(-12),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.45,
+			{
+				Torso = rot(-30),
+				Head = rot(18),
+				RightArm = limb(62, 4),
+				Sword = aim(0, -0.6, -0.8),
+				LeftArm = limb(20, 0, -35),
+				RightLeg = rot(22),
+				LeftLeg = rot(-12),
 			},
 			"Linear",
 			"Out",
@@ -9756,11 +10650,13 @@ export type Animation = {
 
 export type IdleSet = {
 	stand: Animation?, -- played while standing still
-	move: Animation?, -- played while moving (a walk/run cycle)
+	move: Animation?, -- played while moving (a run cycle)
+	walk: Animation?, -- played while moving slowly; blends into `move` as speed picks up
 	air: Animation?, -- played while jumping or falling
-	-- The speed the move cycle is animated for; it plays faster or slower
-	-- with the character's actual speed so feet don't slide.
+	-- The speeds the run and walk cycles are animated for; they play faster
+	-- or slower with the character's actual speed so feet don't slide.
 	moveSpeed: number?,
+	walkSpeed: number?,
 }
 
 local JOINTS = {
@@ -9775,8 +10671,9 @@ local JOINTS = {
 
 local STAND_SPEED = 1.5 -- studs/s; slower than this counts as standing still
 local STANCE_BLEND = 8 -- how fast the idle switches between stand and move
-local AIR_SPEED = 6 -- vertical studs/s; faster than this counts as airborne
+local AIR_HEIGHT = 3.6 -- no ground this far under the root counts as airborne (R6 stands at 3)
 local AIR_BLEND = 10
+local TURN_BLEND = 10 -- how fast the legs swing round to a new movement direction
 
 type Track = {
 	animation: Animation,
@@ -9802,7 +10699,16 @@ type Idle = {
 	start: number,
 	standWeight: number,
 	airWeight: number,
-	moveClock: number,
+	-- Where in the step cycle the legs are (0 to 1), shared by walk and run
+	-- so they blend without the legs fighting.
+	phase: number,
+	-- Movement direction relative to facing (degrees, + is right), folded
+	-- into -75..75; backWeight says it's actually backwards.
+	moveYaw: number,
+	backWeight: number,
+	airborne: boolean,
+	nextGroundCheck: number,
+	rayParams: RaycastParams,
 	nextJointScan: number,
 }
 
@@ -9950,20 +10856,53 @@ local function idleValues(character: Model, idle: Idle, now: number, dt: number)
 	end
 
 	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
-	local speed, verticalSpeed = 0, 0
-	if root then
-		local velocity = root.AssemblyLinearVelocity
-		speed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
-		verticalSpeed = math.abs(velocity.Y)
-	end
+	local velocity = if root then root.AssemblyLinearVelocity else Vector3.zero
+	local flat = Vector3.new(velocity.X, 0, velocity.Z)
+	local speed = flat.Magnitude
 	local set = idle.set
+
+	-- Airborne means nothing under the feet. Unlike checking vertical
+	-- speed, this holds through the top of a jump.
+	if root and now >= idle.nextGroundCheck then
+		idle.nextGroundCheck = now + 0.05
+		idle.airborne = workspace:Raycast(root.Position, Vector3.new(0, -AIR_HEIGHT, 0), idle.rayParams) == nil
+	end
+
 	local standTarget = if speed < STAND_SPEED then 1 else 0
 	idle.standWeight += (standTarget - idle.standWeight) * math.min(dt * STANCE_BLEND, 1)
-	local airTarget = if set.air and verticalSpeed > AIR_SPEED then 1 else 0
+	local airTarget = if set.air and idle.airborne then 1 else 0
 	idle.airWeight += (airTarget - idle.airWeight) * math.min(dt * AIR_BLEND, 1)
-	-- The run cycle keeps pace with the actual movement speed.
-	idle.moveClock += dt * math.clamp(speed / (set.moveSpeed or 16), 0.5, 2)
+
+	-- Which way he's moving compared to where he faces (shift lock strafing,
+	-- backpedalling). Backwards runs the cycle in reverse.
+	local yawTarget, backTarget = 0, 0
+	if root and speed > STAND_SPEED then
+		local direction = root.CFrame:VectorToObjectSpace(flat / speed)
+		local angle = math.deg(math.atan2(direction.X, -direction.Z))
+		local backLimit = if idle.backWeight > 0.5 then 95 else 115
+		if math.abs(angle) > backLimit then
+			backTarget = 1
+			angle -= 180 * math.sign(angle)
+		end
+		yawTarget = math.clamp(angle, -75, 75)
+	end
+	local turn = math.min(dt * TURN_BLEND, 1)
+	idle.moveYaw += (yawTarget - idle.moveYaw) * turn
+	idle.backWeight += (backTarget - idle.backWeight) * turn
+
+	-- Walk when slow, run when fast, both on the same step phase.
+	local runLength = if set.move then lengthOf(set.move) else 1
+	local walkLength = if set.walk then lengthOf(set.walk) else runLength
+	local runSpeed = set.moveSpeed or 16
+	local walkSpeed = set.walkSpeed or 8
+	local runWeight = if set.walk then smooth((speed - walkSpeed * 1.2) / (runSpeed * 0.85 - walkSpeed * 1.2)) else 1
+	local walkRate = math.clamp(speed / walkSpeed, 0.5, 1.8) / walkLength
+	local runRate = math.clamp(speed / runSpeed, 0.5, 2) / runLength
+	local rate = walkRate + (runRate - walkRate) * runWeight
+	idle.phase = (idle.phase + dt * rate * (if backTarget == 1 then -1 else 1)) % 1
+
 	local standW, airW = smooth(idle.standWeight), smooth(idle.airWeight)
+	local yaw, back = math.rad(idle.moveYaw), idle.backWeight
 
 	local t = now - idle.start
 	local values = {}
@@ -9973,7 +10912,27 @@ local function idleValues(character: Model, idle: Idle, now: number, dt: number)
 		end
 		local base = animatorBase(joint)
 		-- Moving (or the default walk), blended toward standing, then air.
-		local value = layer(set.move, poseName, joint, idle.moveClock) or base
+		local value = base
+		local run = if set.move and posed(set.move)[poseName]
+			then sample(set.move, poseName, idle.phase * runLength)
+			else nil
+		local walk = if set.walk and posed(set.walk)[poseName]
+			then sample(set.walk, poseName, idle.phase * walkLength)
+			else nil
+		local move = if run and walk then walk:Lerp(run, runWeight) else run or walk
+		if move then
+			-- Turn the stride toward the movement direction: hips most, the
+			-- torso a little, the head back to facing forward. Lean back less
+			-- when backpedalling.
+			if poseName == "Torso" then
+				move = CFrame.Angles(0, -yaw * 0.4, 0) * CFrame.Angles(math.rad(14) * back, 0, 0) * move
+			elseif poseName == "Head" then
+				move = CFrame.Angles(0, yaw * 0.4, 0) * move
+			elseif poseName == "RightLeg" or poseName == "LeftLeg" then
+				move = CFrame.Angles(0, -yaw * 0.6, 0) * move
+			end
+			value = toJointSpace(joint, move)
+		end
 		value = value:Lerp(layer(set.stand, poseName, joint, t) or base, standW)
 		local air = layer(set.air, poseName, joint, t)
 		if air and airW > 0 then
@@ -10148,9 +11107,11 @@ function PoseAnimator.SetIdle(character: Model, set: IdleSet?)
 		return
 	end
 	local covered: { [string]: boolean } = {}
-	for _, animation in { set.stand, set.move, set.air } do
-		for poseName in posed(animation :: Animation) do
-			covered[poseName] = true
+	for _, animation in { set.stand, set.move, set.walk, set.air } :: { Animation? } do
+		if animation then
+			for poseName in posed(animation) do
+				covered[poseName] = true
+			end
 		end
 	end
 	local joints = {}
@@ -10159,6 +11120,9 @@ function PoseAnimator.SetIdle(character: Model, set: IdleSet?)
 			joints[poseName] = joint
 		end
 	end
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	rayParams.FilterDescendantsInstances = { character }
 	idles[character] = {
 		set = set,
 		covered = covered,
@@ -10166,7 +11130,12 @@ function PoseAnimator.SetIdle(character: Model, set: IdleSet?)
 		start = os.clock(),
 		standWeight = 1,
 		airWeight = 0,
-		moveClock = 0,
+		phase = 0,
+		moveYaw = 0,
+		backWeight = 0,
+		airborne = false,
+		nextGroundCheck = 0,
+		rayParams = rayParams,
 		nextJointScan = 0,
 	}
 end
@@ -10503,7 +11472,8 @@ function ShiftLock.Start()
 			return
 		end
 		local character = localPlayer.Character :: Model
-		if CombatState.IsRagdolled(character) then
+		-- Ragdolled, or a skill is steering the body (Bull Thrust).
+		if CombatState.IsRagdolled(character) or character:GetAttribute("Steering") == true then
 			return
 		end
 		local look = workspace.CurrentCamera.CFrame.LookVector
@@ -11359,11 +12329,13 @@ local function sparks(position: Vector3, direction: Vector3, scale: number?)
 end
 
 -- Thin white speed lines rushing past a moving character for `duration`.
-local function speedLines(root: BasePart, direction: Vector3, duration: number, color: Color3?)
-	local aim = if direction.Magnitude > 1e-3 then direction.Unit else root.CFrame.LookVector
+-- Without a direction they follow the way it's actually moving (curves).
+local function speedLines(root: BasePart, direction: Vector3?, duration: number, color: Color3?)
 	local start = os.clock()
 	task.spawn(function()
 		while os.clock() - start < duration and root.Parent do
+			local heading = direction or root.AssemblyLinearVelocity
+			local aim = if heading.Magnitude > 1 then heading.Unit else root.CFrame.LookVector
 			for _ = 1, 3 do
 				local offset = randomUnit() * Vector3.new(2.6, 2.2, 2.6)
 				local from = root.Position + offset + aim * 4

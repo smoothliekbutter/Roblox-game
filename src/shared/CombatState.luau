@@ -24,6 +24,9 @@ local DEFAULTS = {
 -- Skill slots 1-4. "CD<n>" is the server time the skill is ready again,
 -- "CDLen<n>" how long that cooldown was (for drawing the HUD sweep).
 CombatState.SkillSlots = 4
+-- The R special uses the same attributes as slot 5. It isn't part of the
+-- move set, so awakening doesn't reset it.
+CombatState.SpecialSlot = 5
 
 local function now(): number
 	return workspace:GetServerTimeNow()
@@ -35,6 +38,7 @@ function CombatState.Setup(character: Model)
 		character:SetAttribute(name, value)
 	end
 	CombatState.ResetCooldowns(character)
+	CombatState.ResetSpecial(character)
 end
 
 function CombatState.ResetCooldowns(character: Model)
@@ -42,6 +46,11 @@ function CombatState.ResetCooldowns(character: Model)
 		character:SetAttribute("CD" .. slot, 0)
 		character:SetAttribute("CDLen" .. slot, 1)
 	end
+end
+
+function CombatState.ResetSpecial(character: Model)
+	character:SetAttribute("CD" .. CombatState.SpecialSlot, 0)
+	character:SetAttribute("CDLen" .. CombatState.SpecialSlot, 1)
 end
 
 function CombatState.IsAlive(character: Model?): boolean

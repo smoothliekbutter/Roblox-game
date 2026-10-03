@@ -6,6 +6,7 @@
 	  F (hold)                    block, press right before a hit to perfect block
 	  1-4                         character skills (sent even on cooldown: some skills
 	                              read follow-up presses, like timing Black Divider)
+	  R                           the character's special (also sent on cooldown)
 	  G                           awaken when the meter is full
 ]]
 
@@ -198,6 +199,55 @@ local function tryDash()
 	performDash(direction)
 end
 
+-- A steerable push from a skill (Bull Thrust): it turns toward where you're
+-- heading (movement keys, or the camera when none are held) at up to
+-- `turnRate` degrees per second, keeping its speed, and you face the way
+-- you're going. Shift lock lets go of your facing meanwhile.
+local function steerImpulse(
+	mover: LinearVelocity,
+	character: Model,
+	humanoid: Humanoid,
+	root: BasePart,
+	turnRate: number
+)
+	local autoRotate = humanoid.AutoRotate
+	humanoid.AutoRotate = false
+	character:SetAttribute("Steering", true)
+	local connection
+	connection = RunService.Heartbeat:Connect(function(dt)
+		if not mover.Parent or not root.Parent then
+			connection:Disconnect()
+			character:SetAttribute("Steering", nil)
+			humanoid.AutoRotate = autoRotate
+			return
+		end
+		local velocity = mover.VectorVelocity
+		local flat = Vector3.new(velocity.X, 0, velocity.Z)
+		local speed = flat.Magnitude
+		if speed < 1 then
+			return
+		end
+		local want = humanoid.MoveDirection
+		if want.Magnitude < 0.1 then
+			want = cameraBasis().LookVector
+		end
+		want = Vector3.new(want.X, 0, want.Z)
+		if want.Magnitude < 1e-3 then
+			return
+		end
+		want = want.Unit
+		local current = flat / speed
+		local angle = math.acos(math.clamp(current:Dot(want), -1, 1))
+		if angle > 1e-3 then
+			local turn = math.min(angle, math.rad(turnRate) * dt)
+			local sign = if current:Cross(want).Y > 0 then 1 else -1
+			current = CFrame.Angles(0, turn * sign, 0):VectorToWorldSpace(current)
+		end
+		mover.VectorVelocity = current * speed + Vector3.new(0, velocity.Y, 0)
+		root.CFrame = CFrame.lookAt(root.Position, root.Position + current)
+	end)
+end
+
 local function setBlock(held: boolean)
 	blockHeld = held
 	lastBlockSent = os.clock()
@@ -264,6 +314,13 @@ function Input.Start()
 		end, true, key)
 		ContextActionService:SetTitle(action, tostring(slot))
 	end
+	ContextActionService:BindAction("CloverSpecial", function(_, state)
+		if state == Enum.UserInputState.Begin and getCharacter() then
+			Remotes.Action:FireServer("Special")
+		end
+		return Enum.ContextActionResult.Sink
+	end, true, Enum.KeyCode.R, Enum.KeyCode.ButtonY)
+	ContextActionService:SetTitle("CloverSpecial", "R")
 	ContextActionService:BindAction("CloverAwaken", function(_, state)
 		if state == Enum.UserInputState.Begin and getCharacter() then
 			Remotes.Action:FireServer("Awaken")
@@ -299,10 +356,14 @@ function Input.Start()
 		end
 	end)
 
-	Remotes.Impulse.OnClientEvent:Connect(function(velocity, duration)
-		local _, _, root = getCharacter()
-		if root and typeof(velocity) == "Vector3" and type(duration) == "number" then
-			Impulse.Apply(root, velocity, math.clamp(duration, 0, 1), "Knockback")
+	Remotes.Impulse.OnClientEvent:Connect(function(velocity, duration, options)
+		local character, humanoid, root = getCharacter()
+		if not (character and humanoid and root) or typeof(velocity) ~= "Vector3" or type(duration) ~= "number" then
+			return
+		end
+		local mover = Impulse.Apply(root, velocity, math.clamp(duration, 0, 1), "Knockback")
+		if type(options) == "table" and type(options.steer) == "number" then
+			steerImpulse(mover, character, humanoid, root, options.steer)
 		end
 	end)
 

@@ -164,7 +164,14 @@ function CombatService.Notify(character: Model, text: string, color: Color3?)
 end
 
 -- Moves a character, routing to whoever owns its physics.
-function CombatService.ApplyVelocity(character: Model, velocity: Vector3, duration: number)
+-- `options.steer` (degrees per second) lets a player curve the push with
+-- their camera / movement keys while it lasts (e.g. Bull Thrust).
+function CombatService.ApplyVelocity(
+	character: Model,
+	velocity: Vector3,
+	duration: number,
+	options: { steer: number? }?
+)
 	local root = getRoot(character)
 	if not root then
 		return
@@ -174,7 +181,7 @@ function CombatService.ApplyVelocity(character: Model, velocity: Vector3, durati
 		-- Server owns ragdolls, and a ragdoll has no Humanoid fighting the velocity.
 		CombatService.Tumble(root, velocity)
 	elseif player then
-		Remotes.Impulse:FireClient(player, velocity, duration)
+		Remotes.Impulse:FireClient(player, velocity, duration, options)
 	else
 		Impulse.Apply(root, velocity, duration, "Knockback")
 	end
@@ -717,6 +724,34 @@ function CombatService.UseSkill(character: Model, slot: number)
 	task.spawn(run, ctx)
 end
 
+-- The R special (Kits.special, run by the server kit's Special). Presses
+-- while it's on cooldown are recorded like skill presses (PressedSince with
+-- CombatState.SpecialSlot), so a special can have a follow-up.
+function CombatService.UseSpecial(character: Model)
+	local ctx = makeContext(character)
+	if not ctx then
+		return
+	end
+	local info = ctx.kit.special
+	local serverKit = serverKits[ctx.kit.id]
+	if not info or not serverKit or not serverKit.Special then
+		return
+	end
+	local slot = CombatState.SpecialSlot
+	if CombatState.Cooldown(character, slot) > 0.1 then
+		ctx.data.skillInputs[slot] = os.clock()
+		return
+	end
+	if not CombatState.CanAct(character) or CombatState.IsCasting(character) then
+		return
+	end
+	ctx.data.skillInputs[slot] = nil
+	local awakening = awakeningOf(character)
+	CombatState.StartCooldown(character, slot, info.cooldown * (if awakening then awakening.cooldownMultiplier else 1))
+	CombatState.SetBlocking(character, false)
+	task.spawn(serverKit.Special, ctx)
+end
+
 local function endAwakening(character: Model)
 	local data = registry[character]
 	if data then
@@ -784,6 +819,7 @@ function CombatService.EquipKit(character: Model, kitId: string)
 	endAwakening(character)
 	character:SetAttribute("Awakening", 0)
 	CombatState.ResetCooldowns(character)
+	CombatState.ResetSpecial(character)
 	CombatService.ClearCounter(character)
 
 	-- Weapon first, then the attribute: clients react to "Kit" by animating
@@ -943,6 +979,8 @@ local function onAction(player: Player, action: unknown, payload: unknown)
 		if type(payload) == "number" and payload >= 1 and payload <= CombatState.SkillSlots then
 			CombatService.UseSkill(character, math.floor(payload))
 		end
+	elseif action == "Special" then
+		CombatService.UseSpecial(character)
 	elseif action == "Awaken" then
 		CombatService.Awaken(character)
 	end

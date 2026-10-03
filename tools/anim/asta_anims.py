@@ -30,20 +30,31 @@ IDLE = [
     (2.6, idle_key((-6,-18), (5,16), 85, L(10,0,-14), R(-6,0,9), R(12,0,-10))),
 ]
 
-# Run cycle (0.6s at walk speed 16; plays faster when moving faster): forward
-# lean, striding legs, left arm pumping against them, sword bobbing on the
-# shoulder.
+# Run cycle (0.5s at speed 16; plays faster or slower with the actual
+# speed): forward lean, long strides, left arm pumping against them, sword
+# bobbing on the shoulder, hips and shoulders twisting with each step.
 def run_key(torso, head, arm_pitch, larm, rleg, lleg):
     t = R(*torso)
     return {'Torso': t, 'Head': R(*head), 'RightArm': L(arm_pitch, 25, 10),
             'Sword': torso_dir(t, SHOULDER), 'LeftArm': larm, 'RightLeg': R(rleg), 'LeftLeg': R(lleg)}
 
 RUN = [
-    (0.00, run_key((-14, 6), (8,-6), 84, L(42,-12), 34, -30)),
-    (0.15, run_key((-16, 0), (10,0), 88, L(5,-5), 2, 2)),
-    (0.30, run_key((-14,-6), (8,6), 84, L(-38,4), -30, 34)),
-    (0.45, run_key((-16, 0), (10,0), 88, L(5,-5), 2, 2)),
-    (0.60, run_key((-14, 6), (8,-6), 84, L(42,-12), 34, -30)),
+    (0.000, run_key((-18, 8), (12, -8), 82, L(55, -14, -6), 50, -42)),
+    (0.125, run_key((-20, 0), (14, 0), 88, L(8, -6, -8), 4, 4)),
+    (0.250, run_key((-18, -8), (12, 8), 82, L(-45, 6, -10), -42, 50)),
+    (0.375, run_key((-20, 0), (14, 0), 88, L(8, -6, -8), 4, 4)),
+    (0.500, run_key((-18, 8), (12, -8), 82, L(55, -14, -6), 50, -42)),
+]
+
+# Walk cycle (0.9s at speed 8): used when he's slowed down (attacking,
+# blocking, casting). Upright, shorter steps, same leg phase as the run so
+# the two blend into each other.
+WALK = [
+    (0.000, run_key((-5, 4), (4, -4), 86, L(22, -8, -6), 24, -22)),
+    (0.225, run_key((-4, 0), (3, 0), 87, L(4, -4, -8), 1, 1)),
+    (0.450, run_key((-5, -4), (4, 4), 86, L(-16, 2, -10), -22, 24)),
+    (0.675, run_key((-4, 0), (3, 0), 87, L(4, -4, -8), 1, 1)),
+    (0.900, run_key((-5, 4), (4, -4), 86, L(22, -8, -6), 24, -22)),
 ]
 
 # In the air (jumping or falling): knee up, free arm out for balance.
@@ -204,7 +215,7 @@ STAGGER = [(0.0, UPPER | {'RightLeg': R(0), 'LeftLeg': R(0)}), (0.08, STAGGER_PO
 # Propel: low and long, sword thrust straight ahead, free arm back.
 PROPEL_POSE = {'Torso': R(-30, 10), 'Head': R(22, -8), 'RightArm': L(60, 5), 'Sword': A(0, -0.05, -1),
                'LeftArm': L(-35, 0, -25), 'RightLeg': R(-38), 'LeftLeg': R(32)}
-PROPEL = [(0.0, UPPER), (0.07, PROPEL_POSE), (0.4, PROPEL_POSE)]
+PROPEL = [(0.0, UPPER), (0.07, PROPEL_POSE), (0.62, PROPEL_POSE)]
 
 # Barrage: a rapid flurry, side to side with an overhead chop thrown in,
 # finishing with a straight thrust that pushes them away.
@@ -287,7 +298,49 @@ AWAKEN = [(0.0, UPPER | {'RightLeg': R(0), 'LeftLeg': R(0)}), (0.25, a_gather(-3
           (0.65, a_gather(-34, -3)), (0.85, a_gather(-33, 0)), (0.95, A_ROAR), (1.4, A_ROAR), (1.7, A_STANCE),
           (2.0, A_STANCE)]
 
-ALL = {'Idle': IDLE, 'Run': RUN, 'Air': AIR, 'Propel': PROPEL, 'Barrage': BARRAGE,
+# ---------------- Special (R): Anti-Magic Leap / Meteor Plunge ----------------
+# Leap: a coiled crouch, then he launches, free arm reaching ahead, sword
+# trailing behind him.
+LEAP_CROUCH = {'Torso': R(-28, 6), 'Head': R(20, -4), 'RightArm': L(-25, 0, 22), 'Sword': A(0.3, -0.15, 0.94),
+               'LeftArm': L(-20, 0, -25), 'RightLeg': R(30), 'LeftLeg': R(-18)}
+LEAP_LAUNCH = {'Torso': R(-12, -4), 'Head': R(6), 'RightArm': L(-45, 0, 25), 'Sword': A(0.25, -0.3, 0.92),
+               'LeftArm': L(150, -10), 'RightLeg': R(-40), 'LeftLeg': R(32)}
+LEAP = [(0.0, UPPER), (0.08, LEAP_CROUCH), (0.2, LEAP_LAUNCH), (0.6, LEAP_LAUNCH)]
+
+# Plunge: curls up in the air with the sword raised behind his head, then
+# dives head-first behind it like a spear, and stabs it into the ground.
+P_WIND = {'Torso': R(14), 'Head': R(-10), 'RightArm': L(172, 5), 'Sword': A(0.05, 0.35, 0.94),
+          'LeftArm': L(60, -20, -25), 'RightLeg': R(45), 'LeftLeg': R(25)}
+P_DIVE = {'Torso': R(-50), 'Head': R(30), 'RightArm': L(75, 4), 'Sword': A(0, -0.72, -0.69),
+          'LeftArm': L(-30, 0, -30), 'RightLeg': R(-20), 'LeftLeg': R(-5)}
+P_STAB = {'Torso': R(-30, 8), 'Head': R(20, -6), 'RightArm': L(55, 4), 'Sword': A(0, -0.5, -0.87),
+          'LeftArm': L(15, 0, -40), 'RightLeg': R(28), 'LeftLeg': R(-26)}
+P_SETTLE = {'Torso': R(-22, 8), 'Head': R(14, -6), 'RightArm': L(62, 4), 'Sword': A(0, -0.5, -0.87),
+            'LeftArm': L(10, 0, -35), 'RightLeg': R(20), 'LeftLeg': R(-18)}
+PLUNGE = [(0.0, UPPER | {'RightLeg': R(10), 'LeftLeg': R(-5)}), (0.12, P_WIND), (0.22, P_DIVE), (0.9, P_DIVE)]
+# Starts from the stab: by the time it plays he has hit the ground.
+PLUNGE_IMPACT = [(0.0, P_STAB), (0.1, P_STAB), (0.45, P_SETTLE)]
+
+# ---------------- Air Black Divider ----------------
+# Hangs in the air with the sword cocked overhead, then a front flip that
+# carries the blade in a full circle and ends pointing down at the target.
+def ad_charge(lean):
+    return {'Torso': R(lean), 'Head': R(-6), 'RightArm': L(168, -15), 'Sword': A(0.15, -0.1, 0.98),
+            'LeftArm': L(70, -30, -20), 'RightLeg': R(48), 'LeftLeg': R(24)}
+def flip(pitch):
+    t = R(pitch)
+    return {'Torso': t, 'Head': R(12), 'RightArm': L(172, 0), 'Sword': torso_dir(t, (0, 0.95, -0.31)),
+            'LeftArm': L(140, -10, -15), 'RightLeg': R(60), 'LeftLeg': R(50)}
+AD_END = {'Torso': R(-30), 'Head': R(18), 'RightArm': L(62, 4), 'Sword': A(0, -0.6, -0.8),
+          'LeftArm': L(20, 0, -35), 'RightLeg': R(22), 'LeftLeg': R(-12)}
+AIR_DIVIDER_CHARGE = [(0.0, UPPER), (0.15, ad_charge(12)), (0.3, ad_charge(16)), (0.45, ad_charge(11)),
+                      (0.62, ad_charge(17))]
+AIR_DIVIDER_RELEASE = [(0.0, ad_charge(17)), (0.05, flip(-70)), (0.1, flip(-180)), (0.15, flip(-280)),
+                       (0.2, AD_END), (0.45, AD_END)]
+
+ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR,
+       'Leap': LEAP, 'Plunge': PLUNGE, 'PlungeImpact': PLUNGE_IMPACT,
+       'AirDividerCharge': AIR_DIVIDER_CHARGE, 'AirDividerRelease': AIR_DIVIDER_RELEASE, 'Propel': PROPEL, 'Barrage': BARRAGE,
        'MeteorLunge': METEOR_LUNGE, 'MeteorRise': METEOR_RISE, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
        'DividerCharge': DIVIDER_CHARGE, 'DividerRelease': DIVIDER_RELEASE,
        'DeflectStance': DEFLECT_STANCE, 'DeflectCounter': DEFLECT_COUNTER, 'DeflectReflect': DEFLECT_REFLECT,
@@ -302,7 +355,10 @@ if __name__ == '__main__':
     # entrance slam plants it. The entrance sword is hidden until the draw.
     rules = {'Chop': dict(floor=-3.1), 'Entrance': dict(floor=-3.5, hidden_until=0.88),
              # These plant the blade on purpose.
-             'MeteorSlam': dict(floor=-3.6), 'MeteorImpact': dict(floor=-3.6), 'Awaken': dict(floor=-3.6)}
+             'MeteorSlam': dict(floor=-3.6), 'MeteorImpact': dict(floor=-3.6), 'Awaken': dict(floor=-3.6),
+             'PlungeImpact': dict(floor=-3.6),
+             # Only ever played in the air.
+             'Plunge': dict(floor=-10), 'AirDividerCharge': dict(floor=-10), 'AirDividerRelease': dict(floor=-10)}
     ok = True
     for name, keys in ALL.items():
         ok &= verify(name, keys, **rules.get(name, {}))

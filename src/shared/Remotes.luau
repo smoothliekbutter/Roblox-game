@@ -3,10 +3,10 @@
 	The server creates every RemoteEvent; clients wait for them.
 
 	Action       client -> server   ("M1", {jump}) | ("Block", bool) | ("Dash", dir) | ("Evasive")
-	                                | ("Skill", slot) | ("Awaken") | ("SelectKit", kitId)
+	                                | ("Skill", slot) | ("Special") | ("Awaken") | ("SelectKit", kitId)
 	VFX          server -> clients  (effectName, data)
 	CameraShake  server -> client   (intensity 0-1)
-	Impulse      server -> client   (velocity, duration) applied to your own character
+	Impulse      server -> client   (velocity, duration, {steer?}) applied to your own character
 	Notify       server -> client   (text, color?) toast message
 ]]
 

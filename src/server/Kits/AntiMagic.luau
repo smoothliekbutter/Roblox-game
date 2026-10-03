@@ -32,6 +32,9 @@ local KIT_ID = "AntiMagic"
 local UP = Vector3.yAxis
 
 -- Anti-magic cuts through everything.
+-- Holds a character in the air (a tiny upward velocity switches on the
+-- vertical force, so gravity stops pulling).
+local HOVER = Vector3.new(0, 0.05, 0)
 local ALL_TYPES = { Melee = true, Bolt = true, Explosion = true, Swarm = true, Zone = true }
 
 local Kit = {}
@@ -241,8 +244,10 @@ local function interrupted(ctx): boolean
 end
 
 -- Charges forward for `duration`, returning the first character caught.
-local function lunge(ctx, velocity: Vector3, duration: number, reach: Vector3): Model?
-	ctx.combat.ApplyVelocity(ctx.character, velocity, duration)
+-- With `steer` (degrees per second) the player can curve it as it goes; the
+-- hitbox follows their root, so it catches whatever they curve into.
+local function lunge(ctx, velocity: Vector3, duration: number, reach: Vector3, steer: number?): Model?
+	ctx.combat.ApplyVelocity(ctx.character, velocity, duration, if steer then { steer = steer } else nil)
 	local start = os.clock()
 	while os.clock() - start < duration + 0.05 do
 		if interrupted(ctx) then
@@ -330,6 +335,9 @@ end
 -- string (a combo starter, like Vessel's Cursed Strikes).
 local BARRAGE_HITS = 8
 local BARRAGE_STEP = 0.1 -- matches the Barrage animation (tools/anim)
+local PROPEL_SPEED = 85
+local PROPEL_TIME = 0.55 -- the Propel animation holds for this long
+local PROPEL_STEER = 240 -- degrees per second: up to a ~130 degree curve
 
 local function bullThrust(ctx)
 	local c, character = ctx.combat, ctx.character
@@ -337,9 +345,9 @@ local function bullThrust(ctx)
 	local airborne = c.IsAirborne(character)
 	local direction = if airborne then (forward + UP * -0.6).Unit else forward
 
-	CombatState.SetCasting(character, 0.6)
-	fx(ctx, "BullThrust", "Propel", { airborne = airborne, direction = direction })
-	local target = lunge(ctx, direction * 95, 0.32, Vector3.new(6, 6, 7))
+	CombatState.SetCasting(character, PROPEL_TIME + 0.25)
+	fx(ctx, "BullThrust", "Propel", { airborne = airborne, direction = direction, duration = PROPEL_TIME })
+	local target = lunge(ctx, direction * PROPEL_SPEED, PROPEL_TIME, Vector3.new(6, 6, 7), PROPEL_STEER)
 	if not target then
 		if airborne then
 			waitForGround(ctx, 0.5)
@@ -350,6 +358,8 @@ local function bullThrust(ctx)
 		return
 	end
 
+	-- Wherever they curved to is forward now.
+	forward = look(ctx)
 	local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
 	local contact = if targetRoot then targetRoot.Position else ctx.root.Position + forward * 3
 	if c.Hit(character, target, { damage = 2.5, stun = 1.6, attackType = "Melee" }) ~= "Hit" then
@@ -400,11 +410,11 @@ end
 
 -- Shared by Black Meteorite and Demon-Destroyer: lunge, and if someone is
 -- caught (and not countering/immune), grab them.
-local function lungeGrab(ctx, skill: string, grabTime: number): (Model?, (() -> ())?)
+local function lungeGrab(ctx, skill: string, grabTime: number, velocity: Vector3?): (Model?, (() -> ())?)
 	local c, character = ctx.combat, ctx.character
 	CombatState.SetCasting(character, 0.55)
 	fx(ctx, skill, "Lunge")
-	local target = lunge(ctx, look(ctx) * 72, 0.3, Vector3.new(4.5, 6, 5))
+	local target = lunge(ctx, velocity or look(ctx) * 72, 0.3, Vector3.new(4.5, 6, 5))
 	if not target then
 		CombatState.SetCasting(character, 0.35)
 		return nil, nil
@@ -420,19 +430,26 @@ local function lungeGrab(ctx, skill: string, grabTime: number): (Model?, (() -> 
 	return target, release
 end
 
+-- On the ground: grab, carry them up, slam. In the air: dive down at them
+-- and spike them straight into the ground.
 local function blackMeteorite(ctx)
 	local c, character = ctx.combat, ctx.character
-	local target, release = lungeGrab(ctx, "BlackMeteorite", 1.7)
+	local airborne = c.IsAirborne(character)
+	local forward = look(ctx)
+	local velocity = if airborne then (forward + UP * -0.55).Unit * 80 else forward * 72
+	local target, release = lungeGrab(ctx, "BlackMeteorite", if airborne then 1.2 else 1.7, velocity)
 	if not target or not release then
 		return
 	end
-	local forward = look(ctx)
+	forward = look(ctx)
 
-	fx(ctx, "BlackMeteorite", "Rise", { target = target })
-	c.ApplyVelocity(character, UP * 75 + forward * 6, 0.3)
-	task.wait(0.55)
+	if not airborne then
+		fx(ctx, "BlackMeteorite", "Rise", { target = target })
+		c.ApplyVelocity(character, UP * 75 + forward * 6, 0.3)
+		task.wait(0.55)
+	end
 
-	fx(ctx, "BlackMeteorite", "Slam", { target = target })
+	fx(ctx, "BlackMeteorite", "Slam", { target = target, airGrab = airborne })
 	c.ApplyVelocity(character, UP * -125 + forward * 8, 0.4)
 	waitForGround(ctx, 0.6)
 	release()
@@ -442,7 +459,7 @@ local function blackMeteorite(ctx)
 	fx(ctx, "BlackMeteorite", "Impact", { position = impact, target = target })
 	c.ShakeArea(impact, 45, 0.6)
 	c.Hit(character, target, {
-		damage = 9,
+		damage = if airborne then 8 else 9,
 		stun = 1,
 		attackType = "Melee",
 		unblockable = true,
@@ -456,13 +473,19 @@ end
 local DIVIDER_CHARGE = 0.62
 local PERFECT_FROM, PERFECT_TO = 0.36, 0.66 -- generous for ping; client shows the flash at 0.38
 
+-- In the air he hangs while it charges, then front-flips the blade down
+-- onto whatever's below and in front, spiking them into the ground.
 local function blackDivider(ctx)
 	local c, character = ctx.combat, ctx.character
 	local data = ctx.data
+	local airborne = c.IsAirborne(character)
 	CombatState.SetCasting(character, DIVIDER_CHARGE + 0.45)
+	if airborne then
+		c.ApplyVelocity(character, HOVER, DIVIDER_CHARGE + 0.05)
+	end
 
 	local start = os.clock()
-	fx(ctx, "BlackDivider", "Charge", { flashAt = 0.38 })
+	fx(ctx, "BlackDivider", "Charge", { flashAt = 0.38, airborne = airborne })
 
 	-- Only the FIRST press after starting counts, so mashing doesn't work.
 	local firstPress: number? = nil
@@ -480,7 +503,28 @@ local function blackDivider(ctx)
 	local perfect = firstPress ~= nil and firstPress - start >= PERFECT_FROM and firstPress - start <= PERFECT_TO
 
 	local forward = look(ctx)
-	fx(ctx, "BlackDivider", "Release", { perfect = perfect })
+	fx(ctx, "BlackDivider", "Release", { perfect = perfect, airborne = airborne })
+	if airborne then
+		local below = ctx.root.CFrame * CFrame.new(0, -2.5, -3)
+		for _, victim in c.Box(character, below, Vector3.new(10, 11, 10)) do
+			c.Hit(character, victim, {
+				damage = if perfect then 13 else 7,
+				stun = if perfect then 1.2 else 1,
+				attackType = "Melee",
+				unblockable = perfect,
+				guardBreak = not perfect,
+				heavy = true,
+				ragdoll = if perfect then 1.6 else 1.3,
+				velocity = forward * 18 + UP * -85,
+				effect = if perfect then "PerfectDivider" else nil,
+			})
+		end
+		-- The flip carries him up a touch before he drops.
+		c.ApplyVelocity(character, UP * 22 + forward * 6, 0.12)
+		c.ShakeArea(ctx.root.Position, if perfect then 60 else 25, if perfect then 0.8 else 0.35)
+		CombatState.SetCasting(character, 0.35)
+		return
+	end
 	local box = ctx.root.CFrame * CFrame.new(0, 0, -4.5)
 	for _, victim in c.Box(character, box, Vector3.new(9, 7, 9)) do
 		if perfect then
@@ -514,7 +558,12 @@ local function antiMagicDeflect(ctx)
 	local c, character = ctx.combat, ctx.character
 	local countered = false
 	CombatState.SetCasting(character, 0.9)
-	fx(ctx, "Deflect", "Stance")
+	-- In the air he hangs there, guard up.
+	local airborne = c.IsAirborne(character)
+	if airborne then
+		c.ApplyVelocity(character, HOVER, 0.82)
+	end
+	fx(ctx, "Deflect", "Stance", { airborne = airborne })
 
 	c.SetCounter(character, 0.8, ALL_TYPES, function(attacker: Model)
 		countered = true
@@ -709,6 +758,86 @@ function Kit.Entrance(ctx)
 	end
 	task.wait(ENTRANCE_TIME - 1.7)
 	character:SetAttribute("Rooted", false)
+end
+
+---------------------------------------------------------------------------
+-- Special (R): Anti-Magic Leap / Meteor Plunge
+---------------------------------------------------------------------------
+
+local SPECIAL = CombatState.SpecialSlot
+local LEAP_TIME = 0.22
+local PLUNGE_HANG = 0.12 -- the Plunge animation's wind-up
+
+-- Meteor Plunge: hangs for a beat with the sword raised, dives behind it
+-- (steerable) and stabs it into the ground, blasting everyone around away.
+local function plunge(ctx)
+	local c, character = ctx.combat, ctx.character
+	CombatState.SetCasting(character, 1.2)
+	fx(ctx, "Special", "Plunge")
+	c.ApplyVelocity(character, HOVER, PLUNGE_HANG)
+	task.wait(PLUNGE_HANG)
+	if interrupted(ctx) then
+		return
+	end
+	fx(ctx, "Special", "Dive")
+	c.ApplyVelocity(character, look(ctx) * 40 + UP * -140, 1, { steer = 140 })
+	waitForGround(ctx, 1)
+	if interrupted(ctx) or c.IsAirborne(character) then
+		CombatState.SetCasting(character, 0.2)
+		return
+	end
+	c.ApplyVelocity(character, Vector3.zero, 0.05)
+	local impact = groundBelow(ctx)
+	fx(ctx, "Special", "Impact", { position = impact })
+	c.ShakeArea(impact, 35, 0.45)
+	for _, victim in c.Sphere(character, impact + UP * 2, 9) do
+		local victimRoot = victim:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if victimRoot then
+			c.Hit(character, victim, {
+				damage = 6,
+				stun = 0.9,
+				attackType = "Melee",
+				heavy = true,
+				velocity = c.Flat(victimRoot.Position - impact) * 34 + UP * 30,
+				velocityTime = 0.2,
+			})
+		end
+	end
+	CombatState.SetCasting(character, 0.35)
+end
+
+-- Anti-Magic Leap: blasts off the ground toward where he's heading
+-- (steerable). Press R again in the air to turn it into the plunge.
+local function leap(ctx)
+	local c, character = ctx.combat, ctx.character
+	local start = os.clock()
+	CombatState.SetCasting(character, 0.25)
+	fx(ctx, "Special", "Leap")
+	c.ApplyVelocity(character, look(ctx) * 60 + UP * 62, LEAP_TIME, { steer = 200 })
+	task.wait(0.15)
+	while os.clock() - start < 1.6 do
+		if interrupted(ctx) then
+			return
+		end
+		if c.PressedSince(character, SPECIAL, start + 0.1) then
+			if c.IsAirborne(character) then
+				plunge(ctx)
+			end
+			return
+		end
+		if os.clock() - start > 0.35 and not c.IsAirborne(character) then
+			return -- landed without plunging
+		end
+		task.wait()
+	end
+end
+
+function Kit.Special(ctx)
+	if ctx.combat.IsAirborne(ctx.character) then
+		plunge(ctx)
+	else
+		leap(ctx)
+	end
 end
 
 Kit.Skills = { bullThrust, blackMeteorite, blackDivider, antiMagicDeflect }
