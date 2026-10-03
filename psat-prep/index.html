@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PSAT Prep</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="#dashboard" aria-label="PSAT Prep home">
+      <span class="brand-bubble" aria-hidden="true"></span>
+      <span class="brand-name">PSAT Prep</span>
+    </a>
+    <nav class="tabs" aria-label="Main">
+      <a href="#dashboard" data-route="dashboard">Dashboard</a>
+      <a href="#practice" data-route="practice">Practice</a>
+      <a href="#bank" data-route="bank">Question bank</a>
+      <a href="#review" data-route="review">Review</a>
+    </nav>
+    <span class="sync" id="sync-status" hidden></span>
+  </div>
+</header>
+
+<main id="view" tabindex="-1"></main>
+
+<footer class="site-footer" id="footer"></footer>
+
+<dialog id="refsheet" aria-labelledby="refsheet-title">
+  <div class="ref-head">
+    <h2 id="refsheet-title">Math reference sheet</h2>
+    <button type="button" class="btn btn-ghost btn-sm" data-action="close-ref">Close</button>
+  </div>
+  <div class="ref-grid">
+    <div><h3>Circle</h3><p><math><mi>A</mi><mo>=</mo><mi>π</mi><msup><mi>r</mi><mn>2</mn></msup></math><br><math><mi>C</mi><mo>=</mo><mn>2</mn><mi>π</mi><mi>r</mi></math></p></div>
+    <div><h3>Rectangle</h3><p><math><mi>A</mi><mo>=</mo><mi>ℓ</mi><mi>w</mi></math></p></div>
+    <div><h3>Triangle</h3><p><math><mi>A</mi><mo>=</mo><mfrac><mn>1</mn><mn>2</mn></mfrac><mi>b</mi><mi>h</mi></math></p></div>
+    <div><h3>Pythagorean theorem</h3><p><math><msup><mi>c</mi><mn>2</mn></msup><mo>=</mo><msup><mi>a</mi><mn>2</mn></msup><mo>+</mo><msup><mi>b</mi><mn>2</mn></msup></math></p></div>
+    <div><h3>Special right triangles</h3><p>30°-60°-90°: sides <math><mi>x</mi><mo>,</mo><mi>x</mi><msqrt><mn>3</mn></msqrt><mo>,</mo><mn>2</mn><mi>x</mi></math><br>45°-45°-90°: sides <math><mi>s</mi><mo>,</mo><mi>s</mi><mo>,</mo><mi>s</mi><msqrt><mn>2</mn></msqrt></math></p></div>
+    <div><h3>Rectangular prism</h3><p><math><mi>V</mi><mo>=</mo><mi>ℓ</mi><mi>w</mi><mi>h</mi></math></p></div>
+    <div><h3>Cylinder</h3><p><math><mi>V</mi><mo>=</mo><mi>π</mi><msup><mi>r</mi><mn>2</mn></msup><mi>h</mi></math></p></div>
+    <div><h3>Sphere</h3><p><math><mi>V</mi><mo>=</mo><mfrac><mn>4</mn><mn>3</mn></mfrac><mi>π</mi><msup><mi>r</mi><mn>3</mn></msup></math></p></div>
+    <div><h3>Cone</h3><p><math><mi>V</mi><mo>=</mo><mfrac><mn>1</mn><mn>3</mn></mfrac><mi>π</mi><msup><mi>r</mi><mn>2</mn></msup><mi>h</mi></math></p></div>
+    <div><h3>Pyramid</h3><p><math><mi>V</mi><mo>=</mo><mfrac><mn>1</mn><mn>3</mn></mfrac><mi>ℓ</mi><mi>w</mi><mi>h</mi></math></p></div>
+  </div>
+  <p class="ref-notes">A circle has 360° of arc, or <math><mn>2</mn><mi>π</mi></math> radians. The angles of a triangle add up to 180°.</p>
+</dialog>
+
+<script src="data/sample-questions.js"></script>
+<script src="data/questions-rw.js"></script>
+<script src="data/questions-math.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

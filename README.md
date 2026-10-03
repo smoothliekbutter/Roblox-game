@@ -69,3 +69,7 @@ src/
 - **Server-authoritative:** the server decides every hit, block and cooldown. Clients only send inputs and draw effects.
 - **Animations are code:** `src/client/M1Animations.luau` holds keyframed R6 poses, played by `PoseAnimator` by overriding Motor6Ds. Nothing needs uploading and there are no animation-permission problems. Uploaded animation IDs can replace them later.
 - **VFX are client-side:** the server sends `("EffectName", data)` and `src/client/VFX.luau` draws it. Effects use only textures built into Roblox, so nothing needs uploading.
+
+## Also in this repo: PSAT Prep
+
+[`psat-prep/`](psat-prep/) is a separate PSAT study website with practice questions, explanations, and skill analytics. See [`psat-prep/README.md`](psat-prep/README.md).
