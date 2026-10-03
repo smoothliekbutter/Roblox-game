@@ -78,22 +78,22 @@ Kits.List = {
 		-- rush combo, grab, timing-crit heavy, counter.
 		skills = {
 			{ name = "Bull Thrust", cooldown = 8, type = "Melee" },
-			{ name = "Black Meteorite", cooldown = 12, type = "Melee" },
-			{ name = "Black Divider", cooldown = 10, type = "Melee" },
-			{ name = "Anti-Magic Deflect", cooldown = 15, type = "Counter" },
+			{ name = "Black Meteorite", cooldown = 13, type = "Melee" },
+			{ name = "Black Divider", cooldown = 11, type = "Melee" },
+			{ name = "Anti-Magic Deflect", cooldown = 14, type = "Counter" },
 		},
 		-- Leap off a blast of anti-magic; R again in the air to plunge.
-		special = { name = "Anti-Magic Leap", cooldown = 9, type = "Melee" },
+		special = { name = "Anti-Magic Leap", cooldown = 10, type = "Melee" },
 		awakenedSkills = {
 			{ name = "Black Hurricane", cooldown = 9, type = "Melee" },
 			{ name = "Black Slash", cooldown = 7, type = "Bolt" },
-			{ name = "Grand Divider", cooldown = 12, type = "Explosion" },
+			{ name = "Grand Divider", cooldown = 13, type = "Explosion" },
 			{ name = "Demon-Destroyer", cooldown = 25, type = "Melee" },
 		},
 		awakening = {
 			name = "Black Form",
 			duration = 40,
-			damageMultiplier = 1.25,
+			damageMultiplier = 1.2,
 			cooldownMultiplier = 0.85,
 			speedBonus = 6,
 		},

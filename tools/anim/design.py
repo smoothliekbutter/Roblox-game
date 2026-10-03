@@ -1,6 +1,7 @@
 """Asta's animation set as data. Verified with the FK model, then emitted as Luau.
 Pose values are tuples so they can be both evaluated (Python) and printed (Luau):
   ('rot', x, y, z) | ('limb', pitch, yaw, roll) | ('aim', dx, dy, dz)  (blade direction in character space)
+  ('body', dy, x, y, z)  the torso moved dy studs up/down (root space), then rotated
 """
 import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rig import *
@@ -13,6 +14,7 @@ def to_cf(v):
     kind = v[0]
     if kind == 'rot': return rot(*v[1:])
     if kind == 'limb': return limb(*v[1:])
+    if kind == 'body': return T(0, v[1], 0) @ rot(*v[2:])
     raise ValueError(kind)
 
 def aim_matrix(torso_cf, arm_cf, d):
@@ -58,8 +60,37 @@ def lerp_pose(a, b, t):
     keys = set(a) | set(b); out = {}
     for k in keys:
         A = a.get(k, np.eye(4)); B = b.get(k, np.eye(4))
-        out[k] = cf(slerp(A[:3,:3], B[:3,:3], t))
+        out[k] = cf(slerp(A[:3,:3], B[:3,:3], t), A[:3,3]*(1-t) + B[:3,3]*t)
     return out
+
+# ---- planting the feet ----
+FLOOR = -3.0
+def plant_pose(pose):
+    """Moves the torso up or down so the lowest sole rests on the floor. R6
+    has no knees, so a lunge or a wide stance lifts the feet; dropping the
+    body is what makes it look grounded."""
+    sole = solve(pose_cfs(pose))['sole']
+    dy = round(FLOOR - sole, 3)
+    if abs(dy) < 0.01:
+        return pose
+    torso = pose.get('Torso', ('rot', 0, 0, 0))
+    if torso[0] == 'body':
+        dy = round(dy + torso[1], 3); angles = torso[2:]
+    else:
+        angles = torso[1:]
+    angles = tuple(angles) + (0,) * (3 - len(angles))
+    out = dict(pose); out['Torso'] = ('body', dy, *angles)
+    return out
+
+def plant(keys, until=None):
+    """Plants every keyframe (or those at or before `until` seconds)."""
+    return [(k[0], plant_pose(k[1]) if until is None or k[0] <= until else k[1], *k[2:]) for k in keys]
+
+def sole_check(pose_m, label, problems, tolerance=0.05):
+    """Keyframes are planted exactly; in-betweens may dip a little (the drop
+    is interpolated in a straight line while the legs swing in arcs)."""
+    r = solve(pose_m)
+    if r['sole'] < FLOOR - tolerance: problems.append(f"{label}: foot in ground (y={r['sole']:.2f})")
 
 # ---- collision checks ----
 def inside_box(p, M, half):
@@ -78,7 +109,7 @@ def check(pose_m, label, problems, floor=-2.85):
         if r[name][1] < floor: problems.append(f"{label}: {name} in ground (y={r[name][1]:.2f})")
     return r
 
-def verify(name, keys, floor=-2.85, hidden_until=-1.0):
+def verify(name, keys, floor=-2.85, hidden_until=-1.0, grounded=False):
     """floor: lowest the blade may go (the ground is y=-3; lower it for moves
     that plant the blade on purpose). hidden_until: the sword is invisible
     before this time, so it isn't checked."""
@@ -88,9 +119,11 @@ def verify(name, keys, floor=-2.85, hidden_until=-1.0):
         if i + 1 < len(keys) and keys[i+1][0] <= hidden_until:
             continue
         check(pm, f"{name}@{k[0]:.2f}", problems, floor)
+        if grounded: sole_check(pm, f"{name}@{k[0]:.2f}", problems)
         if i + 1 < len(keys):
             for t in (0.25, 0.5, 0.75):
                 check(lerp_pose(pm, poses[i+1], t), f"{name}@{k[0]:.2f}+{t}", problems, floor)
+                if grounded: sole_check(lerp_pose(pm, poses[i+1], t), f"{name}@{k[0]:.2f}+{t}", problems, 0.16)
     tips = [solve(pm)['tip'] for pm in poses]
     print(f"{name:12s} " + " ".join(fmt(t) for t in tips))
     for p in problems: print("   !!", p)

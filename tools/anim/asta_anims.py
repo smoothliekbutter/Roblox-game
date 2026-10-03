@@ -214,7 +214,7 @@ STAGGER = [(0.0, UPPER | {'RightLeg': R(0), 'LeftLeg': R(0)}), (0.08, STAGGER_PO
 # ---------------- Bull Thrust ----------------
 # Propel: low and long, sword thrust straight ahead, free arm back.
 PROPEL_POSE = {'Torso': R(-30, 10), 'Head': R(22, -8), 'RightArm': L(60, 5), 'Sword': A(0, -0.05, -1),
-               'LeftArm': L(-35, 0, -25), 'RightLeg': R(-38), 'LeftLeg': R(32)}
+               'LeftArm': L(-35, 0, -25), 'RightLeg': R(-52), 'LeftLeg': R(42)}
 PROPEL = [(0.0, UPPER), (0.07, PROPEL_POSE), (0.62, PROPEL_POSE)]
 
 # Barrage: a rapid flurry, side to side with an overhead chop thrown in,
@@ -240,17 +240,24 @@ BARRAGE.append((round(BARRAGE_END + 0.32, 3), B_PUSH))
 
 # ---------------- Black Meteorite (grab, rise, slam) ----------------
 M_LUNGE = {'Torso': R(-28, -8), 'Head': R(22, 6), 'RightArm': L(-15, -10, 30), 'Sword': A(0.3, 0.15, 0.94),
-           'LeftArm': L(95, -8), 'RightLeg': R(-35), 'LeftLeg': R(32)}
+           'LeftArm': L(95, -8), 'RightLeg': R(-48), 'LeftLeg': R(40)}
+# The grab: his free hand clamps on their throat, then he hoists them up.
+SEIZE_CLAMP = {'Torso': R(-10, 12), 'Head': R(6, -8), 'RightArm': L(-20, -10, 30), 'Sword': A(0.3, 0.2, 0.93),
+               'LeftArm': L(100, -8), 'RightLeg': R(-38), 'LeftLeg': R(32)}
+SEIZE_LIFT = {'Torso': R(-4, 14), 'Head': R(-4, -10), 'RightArm': L(-15, -10, 32), 'Sword': A(0.3, 0.25, 0.92),
+              'LeftArm': L(120, -8), 'RightLeg': R(-24), 'LeftLeg': R(24)}
+SEIZE = [(0.0, M_LUNGE), (0.08, SEIZE_CLAMP), (0.3, SEIZE_LIFT), (0.45, SEIZE_LIFT)]
+# Still holding them up in front through the rise.
 M_HOLD = {'Torso': R(-12, 10), 'Head': R(8, -6), 'RightArm': L(-10, -10, 30), 'Sword': A(0.3, 0.2, 0.93),
-          'LeftArm': L(92, -5), 'RightLeg': R(-10), 'LeftLeg': R(12)}
+          'LeftArm': L(122, -6), 'RightLeg': R(-10), 'LeftLeg': R(12)}
 M_RISE = {'Torso': R(14, 5), 'Head': R(-12), 'RightArm': L(165, 15), 'Sword': A(0.15, 0.55, 0.82),
-          'LeftArm': L(90, -5), 'RightLeg': R(-25), 'LeftLeg': R(35)}
+          'LeftArm': L(108, -5), 'RightLeg': R(-25), 'LeftLeg': R(35)}
 M_APEX = {'Torso': R(24), 'Head': R(-18), 'RightArm': L(178, 10), 'Sword': A(0.1, 0.2, 0.97),
-          'LeftArm': L(90, -5), 'RightLeg': R(-15), 'LeftLeg': R(30)}
+          'LeftArm': L(100, -5), 'RightLeg': R(-15), 'LeftLeg': R(30)}
 M_SLAM = {'Torso': R(-38), 'Head': R(18), 'RightArm': L(40, 8), 'Sword': A(0, -0.32, -0.95),
           'LeftArm': L(50, -10), 'RightLeg': R(-28), 'LeftLeg': R(30)}
 M_RECOVER = {'Torso': R(-20), 'Head': R(8), 'RightArm': L(55, 8), 'Sword': A(0, -0.4, -0.92),
-             'LeftArm': L(25, 0, -25), 'RightLeg': R(-18), 'LeftLeg': R(22)}
+             'LeftArm': L(25, 0, -25), 'RightLeg': R(-40), 'LeftLeg': R(34)}
 METEOR_LUNGE = [(0.0, UPPER), (0.07, M_LUNGE), (0.35, M_LUNGE)]
 METEOR_RISE = [(0.0, M_HOLD), (0.2, M_RISE), (0.55, M_APEX)]
 METEOR_SLAM = [(0.0, M_APEX), (0.12, M_SLAM), (0.6, M_SLAM)]
@@ -289,7 +296,7 @@ DEFLECT_REFLECT = [(0.0, F_STANCE), (0.08, F_R_WIND), (0.15, F_R_STRIKE), (0.42,
 # ---------------- Awakening: Black Form ----------------
 def a_gather(lean, twist):
     return {'Torso': R(lean, twist), 'Head': R(25, -twist), 'RightArm': L(40, 10), 'Sword': A(0, -0.42, -0.91),
-            'LeftArm': L(60, -55), 'RightLeg': R(-15), 'LeftLeg': R(20)}
+            'LeftArm': L(60, -55), 'RightLeg': R(-32), 'LeftLeg': R(34)}
 A_ROAR = {'Torso': R(22), 'Head': R(-30), 'RightArm': L(40, -10, 70), 'Sword': A(0.85, 0.45, 0.25),
           'LeftArm': L(40, 10, -75), 'RightLeg': R(-12, 0, 10), 'LeftLeg': R(14, 0, -10)}
 A_STANCE = {'Torso': R(-12, -15), 'Head': R(8, 12), 'RightArm': L(70, 5), 'Sword': A(0.2, -0.3, -0.93),
@@ -298,11 +305,21 @@ AWAKEN = [(0.0, UPPER | {'RightLeg': R(0), 'LeftLeg': R(0)}), (0.25, a_gather(-3
           (0.65, a_gather(-34, -3)), (0.85, a_gather(-33, 0)), (0.95, A_ROAR), (1.4, A_ROAR), (1.7, A_STANCE),
           (2.0, A_STANCE)]
 
+# ---------------- Grabbed (held up by the throat) ----------------
+# Head thrown back, free hand clawing at the grip, legs kicking. Written out
+# as one long clip (tracks don't loop); the grab fades it out on release.
+def grabbed(kick, arch):
+    return {'Torso': R(10 + arch), 'Head': R(-26 - arch), 'RightArm': L(22, 0, 16), 'Sword': A(0.25, -0.35, -0.9),
+            'LeftArm': L(150 + arch * 2, 14, -6), 'RightLeg': R(14 * kick), 'LeftLeg': R(-12 * kick)}
+GRABBED = [(0.0, grabbed(0, 0))]
+for i in range(1, 15):
+    GRABBED.append((round(i * 0.18, 2), grabbed(1 if i % 2 else -1, 3 if i % 2 else 0)))
+
 # ---------------- Special (R): Anti-Magic Leap / Meteor Plunge ----------------
 # Leap: a coiled crouch, then he launches, free arm reaching ahead, sword
 # trailing behind him.
 LEAP_CROUCH = {'Torso': R(-28, 6), 'Head': R(20, -4), 'RightArm': L(-25, 0, 22), 'Sword': A(0.3, -0.15, 0.94),
-               'LeftArm': L(-20, 0, -25), 'RightLeg': R(30), 'LeftLeg': R(-18)}
+               'LeftArm': L(-20, 0, -25), 'RightLeg': R(42), 'LeftLeg': R(-30)}
 LEAP_LAUNCH = {'Torso': R(-12, -4), 'Head': R(6), 'RightArm': L(-45, 0, 25), 'Sword': A(0.25, -0.3, 0.92),
                'LeftArm': L(150, -10), 'RightLeg': R(-40), 'LeftLeg': R(32)}
 LEAP = [(0.0, UPPER), (0.08, LEAP_CROUCH), (0.2, LEAP_LAUNCH), (0.6, LEAP_LAUNCH)]
@@ -314,9 +331,9 @@ P_WIND = {'Torso': R(14), 'Head': R(-10), 'RightArm': L(172, 5), 'Sword': A(0.05
 P_DIVE = {'Torso': R(-50), 'Head': R(30), 'RightArm': L(75, 4), 'Sword': A(0, -0.72, -0.69),
           'LeftArm': L(-30, 0, -30), 'RightLeg': R(-20), 'LeftLeg': R(-5)}
 P_STAB = {'Torso': R(-30, 8), 'Head': R(20, -6), 'RightArm': L(55, 4), 'Sword': A(0, -0.5, -0.87),
-          'LeftArm': L(15, 0, -40), 'RightLeg': R(28), 'LeftLeg': R(-26)}
+          'LeftArm': L(15, 0, -40), 'RightLeg': R(44), 'LeftLeg': R(-38)}
 P_SETTLE = {'Torso': R(-22, 8), 'Head': R(14, -6), 'RightArm': L(62, 4), 'Sword': A(0, -0.5, -0.87),
-            'LeftArm': L(10, 0, -35), 'RightLeg': R(20), 'LeftLeg': R(-18)}
+            'LeftArm': L(10, 0, -35), 'RightLeg': R(30), 'LeftLeg': R(-26)}
 PLUNGE = [(0.0, UPPER | {'RightLeg': R(10), 'LeftLeg': R(-5)}), (0.12, P_WIND), (0.22, P_DIVE), (0.9, P_DIVE)]
 # Starts from the stab: by the time it plays he has hit the ground.
 PLUNGE_IMPACT = [(0.0, P_STAB), (0.1, P_STAB), (0.45, P_SETTLE)]
@@ -338,7 +355,7 @@ AIR_DIVIDER_CHARGE = [(0.0, UPPER), (0.15, ad_charge(12)), (0.3, ad_charge(16)),
 AIR_DIVIDER_RELEASE = [(0.0, ad_charge(17)), (0.05, flip(-70)), (0.1, flip(-180)), (0.15, flip(-280)),
                        (0.2, AD_END), (0.45, AD_END)]
 
-ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR,
+ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grabbed': GRABBED,
        'Leap': LEAP, 'Plunge': PLUNGE, 'PlungeImpact': PLUNGE_IMPACT,
        'AirDividerCharge': AIR_DIVIDER_CHARGE, 'AirDividerRelease': AIR_DIVIDER_RELEASE, 'Propel': PROPEL, 'Barrage': BARRAGE,
        'MeteorLunge': METEOR_LUNGE, 'MeteorRise': METEOR_RISE, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
@@ -350,6 +367,14 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR,
        'Guard': GUARD, 'GuardHit': GUARD_HIT, 'Stagger': STAGGER, 'Slash1': SLASH1, 'Slash2': SLASH2, 'Slash3': SLASH3,
        'Cleave': CLEAVE, 'Rising': RISING, 'Chop': CHOP, 'Entrance': ENTRANCE}
 
+# Grounded animations get their feet planted (the body drops into lunges and
+# wide stances). These are played in the air instead, or leave the ground
+# (planted only up to the time given).
+AIRBORNE = {'Air', 'Grabbed', 'Plunge', 'AirDividerCharge', 'AirDividerRelease', 'MeteorRise', 'MeteorSlam', 'Chop'}
+PLANT_UNTIL = {'Leap': 0.1}
+UNPLANTED = dict(ALL)
+ALL = {name: keys if name in AIRBORNE else plant(keys, PLANT_UNTIL.get(name)) for name, keys in ALL.items()}
+
 if __name__ == '__main__':
     # Intentional floor contact: the air chop's tip grazes the floor, the
     # entrance slam plants it. The entrance sword is hidden until the draw.
@@ -358,8 +383,9 @@ if __name__ == '__main__':
              'MeteorSlam': dict(floor=-3.6), 'MeteorImpact': dict(floor=-3.6), 'Awaken': dict(floor=-3.6),
              'PlungeImpact': dict(floor=-3.6),
              # Only ever played in the air.
-             'Plunge': dict(floor=-10), 'AirDividerCharge': dict(floor=-10), 'AirDividerRelease': dict(floor=-10)}
+             'Plunge': dict(floor=-10), 'Grabbed': dict(floor=-10), 'AirDividerCharge': dict(floor=-10), 'AirDividerRelease': dict(floor=-10)}
     ok = True
     for name, keys in ALL.items():
-        ok &= verify(name, keys, **rules.get(name, {}))
+        grounded = name not in AIRBORNE and name not in PLANT_UNTIL
+        ok &= verify(name, keys, grounded=grounded, **rules.get(name, {}))
     print("ALL CLEAN" if ok else "PROBLEMS FOUND")

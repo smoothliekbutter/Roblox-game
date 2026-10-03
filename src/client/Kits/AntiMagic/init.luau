@@ -151,6 +151,7 @@ Kit.Reactions = {
 	Guard = ANIMS.Guard,
 	GuardHit = ANIMS.GuardHit,
 	Stagger = ANIMS.Stagger,
+	Grabbed = ANIMS.Grabbed,
 }
 
 ---------------------------------------------------------------------------
@@ -1040,19 +1041,59 @@ function handlers.BlackMeteorite(data, character, root)
 		if U.isLocal(character) then
 			CameraShake.FovKick(8)
 		end
+	elseif phase == "Seize" then
+		-- The grab: his free hand clamps on their throat and hoists them,
+		-- anti-magic pouring out of his grip and through them.
+		play(character, ANIMS.Seize)
+		local target = data.target
+		local mine = involves(data, character)
+		local function grip(): Vector3?
+			local hand = character:FindFirstChild("Left Arm")
+			return if hand and hand:IsA("BasePart") then (hand.CFrame * CFrame.new(0, -1, 0)).Position else nil
+		end
+		task.delay(0.07, function()
+			local at = grip()
+			if not at or not character.Parent then
+				return
+			end
+			U.flash(at, WHITE, 3, 0.08)
+			U.flash(at, BLACK, 5, 0.18)
+			U.impactRing(at, root.CFrame.LookVector, RED, 0.4, 3.5, 0.2)
+			redSparks(at, 12, 0.7)
+			U.highlight(target, BLACK, 0.3)
+			blackSmoke(feetOf(character, root) + UP * 0.3, 6, 2.2, 6)
+			U.ringBurst(CFrame.new(feetOf(character, root) + UP * 0.1), BLACK, 0.8, 5, 0.25, 0.2)
+			if mine then
+				CameraShake.Add(0.25)
+				CameraShake.FovKick(-6)
+			end
+		end)
+		-- The surge (it lands with the server's 2-damage hit).
+		task.delay(0.2, function()
+			local at = grip()
+			local targetRoot = U.getRoot(target)
+			if not at or not targetRoot or not character.Parent then
+				return
+			end
+			for _ = 1, 6 do
+				local point = targetRoot.Position + U.randomUnit() * Vector3.new(1.1, 1.8, 0.6)
+				U.lightning(at, point, BLACK, RED, 0.12, 0.2)
+			end
+			crackle(targetRoot, 0.25, 0.04, 2.5)
+			U.highlight(target, RED, 0.25)
+			U.flash(targetRoot.Position, RED, 5, 0.15)
+			U.light(targetRoot.Position, RED, 9, 14, 0.3)
+			for _ = 1, 4 do
+				inflow(at, 3.5)
+			end
+			if mine then
+				CameraShake.Add(0.2)
+			end
+		end)
 	elseif phase == "Rise" then
 		play(character, ANIMS.MeteorRise)
 		local target = data.target
-		local targetRoot = U.getRoot(target)
 		local feet = feetOf(character, root)
-
-		-- The grab: black lightning locks onto them.
-		if targetRoot then
-			U.flash(targetRoot.Position, RED, 4, 0.12)
-			U.highlight(target, RED, 0.3)
-			blackLightning(targetRoot.Position, 5, 3.5)
-			redSparks(targetRoot.Position, 10, 0.7)
-		end
 
 		-- Take-off: the ground blows out under them.
 		U.flash(feet + UP, BLACK, 9, 0.25)
@@ -1099,17 +1140,6 @@ function handlers.BlackMeteorite(data, character, root)
 		end
 	elseif phase == "Slam" then
 		play(character, ANIMS.MeteorSlam)
-		-- Air version: caught mid-dive and spiked straight down.
-		local grabbed = U.getRoot(data.target)
-		if data.airGrab and grabbed then
-			U.flash(grabbed.Position, RED, 4, 0.12)
-			U.highlight(data.target, RED, 0.3)
-			blackLightning(grabbed.Position, 5, 3.5)
-			redSparks(grabbed.Position, 10, 0.7)
-			if involves(data, character) then
-				CameraShake.Add(0.3)
-			end
-		end
 		heavyTrail(character, 0.5)
 		U.bodyTrail(character, RED, 0.5)
 		U.bodyTrail(data.target, BLACK, 0.5)
@@ -1552,7 +1582,7 @@ function handlers.Deflect(data, character, root)
 				U.glint(tip, 1.6, RED)
 			end
 		end)
-		openBarrier(character, root, 0.82)
+		openBarrier(character, root, if type(data.window) == "number" then data.window else 0.65)
 		local feet = feetOf(character, root)
 		U.ringBurst(CFrame.new(feet + UP * 0.1), DARK_RED, 1, 5, 0.3, 0.15)
 		blackSmoke(feet + UP * 0.3, 6, 2, 5)

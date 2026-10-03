@@ -10,6 +10,7 @@
 	  Guard              blocking stance, held until the block ends
 	  GuardHit           a blocked hit pushes the guard back
 	  Stagger            guard broken or parried
+	  Grabbed            held up by the throat (faded out on release)
 ]]
 
 local PoseAnimator = require(script.Parent.PoseAnimator)
@@ -176,5 +177,28 @@ Reactions.Stagger = clip({
 	{ 1.0, STAGGER, LINEAR },
 	{ 1.3, settle(0), SINE, IN_OUT },
 }, { fadeIn = 0.02, fadeOut = 0.25 })
+
+-- Held up by the throat: head thrown back, both hands clawing at the grip,
+-- legs kicking. Written out long (tracks don't loop); release fades it.
+do
+	local function grabbed(kick: number, arch: number)
+		return {
+			Torso = rot(10 + arch),
+			Head = rot(-26 - arch),
+			RightArm = limb(150 + arch * 2, -14, 6),
+			LeftArm = limb(150 + arch * 2, 14, -6),
+			RightLeg = rot(14 * kick),
+			LeftLeg = rot(-12 * kick),
+		}
+	end
+	local keys: { any } = { { 0, grabbed(0, 0) } }
+	for i = 1, 14 do
+		table.insert(
+			keys,
+			{ i * 0.18, grabbed(if i % 2 == 1 then 1 else -1, if i % 2 == 1 then 3 else 0), SINE, IN_OUT }
+		)
+	end
+	Reactions.Grabbed = clip(keys, { fadeIn = 0.08, fadeOut = 0.2 })
+end
 
 return Reactions

@@ -44,9 +44,14 @@ def solve(pose):
     # Blade runs from just above the guard to the tip (see buildSword).
     base = apply(sword, (0,0.8,0))
     tip = apply(sword, (0,5.0,0))
+    # Lowest heel or toe of either leg (the middle of the sole's front and
+    # back edge; R6 legs are 1x2x1 boxes). The side edges are left out: R6
+    # hips pivot at the leg's outer edge, so a leg turned out sinks its
+    # inner edge a little, which reads as standing on the edge of the foot.
+    sole = min(apply(leg, (0, -1, z))[1] for leg in (rleg, lleg) for z in (-0.5, 0.5))
     return dict(torso=torso, arm=arm, hand=hand, base=base, tip=tip,
                 head=apply(head,(0,0,0)), lfoot=apply(lleg,(0,-1,0)), rfoot=apply(rleg,(0,-1,0)),
-                lhand=apply(larm,(0,-1,0)))
+                lhand=apply(larm,(0,-1,0)), sole=sole, larm=larm)
 
 def fmt(v): return "(%5.2f,%5.2f,%5.2f)" % tuple(v)
 

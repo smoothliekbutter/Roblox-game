@@ -59,13 +59,42 @@ A close-range rushdown character built like Vessel (Jujutsu Shenanigans) and Her
 | Key | Base | Black Form (after G) |
 |---|---|---|
 | 1 | **Bull Thrust**: rockets forward on anti-magic. **Steer it mid-move** with WASD or the camera to curve around and chase people. Catches the target in an 8-hit slash barrage, then pushes them back still stunned so you can M1 straight into them. **Air:** a diving thrust (also steerable). | **Black Hurricane**: spinning charge that drags enemies along |
-| 2 | **Black Meteorite**: unblockable lunge grab that rockets you both into the sky, charges the blade at the top, then slams down like a meteor into a huge crater (shockwave dome, ground cracks, flying debris, black lightning). **Air:** dives down at them and spikes them straight into the ground. | **Black Slash**: piercing anti-magic slash wave |
+| 2 | **Black Meteorite** (grab): lunges and seizes them by the throat, unblockable. He hoists them up as anti-magic surges through them, rockets into the sky with them, charges the blade at the top, then slams them down like a meteor into a huge crater (shockwave dome, ground cracks, flying debris, black lightning). **Air:** dives at them, seizes them and spikes them straight into the ground. | **Black Slash**: piercing anti-magic slash wave |
 | 3 | **Black Divider**: anti-magic streams into the blade, then a huge sweeping crescent cleave. Press **3** again on the red glint for a Perfect Divider: bigger cut, impact frame, and a black crescent that keeps flying. **Air:** hangs in the air while charging, then front-flips the blade down onto whoever's below and spikes them into the ground. | **Grand Divider**: huge guard-breaking cleave plus a giant slash wave |
 | 4 | **Anti-Magic Deflect**: raises an anti-magic barrier on the blade that counters every attack type. Melee attackers get a frozen impact frame, then a diagonal slash that throws them aside. Projectiles get sent back. **Air:** hangs in the air with the guard up. | **Demon-Destroyer**: grab, carve, explosive finisher that heals 30% |
 | R | **Anti-Magic Leap**: blasts off the ground in a big steerable leap. Press **R** again in the air (or use it while already airborne) for **Meteor Plunge**: hangs for a beat, then dives behind the sword and stabs it into the ground, blasting everyone nearby away. | (same) |
 | G | **Black Form**: a 2-second transformation. Anti-magic gathers as the world darkens, then explodes into a black pillar that blows everyone away, and he drops into his stance. For 40s you get +25% damage, more speed and new moves, plus the look: black flames, a horn, a black arm and sword, and a devil wing with its own idle (it breathes, stretches, tucks back when you run and beats in the air). | |
 
 More grimoires are listed as "coming soon" in the picker.
+
+#### Numbers
+
+Everyone has 100 HP.
+
+| Move | Damage | Cooldown | Notes |
+|---|---|---|---|
+| M1 string | 4 / 4 / 4 / 6 | | 4th hit ragdolls and guard-breaks |
+| Bull Thrust | 11 (2 + 8 × 0.75 + 3) | 8s | Blockable. Combo starter. Long recovery if it whiffs. |
+| Black Meteorite | 12 (1 + 2 + 9), air 10 | 13s | Unblockable grab. Counters and i-frames beat it. Long recovery if it whiffs. |
+| Black Divider | 8, perfect 14 (air 7 / 12) | 11s | Normal guard-breaks, perfect is unblockable |
+| Anti-Magic Deflect | 7 counter, 6 reflected | 14s | 0.65s window. Long recovery if nothing hits it. |
+| Anti-Magic Leap (R) | 5 AoE plunge | 10s | Blockable |
+| Black Form (G) | ×1.2 damage | ×0.85 cooldowns | +6 speed for 40s. About 90 damage dealt to charge. |
+| Black Hurricane | up to 9 + 5 | 9s | |
+| Black Slash | 9 | 7s | Piercing projectile |
+| Grand Divider | 10 + 9 wave | 13s | Guard-breaks. The wave skips whoever the slash hit. |
+| Demon-Destroyer | 19.5 (1 + 5 × 1.5 + 11) | 25s | Unblockable grab, heals 20% |
+
+#### Animations
+
+All of Asta's animations are generated from `tools/anim/asta_anims.py` and checked against an R6 model of the rig:
+
+- The blade never passes through his body or the floor.
+- On grounded animations the body is lowered or raised so his soles rest on the floor. That's what lets lunges sink into their stance and runs bob.
+
+Run `python3 tools/anim/asta_anims.py`, then `python3 tools/anim/emit.py src/client/Kits/AntiMagic/Animations.luau`.
+
+Grabs pin the victim to the grabber's actual hand on every screen, so the hold looks solid at any ping. The victim plays a struggling "held by the throat" animation.
 
 ## Test dummies
 

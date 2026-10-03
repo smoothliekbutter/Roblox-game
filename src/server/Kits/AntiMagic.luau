@@ -337,7 +337,7 @@ local BARRAGE_HITS = 8
 local BARRAGE_STEP = 0.1 -- matches the Barrage animation (tools/anim)
 local PROPEL_SPEED = 85
 local PROPEL_TIME = 0.55 -- the Propel animation holds for this long
-local PROPEL_STEER = 240 -- degrees per second: up to a ~130 degree curve
+local PROPEL_STEER = 200 -- degrees per second: up to a ~110 degree curve
 
 local function bullThrust(ctx)
 	local c, character = ctx.combat, ctx.character
@@ -354,7 +354,8 @@ local function bullThrust(ctx)
 			fx(ctx, "BullThrust", "Land", { position = groundBelow(ctx) })
 		end
 		fx(ctx, "BullThrust", "Whiff")
-		CombatState.SetCasting(character, 0.3)
+		-- Whiffing it leaves him open.
+		CombatState.SetCasting(character, 0.45)
 		return
 	end
 
@@ -362,7 +363,7 @@ local function bullThrust(ctx)
 	forward = look(ctx)
 	local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
 	local contact = if targetRoot then targetRoot.Position else ctx.root.Position + forward * 3
-	if c.Hit(character, target, { damage = 2.5, stun = 1.6, attackType = "Melee" }) ~= "Hit" then
+	if c.Hit(character, target, { damage = 2, stun = 1.6, attackType = "Melee" }) ~= "Hit" then
 		CombatState.SetCasting(character, 0.4)
 		return
 	end
@@ -378,7 +379,7 @@ local function bullThrust(ctx)
 			return
 		end
 		c.Hit(character, target, {
-			damage = 1,
+			damage = 0.75,
 			stun = 1,
 			attackType = "Melee",
 			velocity = forward * 6,
@@ -408,48 +409,87 @@ local function bullThrust(ctx)
 	ctx.data.nextM1 = 0
 end
 
+-- Where his free (left) hand holds a grabbed victim, in root space and
+-- facing him, roughly matching the animations (tools/anim). This is what
+-- the server's hitboxes see; every client pins them to the actual hand.
+local FACING = CFrame.Angles(0, math.pi, 0)
+local HOLD_SEIZE = CFrame.new(-1.6, 0.35, -1.75) * FACING
+local HOLD_RISE = CFrame.new(-1.5, 0.4, -1.7) * FACING
+-- Kept level with him server-side so they never end up under the floor on
+-- landing; clients show them driven down in front of him.
+local HOLD_SLAM = CFrame.new(-1.3, 0, -1.8) * FACING
+
 -- Shared by Black Meteorite and Demon-Destroyer: lunge, and if someone is
--- caught (and not countering/immune), grab them.
-local function lungeGrab(ctx, skill: string, grabTime: number, velocity: Vector3?): (Model?, (() -> ())?)
+-- caught (and not countering/immune), seize them by the throat. Whiffing
+-- leaves him open for a moment.
+local function lungeGrab(
+	ctx,
+	skill: string,
+	grabTime: number,
+	velocity: Vector3?
+): (Model?, (() -> ())?, ((CFrame) -> ())?)
 	local c, character = ctx.combat, ctx.character
 	CombatState.SetCasting(character, 0.55)
 	fx(ctx, skill, "Lunge")
-	local target = lunge(ctx, velocity or look(ctx) * 72, 0.3, Vector3.new(4.5, 6, 5))
+	local target = lunge(ctx, velocity or look(ctx) * 72, 0.3, Vector3.new(5.5, 6.5, 6))
 	if not target then
-		CombatState.SetCasting(character, 0.35)
-		return nil, nil
+		CombatState.SetCasting(character, 0.5)
+		return nil, nil, nil
 	end
 	-- Grabs can't be blocked, but counters and i-frames still beat them.
-	if c.Hit(character, target, { damage = 2, stun = 2, attackType = "Melee", unblockable = true }) ~= "Hit" then
-		CombatState.SetCasting(character, 0.4)
-		return nil, nil
+	if c.Hit(character, target, { damage = 1, stun = 2, attackType = "Melee", unblockable = true }) ~= "Hit" then
+		CombatState.SetCasting(character, 0.5)
+		return nil, nil, nil
 	end
 	CombatState.SetCasting(character, grabTime + 0.2)
 	CombatState.GiveIFrames(character, grabTime)
-	local release = c.Grab(character, target, CFrame.new(0, 0.3, -3.2), grabTime)
-	return target, release
+	local release, hold = c.Grab(character, target, HOLD_SEIZE, grabTime, "Left Arm")
+	return target, release, hold
 end
 
--- On the ground: grab, carry them up, slam. In the air: dive down at them
--- and spike them straight into the ground.
+-- The grab. Lunges, seizes them by the throat and hoists them up while
+-- anti-magic surges through them, then leaps into the sky with them and
+-- comes down like a meteor. In the air: dives at them, seizes them and
+-- spikes them straight into the ground.
+local SEIZE_TIME = 0.4 -- the Seize animation's hoist
+local SURGE_AT = 0.2
+
 local function blackMeteorite(ctx)
 	local c, character = ctx.combat, ctx.character
 	local airborne = c.IsAirborne(character)
 	local forward = look(ctx)
 	local velocity = if airborne then (forward + UP * -0.55).Unit * 80 else forward * 72
-	local target, release = lungeGrab(ctx, "BlackMeteorite", if airborne then 1.2 else 1.7, velocity)
-	if not target or not release then
+	local target, release, hold = lungeGrab(ctx, "BlackMeteorite", if airborne then 1.5 else 2.1, velocity)
+	if not target or not release or not hold then
 		return
 	end
 	forward = look(ctx)
 
+	-- The seize: he plants (or hangs in the air) and hoists them up.
+	fx(ctx, "BlackMeteorite", "Seize", { target = target, airborne = airborne })
+	local seize = if airborne then 0.3 else SEIZE_TIME
+	c.ApplyVelocity(character, if airborne then HOVER else Vector3.zero, seize)
+	task.wait(SURGE_AT)
+	if interrupted(ctx) then
+		release()
+		return
+	end
+	c.Hit(character, target, { damage = 2, stun = 1.5, attackType = "Melee", unblockable = true })
+	task.wait(seize - SURGE_AT)
+	if interrupted(ctx) then
+		release()
+		return
+	end
+
 	if not airborne then
+		hold(HOLD_RISE)
 		fx(ctx, "BlackMeteorite", "Rise", { target = target })
 		c.ApplyVelocity(character, UP * 75 + forward * 6, 0.3)
 		task.wait(0.55)
 	end
 
-	fx(ctx, "BlackMeteorite", "Slam", { target = target, airGrab = airborne })
+	hold(HOLD_SLAM)
+	fx(ctx, "BlackMeteorite", "Slam", { target = target })
 	c.ApplyVelocity(character, UP * -125 + forward * 8, 0.4)
 	waitForGround(ctx, 0.6)
 	release()
@@ -459,7 +499,7 @@ local function blackMeteorite(ctx)
 	fx(ctx, "BlackMeteorite", "Impact", { position = impact, target = target })
 	c.ShakeArea(impact, 45, 0.6)
 	c.Hit(character, target, {
-		damage = if airborne then 8 else 9,
+		damage = if airborne then 7 else 9,
 		stun = 1,
 		attackType = "Melee",
 		unblockable = true,
@@ -508,7 +548,7 @@ local function blackDivider(ctx)
 		local below = ctx.root.CFrame * CFrame.new(0, -2.5, -3)
 		for _, victim in c.Box(character, below, Vector3.new(10, 11, 10)) do
 			c.Hit(character, victim, {
-				damage = if perfect then 13 else 7,
+				damage = if perfect then 12 else 7,
 				stun = if perfect then 1.2 else 1,
 				attackType = "Melee",
 				unblockable = perfect,
@@ -529,7 +569,7 @@ local function blackDivider(ctx)
 	for _, victim in c.Box(character, box, Vector3.new(9, 7, 9)) do
 		if perfect then
 			c.Hit(character, victim, {
-				damage = 15,
+				damage = 14,
 				stun = 1.2,
 				attackType = "Melee",
 				unblockable = true,
@@ -554,18 +594,20 @@ local function blackDivider(ctx)
 	CombatState.SetCasting(character, 0.35)
 end
 
+local DEFLECT_WINDOW = 0.65
+
 local function antiMagicDeflect(ctx)
 	local c, character = ctx.combat, ctx.character
 	local countered = false
-	CombatState.SetCasting(character, 0.9)
+	CombatState.SetCasting(character, DEFLECT_WINDOW + 0.1)
 	-- In the air he hangs there, guard up.
 	local airborne = c.IsAirborne(character)
 	if airborne then
-		c.ApplyVelocity(character, HOVER, 0.82)
+		c.ApplyVelocity(character, HOVER, DEFLECT_WINDOW)
 	end
-	fx(ctx, "Deflect", "Stance", { airborne = airborne })
+	fx(ctx, "Deflect", "Stance", { airborne = airborne, window = DEFLECT_WINDOW })
 
-	c.SetCounter(character, 0.8, ALL_TYPES, function(attacker: Model)
+	c.SetCounter(character, DEFLECT_WINDOW, ALL_TYPES, function(attacker: Model)
 		countered = true
 		CombatState.GiveIFrames(character, 0.7)
 		CombatState.SetCasting(character, 0.45)
@@ -578,7 +620,7 @@ local function antiMagicDeflect(ctx)
 			-- Slash them aside, like Manji Kick.
 			fx(ctx, "Deflect", "Counter", { target = attacker })
 			c.Hit(character, attacker, {
-				damage = 8,
+				damage = 7,
 				stun = 1.2,
 				attackType = "Melee",
 				unblockable = true,
@@ -590,15 +632,16 @@ local function antiMagicDeflect(ctx)
 			-- Ranged attack: send it back as a Black Slash, like Prey's Peril.
 			local direction = c.Flat(offset)
 			fx(ctx, "Deflect", "Reflect", { direction = direction })
-			blackSlash(ctx, ctx.root.Position + direction * 2 + UP * 0.5, direction, { damage = 7 })
+			blackSlash(ctx, ctx.root.Position + direction * 2 + UP * 0.5, direction, { damage = 6 })
 		end
 	end)
 
-	task.wait(0.82)
+	task.wait(DEFLECT_WINDOW + 0.02)
 	if not countered then
+		-- Guessed wrong: a moment where he's wide open.
 		c.ClearCounter(character)
 		fx(ctx, "Deflect", "End")
-		CombatState.SetCasting(character, 0.35)
+		CombatState.SetCasting(character, 0.45)
 	end
 end
 
@@ -623,7 +666,7 @@ local function blackHurricane(ctx)
 			-- Dragged along at the same speed as the spin.
 			if
 				c.Hit(character, victim, {
-					damage = 1.2,
+					damage = 1,
 					stun = 0.6,
 					attackType = "Melee",
 					velocity = forward * 55 + UP * 2,
@@ -660,7 +703,7 @@ local function blackSlashMove(ctx)
 		return
 	end
 	local forward = look(ctx)
-	blackSlash(ctx, ctx.root.Position + forward * 2 + UP * 0.5, forward, { damage = 10 })
+	blackSlash(ctx, ctx.root.Position + forward * 2 + UP * 0.5, forward, { damage = 9 })
 end
 
 local function grandDivider(ctx)
@@ -679,7 +722,7 @@ local function grandDivider(ctx)
 	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -5), Vector3.new(12, 9, 10)) do
 		struck[victim] = true
 		c.Hit(character, victim, {
-			damage = 12,
+			damage = 10,
 			stun = 1.2,
 			attackType = "Explosion",
 			guardBreak = true,
@@ -689,7 +732,7 @@ local function grandDivider(ctx)
 		})
 	end
 	blackSlash(ctx, ctx.root.Position + forward * 4 + UP * 1, forward, {
-		damage = 10,
+		damage = 9,
 		size = Vector3.new(18, 8, 3),
 		speed = 95,
 		range = 55,
@@ -707,6 +750,7 @@ local function demonDestroyer(ctx)
 	if not target or not release then
 		return
 	end
+	-- Five carves (1.5 each) and the finisher (11), healing 20%.
 
 	fx(ctx, "DemonDestroyer", "Grab", { target = target })
 	task.wait(0.25)
@@ -716,7 +760,7 @@ local function demonDestroyer(ctx)
 			return
 		end
 		fx(ctx, "DemonDestroyer", "Carve", { target = target, index = i })
-		c.Hit(character, target, { damage = 2, stun = 1, attackType = "Melee", unblockable = true })
+		c.Hit(character, target, { damage = 1.5, stun = 1, attackType = "Melee", unblockable = true })
 		task.wait(0.15)
 	end
 
@@ -725,7 +769,7 @@ local function demonDestroyer(ctx)
 	release()
 	local forward = look(ctx)
 	c.Hit(character, target, {
-		damage = 12,
+		damage = 11,
 		stun = 1.2,
 		attackType = "Melee",
 		unblockable = true,
@@ -735,7 +779,7 @@ local function demonDestroyer(ctx)
 		effect = "PerfectDivider",
 	})
 	-- Like Hero Hunter's Final Hunt: the finisher restores health.
-	c.Heal(character, ctx.humanoid.MaxHealth * 0.3)
+	c.Heal(character, ctx.humanoid.MaxHealth * 0.2)
 	fx(ctx, "DemonDestroyer", "Heal")
 	c.ShakeArea(ctx.root.Position, 70, 0.9)
 	CombatState.SetCasting(character, 0.35)
@@ -790,11 +834,11 @@ local function plunge(ctx)
 	local impact = groundBelow(ctx)
 	fx(ctx, "Special", "Impact", { position = impact })
 	c.ShakeArea(impact, 35, 0.45)
-	for _, victim in c.Sphere(character, impact + UP * 2, 9) do
+	for _, victim in c.Sphere(character, impact + UP * 2, 8) do
 		local victimRoot = victim:FindFirstChild("HumanoidRootPart") :: BasePart?
 		if victimRoot then
 			c.Hit(character, victim, {
-				damage = 6,
+				damage = 5,
 				stun = 0.9,
 				attackType = "Melee",
 				heavy = true,

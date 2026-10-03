@@ -50,6 +50,9 @@ SPEC = {
                        additive=['RightLeg', 'LeftLeg'], doc="Hit from behind: thrown forward."),
     'HitHeavy': dict(keys=HIT_HEAVY, ease=[None, QUART_OUT, SINE_IO], fadeIn=0.02, fadeOut=0.25,
                      additive=['RightLeg', 'LeftLeg'], doc="Big hit that doesn't knock down (e.g. launched by an uppercut)."),
+    'Grabbed': dict(keys=GRABBED, ease=[None] + [SINE_IO] * (len(GRABBED) - 1), fadeIn=0.08, fadeOut=0.2,
+                    delays={'Head': 0.03, 'LeftArm': 0.04},
+                    doc="Held up by the throat: head back, clawing at the grip, legs kicking. Faded out on release."),
     'Guard': dict(keys=GUARD, ease=[None, QUART_OUT, LINEAR], fadeIn=0.05, fadeOut=0.15,
                   doc="Blocking: sword across the chest. Held until the block ends."),
     'GuardHit': dict(keys=GUARD_HIT, ease=[None, QUART_OUT, SINE_OUT, LINEAR], fadeIn=0.02, fadeOut=0.15,
@@ -63,6 +66,9 @@ SPEC = {
                     doc="Bull Thrust: rapid slash flurry ending in a pushing thrust."),
     'MeteorLunge': dict(keys=METEOR_LUNGE, ease=[None, QUART_OUT, SINE_OUT], fadeIn=0.03, fadeOut=0.1,
                         delays={'Sword': 0.03}, doc="Black Meteorite: lunging grab, free hand reaching out."),
+    'Seize': dict(keys=SEIZE, ease=[None, QUART_OUT, SINE_OUT, LINEAR], fadeIn=0.02, fadeOut=0.1,
+                  delays={'Sword': 0.03, 'Head': -0.01},
+                  doc="Black Meteorite: the free hand clamps on their throat and hoists them up."),
     'MeteorRise': dict(keys=METEOR_RISE, ease=[None, QUAD_OUT, SINE_IO], fadeIn=0.05, fadeOut=0.1,
                        delays={'Sword': 0.04}, doc="Black Meteorite: rising with the victim, sword drawn back overhead."),
     'MeteorSlam': dict(keys=METEOR_SLAM, ease=[None, QUAD_IN, LINEAR], fadeIn=0.02, fadeOut=0.1,
@@ -114,7 +120,7 @@ def num(v):
 
 def value(v):
     kind, *args = v
-    while kind in ('rot', 'limb') and len(args) > 1 and args[-1] == 0:
+    while kind in ('rot', 'limb', 'body') and len(args) > (2 if kind == 'body' else 1) and args[-1] == 0:
         args = args[:-1]
     return f"{kind}({', '.join(num(a) for a in args)})"
 
@@ -138,6 +144,8 @@ out = ['''--[[
 
 	Each animation: keys = { {time, pose, easingStyle?, easingDirection?}, ... }
 	  rot(x, y, z)          torso/head/leg rotation (degrees)
+	  body(dy, x, y, z)     torso lowered/raised dy studs, then rotated (the
+	                        feet are planted on the floor this way)
 	  limb(pitch, yaw, roll) arm/leg aim (degrees)
 	  aim(x, y, z)          which way the blade points, in character space
 	                        (X right, Y up, -Z forward); the wrist is solved
@@ -148,6 +156,10 @@ local rad = math.rad
 
 local function rot(x: number, y: number?, z: number?): CFrame
 	return CFrame.Angles(rad(x), rad(y or 0), rad(z or 0))
+end
+
+local function body(dy: number, x: number, y: number?, z: number?): CFrame
+	return CFrame.new(0, dy, 0) * CFrame.Angles(rad(x), rad(y or 0), rad(z or 0))
 end
 
 local function limb(pitch: number, yaw: number?, roll: number?): CFrame
@@ -161,6 +173,9 @@ end
 local Animations = {}
 ''']
 
+# Emit the planted versions (see the bottom of asta_anims.py).
+for name, spec in SPEC.items():
+    spec['keys'] = ALL[name]
 for name, spec in SPEC.items():
     out.append(f"-- {spec['doc']}")
     out.append(f"Animations.{name} = {{")

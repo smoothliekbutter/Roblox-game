@@ -298,13 +298,26 @@ end
 	passes. `offset` is relative to the attacker's root. The victim is
 	stunned for the whole grab.
 ]]
-function CombatService.Grab(attacker: Model, victim: Model, offset: CFrame, maxTime: number): () -> ()
+--[[
+	Holds `victim` at `offset` from the attacker's root (server side: what
+	hitboxes see) for up to `maxTime`. Every client draws them pinned to
+	the attacker's `hand` part instead, playing their "Grabbed" struggle
+	(see Client/Moves), so the hold looks solid at any ping. Returns
+	release() and hold(newOffset) for moves that change grip mid-grab.
+]]
+function CombatService.Grab(
+	attacker: Model,
+	victim: Model,
+	offset: CFrame,
+	maxTime: number,
+	hand: string?
+): (() -> (), (CFrame) -> ())
 	local victimData = registry[victim]
 	local victimRoot = getRoot(victim)
 	local attackerRoot = getRoot(attacker)
 	local humanoid = victimData and victimData.humanoid
 	if not victimData or not victimRoot or not attackerRoot or not humanoid then
-		return function() end
+		return function() end, function() end
 	end
 
 	victimData.grabbedBy = attacker
@@ -315,6 +328,13 @@ function CombatService.Grab(attacker: Model, victim: Model, offset: CFrame, maxT
 		pcall(victimRoot.SetNetworkOwner, victimRoot, nil)
 	end
 	humanoid.PlatformStand = true
+	CombatService.FireVFX("Grabbed", {
+		victim = victim,
+		attacker = attacker,
+		offset = offset,
+		duration = maxTime,
+		hand = hand,
+	})
 
 	local released = false
 	local connection
@@ -331,6 +351,7 @@ function CombatService.Grab(attacker: Model, victim: Model, offset: CFrame, maxT
 		if player and victimRoot.Parent and not Ragdoll.IsActive(victim) then
 			pcall(victimRoot.SetNetworkOwner, victimRoot, player)
 		end
+		CombatService.FireVFX("GrabReleased", { victim = victim })
 	end
 
 	connection = RunService.Heartbeat:Connect(function()
@@ -342,7 +363,9 @@ function CombatService.Grab(attacker: Model, victim: Model, offset: CFrame, maxT
 		victimRoot.CFrame = attackerRoot.CFrame * offset
 	end)
 	task.delay(maxTime, release)
-	return release
+	return release, function(newOffset: CFrame)
+		offset = newOffset
+	end
 end
 
 -- Fires the crater effect roughly when a downslammed victim reaches the ground.

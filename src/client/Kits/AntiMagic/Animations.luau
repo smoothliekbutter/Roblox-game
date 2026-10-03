@@ -8,6 +8,8 @@
 
 	Each animation: keys = { {time, pose, easingStyle?, easingDirection?}, ... }
 	  rot(x, y, z)          torso/head/leg rotation (degrees)
+	  body(dy, x, y, z)     torso lowered/raised dy studs, then rotated (the
+	                        feet are planted on the floor this way)
 	  limb(pitch, yaw, roll) arm/leg aim (degrees)
 	  aim(x, y, z)          which way the blade points, in character space
 	                        (X right, Y up, -Z forward); the wrist is solved
@@ -18,6 +20,10 @@ local rad = math.rad
 
 local function rot(x: number, y: number?, z: number?): CFrame
 	return CFrame.Angles(rad(x), rad(y or 0), rad(z or 0))
+end
+
+local function body(dy: number, x: number, y: number?, z: number?): CFrame
+	return CFrame.new(0, dy, 0) * CFrame.Angles(rad(x), rad(y or 0), rad(z or 0))
 end
 
 local function limb(pitch: number, yaw: number?, roll: number?): CFrame
@@ -38,7 +44,7 @@ Animations.Idle = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.12, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -50,7 +56,7 @@ Animations.Idle = {
 		{
 			1.3,
 			{
-				Torso = rot(-2, -18),
+				Torso = body(0.121, -2, -18),
 				Head = rot(2, 22),
 				RightArm = limb(89, 25, 10),
 				Sword = aim(-0.006, 0.421, 0.907),
@@ -64,7 +70,7 @@ Animations.Idle = {
 		{
 			2.6,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.12, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -86,7 +92,7 @@ Animations.Run = {
 		{
 			0,
 			{
-				Torso = rot(-18, 8),
+				Torso = body(-0.07, -18, 8),
 				Head = rot(12, -8),
 				RightArm = limb(82, 25, 10),
 				Sword = aim(0.399, 0.627, 0.67),
@@ -112,7 +118,7 @@ Animations.Run = {
 		{
 			0.25,
 			{
-				Torso = rot(-18, -8),
+				Torso = body(-0.07, -18, -8),
 				Head = rot(12, 8),
 				RightArm = limb(82, 25, 10),
 				Sword = aim(0.154, 0.651, 0.744),
@@ -140,7 +146,7 @@ Animations.Run = {
 		{
 			0.5,
 			{
-				Torso = rot(-18, 8),
+				Torso = body(-0.07, -18, 8),
 				Head = rot(12, -8),
 				RightArm = limb(82, 25, 10),
 				Sword = aim(0.399, 0.627, 0.67),
@@ -162,7 +168,7 @@ Animations.Walk = {
 		{
 			0,
 			{
-				Torso = rot(-5, 4),
+				Torso = body(0.053, -5, 4),
 				Head = rot(4, -4),
 				RightArm = limb(86, 25, 10),
 				Sword = aim(0.34, 0.462, 0.819),
@@ -174,7 +180,7 @@ Animations.Walk = {
 		{
 			0.225,
 			{
-				Torso = rot(-4),
+				Torso = body(0.021, -4),
 				Head = rot(3),
 				RightArm = limb(87, 25, 10),
 				Sword = aim(0.279, 0.449, 0.849),
@@ -188,7 +194,7 @@ Animations.Walk = {
 		{
 			0.45,
 			{
-				Torso = rot(-5, -4),
+				Torso = body(0.053, -5, -4),
 				Head = rot(4, 4),
 				RightArm = limb(86, 25, 10),
 				Sword = aim(0.217, 0.466, 0.858),
@@ -202,7 +208,7 @@ Animations.Walk = {
 		{
 			0.675,
 			{
-				Torso = rot(-4),
+				Torso = body(0.021, -4),
 				Head = rot(3),
 				RightArm = limb(87, 25, 10),
 				Sword = aim(0.279, 0.449, 0.849),
@@ -216,7 +222,7 @@ Animations.Walk = {
 		{
 			0.9,
 			{
-				Torso = rot(-5, 4),
+				Torso = body(0.053, -5, 4),
 				Head = rot(4, -4),
 				RightArm = limb(86, 25, 10),
 				Sword = aim(0.34, 0.462, 0.819),
@@ -258,7 +264,7 @@ Animations.Slash1 = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -270,7 +276,7 @@ Animations.Slash1 = {
 		{
 			0.08,
 			{
-				Torso = rot(3, -42),
+				Torso = body(0.056, 3, -42),
 				Head = rot(0, 32),
 				RightArm = limb(80, -100),
 				Sword = aim(0.75, 0.25, 0.6),
@@ -284,7 +290,7 @@ Animations.Slash1 = {
 		{
 			0.12,
 			{
-				Torso = rot(-4, -5),
+				Torso = body(0.034, -4, -5),
 				Head = rot(0, 4),
 				RightArm = limb(85, -20),
 				Sword = aim(0.35, 0.05, -0.94),
@@ -298,7 +304,7 @@ Animations.Slash1 = {
 		{
 			0.17,
 			{
-				Torso = rot(-8, 38),
+				Torso = body(0.124, -8, 38),
 				Head = rot(0, -28),
 				RightArm = limb(82, 70),
 				Sword = aim(-0.9, -0.1, -0.35),
@@ -312,7 +318,7 @@ Animations.Slash1 = {
 		{
 			0.32,
 			{
-				Torso = rot(-6, 28),
+				Torso = body(0.083, -6, 28),
 				Head = rot(0, -20),
 				RightArm = limb(70, 55),
 				Sword = aim(-0.75, -0.35, -0.5),
@@ -335,7 +341,7 @@ Animations.Slash2 = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -347,7 +353,7 @@ Animations.Slash2 = {
 		{
 			0.08,
 			{
-				Torso = rot(3, 35),
+				Torso = body(0.052, 3, 35),
 				Head = rot(0, -28),
 				RightArm = limb(82, 80),
 				Sword = aim(-0.8, 0.2, 0.5),
@@ -361,7 +367,7 @@ Animations.Slash2 = {
 		{
 			0.12,
 			{
-				Torso = rot(-4),
+				Torso = body(0.028, -4),
 				Head = rot(0, -2),
 				RightArm = limb(85, 10),
 				Sword = aim(-0.3, 0.05, -0.95),
@@ -375,7 +381,7 @@ Animations.Slash2 = {
 		{
 			0.17,
 			{
-				Torso = rot(-8, -38),
+				Torso = body(0.124, -8, -38),
 				Head = rot(0, 28),
 				RightArm = limb(80, -85),
 				Sword = aim(0.95, -0.1, -0.25),
@@ -389,7 +395,7 @@ Animations.Slash2 = {
 		{
 			0.32,
 			{
-				Torso = rot(-6, -26),
+				Torso = body(0.08, -6, -26),
 				Head = rot(0, 18),
 				RightArm = limb(72, -65),
 				Sword = aim(0.75, -0.35, -0.45),
@@ -412,7 +418,7 @@ Animations.Slash3 = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -424,7 +430,7 @@ Animations.Slash3 = {
 		{
 			0.08,
 			{
-				Torso = rot(-14, -25),
+				Torso = body(0.128, -14, -25),
 				Head = rot(10, 18),
 				RightArm = limb(25, -40),
 				Sword = aim(0.45, -0.35, -0.8),
@@ -438,7 +444,7 @@ Animations.Slash3 = {
 		{
 			0.12,
 			{
-				Torso = rot(-3),
+				Torso = body(0.022, -3),
 				Head = rot(0),
 				RightArm = limb(85, -5),
 				Sword = aim(0.1, 0.3, -0.95),
@@ -452,7 +458,7 @@ Animations.Slash3 = {
 		{
 			0.17,
 			{
-				Torso = rot(10, 28),
+				Torso = body(0.12, 10, 28),
 				Head = rot(-10, -15),
 				RightArm = limb(150, 30),
 				Sword = aim(-0.45, 0.85, -0.25),
@@ -466,7 +472,7 @@ Animations.Slash3 = {
 		{
 			0.32,
 			{
-				Torso = rot(6, 20),
+				Torso = body(0.07, 6, 20),
 				Head = rot(-6, -10),
 				RightArm = limb(135, 25),
 				Sword = aim(-0.35, 0.8, 0.45),
@@ -489,7 +495,7 @@ Animations.Cleave = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -501,7 +507,7 @@ Animations.Cleave = {
 		{
 			0.12,
 			{
-				Torso = rot(4, -60),
+				Torso = body(0.085, 4, -60),
 				Head = rot(0, 40),
 				RightArm = limb(80, -120),
 				Sword = aim(0.45, 0.2, 0.85),
@@ -515,7 +521,7 @@ Animations.Cleave = {
 		{
 			0.18,
 			{
-				Torso = rot(-4, -10),
+				Torso = body(0.038, -4, -10),
 				Head = rot(0, 8),
 				RightArm = limb(85, -20),
 				Sword = aim(0.4, 0.05, -0.9),
@@ -529,7 +535,7 @@ Animations.Cleave = {
 		{
 			0.24,
 			{
-				Torso = rot(-12, 62),
+				Torso = body(0.214, -12, 62),
 				Head = rot(0, -42),
 				RightArm = limb(80, 95),
 				Sword = aim(-0.85, -0.05, 0.5),
@@ -543,7 +549,7 @@ Animations.Cleave = {
 		{
 			0.44,
 			{
-				Torso = rot(-10, 50),
+				Torso = body(0.168, -10, 50),
 				Head = rot(0, -34),
 				RightArm = limb(72, 80),
 				Sword = aim(-0.7, -0.35, 0.6),
@@ -566,7 +572,7 @@ Animations.Rising = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -578,7 +584,7 @@ Animations.Rising = {
 		{
 			0.12,
 			{
-				Torso = rot(-22, -15),
+				Torso = body(0.035, -22, -15),
 				Head = rot(14, 10),
 				RightArm = limb(15, -25),
 				Sword = aim(0.45, -0.3, -0.84),
@@ -592,7 +598,7 @@ Animations.Rising = {
 		{
 			0.18,
 			{
-				Torso = rot(-8),
+				Torso = body(0.051, -8),
 				Head = rot(2),
 				RightArm = limb(80),
 				Sword = aim(0.05, 0.45, -0.9),
@@ -606,7 +612,7 @@ Animations.Rising = {
 		{
 			0.24,
 			{
-				Torso = rot(15, 15),
+				Torso = body(0.094, 15, 15),
 				Head = rot(-20, -10),
 				RightArm = limb(175, 10),
 				Sword = aim(0.05, 1, 0.1),
@@ -620,7 +626,7 @@ Animations.Rising = {
 		{
 			0.44,
 			{
-				Torso = rot(10, 10),
+				Torso = body(0.071, 10, 10),
 				Head = rot(-14, -8),
 				RightArm = limb(160, 10),
 				Sword = aim(0.05, 0.8, 0.6),
@@ -709,7 +715,7 @@ Animations.DashFront = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -719,7 +725,7 @@ Animations.DashFront = {
 		{
 			0.06,
 			{
-				Torso = rot(-28, 6),
+				Torso = body(-0.093, -28, 6),
 				Head = rot(20, -4),
 				RightArm = limb(-25, 0, 20),
 				Sword = aim(0.2, -0.2, 0.96),
@@ -733,7 +739,7 @@ Animations.DashFront = {
 		{
 			0.26,
 			{
-				Torso = rot(-28, 6),
+				Torso = body(-0.093, -28, 6),
 				Head = rot(20, -4),
 				RightArm = limb(-25, 0, 20),
 				Sword = aim(0.2, -0.2, 0.96),
@@ -756,7 +762,7 @@ Animations.DashBack = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -766,7 +772,7 @@ Animations.DashBack = {
 		{
 			0.06,
 			{
-				Torso = rot(14),
+				Torso = body(0.012, 14),
 				Head = rot(-6),
 				RightArm = limb(70, 25),
 				Sword = aim(0.15, 0.4, -0.9),
@@ -780,7 +786,7 @@ Animations.DashBack = {
 		{
 			0.26,
 			{
-				Torso = rot(14),
+				Torso = body(0.012, 14),
 				Head = rot(-6),
 				RightArm = limb(70, 25),
 				Sword = aim(0.15, 0.4, -0.9),
@@ -803,7 +809,7 @@ Animations.DashLeft = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -813,7 +819,7 @@ Animations.DashLeft = {
 		{
 			0.06,
 			{
-				Torso = rot(-8, 15, 14),
+				Torso = body(0.162, -8, 15, 14),
 				Head = rot(4, -12),
 				RightArm = limb(35, -35, 20),
 				Sword = aim(0.9, -0.1, 0.42),
@@ -827,7 +833,7 @@ Animations.DashLeft = {
 		{
 			0.26,
 			{
-				Torso = rot(-8, 15, 14),
+				Torso = body(0.162, -8, 15, 14),
 				Head = rot(4, -12),
 				RightArm = limb(35, -35, 20),
 				Sword = aim(0.9, -0.1, 0.42),
@@ -850,7 +856,7 @@ Animations.DashRight = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -860,7 +866,7 @@ Animations.DashRight = {
 		{
 			0.06,
 			{
-				Torso = rot(-8, -15, -14),
+				Torso = body(0.162, -8, -15, -14),
 				Head = rot(4, 12),
 				RightArm = limb(55, -45, 30),
 				Sword = aim(-0.85, -0.1, 0.52),
@@ -874,7 +880,7 @@ Animations.DashRight = {
 		{
 			0.26,
 			{
-				Torso = rot(-8, -15, -14),
+				Torso = body(0.162, -8, -15, -14),
 				Head = rot(4, 12),
 				RightArm = limb(55, -45, 30),
 				Sword = aim(-0.85, -0.1, 0.52),
@@ -898,7 +904,7 @@ Animations.FlinchA = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -910,7 +916,7 @@ Animations.FlinchA = {
 		{
 			0.05,
 			{
-				Torso = rot(14, 14, 5),
+				Torso = body(0.063, 14, 14, 5),
 				Head = rot(-20, 18),
 				RightArm = limb(70, 35, 25),
 				Sword = aim(0.584, 0.26, 0.769),
@@ -924,7 +930,7 @@ Animations.FlinchA = {
 		{
 			0.3,
 			{
-				Torso = rot(5, 4),
+				Torso = body(0.045, 5, 4),
 				Head = rot(-6, 6),
 				RightArm = limb(84, 25, 10),
 				Sword = aim(0.34, 0.313, 0.887),
@@ -948,7 +954,7 @@ Animations.FlinchB = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -960,7 +966,7 @@ Animations.FlinchB = {
 		{
 			0.05,
 			{
-				Torso = rot(14, -14, -5),
+				Torso = body(0.061, 14, -14, -5),
 				Head = rot(-20, -18),
 				RightArm = limb(78, 15),
 				Sword = aim(0.002, 0.233, 0.972),
@@ -974,7 +980,7 @@ Animations.FlinchB = {
 		{
 			0.3,
 			{
-				Torso = rot(5, -4),
+				Torso = body(0.039, 5, -4),
 				Head = rot(-6, -6),
 				RightArm = limb(84, 25, 10),
 				Sword = aim(0.217, 0.31, 0.926),
@@ -997,7 +1003,7 @@ Animations.FlinchBack = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -1009,7 +1015,7 @@ Animations.FlinchBack = {
 		{
 			0.05,
 			{
-				Torso = rot(-16),
+				Torso = body(0.018, -16),
 				Head = rot(18),
 				RightArm = limb(95, 25, 10),
 				Sword = aim(0.264, 0.518, 0.814),
@@ -1023,7 +1029,7 @@ Animations.FlinchBack = {
 		{
 			0.3,
 			{
-				Torso = rot(-5),
+				Torso = body(0.042, -5),
 				Head = rot(6),
 				RightArm = limb(84, 25, 10),
 				Sword = aim(0.279, 0.464, 0.841),
@@ -1046,7 +1052,7 @@ Animations.HitHeavy = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -1058,7 +1064,7 @@ Animations.HitHeavy = {
 		{
 			0.06,
 			{
-				Torso = rot(26),
+				Torso = body(-0.04, 26),
 				Head = rot(-35),
 				RightArm = limb(110, 30, 30),
 				Sword = aim(0.3, 0.8, 0.5),
@@ -1072,13 +1078,230 @@ Animations.HitHeavy = {
 		{
 			0.5,
 			{
-				Torso = rot(8),
+				Torso = body(0.047, 8),
 				Head = rot(-10),
 				RightArm = limb(84, 25, 10),
 				Sword = aim(0.279, 0.263, 0.923),
 				LeftArm = limb(12, 0, -18),
 				RightLeg = rot(-2),
 				LeftLeg = rot(2),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Held up by the throat: head back, clawing at the grip, legs kicking. Faded out on release.
+Animations.Grabbed = {
+	fadeIn = 0.08,
+	fadeOut = 0.2,
+	delays = { Head = 0.03, LeftArm = 0.04 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(10),
+				Head = rot(-26),
+				RightArm = limb(22, 0, 16),
+				Sword = aim(0.25, -0.35, -0.9),
+				LeftArm = limb(150, 14, -6),
+				RightLeg = rot(0),
+				LeftLeg = rot(0),
+			},
+		},
+		{
+			0.18,
+			{
+				Torso = rot(13),
+				Head = rot(-29),
+				RightArm = limb(22, 0, 16),
+				Sword = aim(0.25, -0.35, -0.9),
+				LeftArm = limb(156, 14, -6),
+				RightLeg = rot(14),
+				LeftLeg = rot(-12),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.36,
+			{
+				Torso = rot(10),
+				Head = rot(-26),
+				RightArm = limb(22, 0, 16),
+				Sword = aim(0.25, -0.35, -0.9),
+				LeftArm = limb(150, 14, -6),
+				RightLeg = rot(-14),
+				LeftLeg = rot(12),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.54,
+			{
+				Torso = rot(13),
+				Head = rot(-29),
+				RightArm = limb(22, 0, 16),
+				Sword = aim(0.25, -0.35, -0.9),
+				LeftArm = limb(156, 14, -6),
+				RightLeg = rot(14),
+				LeftLeg = rot(-12),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.72,
+			{
+				Torso = rot(10),
+				Head = rot(-26),
+				RightArm = limb(22, 0, 16),
+				Sword = aim(0.25, -0.35, -0.9),
+				LeftArm = limb(150, 14, -6),
+				RightLeg = rot(-14),
+				LeftLeg = rot(12),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.9,
+			{
+				Torso = rot(13),
+				Head = rot(-29),
+				RightArm = limb(22, 0, 16),
+				Sword = aim(0.25, -0.35, -0.9),
+				LeftArm = limb(156, 14, -6),
+				RightLeg = rot(14),
+				LeftLeg = rot(-12),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			1.08,
+			{
+				Torso = rot(10),
+				Head = rot(-26),
+				RightArm = limb(22, 0, 16),
+				Sword = aim(0.25, -0.35, -0.9),
+				LeftArm = limb(150, 14, -6),
+				RightLeg = rot(-14),
+				LeftLeg = rot(12),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			1.26,
+			{
+				Torso = rot(13),
+				Head = rot(-29),
+				RightArm = limb(22, 0, 16),
+				Sword = aim(0.25, -0.35, -0.9),
+				LeftArm = limb(156, 14, -6),
+				RightLeg = rot(14),
+				LeftLeg = rot(-12),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			1.44,
+			{
+				Torso = rot(10),
+				Head = rot(-26),
+				RightArm = limb(22, 0, 16),
+				Sword = aim(0.25, -0.35, -0.9),
+				LeftArm = limb(150, 14, -6),
+				RightLeg = rot(-14),
+				LeftLeg = rot(12),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			1.62,
+			{
+				Torso = rot(13),
+				Head = rot(-29),
+				RightArm = limb(22, 0, 16),
+				Sword = aim(0.25, -0.35, -0.9),
+				LeftArm = limb(156, 14, -6),
+				RightLeg = rot(14),
+				LeftLeg = rot(-12),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			1.8,
+			{
+				Torso = rot(10),
+				Head = rot(-26),
+				RightArm = limb(22, 0, 16),
+				Sword = aim(0.25, -0.35, -0.9),
+				LeftArm = limb(150, 14, -6),
+				RightLeg = rot(-14),
+				LeftLeg = rot(12),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			1.98,
+			{
+				Torso = rot(13),
+				Head = rot(-29),
+				RightArm = limb(22, 0, 16),
+				Sword = aim(0.25, -0.35, -0.9),
+				LeftArm = limb(156, 14, -6),
+				RightLeg = rot(14),
+				LeftLeg = rot(-12),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			2.16,
+			{
+				Torso = rot(10),
+				Head = rot(-26),
+				RightArm = limb(22, 0, 16),
+				Sword = aim(0.25, -0.35, -0.9),
+				LeftArm = limb(150, 14, -6),
+				RightLeg = rot(-14),
+				LeftLeg = rot(12),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			2.34,
+			{
+				Torso = rot(13),
+				Head = rot(-29),
+				RightArm = limb(22, 0, 16),
+				Sword = aim(0.25, -0.35, -0.9),
+				LeftArm = limb(156, 14, -6),
+				RightLeg = rot(14),
+				LeftLeg = rot(-12),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			2.52,
+			{
+				Torso = rot(10),
+				Head = rot(-26),
+				RightArm = limb(22, 0, 16),
+				Sword = aim(0.25, -0.35, -0.9),
+				LeftArm = limb(150, 14, -6),
+				RightLeg = rot(-14),
+				LeftLeg = rot(12),
 			},
 			"Sine",
 			"InOut",
@@ -1094,7 +1317,7 @@ Animations.Guard = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -1104,7 +1327,7 @@ Animations.Guard = {
 		{
 			0.08,
 			{
-				Torso = rot(-6, 10),
+				Torso = body(0.044, -6, 10),
 				Head = rot(8, -6),
 				RightArm = limb(80, 45),
 				Sword = aim(-0.9, 0.35, -0.25),
@@ -1116,7 +1339,7 @@ Animations.Guard = {
 		{
 			60,
 			{
-				Torso = rot(-6, 10),
+				Torso = body(0.044, -6, 10),
 				Head = rot(8, -6),
 				RightArm = limb(80, 45),
 				Sword = aim(-0.9, 0.35, -0.25),
@@ -1136,7 +1359,7 @@ Animations.GuardHit = {
 		{
 			0,
 			{
-				Torso = rot(-6, 10),
+				Torso = body(0.044, -6, 10),
 				Head = rot(8, -6),
 				RightArm = limb(80, 45),
 				Sword = aim(-0.9, 0.35, -0.25),
@@ -1146,7 +1369,7 @@ Animations.GuardHit = {
 		{
 			0.05,
 			{
-				Torso = rot(6, 14),
+				Torso = body(0.047, 6, 14),
 				Head = rot(-6, -10),
 				RightArm = limb(68, 50),
 				Sword = aim(-0.85, 0.5, -0.15),
@@ -1158,7 +1381,7 @@ Animations.GuardHit = {
 		{
 			0.2,
 			{
-				Torso = rot(-6, 10),
+				Torso = body(0.044, -6, 10),
 				Head = rot(8, -6),
 				RightArm = limb(80, 45),
 				Sword = aim(-0.9, 0.35, -0.25),
@@ -1170,7 +1393,7 @@ Animations.GuardHit = {
 		{
 			60,
 			{
-				Torso = rot(-6, 10),
+				Torso = body(0.044, -6, 10),
 				Head = rot(8, -6),
 				RightArm = limb(80, 45),
 				Sword = aim(-0.9, 0.35, -0.25),
@@ -1190,7 +1413,7 @@ Animations.Stagger = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -1202,7 +1425,7 @@ Animations.Stagger = {
 		{
 			0.08,
 			{
-				Torso = rot(20, -10),
+				Torso = body(-0.054, 20, -10),
 				Head = rot(-25, 8),
 				RightArm = limb(140, 20, 20),
 				Sword = aim(0.2, 0.9, 0.35),
@@ -1216,7 +1439,7 @@ Animations.Stagger = {
 		{
 			1,
 			{
-				Torso = rot(20, -10),
+				Torso = body(-0.054, 20, -10),
 				Head = rot(-25, 8),
 				RightArm = limb(140, 20, 20),
 				Sword = aim(0.2, 0.9, 0.35),
@@ -1230,7 +1453,7 @@ Animations.Stagger = {
 		{
 			1.3,
 			{
-				Torso = rot(4),
+				Torso = body(0.039, 4),
 				Head = rot(-4),
 				RightArm = limb(84, 25, 10),
 				Sword = aim(0.279, 0.327, 0.903),
@@ -1253,7 +1476,7 @@ Animations.Propel = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -1263,13 +1486,13 @@ Animations.Propel = {
 		{
 			0.07,
 			{
-				Torso = rot(-30, 10),
+				Torso = body(-0.124, -30, 10),
 				Head = rot(22, -8),
 				RightArm = limb(60, 5),
 				Sword = aim(0, -0.05, -1),
 				LeftArm = limb(-35, 0, -25),
-				RightLeg = rot(-38),
-				LeftLeg = rot(32),
+				RightLeg = rot(-52),
+				LeftLeg = rot(42),
 			},
 			"Quart",
 			"Out",
@@ -1277,13 +1500,13 @@ Animations.Propel = {
 		{
 			0.62,
 			{
-				Torso = rot(-30, 10),
+				Torso = body(-0.124, -30, 10),
 				Head = rot(22, -8),
 				RightArm = limb(60, 5),
 				Sword = aim(0, -0.05, -1),
 				LeftArm = limb(-35, 0, -25),
-				RightLeg = rot(-38),
-				LeftLeg = rot(32),
+				RightLeg = rot(-52),
+				LeftLeg = rot(42),
 			},
 			"Sine",
 			"Out",
@@ -1301,7 +1524,7 @@ Animations.Barrage = {
 		{
 			0,
 			{
-				Torso = rot(-30, 10),
+				Torso = body(-0.112, -30, 10),
 				Head = rot(22, -8),
 				RightArm = limb(60, 5),
 				Sword = aim(0, -0.05, -1),
@@ -1313,7 +1536,7 @@ Animations.Barrage = {
 		{
 			0.1,
 			{
-				Torso = rot(-6, -25),
+				Torso = body(0.077, -6, -25),
 				Head = rot(6, 18),
 				RightArm = limb(82, -70),
 				Sword = aim(0.85, 0.05, -0.5),
@@ -1327,7 +1550,7 @@ Animations.Barrage = {
 		{
 			0.2,
 			{
-				Torso = rot(-6, 25),
+				Torso = body(0.077, -6, 25),
 				Head = rot(6, -18),
 				RightArm = limb(82, 70),
 				Sword = aim(-0.85, 0.05, -0.5),
@@ -1341,7 +1564,7 @@ Animations.Barrage = {
 		{
 			0.3,
 			{
-				Torso = rot(-6, -25),
+				Torso = body(0.077, -6, -25),
 				Head = rot(6, 18),
 				RightArm = limb(82, -70),
 				Sword = aim(0.85, 0.05, -0.5),
@@ -1355,7 +1578,7 @@ Animations.Barrage = {
 		{
 			0.4,
 			{
-				Torso = rot(4),
+				Torso = body(0.028, 4),
 				Head = rot(-4),
 				RightArm = limb(150, 10),
 				Sword = aim(0, 0.85, -0.52),
@@ -1369,7 +1592,7 @@ Animations.Barrage = {
 		{
 			0.5,
 			{
-				Torso = rot(-14),
+				Torso = body(0.032, -14),
 				Head = rot(10),
 				RightArm = limb(55, 5),
 				Sword = aim(0, -0.3, -0.95),
@@ -1383,7 +1606,7 @@ Animations.Barrage = {
 		{
 			0.6,
 			{
-				Torso = rot(-6, 25),
+				Torso = body(0.077, -6, 25),
 				Head = rot(6, -18),
 				RightArm = limb(82, 70),
 				Sword = aim(-0.85, 0.05, -0.5),
@@ -1397,7 +1620,7 @@ Animations.Barrage = {
 		{
 			0.7,
 			{
-				Torso = rot(-6, -25),
+				Torso = body(0.077, -6, -25),
 				Head = rot(6, 18),
 				RightArm = limb(82, -70),
 				Sword = aim(0.85, 0.05, -0.5),
@@ -1411,7 +1634,7 @@ Animations.Barrage = {
 		{
 			0.8,
 			{
-				Torso = rot(-6, 25),
+				Torso = body(0.077, -6, 25),
 				Head = rot(6, -18),
 				RightArm = limb(82, 70),
 				Sword = aim(-0.85, 0.05, -0.5),
@@ -1425,7 +1648,7 @@ Animations.Barrage = {
 		{
 			0.92,
 			{
-				Torso = rot(-16, 6),
+				Torso = body(0.035, -16, 6),
 				Head = rot(12, -4),
 				RightArm = limb(85),
 				Sword = aim(0, 0, -1),
@@ -1439,7 +1662,7 @@ Animations.Barrage = {
 		{
 			1.12,
 			{
-				Torso = rot(-16, 6),
+				Torso = body(0.035, -16, 6),
 				Head = rot(12, -4),
 				RightArm = limb(85),
 				Sword = aim(0, 0, -1),
@@ -1462,7 +1685,7 @@ Animations.MeteorLunge = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -1472,13 +1695,13 @@ Animations.MeteorLunge = {
 		{
 			0.07,
 			{
-				Torso = rot(-28, -8),
+				Torso = body(-0.028, -28, -8),
 				Head = rot(22, 6),
 				RightArm = limb(-15, -10, 30),
 				Sword = aim(0.3, 0.15, 0.94),
 				LeftArm = limb(95, -8),
-				RightLeg = rot(-35),
-				LeftLeg = rot(32),
+				RightLeg = rot(-48),
+				LeftLeg = rot(40),
 			},
 			"Quart",
 			"Out",
@@ -1486,15 +1709,78 @@ Animations.MeteorLunge = {
 		{
 			0.35,
 			{
-				Torso = rot(-28, -8),
+				Torso = body(-0.028, -28, -8),
 				Head = rot(22, 6),
 				RightArm = limb(-15, -10, 30),
 				Sword = aim(0.3, 0.15, 0.94),
 				LeftArm = limb(95, -8),
-				RightLeg = rot(-35),
-				LeftLeg = rot(32),
+				RightLeg = rot(-48),
+				LeftLeg = rot(40),
 			},
 			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Black Meteorite: the free hand clamps on their throat and hoists them up.
+Animations.Seize = {
+	fadeIn = 0.02,
+	fadeOut = 0.1,
+	delays = { Sword = 0.03, Head = -0.01 },
+	keys = {
+		{
+			0,
+			{
+				Torso = body(-0.028, -28, -8),
+				Head = rot(22, 6),
+				RightArm = limb(-15, -10, 30),
+				Sword = aim(0.3, 0.15, 0.94),
+				LeftArm = limb(95, -8),
+				RightLeg = rot(-48),
+				LeftLeg = rot(40),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = rot(-10, 12),
+				Head = rot(6, -8),
+				RightArm = limb(-20, -10, 30),
+				Sword = aim(0.3, 0.2, 0.93),
+				LeftArm = limb(100, -8),
+				RightLeg = rot(-38),
+				LeftLeg = rot(32),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.3,
+			{
+				Torso = body(0.039, -4, 14),
+				Head = rot(-4, -10),
+				RightArm = limb(-15, -10, 32),
+				Sword = aim(0.3, 0.25, 0.92),
+				LeftArm = limb(120, -8),
+				RightLeg = rot(-24),
+				LeftLeg = rot(24),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.45,
+			{
+				Torso = body(0.039, -4, 14),
+				Head = rot(-4, -10),
+				RightArm = limb(-15, -10, 32),
+				Sword = aim(0.3, 0.25, 0.92),
+				LeftArm = limb(120, -8),
+				RightLeg = rot(-24),
+				LeftLeg = rot(24),
+			},
+			"Linear",
 			"Out",
 		},
 	},
@@ -1513,7 +1799,7 @@ Animations.MeteorRise = {
 				Head = rot(8, -6),
 				RightArm = limb(-10, -10, 30),
 				Sword = aim(0.3, 0.2, 0.93),
-				LeftArm = limb(92, -5),
+				LeftArm = limb(122, -6),
 				RightLeg = rot(-10),
 				LeftLeg = rot(12),
 			},
@@ -1525,7 +1811,7 @@ Animations.MeteorRise = {
 				Head = rot(-12),
 				RightArm = limb(165, 15),
 				Sword = aim(0.15, 0.55, 0.82),
-				LeftArm = limb(90, -5),
+				LeftArm = limb(108, -5),
 				RightLeg = rot(-25),
 				LeftLeg = rot(35),
 			},
@@ -1539,7 +1825,7 @@ Animations.MeteorRise = {
 				Head = rot(-18),
 				RightArm = limb(178, 10),
 				Sword = aim(0.1, 0.2, 0.97),
-				LeftArm = limb(90, -5),
+				LeftArm = limb(100, -5),
 				RightLeg = rot(-15),
 				LeftLeg = rot(30),
 			},
@@ -1561,7 +1847,7 @@ Animations.MeteorSlam = {
 				Head = rot(-18),
 				RightArm = limb(178, 10),
 				Sword = aim(0.1, 0.2, 0.97),
-				LeftArm = limb(90, -5),
+				LeftArm = limb(100, -5),
 				RightLeg = rot(-15),
 				LeftLeg = rot(30),
 			},
@@ -1605,7 +1891,7 @@ Animations.MeteorImpact = {
 		{
 			0,
 			{
-				Torso = rot(-38),
+				Torso = body(-0.162, -38),
 				Head = rot(18),
 				RightArm = limb(40, 8),
 				Sword = aim(0, -0.32, -0.95),
@@ -1622,8 +1908,8 @@ Animations.MeteorImpact = {
 				RightArm = limb(55, 8),
 				Sword = aim(0, -0.4, -0.92),
 				LeftArm = limb(25, 0, -25),
-				RightLeg = rot(-18),
-				LeftLeg = rot(22),
+				RightLeg = rot(-40),
+				LeftLeg = rot(34),
 			},
 			"Sine",
 			"Out",
@@ -1636,8 +1922,8 @@ Animations.MeteorImpact = {
 				RightArm = limb(55, 8),
 				Sword = aim(0, -0.4, -0.92),
 				LeftArm = limb(25, 0, -25),
-				RightLeg = rot(-18),
-				LeftLeg = rot(22),
+				RightLeg = rot(-40),
+				LeftLeg = rot(34),
 			},
 			"Linear",
 			"Out",
@@ -1655,7 +1941,7 @@ Animations.DividerCharge = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -1667,7 +1953,7 @@ Animations.DividerCharge = {
 		{
 			0.15,
 			{
-				Torso = rot(6, -50),
+				Torso = body(0.114, 6, -50),
 				Head = rot(0, 37.5),
 				RightArm = limb(-40, -35),
 				Sword = aim(0.55, -0.2, 0.8),
@@ -1681,7 +1967,7 @@ Animations.DividerCharge = {
 		{
 			0.3,
 			{
-				Torso = rot(8, -53),
+				Torso = body(0.148, 8, -53),
 				Head = rot(0, 39.75),
 				RightArm = limb(-40, -35),
 				Sword = aim(0.55, -0.2, 0.8),
@@ -1695,7 +1981,7 @@ Animations.DividerCharge = {
 		{
 			0.45,
 			{
-				Torso = rot(5, -49),
+				Torso = body(0.096, 5, -49),
 				Head = rot(0, 36.75),
 				RightArm = limb(-40, -35),
 				Sword = aim(0.55, -0.2, 0.8),
@@ -1709,7 +1995,7 @@ Animations.DividerCharge = {
 		{
 			0.62,
 			{
-				Torso = rot(9, -54),
+				Torso = body(0.164, 9, -54),
 				Head = rot(0, 40.5),
 				RightArm = limb(-40, -35),
 				Sword = aim(0.55, -0.2, 0.8),
@@ -1733,7 +2019,7 @@ Animations.DividerRelease = {
 		{
 			0,
 			{
-				Torso = rot(9, -54),
+				Torso = body(0.164, 9, -54),
 				Head = rot(0, 40.5),
 				RightArm = limb(-40, -35),
 				Sword = aim(0.55, -0.2, 0.8),
@@ -1745,7 +2031,7 @@ Animations.DividerRelease = {
 		{
 			0.05,
 			{
-				Torso = rot(-6, 5),
+				Torso = body(0.045, -6, 5),
 				Head = rot(0, -4),
 				RightArm = limb(86, -10),
 				Sword = aim(0.3, 0, -0.95),
@@ -1759,7 +2045,7 @@ Animations.DividerRelease = {
 		{
 			0.11,
 			{
-				Torso = rot(-12, 60),
+				Torso = body(0.209, -12, 60),
 				Head = rot(0, -45),
 				RightArm = limb(84, 95),
 				Sword = aim(-0.8, -0.05, 0.6),
@@ -1773,7 +2059,7 @@ Animations.DividerRelease = {
 		{
 			0.42,
 			{
-				Torso = rot(-10, 48),
+				Torso = body(0.164, -10, 48),
 				Head = rot(0, -36),
 				RightArm = limb(75, 78),
 				Sword = aim(-0.7, -0.35, 0.6),
@@ -1795,7 +2081,7 @@ Animations.DeflectStance = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -1805,7 +2091,7 @@ Animations.DeflectStance = {
 		{
 			0.08,
 			{
-				Torso = rot(-6, 12),
+				Torso = body(0.065, -6, 12),
 				Head = rot(8, -8),
 				RightArm = limb(40, 40),
 				Sword = aim(-0.1, 0.97, -0.2),
@@ -1819,7 +2105,7 @@ Animations.DeflectStance = {
 		{
 			0.82,
 			{
-				Torso = rot(-6, 12),
+				Torso = body(0.065, -6, 12),
 				Head = rot(8, -8),
 				RightArm = limb(40, 40),
 				Sword = aim(-0.1, 0.97, -0.2),
@@ -1842,7 +2128,7 @@ Animations.DeflectCounter = {
 		{
 			0,
 			{
-				Torso = rot(-6, 12),
+				Torso = body(0.065, -6, 12),
 				Head = rot(8, -8),
 				RightArm = limb(40, 40),
 				Sword = aim(-0.1, 0.97, -0.2),
@@ -1854,7 +2140,7 @@ Animations.DeflectCounter = {
 		{
 			0.06,
 			{
-				Torso = rot(-4, 30),
+				Torso = body(0.075, -4, 30),
 				Head = rot(4, -20),
 				RightArm = limb(150, 50),
 				Sword = aim(-0.5, 0.75, 0.4),
@@ -1868,7 +2154,7 @@ Animations.DeflectCounter = {
 		{
 			0.13,
 			{
-				Torso = rot(-12, -45),
+				Torso = body(0.01, -12, -45),
 				Head = rot(4, 35),
 				RightArm = limb(55, -95),
 				Sword = aim(0.85, -0.3, 0.4),
@@ -1882,7 +2168,7 @@ Animations.DeflectCounter = {
 		{
 			0.42,
 			{
-				Torso = rot(-12, -45),
+				Torso = body(0.01, -12, -45),
 				Head = rot(4, 35),
 				RightArm = limb(55, -95),
 				Sword = aim(0.85, -0.3, 0.4),
@@ -1905,7 +2191,7 @@ Animations.DeflectReflect = {
 		{
 			0,
 			{
-				Torso = rot(-6, 12),
+				Torso = body(0.065, -6, 12),
 				Head = rot(8, -8),
 				RightArm = limb(40, 40),
 				Sword = aim(-0.1, 0.97, -0.2),
@@ -1917,7 +2203,7 @@ Animations.DeflectReflect = {
 		{
 			0.08,
 			{
-				Torso = rot(-6, 40),
+				Torso = body(0.152, -6, 40),
 				Head = rot(4, -30),
 				RightArm = limb(84, 85),
 				Sword = aim(-0.9, 0.1, 0.35),
@@ -1931,7 +2217,7 @@ Animations.DeflectReflect = {
 		{
 			0.15,
 			{
-				Torso = rot(-14, -40),
+				Torso = body(0.059, -14, -40),
 				Head = rot(6, 30),
 				RightArm = limb(84, -90),
 				Sword = aim(0.9, 0.05, -0.4),
@@ -1945,7 +2231,7 @@ Animations.DeflectReflect = {
 		{
 			0.42,
 			{
-				Torso = rot(-14, -40),
+				Torso = body(0.059, -14, -40),
 				Head = rot(6, 30),
 				RightArm = limb(84, -90),
 				Sword = aim(0.9, 0.05, -0.4),
@@ -1972,7 +2258,7 @@ Animations.Awaken = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -1984,13 +2270,13 @@ Animations.Awaken = {
 		{
 			0.25,
 			{
-				Torso = rot(-32),
+				Torso = body(-0.136, -32),
 				Head = rot(25),
 				RightArm = limb(40, 10),
 				Sword = aim(0, -0.42, -0.91),
 				LeftArm = limb(60, -55),
-				RightLeg = rot(-15),
-				LeftLeg = rot(20),
+				RightLeg = rot(-32),
+				LeftLeg = rot(34),
 			},
 			"Sine",
 			"InOut",
@@ -1998,13 +2284,13 @@ Animations.Awaken = {
 		{
 			0.45,
 			{
-				Torso = rot(-30, 3),
+				Torso = body(-0.118, -30, 3),
 				Head = rot(25, -3),
 				RightArm = limb(40, 10),
 				Sword = aim(0, -0.42, -0.91),
 				LeftArm = limb(60, -55),
-				RightLeg = rot(-15),
-				LeftLeg = rot(20),
+				RightLeg = rot(-32),
+				LeftLeg = rot(34),
 			},
 			"Sine",
 			"InOut",
@@ -2012,13 +2298,13 @@ Animations.Awaken = {
 		{
 			0.65,
 			{
-				Torso = rot(-34, -3),
+				Torso = body(-0.157, -34, -3),
 				Head = rot(25, 3),
 				RightArm = limb(40, 10),
 				Sword = aim(0, -0.42, -0.91),
 				LeftArm = limb(60, -55),
-				RightLeg = rot(-15),
-				LeftLeg = rot(20),
+				RightLeg = rot(-32),
+				LeftLeg = rot(34),
 			},
 			"Sine",
 			"InOut",
@@ -2026,13 +2312,13 @@ Animations.Awaken = {
 		{
 			0.85,
 			{
-				Torso = rot(-33),
+				Torso = body(-0.153, -33),
 				Head = rot(25),
 				RightArm = limb(40, 10),
 				Sword = aim(0, -0.42, -0.91),
 				LeftArm = limb(60, -55),
-				RightLeg = rot(-15),
-				LeftLeg = rot(20),
+				RightLeg = rot(-32),
+				LeftLeg = rot(34),
 			},
 			"Sine",
 			"InOut",
@@ -2040,7 +2326,7 @@ Animations.Awaken = {
 		{
 			0.95,
 			{
-				Torso = rot(22),
+				Torso = body(0.039, 22),
 				Head = rot(-30),
 				RightArm = limb(40, -10, 70),
 				Sword = aim(0.85, 0.45, 0.25),
@@ -2054,7 +2340,7 @@ Animations.Awaken = {
 		{
 			1.4,
 			{
-				Torso = rot(22),
+				Torso = body(0.039, 22),
 				Head = rot(-30),
 				RightArm = limb(40, -10, 70),
 				Sword = aim(0.85, 0.45, 0.25),
@@ -2068,7 +2354,7 @@ Animations.Awaken = {
 		{
 			1.7,
 			{
-				Torso = rot(-12, -15),
+				Torso = body(0.081, -12, -15),
 				Head = rot(8, 12),
 				RightArm = limb(70, 5),
 				Sword = aim(0.2, -0.3, -0.93),
@@ -2082,7 +2368,7 @@ Animations.Awaken = {
 		{
 			2,
 			{
-				Torso = rot(-12, -15),
+				Torso = body(0.081, -12, -15),
 				Head = rot(8, 12),
 				RightArm = limb(70, 5),
 				Sword = aim(0.2, -0.3, -0.93),
@@ -2105,7 +2391,7 @@ Animations.Leap = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.049, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),
@@ -2115,13 +2401,13 @@ Animations.Leap = {
 		{
 			0.08,
 			{
-				Torso = rot(-28, 6),
+				Torso = body(-0.033, -28, 6),
 				Head = rot(20, -4),
 				RightArm = limb(-25, 0, 22),
 				Sword = aim(0.3, -0.15, 0.94),
 				LeftArm = limb(-20, 0, -25),
-				RightLeg = rot(30),
-				LeftLeg = rot(-18),
+				RightLeg = rot(42),
+				LeftLeg = rot(-30),
 			},
 			"Quad",
 			"Out",
@@ -2228,25 +2514,25 @@ Animations.PlungeImpact = {
 		{
 			0,
 			{
-				Torso = rot(-30, 8),
+				Torso = body(-0.043, -30, 8),
 				Head = rot(20, -6),
 				RightArm = limb(55, 4),
 				Sword = aim(0, -0.5, -0.87),
 				LeftArm = limb(15, 0, -40),
-				RightLeg = rot(28),
-				LeftLeg = rot(-26),
+				RightLeg = rot(44),
+				LeftLeg = rot(-38),
 			},
 		},
 		{
 			0.1,
 			{
-				Torso = rot(-30, 8),
+				Torso = body(-0.043, -30, 8),
 				Head = rot(20, -6),
 				RightArm = limb(55, 4),
 				Sword = aim(0, -0.5, -0.87),
 				LeftArm = limb(15, 0, -40),
-				RightLeg = rot(28),
-				LeftLeg = rot(-26),
+				RightLeg = rot(44),
+				LeftLeg = rot(-38),
 			},
 			"Linear",
 			"Out",
@@ -2259,8 +2545,8 @@ Animations.PlungeImpact = {
 				RightArm = limb(62, 4),
 				Sword = aim(0, -0.5, -0.87),
 				LeftArm = limb(10, 0, -35),
-				RightLeg = rot(20),
-				LeftLeg = rot(-18),
+				RightLeg = rot(30),
+				LeftLeg = rot(-26),
 			},
 			"Sine",
 			"InOut",
@@ -2449,7 +2735,7 @@ Animations.Entrance = {
 		{
 			0,
 			{
-				Torso = rot(-28),
+				Torso = body(-0.035, -28),
 				Head = rot(22),
 				RightArm = limb(-12, 0, 28),
 				Sword = aim(0, -1, 0.2),
@@ -2461,7 +2747,7 @@ Animations.Entrance = {
 		{
 			0.3,
 			{
-				Torso = rot(-28),
+				Torso = body(-0.035, -28),
 				Head = rot(22),
 				RightArm = limb(-12, 0, 28),
 				Sword = aim(0, -1, 0.2),
@@ -2475,7 +2761,7 @@ Animations.Entrance = {
 		{
 			0.62,
 			{
-				Torso = rot(-10, 10),
+				Torso = body(0.106, -10, 10),
 				Head = rot(-4, -28),
 				RightArm = limb(15, 0, 18),
 				Sword = aim(0, -1, 0.2),
@@ -2489,7 +2775,7 @@ Animations.Entrance = {
 		{
 			0.88,
 			{
-				Torso = rot(-8, 32),
+				Torso = body(0.181, -8, 32),
 				Head = rot(0, -20),
 				RightArm = limb(82, 72),
 				Sword = aim(-0.95, 0, -0.3),
@@ -2503,7 +2789,7 @@ Animations.Entrance = {
 		{
 			1.05,
 			{
-				Torso = rot(4, -20),
+				Torso = body(0.089, 4, -20),
 				Head = rot(-8, 15),
 				RightArm = limb(150, -55),
 				Sword = aim(0.6, 0.8, 0),
@@ -2517,7 +2803,7 @@ Animations.Entrance = {
 		{
 			1.13,
 			{
-				Torso = rot(4),
+				Torso = body(0.108, 4),
 				Head = rot(-12),
 				RightArm = limb(172),
 				Sword = aim(0.95, 0.2, -0.2),
@@ -2531,7 +2817,7 @@ Animations.Entrance = {
 		{
 			1.21,
 			{
-				Torso = rot(4),
+				Torso = body(0.108, 4),
 				Head = rot(-12),
 				RightArm = limb(172),
 				Sword = aim(0.2, 0.2, 0.95),
@@ -2545,7 +2831,7 @@ Animations.Entrance = {
 		{
 			1.29,
 			{
-				Torso = rot(4),
+				Torso = body(0.108, 4),
 				Head = rot(-12),
 				RightArm = limb(172),
 				Sword = aim(-0.95, 0.2, 0.2),
@@ -2559,7 +2845,7 @@ Animations.Entrance = {
 		{
 			1.37,
 			{
-				Torso = rot(4),
+				Torso = body(0.108, 4),
 				Head = rot(-12),
 				RightArm = limb(172),
 				Sword = aim(-0.2, 0.2, -0.95),
@@ -2573,7 +2859,7 @@ Animations.Entrance = {
 		{
 			1.45,
 			{
-				Torso = rot(4),
+				Torso = body(0.108, 4),
 				Head = rot(-12),
 				RightArm = limb(172),
 				Sword = aim(0.95, 0.2, -0.2),
@@ -2587,7 +2873,7 @@ Animations.Entrance = {
 		{
 			1.58,
 			{
-				Torso = rot(16),
+				Torso = body(0.032, 16),
 				Head = rot(-10),
 				RightArm = limb(175, 6),
 				Sword = aim(0, 0.5, 0.86),
@@ -2601,7 +2887,7 @@ Animations.Entrance = {
 		{
 			1.7,
 			{
-				Torso = rot(-30, 5),
+				Torso = body(-0.109, -30, 5),
 				Head = rot(12),
 				RightArm = limb(52, 8),
 				Sword = aim(0, -0.42, -0.91),
@@ -2615,7 +2901,7 @@ Animations.Entrance = {
 		{
 			2.05,
 			{
-				Torso = rot(-20, 8),
+				Torso = body(-0.018, -20, 8),
 				Head = rot(-12, -5),
 				RightArm = limb(55, 8),
 				Sword = aim(0, -0.45, -0.89),
@@ -2629,7 +2915,7 @@ Animations.Entrance = {
 		{
 			2.45,
 			{
-				Torso = rot(-6, -18),
+				Torso = body(0.12, -6, -18),
 				Head = rot(5, 16),
 				RightArm = limb(85, 25, 10),
 				Sword = aim(-0.006, 0.483, 0.875),

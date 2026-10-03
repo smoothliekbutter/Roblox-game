@@ -11,6 +11,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared").Config)
 local Kits = require(ReplicatedStorage:WaitForChild("Shared").Kits)
@@ -83,9 +84,15 @@ local function asModel(value: unknown): Model?
 	return if typeof(value) == "Instance" and value:IsA("Model") then value else nil
 end
 
+-- Characters being held in a grab (see pinGrab), by victim.
+local grabs: { [Model]: { stop: () -> () } } = {}
+
 local function react(character: Model, name: string)
 	if character:GetAttribute("Ragdolled") == true then
 		return -- the ragdoll is the reaction
+	end
+	if grabs[character] and name ~= "Grabbed" then
+		return -- they keep struggling in the grip
 	end
 	local animation = reactionFor(character, name)
 	if animation then
@@ -134,6 +141,85 @@ local function onLandedHit(name: string, data)
 	local side = not lastFlinchSide[victim]
 	lastFlinchSide[victim] = side
 	react(victim, if side then "FlinchA" else "FlinchB")
+end
+
+--[[
+	Grabs. The server holds the victim in place for hitboxes, but its
+	position reaches us a ping late, which looks loose when the grabber is
+	moving fast (Black Meteorite's rise and slam). So every client pins the
+	victim to the grabber's hand itself, every frame: the hand's grip point
+	is at their throat, facing the grabber, never sunk into the floor.
+]]
+local GRAB_NECK = 0.85 -- grip point to the victim's root
+local GRAB_REACH = 0.6 -- the victim's root sits this far past the hand
+local GRAB_FLOOR = 2.6 -- lowest the victim's root goes above the ground
+
+local function pinGrab(data)
+	local victim, attacker = asModel(data.victim), asModel(data.attacker)
+	if not victim or not attacker then
+		return
+	end
+	local victimRoot = victim:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local attackerRoot = attacker:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not victimRoot or not attackerRoot then
+		return
+	end
+	local existing = grabs[victim]
+	if existing then
+		existing.stop()
+	end
+
+	local offset: CFrame = if typeof(data.offset) == "CFrame" then data.offset else CFrame.new(0, 0, -3)
+	local handName: string? = if type(data.hand) == "string" then data.hand else nil
+	local duration = (tonumber(data.duration) or 2) + 0.3
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { victim, attacker, VFX.Util.folder }
+	local floorY: number? = nil
+	local nextFloorCheck = 0
+	local started = os.clock()
+
+	local entry = {} :: { stop: () -> () }
+	local connection
+	entry.stop = function()
+		if grabs[victim] ~= entry then
+			return
+		end
+		grabs[victim] = nil
+		connection:Disconnect()
+		if PoseAnimator.Current(victim) == reactionFor(victim, "Grabbed") then
+			PoseAnimator.FadeOut(victim, 0.2)
+		end
+	end
+	grabs[victim] = entry
+
+	connection = RunService.RenderStepped:Connect(function()
+		if os.clock() - started > duration or not victimRoot.Parent or not attackerRoot.Parent then
+			entry.stop()
+			return
+		end
+		local target = attackerRoot.CFrame * offset
+		local hand = if handName then attacker:FindFirstChild(handName) else nil
+		if hand and hand:IsA("BasePart") then
+			local grip = (hand.CFrame * CFrame.new(0, -1, 0)).Position
+			local look = attackerRoot.CFrame.LookVector
+			local forward = Vector3.new(look.X, 0, look.Z)
+			forward = if forward.Magnitude > 1e-3 then forward.Unit else Vector3.new(0, 0, -1)
+			local position = grip + forward * GRAB_REACH - Vector3.new(0, GRAB_NECK, 0)
+			target = CFrame.lookAt(position, position - forward)
+		end
+		local now = os.clock()
+		if now >= nextFloorCheck then
+			nextFloorCheck = now + 0.1
+			local hit = workspace:Raycast(target.Position + Vector3.new(0, 2, 0), Vector3.new(0, -12, 0), params)
+			floorY = if hit then hit.Position.Y else nil
+		end
+		if floorY and target.Position.Y < floorY + GRAB_FLOOR then
+			target += Vector3.new(0, floorY + GRAB_FLOOR - target.Position.Y, 0)
+		end
+		victimRoot.CFrame = target
+	end)
+	react(victim, "Grabbed")
 end
 
 -- Holding block shows the guard; letting go fades it out.
@@ -196,6 +282,18 @@ function Moves.Start()
 		end
 		if HEAVY_EFFECTS[name] and typeof(data.attacker) == "Instance" then
 			PoseAnimator.Freeze(data.attacker :: Model, Config.Physics.HitStop)
+		end
+
+		if name == "Grabbed" then
+			pinGrab(data)
+			return
+		elseif name == "GrabReleased" then
+			local victim = asModel(data.victim)
+			local grab = victim and grabs[victim]
+			if grab then
+				grab.stop()
+			end
+			return
 		end
 
 		-- Reactions on whoever got hit.
