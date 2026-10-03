@@ -40,8 +40,15 @@ local Kit = {}
 -- Demon-Slayer Sword model
 ---------------------------------------------------------------------------
 
-local function swordPart(name: string, size: Vector3, cframe: CFrame, color: Color3, material: Enum.Material): Part
-	local part = Instance.new("Part")
+local function swordPart(
+	name: string,
+	size: Vector3,
+	cframe: CFrame,
+	color: Color3,
+	material: Enum.Material,
+	className: string?
+): BasePart
+	local part = Instance.new(className or "Part") :: BasePart
 	part.Name = name
 	part.Size = size
 	part.CFrame = cframe
@@ -56,46 +63,56 @@ local function swordPart(name: string, size: Vector3, cframe: CFrame, color: Col
 	return part
 end
 
--- The blade runs along the handle's +Y axis. Built at the origin, then welded.
+-- The Demon-Slayer Sword: a broad black blade about as tall as Asta, with
+-- a chisel tip, a fuller down the middle, a worn grey edge and a chipped
+-- spine. The blade runs along the handle's +Y axis; built around the
+-- handle at the origin, then welded.
 local function buildSword(): Model
 	local model = Instance.new("Model")
 	model.Name = "KitWeapon"
 
-	local black = Color3.fromRGB(22, 22, 26)
-	local steel = Color3.fromRGB(40, 40, 46)
+	local black = Color3.fromRGB(20, 20, 24)
+	local fuller = Color3.fromRGB(38, 38, 44)
+	local edge = Color3.fromRGB(110, 110, 120)
+	local steel = Color3.fromRGB(58, 58, 66)
+	local wrap = Color3.fromRGB(42, 31, 26)
+	local metal, cloth = Enum.Material.Metal, Enum.Material.Fabric
 
-	local handle = swordPart(
-		"Handle",
-		Vector3.new(0.32, 1.3, 0.32),
-		CFrame.new(),
-		Color3.fromRGB(45, 32, 26),
-		Enum.Material.Fabric
-	)
+	local handle = swordPart("Handle", Vector3.new(0.26, 0.9, 0.26), CFrame.new(), wrap, cloth)
 	handle.Parent = model
 	model.PrimaryPart = handle
 
 	local parts = {
-		swordPart("Pommel", Vector3.new(0.45, 0.25, 0.45), CFrame.new(0, -0.75, 0), steel, Enum.Material.Metal),
-		swordPart("Guard", Vector3.new(0.4, 0.28, 1.6), CFrame.new(0, 0.78, 0), steel, Enum.Material.Metal),
-		-- Thin side faces forward so horizontal slashes lead with the edge.
-		swordPart("Blade", Vector3.new(0.24, 4.6, 1.3), CFrame.new(0, 3.2, 0), black, Enum.Material.Metal),
-		-- Worn grey cutting edge so the black blade reads against dark ground.
+		-- Grip: diamond pommel and wrap bands.
 		swordPart(
-			"Edge",
-			Vector3.new(0.18, 4.4, 0.16),
-			CFrame.new(0, 3.15, -0.68),
-			Color3.fromRGB(95, 95, 105),
-			Enum.Material.Metal
+			"Pommel",
+			Vector3.new(0.28, 0.28, 0.28),
+			CFrame.new(0, -0.55, 0) * CFrame.Angles(0, 0, math.rad(45)),
+			steel,
+			metal
 		),
-		-- Jagged, broken-off tip.
+		swordPart("WrapA", Vector3.new(0.3, 0.06, 0.3), CFrame.new(0, -0.28, 0), Color3.fromRGB(26, 20, 18), cloth),
+		swordPart("WrapB", Vector3.new(0.3, 0.06, 0.3), CFrame.new(0, 0.02, 0), Color3.fromRGB(26, 20, 18), cloth),
+		swordPart("WrapC", Vector3.new(0.3, 0.06, 0.3), CFrame.new(0, 0.32, 0), Color3.fromRGB(26, 20, 18), cloth),
+		-- Guard and collar.
+		swordPart("Guard", Vector3.new(0.34, 0.2, 1.05), CFrame.new(0, 0.55, 0), steel, metal),
+		swordPart("Collar", Vector3.new(0.22, 0.12, 0.7), CFrame.new(0, 0.7, 0), black, metal),
+		-- Blade (0.76 to 3.86). The thin side faces forward so horizontal
+		-- swings lead with the edge.
+		swordPart("Blade", Vector3.new(0.16, 3.1, 0.9), CFrame.new(0, 2.31, 0), black, metal),
 		swordPart(
-			"TipA",
-			Vector3.new(0.2, 0.5, 0.7),
-			CFrame.new(0, 5.7, 0.25) * CFrame.Angles(math.rad(18), 0, 0),
-			black,
-			Enum.Material.Metal
+			"Fuller",
+			Vector3.new(0.18, 2.5, 0.14),
+			CFrame.new(0, 2.2, 0.08),
+			fuller,
+			Enum.Material.SmoothPlastic
 		),
-		swordPart("TipB", Vector3.new(0.2, 0.35, 0.45), CFrame.new(0, 5.6, -0.4), black, Enum.Material.Metal),
+		swordPart("Edge", Vector3.new(0.12, 3.0, 0.08), CFrame.new(0, 2.31, -0.47), edge, metal),
+		-- Chisel tip: a wedge sloping from the spine down to the edge.
+		swordPart("Tip", Vector3.new(0.16, 0.6, 0.9), CFrame.new(0, 4.16, 0), black, metal, "WedgePart"),
+		-- Chips along the spine.
+		swordPart("ChipA", Vector3.new(0.18, 0.18, 0.1), CFrame.new(0, 1.6, 0.47), black, metal),
+		swordPart("ChipB", Vector3.new(0.18, 0.14, 0.1), CFrame.new(0, 2.95, 0.47), black, metal),
 	}
 	-- Plain Welds with the offset written into C0, not WeldConstraints:
 	-- a WeldConstraint works its offset out from where the parts happen to
@@ -116,11 +133,11 @@ local function buildSword(): Model
 	local blade = model:FindFirstChild("Blade") :: Part
 	local base = Instance.new("Attachment")
 	base.Name = "TrailBase"
-	base.Position = Vector3.new(0, -2, 0)
+	base.Position = Vector3.new(0, -1.4, 0)
 	base.Parent = blade
 	local tip = Instance.new("Attachment")
 	tip.Name = "TrailTip"
-	tip.Position = Vector3.new(0, 2.5, 0)
+	tip.Position = Vector3.new(0, 1.5, 0)
 	tip.Parent = blade
 
 	local trail = Instance.new("Trail")

@@ -12,23 +12,44 @@ def torso_dir(torso_rot, d):
     v = M @ np.array(d, float); v /= np.linalg.norm(v)
     return ('aim', *[round(float(c), 3) for c in v])
 
-SHOULDER = (0.15, 0.49, 0.86)   # blade over the right shoulder, torso space
-REST_ARM = L(80, 10, -20)
+# Blade over the right shoulder (torso space), angled out and back so it
+# stays clear of the face from any camera angle (1.35 studs from the head).
+SHOULDER = (0.28, 0.39, 0.88)
+REST_ARM = L(85, 25, 10)
 
 # ---------------- Idle ----------------
 def idle_key(torso, head, arm_pitch, larm, rleg, lleg):
     t = R(*torso)
-    return {'Torso': t, 'Head': R(*head), 'RightArm': L(arm_pitch, 10, -20),
+    return {'Torso': t, 'Head': R(*head), 'RightArm': L(arm_pitch, 25, 10),
             'Sword': torso_dir(t, SHOULDER), 'LeftArm': larm, 'RightLeg': rleg, 'LeftLeg': lleg}
 
+# Breathing in and out over 2.6s, with the head glancing around a little.
 IDLE = [
-    (0.0, idle_key((-6,-18), (5,16), 80, L(10,0,-14), R(-6,0,9), R(12,0,-10))),
-    (1.3, idle_key((-2,-18), (2,16), 84, L(13,0,-16), R(-6,0,9), R(12,0,-10))),
-    (2.6, idle_key((-6,-18), (5,16), 80, L(10,0,-14), R(-6,0,9), R(12,0,-10))),
+    (0.0, idle_key((-6,-18), (5,16), 85, L(10,0,-14), R(-6,0,9), R(12,0,-10))),
+    (1.3, idle_key((-2,-18), (2,22), 89, L(13,0,-16), R(-6,0,9), R(12,0,-10))),
+    (2.6, idle_key((-6,-18), (5,16), 85, L(10,0,-14), R(-6,0,9), R(12,0,-10))),
 ]
-# While moving: just carry the sword on the shoulder; legs/left arm walk normally.
-IDLE_MOVE = [
-    (0.0, {'RightArm': REST_ARM, 'Sword': A(*SHOULDER)}),
+
+# Run cycle (0.6s at walk speed 16; plays faster when moving faster): forward
+# lean, striding legs, left arm pumping against them, sword bobbing on the
+# shoulder.
+def run_key(torso, head, arm_pitch, larm, rleg, lleg):
+    t = R(*torso)
+    return {'Torso': t, 'Head': R(*head), 'RightArm': L(arm_pitch, 25, 10),
+            'Sword': torso_dir(t, SHOULDER), 'LeftArm': larm, 'RightLeg': R(rleg), 'LeftLeg': R(lleg)}
+
+RUN = [
+    (0.00, run_key((-14, 6), (8,-6), 84, L(42,-12), 34, -30)),
+    (0.15, run_key((-16, 0), (10,0), 88, L(5,-5), 2, 2)),
+    (0.30, run_key((-14,-6), (8,6), 84, L(-38,4), -30, 34)),
+    (0.45, run_key((-16, 0), (10,0), 88, L(5,-5), 2, 2)),
+    (0.60, run_key((-14, 6), (8,-6), 84, L(42,-12), 34, -30)),
+]
+
+# In the air (jumping or falling): knee up, free arm out for balance.
+AIR = [
+    (0.0, {'Torso': R(-6), 'Head': R(6), 'RightArm': REST_ARM, 'Sword': A(*SHOULDER),
+           'LeftArm': L(35, 0, -40), 'RightLeg': R(30), 'LeftLeg': R(-12)}),
 ]
 
 # ---------------- M1 swings ----------------
@@ -120,7 +141,7 @@ ENTRANCE = [
     (2.45, IDLE[0][1]),
 ]
 
-ALL = {'Idle': IDLE, 'IdleMove': IDLE_MOVE, 'Slash1': SLASH1, 'Slash2': SLASH2, 'Slash3': SLASH3,
+ALL = {'Idle': IDLE, 'Run': RUN, 'Air': AIR, 'Slash1': SLASH1, 'Slash2': SLASH2, 'Slash3': SLASH3,
        'Cleave': CLEAVE, 'Rising': RISING, 'Chop': CHOP, 'Entrance': ENTRANCE}
 
 if __name__ == '__main__':

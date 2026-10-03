@@ -810,9 +810,8 @@ function CombatService.SelectKit(player: Player, kitId: string)
 		player:SetAttribute("Kit", kitId) -- applies on next spawn
 		return
 	end
-	if character:GetAttribute("Kit") == kitId then
-		return
-	end
+	-- Same character again is allowed: it re-equips in place, which also
+	-- repairs a missing weapon or a half-applied kit.
 	if
 		os.clock() - data.lastCombat < Config.KitSwitchCombatLock
 		or not CombatState.CanAct(character)

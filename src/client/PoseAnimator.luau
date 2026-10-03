@@ -55,7 +55,11 @@ export type Animation = {
 
 export type IdleSet = {
 	stand: Animation?, -- played while standing still
-	move: Animation?, -- played while moving (usually upper body only)
+	move: Animation?, -- played while moving (a walk/run cycle)
+	air: Animation?, -- played while jumping or falling
+	-- The speed the move cycle is animated for; it plays faster or slower
+	-- with the character's actual speed so feet don't slide.
+	moveSpeed: number?,
 }
 
 local JOINTS = {
@@ -70,6 +74,8 @@ local JOINTS = {
 
 local STAND_SPEED = 1.5 -- studs/s; slower than this counts as standing still
 local STANCE_BLEND = 8 -- how fast the idle switches between stand and move
+local AIR_SPEED = 6 -- vertical studs/s; faster than this counts as airborne
+local AIR_BLEND = 10
 
 type Track = {
 	animation: Animation,
@@ -92,6 +98,8 @@ type Idle = {
 	joints: { [string]: Motor6D },
 	start: number,
 	standWeight: number,
+	airWeight: number,
+	moveClock: number,
 	nextJointScan: number,
 }
 
@@ -214,6 +222,14 @@ local function release(track: Track, character: Model)
 	end
 end
 
+-- One idle animation's value for a joint (joint space), or nil if it doesn't pose it.
+local function layer(animation: Animation?, poseName: string, joint: Motor6D, time: number): CFrame?
+	if animation and posed(animation)[poseName] then
+		return toJointSpace(joint, sample(animation, poseName, time))
+	end
+	return nil
+end
+
 -- The idle layer's value for every joint it covers this frame (joint space).
 local function idleValues(character: Model, idle: Idle, now: number, dt: number): { [string]: CFrame }
 	-- Joints can show up late (a weapon replicating after the kit was set)
@@ -231,34 +247,36 @@ local function idleValues(character: Model, idle: Idle, now: number, dt: number)
 	end
 
 	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
-	local speed = 0
+	local speed, verticalSpeed = 0, 0
 	if root then
 		local velocity = root.AssemblyLinearVelocity
 		speed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
+		verticalSpeed = math.abs(velocity.Y)
 	end
-	local target = if speed < STAND_SPEED then 1 else 0
-	idle.standWeight += (target - idle.standWeight) * math.min(dt * STANCE_BLEND, 1)
-	local w = smooth(idle.standWeight)
+	local set = idle.set
+	local standTarget = if speed < STAND_SPEED then 1 else 0
+	idle.standWeight += (standTarget - idle.standWeight) * math.min(dt * STANCE_BLEND, 1)
+	local airTarget = if set.air and verticalSpeed > AIR_SPEED then 1 else 0
+	idle.airWeight += (airTarget - idle.airWeight) * math.min(dt * AIR_BLEND, 1)
+	-- The run cycle keeps pace with the actual movement speed.
+	idle.moveClock += dt * math.clamp(speed / (set.moveSpeed or 16), 0.5, 2)
+	local standW, airW = smooth(idle.standWeight), smooth(idle.airWeight)
 
 	local t = now - idle.start
-	local stand, move = idle.set.stand, idle.set.move
 	local values = {}
 	for poseName, joint in idle.joints do
 		if not joint.Parent then
 			continue
 		end
 		local base = animatorBase(joint)
-		local standValue = if stand and posed(stand)[poseName]
-			then toJointSpace(joint, sample(stand, poseName, t))
-			else nil
-		local moveValue = if move and posed(move)[poseName] then toJointSpace(joint, sample(move, poseName, t)) else nil
-		if standValue and moveValue then
-			values[poseName] = moveValue:Lerp(standValue, w)
-		elseif standValue then
-			values[poseName] = base:Lerp(standValue, w)
-		elseif moveValue then
-			values[poseName] = moveValue:Lerp(base, w)
+		-- Moving (or the default walk), blended toward standing, then air.
+		local value = layer(set.move, poseName, joint, idle.moveClock) or base
+		value = value:Lerp(layer(set.stand, poseName, joint, t) or base, standW)
+		local air = layer(set.air, poseName, joint, t)
+		if air and airW > 0 then
+			value = value:Lerp(air, airW)
 		end
+		values[poseName] = value
 	end
 	return values
 end
@@ -408,7 +426,7 @@ function PoseAnimator.SetIdle(character: Model, set: IdleSet?)
 		return
 	end
 	local covered: { [string]: boolean } = {}
-	for _, animation in { set.stand, set.move } do
+	for _, animation in { set.stand, set.move, set.air } do
 		for poseName in posed(animation :: Animation) do
 			covered[poseName] = true
 		end
@@ -425,6 +443,8 @@ function PoseAnimator.SetIdle(character: Model, set: IdleSet?)
 		joints = joints,
 		start = os.clock(),
 		standWeight = 1,
+		airWeight = 0,
+		moveClock = 0,
 		nextJointScan = 0,
 	}
 end

@@ -130,10 +130,13 @@ local READY = {
 }
 
 -- Signature stance: wide footing, the greatsword resting on the right
--- shoulder, slow breathing. While moving he just carries it on his shoulder.
+-- shoulder, slow breathing. Runs leaning forward with the sword bobbing on
+-- his shoulder; knee up and free arm out in the air.
 Kit.Idle = {
 	stand = ANIMS.Idle,
-	move = ANIMS.IdleMove,
+	move = ANIMS.Run,
+	air = ANIMS.Air,
+	moveSpeed = 16,
 }
 
 ---------------------------------------------------------------------------
@@ -1221,7 +1224,7 @@ function handlers.Entrance(data, character, root)
 			local sword = getSword(character)
 			local blade = sword and sword:FindFirstChild("Blade")
 			local tip = if blade and blade:IsA("BasePart")
-				then (blade.CFrame * CFrame.new(0, 2.3, 0)).Position
+				then (blade.CFrame * CFrame.new(0, 1.85, 0)).Position
 				else root.Position + root.CFrame.LookVector * 5
 			U.groundRocks(tip, 9, 2, 1.4)
 			blackSmoke(tip, 12, 3.5, 14)

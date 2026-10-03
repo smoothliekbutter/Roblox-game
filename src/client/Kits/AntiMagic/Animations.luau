@@ -40,8 +40,8 @@ Animations.Idle = {
 			{
 				Torso = rot(-6, -18),
 				Head = rot(5, 16),
-				RightArm = limb(80, 10, -20),
-				Sword = aim(-0.123, 0.577, 0.807),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
 				LeftArm = limb(10, 0, -14),
 				RightLeg = rot(-6, 0, 9),
 				LeftLeg = rot(12, 0, -10),
@@ -51,9 +51,9 @@ Animations.Idle = {
 			1.3,
 			{
 				Torso = rot(-2, -18),
-				Head = rot(2, 16),
-				RightArm = limb(84, 10, -20),
-				Sword = aim(-0.123, 0.519, 0.846),
+				Head = rot(2, 22),
+				RightArm = limb(89, 25, 10),
+				Sword = aim(-0.006, 0.421, 0.907),
 				LeftArm = limb(13, 0, -16),
 				RightLeg = rot(-6, 0, 9),
 				LeftLeg = rot(12, 0, -10),
@@ -66,8 +66,8 @@ Animations.Idle = {
 			{
 				Torso = rot(-6, -18),
 				Head = rot(5, 16),
-				RightArm = limb(80, 10, -20),
-				Sword = aim(-0.123, 0.577, 0.807),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
 				LeftArm = limb(10, 0, -14),
 				RightLeg = rot(-6, 0, 9),
 				LeftLeg = rot(12, 0, -10),
@@ -78,15 +78,96 @@ Animations.Idle = {
 	},
 }
 
--- Moving: carries the sword on the shoulder; legs and left arm walk normally.
-Animations.IdleMove = {
+-- Moving: forward-leaning run, sword bobbing on the shoulder. Speeds up with movement speed.
+Animations.Run = {
+	loop = true,
+	delays = { Head = 0.04, Sword = 0.05, LeftArm = 0.02 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-14, 6),
+				Head = rot(8, -6),
+				RightArm = limb(84, 25, 10),
+				Sword = aim(0.37, 0.582, 0.725),
+				LeftArm = limb(42, -12),
+				RightLeg = rot(34),
+				LeftLeg = rot(-30),
+			},
+		},
+		{
+			0.15,
+			{
+				Torso = rot(-16),
+				Head = rot(10),
+				RightArm = limb(88, 25, 10),
+				Sword = aim(0.279, 0.616, 0.737),
+				LeftArm = limb(5, -5),
+				RightLeg = rot(2),
+				LeftLeg = rot(2),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.3,
+			{
+				Torso = rot(-14, -6),
+				Head = rot(8, 6),
+				RightArm = limb(84, 25, 10),
+				Sword = aim(0.186, 0.596, 0.781),
+				LeftArm = limb(-38, 4),
+				RightLeg = rot(-30),
+				LeftLeg = rot(34),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.45,
+			{
+				Torso = rot(-16),
+				Head = rot(10),
+				RightArm = limb(88, 25, 10),
+				Sword = aim(0.279, 0.616, 0.737),
+				LeftArm = limb(5, -5),
+				RightLeg = rot(2),
+				LeftLeg = rot(2),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.6,
+			{
+				Torso = rot(-14, 6),
+				Head = rot(8, -6),
+				RightArm = limb(84, 25, 10),
+				Sword = aim(0.37, 0.582, 0.725),
+				LeftArm = limb(42, -12),
+				RightLeg = rot(34),
+				LeftLeg = rot(-30),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Jumping or falling: knee up, free arm out for balance.
+Animations.Air = {
 	loop = true,
 	keys = {
 		{
 			0,
 			{
-				RightArm = limb(80, 10, -20),
-				Sword = aim(0.15, 0.49, 0.86),
+				Torso = rot(-6),
+				Head = rot(6),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(0.28, 0.39, 0.88),
+				LeftArm = limb(35, 0, -40),
+				RightLeg = rot(30),
+				LeftLeg = rot(-12),
 			},
 		},
 	},
@@ -103,8 +184,8 @@ Animations.Slash1 = {
 			{
 				Torso = rot(-6, -18),
 				Head = rot(5, 16),
-				RightArm = limb(80, 10, -20),
-				Sword = aim(-0.123, 0.577, 0.807),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
 				LeftArm = limb(10, 0, -14),
 				RightLeg = rot(0),
 				LeftLeg = rot(0),
@@ -180,8 +261,8 @@ Animations.Slash2 = {
 			{
 				Torso = rot(-6, -18),
 				Head = rot(5, 16),
-				RightArm = limb(80, 10, -20),
-				Sword = aim(-0.123, 0.577, 0.807),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
 				LeftArm = limb(10, 0, -14),
 				RightLeg = rot(0),
 				LeftLeg = rot(0),
@@ -257,8 +338,8 @@ Animations.Slash3 = {
 			{
 				Torso = rot(-6, -18),
 				Head = rot(5, 16),
-				RightArm = limb(80, 10, -20),
-				Sword = aim(-0.123, 0.577, 0.807),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
 				LeftArm = limb(10, 0, -14),
 				RightLeg = rot(0),
 				LeftLeg = rot(0),
@@ -334,8 +415,8 @@ Animations.Cleave = {
 			{
 				Torso = rot(-6, -18),
 				Head = rot(5, 16),
-				RightArm = limb(80, 10, -20),
-				Sword = aim(-0.123, 0.577, 0.807),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
 				LeftArm = limb(10, 0, -14),
 				RightLeg = rot(0),
 				LeftLeg = rot(0),
@@ -411,8 +492,8 @@ Animations.Rising = {
 			{
 				Torso = rot(-6, -18),
 				Head = rot(5, 16),
-				RightArm = limb(80, 10, -20),
-				Sword = aim(-0.123, 0.577, 0.807),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
 				LeftArm = limb(10, 0, -14),
 				RightLeg = rot(0),
 				LeftLeg = rot(0),
@@ -487,8 +568,8 @@ Animations.Chop = {
 			{
 				Torso = rot(-6, -18),
 				Head = rot(5, 16),
-				RightArm = limb(80, 10, -20),
-				Sword = aim(-0.123, 0.577, 0.807),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
 				LeftArm = limb(10, 0, -14),
 			},
 		},
@@ -740,8 +821,8 @@ Animations.Entrance = {
 			{
 				Torso = rot(-6, -18),
 				Head = rot(5, 16),
-				RightArm = limb(80, 10, -20),
-				Sword = aim(-0.123, 0.577, 0.807),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
 				LeftArm = limb(10, 0, -14),
 				RightLeg = rot(-6, 0, 9),
 				LeftLeg = rot(12, 0, -10),

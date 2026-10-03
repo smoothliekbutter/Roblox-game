@@ -41,8 +41,9 @@ def solve(pose):
     # Asta's sword: grip at the bottom of the arm; S rotates around the hand.
     sword = arm @ T(0,-1,0) @ pose.get('Sword', I) @ cf(Rx(radians(215)))
     hand = apply(arm, (0,-1,0))
-    base = apply(sword, (0,0.9,0))
-    tip = apply(sword, (0,5.6,0))
+    # Blade runs from just above the guard to the tip (see buildSword).
+    base = apply(sword, (0,0.7,0))
+    tip = apply(sword, (0,4.4,0))
     return dict(torso=torso, arm=arm, hand=hand, base=base, tip=tip,
                 head=apply(head,(0,0,0)), lfoot=apply(lleg,(0,-1,0)), rfoot=apply(rleg,(0,-1,0)),
                 lhand=apply(larm,(0,-1,0)))

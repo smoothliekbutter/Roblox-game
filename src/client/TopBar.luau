@@ -155,9 +155,8 @@ local function buildCard(parent: Instance, kit: Kits.KitInfo, order: number)
 		if not kit.playable then
 			return
 		end
-		if kit.id ~= selectedKit() then
-			Remotes.Action:FireServer("SelectKit", kit.id)
-		end
+		-- Picking the character you already are re-equips it (a refresh).
+		Remotes.Action:FireServer("SelectKit", kit.id)
 		setOpen(false)
 	end)
 end
