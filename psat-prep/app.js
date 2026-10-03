@@ -26,6 +26,18 @@
   const DIFFS = ["E", "M", "H"];
   const LETTERS = "ABCDEFGH".split("");
   const PAGE_SIZE = 25;
+  const svgIcon = (body) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+  const ICON = {
+    clock: svgIcon('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
+    calc: svgIcon('<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8.5 7h7M8.5 11h.01M12 11h.01M15.5 11h.01M8.5 14.5h.01M12 14.5h.01M15.5 14.5h.01M8.5 18h.01M12 18h.01M15.5 18h.01"/>'),
+    ref: svgIcon('<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 12h6M9 16h4"/>'),
+    flag: svgIcon('<path class="fillable" d="M6 4h11l-2.5 4L17 12H6z"/><path d="M6 21V4"/>'),
+    end: svgIcon('<path d="M10 5H5v14h5M14 8l4 4-4 4M18 12H9"/>'),
+  };
+  // Desmos graphing calculator: the npm copy of Desmos's API build, pinned to the
+  // exact file by hash. It runs entirely in the page (no calls to other sites).
+  const DESMOS_SRC = "https://cdn.jsdelivr.net/npm/desmos@1.5.4/index.js";
+  const DESMOS_SRI = "sha384-qy1mnLKKTuh7BwWSTEfLtdVbaz6f/XwADX2bWLveRqpiB0n9wQx9Yvmuw7nFfKd4";
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -632,8 +644,13 @@
       else a.removeAttribute("aria-current");
     });
     if (r !== "session") stopTimer();
+    const calcShown = r === "session" && !!state.prefs.calcOpen && QBYID.get(session.ids[session.idx]).section === "math";
+    view.classList.toggle("wide", calcShown);
     view.innerHTML = VIEWS[r]();
-    if (r === "session") startTimer();
+    if (r === "session") {
+      startTimer();
+      mountCalculator();
+    }
     if (r === "dashboard") wireChart();
     renderFooter();
   }
@@ -644,13 +661,9 @@
   // ---------------------------------------------------------------------------
   // Shared fragments
   // ---------------------------------------------------------------------------
-  function diffChip(d) {
-    const n = DIFFS.indexOf(d) + 1;
-    return `<span class="chip diff" title="Difficulty"><span class="diff-pips" aria-hidden="true">${[1, 2, 3].map((i) => `<i class="${i <= n ? "on" : ""}"></i>`).join("")}</span>${esc(DIFF_NAMES[d] || d || "Unrated")}</span>`;
-  }
   function levelChip(st) {
     const l = levelOf(st);
-    return `<span class="chip lvl-${l.key}"><span class="dot" aria-hidden="true"></span>${l.label}</span>`;
+    return `<span class="lvl lvl-${l.key}"><i aria-hidden="true"></i>${l.label}</span>`;
   }
   function meter(st) {
     const l = levelOf(st);
@@ -666,7 +679,7 @@
     let html = "";
     if (p) html += p.lastOk ? `<span class="chip ok">✓ Correct</span>` : `<span class="chip bad">✗ Missed</span>`;
     if (state.marked[id]) html += `<span class="chip flag">⚑ Marked</span>`;
-    return html || `<span class="chip">Not tried</span>`;
+    return html;
   }
   function snippet(q) {
     if (q._snip == null) {
@@ -717,7 +730,7 @@
       <div class="stat"><span class="label">Overall accuracy</span><span class="value num">${acc(o)}</span><span class="sub">${o.ok} correct</span></div>
       <div class="stat"><span class="label">Reading and Writing</span><span class="value num">${acc(stats.section.rw)}</span><span class="sub">${plural(stats.section.rw.n, "answer")}</span></div>
       <div class="stat"><span class="label">Math</span><span class="value num">${acc(stats.section.math)}</span><span class="sub">${plural(stats.section.math.n, "answer")}</span></div>
-      <div class="stat"><span class="label">Time per question</span><span class="value num">${avgT ? avgT + "<small> s</small>" : "–"}</span><span class="sub">Test pace: 71 s R&amp;W, 95 s Math</span></div>
+      <div class="stat"><span class="label">Time per question</span><span class="value num">${avgT ? avgT + "<small> s</small>" : "–"}</span><span class="sub">Pace: 71 s R&amp;W · 95 s Math</span></div>
     </div>`;
 
     const focus = focusList(stats).slice(0, 5);
@@ -743,10 +756,10 @@
       ${ins.length ? `<section class="panel"><h2>What your answers show</h2><ul class="insights">${ins.map((t) => `<li><span>${t}</span></li>`).join("")}</ul></section>` : ""}
       ${
         fresh.length
-          ? `<section class="panel"><div class="panel-head"><h2>Not tried yet</h2><p>${plural(fresh.length, "skill")}</p></div><div class="btn-row">${fresh
-              .slice(0, 12)
+          ? `<section class="panel"><div class="panel-head"><h2>Not tried yet</h2><p>${plural(fresh.length, "skill")}${fresh.length > 6 ? ", most tested first" : ""}</p></div><div class="btn-row">${fresh
+              .slice(0, 6)
               .map((sk) => `<button class="btn btn-secondary btn-sm" data-action="practice-skill" data-skill="${esc(sk.key)}">${esc(sk.name)}</button>`)
-              .join("")}</div></section>`
+              .join("")}${fresh.length > 6 ? `<span class="muted small">+${fresh.length - 6} more in the skill map</span>` : ""}</div></section>`
           : ""
       }
       <section class="panel"><div class="panel-head"><h2>Last 14 days</h2></div>${activityChart(stats)}</section>
@@ -791,7 +804,7 @@
                 return `<button class="skill-row" data-action="practice-skill" data-skill="${esc(sk.key)}" ${has ? "" : "disabled"} title="${has ? "Practice " + esc(sk.name) : "No questions loaded for this skill"}">
                   <span class="name">${esc(sk.name)}<span class="num">${st && st.n ? `${st.ok}/${st.n} correct` : has ? plural(sk.qids.length, "question") : "No questions loaded"}</span></span>
                   ${meter(st)}
-                  ${levelChip(st)}
+                  ${st && st.n ? levelChip(st) : "<span></span>"}
                 </button>`;
               })
               .join("")}</div>`;
@@ -950,7 +963,8 @@
   function questionBody(q, o) {
     // o: { locked, sel, spr, elim, result: { ok, given } | null, showAnswer }
     const split = q.section === "rw" && q.stimulus;
-    const meta = `<div class="q-meta"><span class="chip">${esc(q._dom.name)}</span><span class="chip">${esc(q._skill.name)}</span>${diffChip(q.difficulty)}<span class="chip num" title="Question ID">ID ${esc(q.id)}</span></div>`;
+    const pips = [1, 2, 3].map((i) => `<i class="${i <= DIFFS.indexOf(q.difficulty) + 1 ? "on" : ""}"></i>`).join("");
+    const meta = `<p class="q-meta"><span>${esc(q._dom.name)}</span><span>${esc(q._skill.name)}</span><span><span class="diff-pips" aria-hidden="true">${pips}</span> ${esc(DIFF_NAMES[q.difficulty] || "Unrated")}</span><span class="num" title="College Board question ID">#${esc(q.id)}</span></p>`;
     let answerArea;
     if (q.type === "spr") {
       const cls = o.showAnswer && o.result ? (o.result.ok ? "is-correct" : "is-wrong") : "";
@@ -1016,19 +1030,110 @@
         return `<i class="${c}"></i>`;
       })
       .join("");
-    return `<div class="q-shell">
-      <div class="q-bar">
-        <div class="q-progress"><span>Question ${s.idx + 1} <span class="of">of ${s.ids.length}</span></span>${s.ids.length <= 60 ? `<span class="q-dots" aria-hidden="true">${dots}</span>` : ""}</div>
-        <div class="q-tools">
-          <span class="timer num" id="timer" title="${s.timed ? "Time left at test pace" : "Time in this session"}">0:00</span>
-          <button class="btn btn-secondary btn-sm flag-btn" data-action="flag" data-id="${esc(q.id)}" aria-pressed="${!!state.marked[q.id]}">⚑ ${state.marked[q.id] ? "Marked" : "Mark for review"}</button>
-          ${q.section === "math" ? `<a class="btn btn-secondary btn-sm" href="https://www.desmos.com/calculator" target="_blank" rel="noopener">Calculator ↗</a><button class="btn btn-secondary btn-sm" data-action="open-ref">Reference</button>` : ""}
-          <button class="btn btn-ghost btn-sm" data-action="end-session">End</button>
+    const math = q.section === "math";
+    const calcOpen = math && !!state.prefs.calcOpen;
+    const hideTime = !!state.prefs.hideTimer;
+    const tools = [
+      `<button type="button" class="tool timer-tool" data-action="toggle-timer" title="${hideTime ? "Show timer" : "Hide timer"}" aria-label="${hideTime ? "Show timer" : "Hide timer"}">${ICON.clock}<span class="timer num" id="timer" ${hideTime ? "hidden" : ""}>0:00</span></button>`,
+      math ? tool("toggle-calc", ICON.calc, "Calculator", { pressed: calcOpen, title: calcOpen ? "Hide the Desmos calculator" : "Show the Desmos calculator" }) : "",
+      math ? tool("open-ref", ICON.ref, "Reference", { title: "Math reference sheet" }) : "",
+      q.type === "spr" ? "" : tool("toggle-crossout", `<span class="abc" aria-hidden="true">ABC</span>`, "Cross out", { pressed: !!state.prefs.crossOut, title: "Cross out answer choices" }),
+      tool("flag", ICON.flag, "Mark for review", { pressed: !!state.marked[q.id], cls: "flag-btn", data: `data-id="${esc(q.id)}"` }),
+      `<span class="tool-sep" aria-hidden="true"></span>`,
+      tool("end-session", ICON.end, "End", { title: "End this session and see results" }),
+    ].join("");
+    return `<div class="session${calcOpen ? " with-calc" : ""}">
+      ${calcOpen ? `<aside class="calc-dock" id="calc-slot" aria-label="Desmos graphing calculator"></aside>` : ""}
+      <div class="q-shell${state.prefs.crossOut ? " crossout-on" : ""}">
+        <div class="q-bar">
+          <div class="q-progress"><span class="q-count">Question ${s.idx + 1} <span class="of">of ${s.ids.length}</span></span>${s.ids.length <= 60 ? `<span class="q-dots" aria-hidden="true">${dots}</span>` : ""}</div>
+          <div class="q-tools">${tools}</div>
         </div>
+        <div class="q-body ${body.split ? "split" : ""}">${body.html.replace("__ACTIONS__", actions + (s.feedback === "end" && !answered ? `<p class="q-note">Test mode: explanations appear when you finish.</p>` : ""))}</div>
       </div>
-      <div class="q-body ${body.split ? "split" : ""}">${body.html.replace("__ACTIONS__", actions)}</div>
-    </div>
-    <p class="muted small">${esc(s.label)}${s.feedback === "end" ? " · Explanations appear when you finish" : ""}</p>`;
+    </div>`;
+  }
+  function tool(action, icon, label, o) {
+    o = o || {};
+    const pressed = o.pressed == null ? "" : ` aria-pressed="${o.pressed}"`;
+    return `<button type="button" class="tool${o.cls ? " " + o.cls : ""}" data-action="${action}"${pressed} ${o.data || ""} title="${esc(o.title || label)}" aria-label="${esc(label)}">${icon}<span class="tl">${esc(label)}</span></button>`;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Desmos calculator. One calculator lives for the whole visit; each render
+  // moves it into the new dock so its graphs and expressions carry over.
+  // ---------------------------------------------------------------------------
+  let desmosPromise = null;
+  let calc = null;
+  let calcHost = null;
+  function loadDesmos() {
+    if (window.Desmos) return Promise.resolve(window.Desmos);
+    if (!desmosPromise) {
+      desmosPromise = new Promise((resolve, reject) => {
+        const el = document.createElement("script");
+        el.src = DESMOS_SRC;
+        el.integrity = DESMOS_SRI;
+        el.crossOrigin = "anonymous";
+        el.async = true;
+        el.onload = () => (window.Desmos ? resolve(window.Desmos) : reject(new Error("Desmos missing")));
+        el.onerror = () => {
+          desmosPromise = null;
+          el.remove();
+          reject(new Error("Desmos failed to load"));
+        };
+        document.head.appendChild(el);
+      });
+    }
+    return desmosPromise;
+  }
+  function prefersDark() {
+    const t = document.documentElement.getAttribute("data-theme");
+    if (t) return t === "dark";
+    return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  }
+  function mountCalculator() {
+    const slot = document.getElementById("calc-slot");
+    if (!slot) return;
+    const attach = () => {
+      const target = document.getElementById("calc-slot");
+      if (!target || !calcHost) return;
+      target.textContent = "";
+      target.appendChild(calcHost);
+      try {
+        calc.updateSettings({ invertedColors: prefersDark() });
+      } catch (e) {
+        /* older builds lack this setting */
+      }
+      calc.resize();
+    };
+    if (calc) return attach();
+    slot.innerHTML = `<p class="calc-msg">Loading the Desmos calculator…</p>`;
+    loadDesmos()
+      .then((Desmos) => {
+        if (!calc) {
+          calcHost = document.createElement("div");
+          calcHost.className = "calc-host";
+          document.getElementById("calc-slot").appendChild(calcHost);
+          calc = Desmos.GraphingCalculator(calcHost, {
+            keypad: true,
+            expressions: true,
+            settingsMenu: true,
+            zoomButtons: true,
+            border: false,
+            links: false,
+            images: false,
+            folders: false,
+            notes: false,
+            pasteGraphLink: false,
+            invertedColors: prefersDark(),
+          });
+        }
+        attach();
+      })
+      .catch(() => {
+        const target = document.getElementById("calc-slot");
+        if (target) target.innerHTML = `<p class="calc-msg">The calculator didn't load. Check your internet connection and select Calculator again, or <a href="https://www.desmos.com/calculator" target="_blank" rel="noopener">open Desmos in a new tab</a>.</p>`;
+      });
   }
 
   function startTimer() {
@@ -1131,7 +1236,7 @@
     const body = questionBody(q, { locked: true, sel: q.type === "spr" ? null : given, spr: q.type === "spr" ? given : "", elim: {}, result, showAnswer: true });
     const back = viewer.from === "summary" ? `<a class="btn btn-secondary btn-sm" href="#summary">← Back to results</a>` : `<a class="btn btn-secondary btn-sm" href="#${esc(viewer.from)}">← Back</a>`;
     const actions = `<div class="q-actions"><button class="btn" data-action="retry-ids" data-ids="${esc(q.id)}">Try it again</button></div>`;
-    return `<div class="btn-row">${back}</div><div class="q-shell"><div class="q-bar"><div class="q-progress">Review</div><div class="q-tools"><button class="btn btn-secondary btn-sm flag-btn" data-action="flag" data-id="${esc(q.id)}" aria-pressed="${!!state.marked[q.id]}">⚑ ${state.marked[q.id] ? "Marked" : "Mark for review"}</button></div></div><div class="q-body ${body.split ? "split" : ""}">${body.html.replace("__ACTIONS__", actions)}</div></div>`;
+    return `<div class="btn-row">${back}</div><div class="q-shell"><div class="q-bar"><div class="q-progress">Review</div><div class="q-tools">${tool("flag", ICON.flag, "Mark for review", { pressed: !!state.marked[q.id], cls: "flag-btn", data: `data-id="${esc(q.id)}"` })}</div></div><div class="q-body ${body.split ? "split" : ""}">${body.html.replace("__ACTIONS__", actions)}</div></div>`;
   }
 
   // ---------------------------------------------------------------------------
@@ -1361,7 +1466,24 @@
       else state.marked[id] = 1;
       persist();
       el.setAttribute("aria-pressed", String(!!state.marked[id]));
-      el.textContent = "⚑ " + (state.marked[id] ? "Marked" : "Mark for review");
+    },
+    "toggle-calc"() {
+      setPref("calcOpen", !state.prefs.calcOpen);
+      render();
+    },
+    "toggle-crossout"(el) {
+      setPref("crossOut", !state.prefs.crossOut);
+      el.setAttribute("aria-pressed", String(!!state.prefs.crossOut));
+      const shell = el.closest(".q-shell");
+      if (shell) shell.classList.toggle("crossout-on", !!state.prefs.crossOut);
+    },
+    "toggle-timer"(el) {
+      setPref("hideTimer", !state.prefs.hideTimer);
+      const t = document.getElementById("timer");
+      if (t) t.hidden = !!state.prefs.hideTimer;
+      const label = state.prefs.hideTimer ? "Show timer" : "Hide timer";
+      el.title = label;
+      el.setAttribute("aria-label", label);
     },
     "open-ref"() {
       const d = document.getElementById("refsheet");

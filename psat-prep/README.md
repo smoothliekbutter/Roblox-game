@@ -41,7 +41,9 @@ If the download fails on a school network, College Board's site may be blocked t
 - **Question bank**: search and filter every question by section, domain, skill, difficulty, and your history.
 - **Review**: questions you missed or marked, your answer history, and export, import, or reset of your progress.
 
-The practice screen works like Bluebook: a split passage pane for Reading and Writing, choice elimination (cross-out), mark for review, a math reference sheet, and a link to the Desmos calculator. Keyboard: <kbd>A</kbd>–<kbd>D</kbd> to choose, <kbd>Enter</kbd> to check and go to the next question.
+The practice screen works like Bluebook: a split passage pane for Reading and Writing, a built-in Desmos graphing calculator beside every Math question, a math reference sheet, answer cross-out, mark for review, and a timer you can hide. The calculator keeps your graphs from one question to the next. Keyboard: <kbd>A</kbd>–<kbd>D</kbd> to choose, <kbd>Enter</kbd> to check and go to the next question.
+
+The calculator is Desmos's own code, loaded from the jsDelivr CDN (npm package `desmos@1.5.4`) and pinned by hash, so it needs an internet connection the first time you open it.
 
 ## How the analytics decide what you need to work on
 
