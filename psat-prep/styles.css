@@ -539,15 +539,52 @@ main.wide { max-width: 1480px; }
 .session.with-calc { grid-template-columns: minmax(380px, 5fr) minmax(0, 6fr); }
 .calc-dock {
   position: sticky; top: calc(env(safe-area-inset-top, 0px) + 72px);
-  height: min(700px, calc(100dvh - 96px)); min-height: 420px;
+  height: min(720px, calc(100dvh - 96px)); min-height: 440px;
   background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius);
   box-shadow: var(--shadow); overflow: hidden; display: flex;
 }
+.calc-dock.expanded {
+  position: fixed; z-index: 40; top: calc(env(safe-area-inset-top, 0px) + 64px); left: 16px; right: 16px; bottom: 16px;
+  height: auto; min-height: 0; box-shadow: 0 16px 48px rgba(10, 14, 20, 0.3);
+}
+body.calc-expanded { overflow: hidden; }
+.calc-page {
+  height: max(560px, calc(100dvh - 230px)); display: flex;
+  background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+}
+
+/* Desmos workspace: calculator tabs and file buttons above the calculator */
+.desmos { display: flex; flex-direction: column; width: 100%; min-width: 0; min-height: 0; }
+.desmos-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px 10px; flex-wrap: wrap;
+  padding: 6px 8px; border-bottom: 1px solid var(--rule); background: var(--sheet);
+}
+.desmos-tabs button { padding: 6px 10px; }
+.desmos-actions { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; }
+.desmos-dock .tl { display: none; }
+.calc-dock.expanded .desmos-dock .tl { display: inline; }
+.desmos-slot { flex: 1; min-height: 0; display: flex; }
 .calc-host { width: 100%; height: 100%; }
-.calc-msg { margin: auto; padding: 24px; max-width: 34ch; text-align: center; color: var(--ink-2); font-size: var(--step--1); }
+.calc-loading, .calc-fallback { margin: auto; padding: 24px; max-width: 42ch; text-align: center; color: var(--ink-2); font-size: var(--step--1); }
+.calc-fallback p + p { margin-top: 10px; }
+.calc-fallback a { margin: 0 4px; white-space: nowrap; }
+.desmos-msg { font-size: var(--step--1); color: var(--ink-2); padding: 6px 12px; border-top: 1px solid var(--rule); }
+.desmos-msg:empty { display: none; }
+label.tool { cursor: pointer; }
+.desmos-more { position: relative; }
+.desmos-more summary { list-style: none; }
+.desmos-more summary::-webkit-details-marker { display: none; }
+.desmos-menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 50; min-width: 200px;
+  display: flex; flex-direction: column; padding: 6px;
+  background: var(--sheet); border: 1px solid var(--rule-strong); border-radius: 10px; box-shadow: 0 10px 28px rgba(10, 14, 20, 0.18);
+}
+.desmos-menu p { font-size: var(--step--1); color: var(--ink-3); padding: 4px 8px; }
+.desmos-menu a { padding: 7px 8px; border-radius: 6px; text-decoration: none; color: var(--ink); font-weight: 600; }
+.desmos-menu a:hover { background: var(--paper); }
 @media (max-width: 960px) {
   .session.with-calc { grid-template-columns: minmax(0, 1fr); }
-  .calc-dock { position: static; order: 2; height: 460px; }
+  .calc-dock { position: static; order: 2; height: 540px; }
 }
 
 /* ---------- Phones ---------- */
@@ -555,7 +592,8 @@ main.wide { max-width: 1480px; }
   .topbar-inner { padding-block: 8px; gap: 4px 12px; }
   .tabs { flex-wrap: nowrap; overflow-x: auto; width: 100%; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
-  .tabs a { padding: 6px 8px; white-space: nowrap; font-size: 0.875rem; }
+  .tabs { gap: 0; }
+  .tabs a { padding: 6px 7px; white-space: nowrap; font-size: 0.8125rem; }
   .q-meta > span:first-child { display: none; }
   .tabs .long { display: none; }
   .tabs .short { display: inline; }

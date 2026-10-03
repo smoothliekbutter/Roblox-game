@@ -34,10 +34,11 @@
     flag: svgIcon('<path class="fillable" d="M6 4h11l-2.5 4L17 12H6z"/><path d="M6 21V4"/>'),
     end: svgIcon('<path d="M10 5H5v14h5M14 8l4 4-4 4M18 12H9"/>'),
   };
-  // Desmos graphing calculator: the npm copy of Desmos's API build, pinned to the
-  // exact file by hash. It runs entirely in the page (no calls to other sites).
-  const DESMOS_SRC = "https://cdn.jsdelivr.net/npm/desmos@1.5.4/index.js";
-  const DESMOS_SRI = "sha384-qy1mnLKKTuh7BwWSTEfLtdVbaz6f/XwADX2bWLveRqpiB0n9wQx9Yvmuw7nFfKd4";
+  // Desmos API v1.7, from the npm package that republishes Desmos's own build
+  // (desmos.com can't be loaded on every host). Pinned to the exact file by
+  // hash, and it runs entirely in the page with no calls to other sites.
+  const DESMOS_SRC = "https://cdn.jsdelivr.net/npm/desmosapi@1.7.0/calculator.js";
+  const DESMOS_SRI = "sha384-E+5Pm727VFuZJvJpSglLVjo6a0YNmhWj+lCm1/rKapmfa+b8QlXh/BNaxhcoSd5f";
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -623,7 +624,7 @@
   // ---------------------------------------------------------------------------
   // Router
   // ---------------------------------------------------------------------------
-  const ROUTES = ["dashboard", "practice", "bank", "review", "session", "summary", "question"];
+  const ROUTES = ["dashboard", "practice", "bank", "review", "calculator", "session", "summary", "question"];
   const TAB_FOR = { session: "practice", summary: "practice" };
   function route() {
     const h = location.hash.replace(/^#/, "");
@@ -644,13 +645,16 @@
       else a.removeAttribute("aria-current");
     });
     if (r !== "session") stopTimer();
-    const calcShown = r === "session" && !!state.prefs.calcOpen && QBYID.get(session.ids[session.idx]).section === "math";
-    view.classList.toggle("wide", calcShown);
-    view.innerHTML = VIEWS[r]();
-    if (r === "session") {
-      startTimer();
-      mountCalculator();
+    saveCalcState();
+    if (calcExpanded && r !== "session") {
+      calcExpanded = false;
+      document.body.classList.remove("calc-expanded");
     }
+    const calcShown = r === "session" && !!state.prefs.calcOpen && QBYID.get(session.ids[session.idx]).section === "math";
+    view.classList.toggle("wide", calcShown || r === "calculator");
+    view.innerHTML = VIEWS[r]();
+    if (r === "session") startTimer();
+    if (r === "session" || r === "calculator") mountCalculator();
     if (r === "dashboard") wireChart();
     renderFooter();
   }
@@ -1043,7 +1047,7 @@
       tool("end-session", ICON.end, "End", { title: "End this session and see results" }),
     ].join("");
     return `<div class="session${calcOpen ? " with-calc" : ""}">
-      ${calcOpen ? `<aside class="calc-dock" id="calc-slot" aria-label="Desmos graphing calculator"></aside>` : ""}
+      ${calcOpen ? `<aside class="calc-dock${calcExpanded ? " expanded" : ""}" aria-label="Desmos calculator">${workspaceHtml("dock")}</aside>` : ""}
       <div class="q-shell${state.prefs.crossOut ? " crossout-on" : ""}">
         <div class="q-bar">
           <div class="q-progress"><span class="q-count">Question ${s.idx + 1} <span class="of">of ${s.ids.length}</span></span>${s.ids.length <= 60 ? `<span class="q-dots" aria-hidden="true">${dots}</span>` : ""}</div>
@@ -1060,12 +1064,75 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Desmos calculator. One calculator lives for the whole visit; each render
-  // moves it into the new dock so its graphs and expressions carry over.
+  // Desmos. Graphing, scientific, and four-function calculators with every
+  // option turned on. Each calculator is created once per visit and moved into
+  // whichever panel is showing, so its work carries over between questions; its
+  // state is also saved in this browser so it survives a reload.
   // ---------------------------------------------------------------------------
+  const CALC_TYPES = {
+    graphing: {
+      label: "Graphing",
+      ctor: "GraphingCalculator",
+      options: {
+        keypad: true, graphpaper: true, expressions: true, settingsMenu: true, zoomButtons: true, showResetButtonOnGraphpaper: true,
+        expressionsTopbar: true, pointsOfInterest: true, trace: true, border: false, images: true, folders: true, notes: true,
+        sliders: true, links: true, qwertyKeyboard: true, distributions: true, pasteTableData: true, pasteGraphLink: true,
+        plotInequalities: true, plotImplicits: true, plotSingleVariableImplicitEquations: true, forceEnableGeometryFunctions: true,
+        actions: true, authorFeatures: true, customRegressions: true, brailleControls: true, zoomFit: true,
+      },
+    },
+    scientific: { label: "Scientific", ctor: "ScientificCalculator", options: { settingsMenu: true, qwertyKeyboard: true, functionDefinition: true, brailleControls: true } },
+    fourfunction: { label: "Four-function", ctor: "FourFunctionCalculator", options: { settingsMenu: true, additionalFunctions: ["exponent", "sqrt"] } },
+  };
+  // Desmos tools that only exist on desmos.com (no embeddable build has them).
+  const DESMOS_ONLINE = [
+    ["Geometry", "https://www.desmos.com/geometry"],
+    ["3D", "https://www.desmos.com/3d"],
+    ["Matrix", "https://www.desmos.com/matrix"],
+    ["Help center", "https://help.desmos.com/hc/en-us"],
+  ];
+  const CALC_KEY = "psat-prep:desmos:";
+  const calcs = {}; // type -> { calc, host }
   let desmosPromise = null;
-  let calc = null;
-  let calcHost = null;
+  let calcExpanded = false;
+  let calcMessage = "";
+  const calcType = () => (CALC_TYPES[state.prefs.calcType] ? state.prefs.calcType : "graphing");
+  const ICON_DESMOS = {
+    blank: svgIcon('<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M12 11v6M9 14h6"/>'),
+    open: svgIcon('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+    save: svgIcon('<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/>'),
+    image: svgIcon('<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4 17 5-4.5 3.5 3 3-2.5 4.5 4"/>'),
+    expand: svgIcon('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'),
+    collapse: svgIcon('<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>'),
+    out: svgIcon('<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>'),
+  };
+
+  function workspaceHtml(mode) {
+    const type = calcType();
+    const tabs = Object.entries(CALC_TYPES)
+      .map(([k, t]) => `<button type="button" data-action="calc-type" data-type="${k}" aria-pressed="${k === type}">${t.label}</button>`)
+      .join("");
+    const act = (action, icon, label, extra) => `<button type="button" class="tool" data-action="${action}" title="${esc(label)}" aria-label="${esc(label)}" ${extra || ""}>${icon}<span class="tl">${esc(label)}</span></button>`;
+    return `<div class="desmos desmos-${mode}" id="desmos-ws">
+      <div class="desmos-bar">
+        <div class="seg desmos-tabs" role="group" aria-label="Calculator type">${tabs}</div>
+        <div class="desmos-actions">
+          ${act("calc-blank", ICON_DESMOS.blank, "New")}
+          <label class="tool" for="calc-open-file" title="Open a saved calculator file">${ICON_DESMOS.open}<span class="tl">Open</span></label>
+          <input type="file" id="calc-open-file" accept=".json,application/json" data-change="calc-open" hidden>
+          ${act("calc-save", ICON_DESMOS.save, "Save")}
+          ${type === "graphing" ? act("calc-image", ICON_DESMOS.image, "Image") : ""}
+          ${mode === "dock" ? act("calc-expand", calcExpanded ? ICON_DESMOS.collapse : ICON_DESMOS.expand, calcExpanded ? "Shrink" : "Expand", `aria-pressed="${calcExpanded}"`) : ""}
+          <details class="desmos-more"><summary class="tool" title="More Desmos tools">${ICON_DESMOS.out}<span class="tl">More</span></summary>
+            <div class="desmos-menu"><p>Open on desmos.com:</p>${DESMOS_ONLINE.map(([n, u]) => `<a href="${u}" target="_blank" rel="noopener">${n} ↗</a>`).join("")}</div>
+          </details>
+        </div>
+      </div>
+      <div class="desmos-slot" id="calc-slot"></div>
+      <p class="desmos-msg" id="calc-msg" role="status">${esc(calcMessage)}</p>
+    </div>`;
+  }
+
   function loadDesmos() {
     if (window.Desmos) return Promise.resolve(window.Desmos);
     if (!desmosPromise) {
@@ -1074,66 +1141,217 @@
         el.src = DESMOS_SRC;
         el.integrity = DESMOS_SRI;
         el.crossOrigin = "anonymous";
+        el.charset = "utf-8";
         el.async = true;
-        el.onload = () => (window.Desmos ? resolve(window.Desmos) : reject(new Error("Desmos missing")));
+        el.onload = () => (window.Desmos ? resolve(window.Desmos) : reject(new Error("missing")));
         el.onerror = () => {
           desmosPromise = null;
           el.remove();
-          reject(new Error("Desmos failed to load"));
+          reject(new Error("network"));
         };
         document.head.appendChild(el);
       });
     }
     return desmosPromise;
   }
+  // Desmos turns each equation into JavaScript at runtime. Some pages forbid
+  // that; detect it so we can say so instead of showing a calculator that
+  // never draws anything.
+  function canCompile() {
+    try {
+      return new Function("return 2")() === 2;
+    } catch (e) {
+      return false;
+    }
+  }
   function prefersDark() {
     const t = document.documentElement.getAttribute("data-theme");
     if (t) return t === "dark";
     return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
   }
+  function setCalcMessage(text) {
+    calcMessage = text || "";
+    const el = document.getElementById("calc-msg");
+    if (el) el.textContent = calcMessage;
+  }
+  function saveCalcState(type) {
+    const types = type ? [type] : Object.keys(calcs);
+    for (const t of types) {
+      const c = calcs[t];
+      if (!c) continue;
+      try {
+        localStorage.setItem(CALC_KEY + t, JSON.stringify(c.calc.getState()));
+      } catch (e) {
+        /* storage blocked or full (large images): keep working without saving */
+      }
+    }
+  }
+  function createCalc(Desmos, type, slot) {
+    const spec = CALC_TYPES[type];
+    const host = document.createElement("div");
+    host.className = "calc-host";
+    slot.appendChild(host);
+    const calc = Desmos[spec.ctor](host, Object.assign({ invertedColors: prefersDark() }, spec.options));
+    try {
+      const saved = localStorage.getItem(CALC_KEY + type);
+      if (saved) calc.setState(JSON.parse(saved));
+    } catch (e) {
+      /* no saved state, or it no longer loads */
+    }
+    let t = null;
+    try {
+      calc.observeEvent("change", () => {
+        clearTimeout(t);
+        t = setTimeout(() => saveCalcState(type), 800);
+      });
+    } catch (e) {
+      /* this calculator type doesn't report changes; state saves on switch and on leave */
+    }
+    calcs[type] = { calc, host };
+    return calcs[type];
+  }
   function mountCalculator() {
     const slot = document.getElementById("calc-slot");
     if (!slot) return;
+    const type = calcType();
     const attach = () => {
       const target = document.getElementById("calc-slot");
-      if (!target || !calcHost) return;
-      target.textContent = "";
-      target.appendChild(calcHost);
-      try {
-        calc.updateSettings({ invertedColors: prefersDark() });
-      } catch (e) {
-        /* older builds lack this setting */
+      if (!target) return;
+      const c = calcs[type];
+      if (c.host.parentNode !== target) {
+        target.textContent = "";
+        target.appendChild(c.host);
       }
-      calc.resize();
+      try {
+        c.calc.updateSettings({ invertedColors: prefersDark() });
+      } catch (e) {
+        /* setting not supported by this calculator type */
+      }
+      c.calc.resize();
     };
-    if (calc) return attach();
-    slot.innerHTML = `<p class="calc-msg">Loading the Desmos calculator…</p>`;
+    if (calcs[type]) return attach();
+    if (!canCompile()) {
+      slot.innerHTML = `<div class="calc-fallback"><p>This page's security settings block the part of Desmos that does the math, so the calculator can't run here.</p><p>Open it on desmos.com instead: <a href="https://www.desmos.com/calculator" target="_blank" rel="noopener">Graphing ↗</a> <a href="https://www.desmos.com/scientific" target="_blank" rel="noopener">Scientific ↗</a> <a href="https://www.desmos.com/fourfunction" target="_blank" rel="noopener">Four-function ↗</a></p></div>`;
+      return;
+    }
+    slot.innerHTML = `<p class="calc-loading">Loading Desmos…</p>`;
     loadDesmos()
       .then((Desmos) => {
-        if (!calc) {
-          calcHost = document.createElement("div");
-          calcHost.className = "calc-host";
-          document.getElementById("calc-slot").appendChild(calcHost);
-          calc = Desmos.GraphingCalculator(calcHost, {
-            keypad: true,
-            expressions: true,
-            settingsMenu: true,
-            zoomButtons: true,
-            border: false,
-            links: false,
-            images: false,
-            folders: false,
-            notes: false,
-            pasteGraphLink: false,
-            invertedColors: prefersDark(),
-          });
+        const target = document.getElementById("calc-slot");
+        if (!target || calcType() !== type) return;
+        if (!calcs[type]) {
+          target.textContent = "";
+          createCalc(Desmos, type, target);
         }
         attach();
       })
       .catch(() => {
         const target = document.getElementById("calc-slot");
-        if (target) target.innerHTML = `<p class="calc-msg">The calculator didn't load. Check your internet connection and select Calculator again, or <a href="https://www.desmos.com/calculator" target="_blank" rel="noopener">open Desmos in a new tab</a>.</p>`;
+        if (target) target.innerHTML = `<div class="calc-fallback"><p>Desmos didn't load. Check your internet connection and try again, or <a href="https://www.desmos.com/calculator" target="_blank" rel="noopener">open Desmos on desmos.com ↗</a>.</p></div>`;
       });
+  }
+  // Re-draws just the calculator panel (tabs, buttons, slot) without touching
+  // the question next to it.
+  function refreshWorkspace() {
+    const ws = document.getElementById("desmos-ws");
+    if (!ws) return;
+    const mode = ws.classList.contains("desmos-dock") ? "dock" : "page";
+    ws.outerHTML = workspaceHtml(mode);
+    mountCalculator();
+  }
+  function setExpanded(on) {
+    calcExpanded = on;
+    const dock = document.querySelector(".calc-dock");
+    if (dock) dock.classList.toggle("expanded", on);
+    document.body.classList.toggle("calc-expanded", on);
+    refreshWorkspace();
+  }
+
+  // Hands a file to the viewer: through the artifact's save prompt when the
+  // page runs on claude.ai, otherwise as a normal browser download.
+  async function offerFile(filename, blob) {
+    const c = window.claude;
+    if (c && typeof c.use === "function") {
+      const dl = await c.use("downloads");
+      if (!dl) throw { code: "unavailable" };
+      return dl.save({ filename, data: blob });
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      URL.revokeObjectURL(a.href);
+      a.remove();
+    }, 1000);
+  }
+  function saveErrorText(err) {
+    const code = err && err.code;
+    if (code === "declined") return "";
+    if (code === "rate_limited") return "A save prompt is already open. Finish that one first.";
+    if (code === "unavailable" || code === "not_granted") return "Saving files isn't available in this view.";
+    return "Couldn't save the file.";
+  }
+  async function saveCalcFile() {
+    const type = calcType();
+    const c = calcs[type];
+    if (!c) return;
+    const body = JSON.stringify({ app: "psat-prep", desmos: type, savedAt: new Date().toISOString(), state: c.calc.getState() });
+    try {
+      await offerFile(`desmos-${type}-${dayKey(Date.now())}.json`, new Blob([body], { type: "application/json" }));
+      setCalcMessage("");
+    } catch (err) {
+      setCalcMessage(saveErrorText(err));
+    }
+  }
+  function saveCalcImage() {
+    const c = calcs.graphing;
+    if (!c || calcType() !== "graphing") return;
+    setCalcMessage("Making the image…");
+    c.calc.asyncScreenshot({ width: 900, height: 600, targetPixelRatio: 2, showLabels: true, format: "png" }, async (uri) => {
+      try {
+        const blob = await (await fetch(uri)).blob();
+        await offerFile(`desmos-graph-${dayKey(Date.now())}.png`, blob);
+        setCalcMessage("");
+      } catch (err) {
+        setCalcMessage(saveErrorText(err));
+      }
+    });
+  }
+  function openCalcFile(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        const state = data && data.state ? data.state : data;
+        const type = data && CALC_TYPES[data.desmos] ? data.desmos : calcType();
+        const apply = () => {
+          const c = calcs[type];
+          if (!c) return setTimeout(apply, 200);
+          c.calc.setState(state);
+          saveCalcState(type);
+          setCalcMessage(`Opened ${file.name}.`);
+        };
+        if (type !== calcType()) {
+          setPref("calcType", type);
+          refreshWorkspace();
+        }
+        apply();
+      } catch (err) {
+        setCalcMessage("That file isn't a saved Desmos calculator. Choose a .json file saved from here.");
+      }
+    };
+    reader.readAsText(file);
+  }
+  window.addEventListener("pagehide", () => saveCalcState());
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && calcExpanded) setExpanded(false);
+  });
+
+  function viewCalculator() {
+    return `<div class="page-head"><div><h1>Desmos calculator</h1><p class="lede">The same Desmos calculators you get on the digital PSAT, with every tool turned on: tables, sliders, regressions, statistics, folders, notes, and images. Your work saves in this browser. Use Save to keep a copy as a file.</p></div></div>
+    <div class="calc-page">${workspaceHtml("page")}</div>`;
   }
 
   function startTimer() {
@@ -1334,10 +1552,9 @@
           : `<div class="empty">${tab === "missed" ? "Nothing here yet. Questions you get wrong show up here." : "Use “Mark for review” on any question to save it here."}</div>`
       }</section>`;
     }
-    const inArtifact = !!(window.claude && typeof window.claude.use === "function");
     html += `<section class="panel"><h2>Your data</h2><p class="muted" style="margin-top:6px">${
       cloud.on ? "Your progress is saved to your account and in this browser." : "Your progress is saved in this browser. Export it to move it to another device."
-    }</p><div class="btn-row" style="margin-top:14px">${inArtifact ? "" : `<button class="btn btn-secondary btn-sm" data-action="export">Export progress</button>`}<label class="btn btn-secondary btn-sm" for="import-file">Import progress</label><input type="file" id="import-file" accept="application/json,.json" data-change="import" hidden>${
+    }</p><div class="btn-row" style="margin-top:14px"><button class="btn btn-secondary btn-sm" data-action="export">Export progress</button><label class="btn btn-secondary btn-sm" for="import-file">Import progress</label><input type="file" id="import-file" accept="application/json,.json" data-change="import" hidden>${
       resetArmed
         ? `<span class="small">Delete all ${plural(state.attempts.length, "answer")}? This can't be undone.</span><button class="btn btn-sm" data-action="reset-confirm" style="background:var(--bad);color:#fff">Delete everything</button><button class="btn btn-ghost btn-sm" data-action="reset-cancel">Cancel</button>`
         : `<button class="btn btn-ghost btn-sm" data-action="reset">Reset progress…</button>`
@@ -1356,7 +1573,7 @@
     }
   }
 
-  const VIEWS = { dashboard: viewDashboard, practice: viewPractice, bank: viewBank, review: viewReview, session: viewSession, summary: viewSummary, question: viewQuestion };
+  const VIEWS = { dashboard: viewDashboard, practice: viewPractice, bank: viewBank, review: viewReview, calculator: viewCalculator, session: viewSession, summary: viewSummary, question: viewQuestion };
 
   // ---------------------------------------------------------------------------
   // Events
@@ -1469,7 +1686,33 @@
     },
     "toggle-calc"() {
       setPref("calcOpen", !state.prefs.calcOpen);
+      if (!state.prefs.calcOpen) {
+        calcExpanded = false;
+        document.body.classList.remove("calc-expanded");
+      }
       render();
+    },
+    "calc-type"(el) {
+      saveCalcState();
+      setPref("calcType", el.dataset.type);
+      setCalcMessage("");
+      refreshWorkspace();
+    },
+    "calc-blank"() {
+      const c = calcs[calcType()];
+      if (!c) return;
+      c.calc.setBlank();
+      saveCalcState(calcType());
+      setCalcMessage("Started a blank calculator. Use the undo arrow in Desmos to get your work back.");
+    },
+    "calc-save"() {
+      saveCalcFile();
+    },
+    "calc-image"() {
+      saveCalcImage();
+    },
+    "calc-expand"() {
+      setExpanded(!calcExpanded);
     },
     "toggle-crossout"(el) {
       setPref("crossOut", !state.prefs.crossOut);
@@ -1520,17 +1763,14 @@
       render();
       scrollTop();
     },
-    export() {
+    async export() {
       const blob = new Blob([JSON.stringify({ app: "psat-prep", version: 1, exportedAt: new Date().toISOString(), attempts: state.attempts, marked: state.marked }, null, 1)], { type: "application/json" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "psat-prep-progress-" + dayKey(Date.now()) + ".json";
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        URL.revokeObjectURL(a.href);
-        a.remove();
-      }, 1000);
+      const msg = document.getElementById("data-msg");
+      try {
+        await offerFile("psat-prep-progress-" + dayKey(Date.now()) + ".json", blob);
+      } catch (err) {
+        if (msg) msg.textContent = saveErrorText(err);
+      }
     },
     reset() {
       resetArmed = true;
@@ -1603,6 +1843,9 @@
       if (pv) pv.innerHTML = sprPreview(cleaned);
       const b = document.getElementById("check-btn");
       if (b) b.disabled = !cleanAns(cleaned);
+    } else if (kind === "calc-open" && el.files && el.files[0]) {
+      openCalcFile(el.files[0]);
+      el.value = "";
     } else if (kind === "import" && el.files && el.files[0]) {
       const reader = new FileReader();
       reader.onload = () => {
@@ -1642,6 +1885,8 @@
 
   document.addEventListener("keydown", (e) => {
     if (route() !== "session" || !session || e.metaKey || e.ctrlKey || e.altKey) return;
+    // Typing in Desmos (or its menus) must never answer the question.
+    if (e.target && e.target.closest && e.target.closest(".desmos")) return;
     const q = QBYID.get(session.ids[session.idx]);
     const answered = !!session.results[q.id];
     const inInput = e.target && (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.target.tagName === "TEXTAREA");

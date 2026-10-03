@@ -41,9 +41,22 @@ If the download fails on a school network, College Board's site may be blocked t
 - **Question bank**: search and filter every question by section, domain, skill, difficulty, and your history.
 - **Review**: questions you missed or marked, your answer history, and export, import, or reset of your progress.
 
-The practice screen works like Bluebook: a split passage pane for Reading and Writing, a built-in Desmos graphing calculator beside every Math question, a math reference sheet, answer cross-out, mark for review, and a timer you can hide. The calculator keeps your graphs from one question to the next. Keyboard: <kbd>A</kbd>–<kbd>D</kbd> to choose, <kbd>Enter</kbd> to check and go to the next question.
+The practice screen works like Bluebook: a split passage pane for Reading and Writing, a Desmos calculator beside every Math question, a math reference sheet, answer cross-out, mark for review, and a timer you can hide. Keyboard: <kbd>A</kbd>–<kbd>D</kbd> to choose, <kbd>Enter</kbd> to check and go to the next question.
 
-The calculator is Desmos's own code, loaded from the jsDelivr CDN (npm package `desmos@1.5.4`) and pinned by hash, so it needs an internet connection the first time you open it.
+### Desmos
+
+The **Calculator** tab, and the calculator panel on Math questions, have everything Desmos's embeddable calculators offer:
+
+- **Graphing**, **Scientific**, and **Four-function** calculators, switchable with tabs
+- Every graphing feature turned on: tables, sliders, regressions (including custom ones), statistics and distributions, inequalities, points of interest and tracing, folders, notes, images, actions, the full keyboard and function menus, and the settings menu (degrees or radians, grid, axes, projector mode, braille)
+- **New**, **Open**, and **Save** for calculator files (.json), and **Image** to save the graph as a PNG
+- **Expand** to fill the screen during practice (<kbd>Esc</kbd> shrinks it again)
+- Your work stays as you move between questions and saves in your browser, so it's still there after a reload
+- Desmos colors switch to dark mode with the rest of the site
+
+Desmos **Geometry**, **3D**, and **Matrix** only run on desmos.com, so the **More** menu links to them.
+
+The calculators are Desmos API v1.7, loaded from the jsDelivr CDN (npm package `desmosapi@1.7.0`, a republished copy of Desmos's own build) and pinned by hash, so the page won't run the file if it ever changes. They need an internet connection the first time.
 
 ## How the analytics decide what you need to work on
 
