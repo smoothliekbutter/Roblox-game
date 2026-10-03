@@ -72,13 +72,20 @@ local CombatState = {}
 
 local DEFAULTS = {
 	StunUntil = 0,
-	BusyUntil = 0,
+	BusyUntil = 0, -- swinging: slowed, can't jump
+	CastUntil = 0, -- using a skill: locked out of everything else
 	IFrameUntil = 0,
 	Blocking = false,
 	BlockStart = 0,
 	Ragdolled = false,
 	Evasive = 0,
+	Awakening = 0, -- meter, 0 to Config.Awakening.Max
+	Awakened = false,
 }
+
+-- Skill slots 1-4. "CD<n>" is the server time the skill is ready again,
+-- "CDLen<n>" how long that cooldown was (for drawing the HUD sweep).
+CombatState.SkillSlots = 4
 
 local function now(): number
 	return workspace:GetServerTimeNow()
@@ -88,6 +95,14 @@ CombatState.Now = now
 function CombatState.Setup(character: Model)
 	for name, value in DEFAULTS do
 		character:SetAttribute(name, value)
+	end
+	CombatState.ResetCooldowns(character)
+end
+
+function CombatState.ResetCooldowns(character: Model)
+	for slot = 1, CombatState.SkillSlots do
+		character:SetAttribute("CD" .. slot, 0)
+		character:SetAttribute("CDLen" .. slot, 1)
 	end
 end
 
@@ -107,6 +122,21 @@ function CombatState.IsBusy(character: Model): boolean
 	return (tonumber(character:GetAttribute("BusyUntil")) or 0) > now()
 end
 
+function CombatState.IsCasting(character: Model): boolean
+	return (tonumber(character:GetAttribute("CastUntil")) or 0) > now()
+end
+
+function CombatState.IsAwakened(character: Model): boolean
+	return character:GetAttribute("Awakened") == true
+end
+
+-- Seconds left on a skill's cooldown, and the cooldown's full length.
+function CombatState.Cooldown(character: Model, slot: number): (number, number)
+	local readyAt = tonumber(character:GetAttribute("CD" .. slot)) or 0
+	local length = tonumber(character:GetAttribute("CDLen" .. slot)) or 1
+	return math.max(readyAt - now(), 0), length
+end
+
 function CombatState.IsRagdolled(character: Model): boolean
 	return character:GetAttribute("Ragdolled") == true
 end
@@ -119,7 +149,8 @@ function CombatState.HasIFrames(character: Model): boolean
 	return (tonumber(character:GetAttribute("IFrameUntil")) or 0) > now()
 end
 
--- Alive, not stunned and not ragdolled. Busy (mid-swing) is checked separately.
+-- Alive, not stunned and not ragdolled. Busy (mid-swing) and casting are
+-- checked separately.
 function CombatState.CanAct(character: Model): boolean
 	return CombatState.IsAlive(character)
 		and not CombatState.IsStunned(character)
@@ -135,6 +166,19 @@ end
 
 function CombatState.ClearStun(character: Model)
 	character:SetAttribute("StunUntil", 0)
+end
+
+function CombatState.SetCasting(character: Model, duration: number)
+	character:SetAttribute("CastUntil", now() + duration)
+end
+
+function CombatState.ClearCasting(character: Model)
+	character:SetAttribute("CastUntil", 0)
+end
+
+function CombatState.StartCooldown(character: Model, slot: number, duration: number)
+	character:SetAttribute("CD" .. slot, now() + duration)
+	character:SetAttribute("CDLen" .. slot, math.max(duration, 0.01))
 end
 
 function CombatState.SetBusy(character: Model, duration: number)
@@ -178,6 +222,7 @@ Config.Movement = {
 	AttackingSpeed = 10,
 	BlockingSpeed = 7,
 	StunnedSpeed = 3,
+	CastingSpeed = 5,
 }
 
 Config.M1 = {
@@ -231,6 +276,16 @@ Config.Dash = {
 		Right = 70,
 	},
 }
+
+-- Awakening: fills by dealing (and a bit by taking) damage. G when full.
+Config.Awakening = {
+	Max = 100,
+	GainPerDamageDealt = 3,
+	GainPerDamageTaken = 1.2,
+}
+
+-- Switching characters is blocked this long after dealing or taking damage.
+Config.KitSwitchCombatLock = 5
 
 Config.Ragdoll = {
 	Duration = 1.5,
@@ -309,21 +364,155 @@ return Impulse
       </Item>
       <Item class="ModuleScript" referent="10">
         <Properties>
+          <string name="Name">Kits</string>
+          <string name="Source"><![CDATA[--[[
+	Kits
+	The character roster. Everything both sides need to know about a
+	character lives here: name, colors, M1 tuning, skills (name, cooldown,
+	attack type) and awakening. The server logic for each kit is in
+	ServerScriptService.Server.Kits, the animations and VFX in
+	StarterPlayerScripts.Client.Kits.
+
+	Attack types decide which counters work against what:
+	  Melee | Bolt | Explosion | Swarm | Zone
+]]
+
+export type SkillInfo = {
+	name: string,
+	cooldown: number,
+	type: string,
+}
+
+export type KitInfo = {
+	id: string,
+	title: string, -- shown in the character picker
+	description: string,
+	color: Color3,
+	playable: boolean,
+	-- Overrides for Config.M1 (hitbox, damage, ...). Missing keys use Config.M1.
+	m1: { [string]: any },
+	skills: { SkillInfo },
+	-- Awakening swaps the move set (like Vessel -> Sukuna, Hero Hunter -> Rampage).
+	awakenedSkills: { SkillInfo }?,
+	awakening: {
+		name: string,
+		duration: number,
+		damageMultiplier: number,
+		cooldownMultiplier: number,
+		speedBonus: number,
+	}?,
+}
+
+local Kits = {}
+
+Kits.Default = "AntiMagic"
+
+-- Picker order.
+Kits.Order = { "AntiMagic", "Wind", "Water", "Dark", "Flame", "Lightning" }
+
+local function comingSoon(id: string, title: string, description: string, color: Color3): KitInfo
+	return {
+		id = id,
+		title = title,
+		description = description,
+		color = color,
+		playable = false,
+		m1 = {},
+		skills = {},
+	}
+end
+
+Kits.List = {
+	AntiMagic = {
+		id = "AntiMagic",
+		title = "Anti-Magic Knight",
+		description = "No magic at all. A demon-slaying greatsword that cuts through every spell.",
+		color = Color3.fromRGB(205, 35, 45),
+		playable = true,
+		m1 = {
+			-- The greatsword reaches further than fists.
+			HitboxSize = Vector3.new(7, 6, 7),
+			HitboxOffset = 3.75,
+			Damage = 4,
+			FinisherDamage = 6,
+		},
+		-- Close-range rushdown, built like Vessel (JJS) / Hero Hunter (TSB):
+		-- rush combo, grab, timing-crit heavy, counter.
+		skills = {
+			{ name = "Bull Thrust", cooldown = 8, type = "Melee" },
+			{ name = "Black Meteorite", cooldown = 12, type = "Melee" },
+			{ name = "Black Divider", cooldown = 10, type = "Melee" },
+			{ name = "Anti-Magic Deflect", cooldown = 15, type = "Counter" },
+		},
+		awakenedSkills = {
+			{ name = "Black Hurricane", cooldown = 9, type = "Melee" },
+			{ name = "Black Slash", cooldown = 7, type = "Bolt" },
+			{ name = "Grand Divider", cooldown = 12, type = "Explosion" },
+			{ name = "Demon-Destroyer", cooldown = 25, type = "Melee" },
+		},
+		awakening = {
+			name = "Black Form",
+			duration = 40,
+			damageMultiplier = 1.25,
+			cooldownMultiplier = 0.85,
+			speedBonus = 6,
+		},
+	} :: KitInfo,
+
+	Wind = comingSoon("Wind", "Wind Prodigy", "Spirit-blessed wind magic.", Color3.fromRGB(90, 220, 150)),
+	Water = comingSoon("Water", "Water Princess", "Royal water magic.", Color3.fromRGB(80, 160, 255)),
+	Dark = comingSoon("Dark", "Dark Captain", "Dark magic that slices space.", Color3.fromRGB(120, 70, 190)),
+	Flame = comingSoon("Flame", "Flame Lioness", "Overwhelming flame magic.", Color3.fromRGB(255, 120, 40)),
+	Lightning = comingSoon("Lightning", "Battle Maniac", "Lightning-fast magic.", Color3.fromRGB(255, 225, 70)),
+} :: { [string]: KitInfo }
+
+function Kits.Get(id: string?): KitInfo?
+	if id == nil then
+		return nil
+	end
+	return Kits.List[id]
+end
+
+-- The move list a character has right now (awakened moves while awakened).
+function Kits.SkillsOf(character: Model): { SkillInfo }
+	local kit = Kits.Of(character)
+	if not kit then
+		return {}
+	end
+	if character:GetAttribute("Awakened") == true and kit.awakenedSkills then
+		return kit.awakenedSkills
+	end
+	return kit.skills
+end
+
+-- The kit a character is using (nil for kit-less NPCs like the dummies).
+function Kits.Of(character: Model): KitInfo?
+	return Kits.Get(character:GetAttribute("Kit") :: string?)
+end
+
+return Kits
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="11">
+        <Properties>
           <string name="Name">Remotes</string>
           <string name="Source"><![CDATA[--[[
 	Remotes
 	The server creates every RemoteEvent; clients wait for them.
 
 	Action       client -> server   ("M1", {jump}) | ("Block", bool) | ("Dash", dir) | ("Evasive")
+	                                | ("Skill", slot) | ("Awaken") | ("SelectKit", kitId)
 	VFX          server -> clients  (effectName, data)
 	CameraShake  server -> client   (intensity 0-1)
 	Impulse      server -> client   (velocity, duration) applied to your own character
+	Notify       server -> client   (text, color?) toast message
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local NAMES = { "Action", "VFX", "CameraShake", "Impulse" }
+local NAMES = { "Action", "VFX", "CameraShake", "Impulse", "Notify" }
 
 local Remotes: { [string]: RemoteEvent } = {}
 
@@ -356,11 +545,11 @@ return Remotes
       </Item>
     </Item>
   </Item>
-  <Item class="ServerScriptService" referent="11">
+  <Item class="ServerScriptService" referent="12">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Script" referent="12">
+    <Item class="Script" referent="13">
       <Properties>
         <string name="Name">Server</string>
         <token name="RunContext">0</token>
@@ -394,7 +583,7 @@ CharacterLoader.Start()
 Dummies.Start()
 ]]></string>
       </Properties>
-      <Item class="ModuleScript" referent="13">
+      <Item class="ModuleScript" referent="14">
         <Properties>
           <string name="Name">CharacterLoader</string>
           <string name="Source"><![CDATA[--[[
@@ -486,14 +675,18 @@ return CharacterLoader
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="14">
+      <Item class="ModuleScript" referent="15">
         <Properties>
           <string name="Name">CombatService</string>
           <string name="Source"><![CDATA[--[[
 	CombatService
-	Server-authoritative core combat: M1 strings, blocking, perfect blocks,
-	guard breaks, dashes, ragdolls and the Evasive breakout. Players and NPCs
-	go through the same functions, so dummies fight with the real rules.
+	Server-authoritative combat: M1 strings, blocking, perfect blocks, guard
+	breaks, dashes, ragdolls, Evasive, and the character kit layer (skills,
+	cooldowns, counters, awakening, switching characters).
+
+	Players and NPCs go through the same functions, so dummies fight with
+	the real rules. Kit modules (Server/Kits/*) get this module through their
+	context and use its public API to deal hits, move people and fire VFX.
 ]]
 
 local Players = game:GetService("Players")
@@ -501,13 +694,20 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
-local Config = require(Shared.Config)
 local CombatState = require(Shared.CombatState)
+local Config = require(Shared.Config)
 local Impulse = require(Shared.Impulse)
+local Kits = require(Shared.Kits)
 local Remotes = require(Shared.Remotes)
 
 local Hitbox = require(script.Parent.Hitbox)
 local Ragdoll = require(script.Parent.Ragdoll)
+
+type Counter = {
+	untilTime: number,
+	types: { [string]: boolean },
+	onCounter: (attacker: Model, hit: HitInfo) -> (),
+}
 
 export type CharData = {
 	humanoid: Humanoid,
@@ -517,22 +717,60 @@ export type CharData = {
 	nextBlock: number,
 	nextDash: number,
 	ragdollToken: number,
-	lastDamaged: number,
+	awakenToken: number,
+	lastDamaged: number, -- last time this character took damage
+	lastCombat: number, -- last time it dealt or took a hit (blocks character switching)
+	counter: Counter?,
+	-- When each skill key was last pressed while already on cooldown. Lets a
+	-- running skill read follow-up presses (timing inputs like Black Divider).
+	skillInputs: { [number]: number },
+	grabbedBy: Model?,
 }
 
 export type HitInfo = {
 	damage: number,
 	stun: number,
-	guardBreak: boolean,
-	variant: string, -- "Normal" | "Knockback" | "Uppercut" | "Downslam"
-	airborne: boolean,
+	attackType: string?, -- "Melee" (default) | "Bolt" | "Explosion" | "Swarm" | "Zone"
+	guardBreak: boolean?,
+	unblockable: boolean?,
+	variant: string?, -- M1 finishers: "Normal" | "Knockback" | "Uppercut" | "Downslam"
+	airborne: boolean?, -- M1 hit while in the air
+	velocity: Vector3?, -- knockback (world space)
+	velocityTime: number?,
+	ragdoll: number?, -- seconds of ragdoll
+	heavy: boolean?, -- bigger hit effect
+	effect: string?, -- VFX name to play instead of Hit / HeavyHit
+}
+
+-- Handed to kit skill functions.
+export type Context = {
+	character: Model,
+	humanoid: Humanoid,
+	root: BasePart,
+	player: Player?,
+	data: CharData,
+	kit: Kits.KitInfo,
+	awakened: boolean,
+	combat: any, -- this module
 }
 
 local DASH_DIRECTIONS = { Front = true, Back = true, Left = true, Right = true }
 
 local registry: { [Model]: CharData } = {}
 
+-- Server kit modules, by kit id.
+local serverKits: { [string]: any } = {}
+for _, module in script.Parent:WaitForChild("Kits"):GetChildren() do
+	if module:IsA("ModuleScript") then
+		serverKits[module.Name] = require(module) :: any
+	end
+end
+
 local CombatService = {}
+
+---------------------------------------------------------------------------
+-- Helpers
+---------------------------------------------------------------------------
 
 local function getRoot(character: Model): BasePart?
 	return character:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -543,19 +781,70 @@ local function flat(vector: Vector3): Vector3
 	return if v.Magnitude > 1e-3 then v.Unit else Vector3.new(0, 0, -1)
 end
 
-local function fireVFX(name: string, data: { [string]: any })
+local function addMeter(character: Model, attribute: string, amount: number, max: number)
+	local current = tonumber(character:GetAttribute(attribute)) or 0
+	local value = math.clamp(current + amount, 0, max)
+	if value ~= current then
+		character:SetAttribute(attribute, value)
+	end
+end
+
+-- Kit-specific M1 tuning, falling back to Config.M1.
+local function m1Value(character: Model, key: string): any
+	local kit = Kits.Of(character)
+	local override = kit and kit.m1[key]
+	if override ~= nil then
+		return override
+	end
+	return (Config.M1 :: any)[key]
+end
+
+local function awakeningOf(character: Model)
+	local kit = Kits.Of(character)
+	return if kit and CombatState.IsAwakened(character) then kit.awakening else nil
+end
+
+function CombatService.Flat(vector: Vector3): Vector3
+	return flat(vector)
+end
+
+function CombatService.GetData(character: Model): CharData?
+	return registry[character]
+end
+
+function CombatService.FireVFX(name: string, data: { [string]: any })
 	Remotes.VFX:FireAllClients(name, data)
 end
 
-local function shake(character: Model, intensity: number)
+function CombatService.Shake(character: Model, intensity: number)
 	local player = Players:GetPlayerFromCharacter(character)
 	if player then
 		Remotes.CameraShake:FireClient(player, intensity)
 	end
 end
 
+-- Shakes everyone's camera near a point, falling off with distance.
+function CombatService.ShakeArea(position: Vector3, radius: number, intensity: number)
+	for _, player in Players:GetPlayers() do
+		local root = player.Character and getRoot(player.Character)
+		if root then
+			local distance = (root.Position - position).Magnitude
+			if distance < radius then
+				Remotes.CameraShake:FireClient(player, intensity * (1 - distance / radius))
+			end
+		end
+	end
+end
+
+function CombatService.Notify(character: Model, text: string, color: Color3?)
+	local player = Players:GetPlayerFromCharacter(character)
+	if player then
+		Remotes.Notify:FireClient(player, text, color)
+	end
+end
+
 -- Moves a character, routing to whoever owns its physics.
-local function applyVelocity(character: Model, velocity: Vector3, duration: number)
+function CombatService.ApplyVelocity(character: Model, velocity: Vector3, duration: number)
 	local root = getRoot(character)
 	if not root then
 		return
@@ -571,7 +860,7 @@ local function applyVelocity(character: Model, velocity: Vector3, duration: numb
 	end
 end
 
-local function isAirborne(character: Model): boolean
+function CombatService.IsAirborne(character: Model): boolean
 	local root = getRoot(character)
 	if not root then
 		return false
@@ -582,15 +871,7 @@ local function isAirborne(character: Model): boolean
 	return workspace:Raycast(root.Position, Vector3.new(0, -4.5, 0), params) == nil
 end
 
-local function addEvasive(character: Model, amount: number)
-	local current = tonumber(character:GetAttribute("Evasive")) or 0
-	local value = math.clamp(current + amount, 0, Config.Evasive.Max)
-	if value ~= current then
-		character:SetAttribute("Evasive", value)
-	end
-end
-
-local function ragdollFor(character: Model, duration: number)
+function CombatService.Ragdoll(character: Model, duration: number)
 	local data = registry[character]
 	if not data then
 		return
@@ -609,6 +890,98 @@ local function ragdollFor(character: Model, duration: number)
 	end)
 end
 
+-- Characters in a box / sphere, excluding `attacker`.
+CombatService.Box = Hitbox.Box
+CombatService.Sphere = Hitbox.Sphere
+
+-- While active, a hit of one of `types` on `character` calls onCounter
+-- instead of landing.
+function CombatService.SetCounter(
+	character: Model,
+	duration: number,
+	types: { [string]: boolean },
+	onCounter: (attacker: Model, hit: HitInfo) -> ()
+)
+	local data = registry[character]
+	if data then
+		data.counter = { untilTime = os.clock() + duration, types = types, onCounter = onCounter }
+	end
+end
+
+function CombatService.ClearCounter(character: Model)
+	local data = registry[character]
+	if data then
+		data.counter = nil
+	end
+end
+
+-- True if `slot`'s key was pressed (while on cooldown) after `since`.
+function CombatService.PressedSince(character: Model, slot: number, since: number): boolean
+	local data = registry[character]
+	local pressed = data and data.skillInputs[slot]
+	return pressed ~= nil and pressed >= since
+end
+
+function CombatService.Heal(character: Model, amount: number)
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if humanoid and humanoid.Health > 0 then
+		humanoid.Health = math.min(humanoid.Health + amount, humanoid.MaxHealth)
+	end
+end
+
+--[[
+	Grabs: the victim is pinned in front of the attacker (the server takes
+	over its physics) until the returned release() is called or `maxTime`
+	passes. `offset` is relative to the attacker's root. The victim is
+	stunned for the whole grab.
+]]
+function CombatService.Grab(attacker: Model, victim: Model, offset: CFrame, maxTime: number): () -> ()
+	local victimData = registry[victim]
+	local victimRoot = getRoot(victim)
+	local attackerRoot = getRoot(attacker)
+	local humanoid = victimData and victimData.humanoid
+	if not victimData or not victimRoot or not attackerRoot or not humanoid then
+		return function() end
+	end
+
+	victimData.grabbedBy = attacker
+	CombatState.SetBlocking(victim, false)
+	CombatState.Stun(victim, maxTime + 0.2)
+	local player = Players:GetPlayerFromCharacter(victim)
+	if player then
+		pcall(victimRoot.SetNetworkOwner, victimRoot, nil)
+	end
+	humanoid.PlatformStand = true
+
+	local released = false
+	local connection
+	local function release()
+		if released then
+			return
+		end
+		released = true
+		connection:Disconnect()
+		victimData.grabbedBy = nil
+		if humanoid.Parent then
+			humanoid.PlatformStand = false
+		end
+		if player and victimRoot.Parent and not Ragdoll.IsActive(victim) then
+			pcall(victimRoot.SetNetworkOwner, victimRoot, player)
+		end
+	end
+
+	connection = RunService.Heartbeat:Connect(function()
+		if not attackerRoot.Parent or not victimRoot.Parent or humanoid.Health <= 0 then
+			release()
+			return
+		end
+		victimRoot.AssemblyLinearVelocity = Vector3.zero
+		victimRoot.CFrame = attackerRoot.CFrame * offset
+	end)
+	task.delay(maxTime, release)
+	return release
+end
+
 -- Fires the crater effect roughly when a downslammed victim reaches the ground.
 local function scheduleCrater(victim: Model, attacker: Model)
 	local root = getRoot(victim)
@@ -624,15 +997,460 @@ local function scheduleCrater(victim: Model, attacker: Model)
 	end
 	local fallTime = math.clamp((root.Position.Y - result.Position.Y - 2) / Config.M1.DownslamForce, 0, 1)
 	task.delay(fallTime, function()
-		fireVFX("Crater", { position = result.Position })
-		shake(victim, 0.5)
-		shake(attacker, 0.4)
+		CombatService.FireVFX("Crater", { position = result.Position })
+		CombatService.Shake(victim, 0.5)
+		CombatService.Shake(attacker, 0.4)
 	end)
 end
 
-function CombatService.GetData(character: Model): CharData?
-	return registry[character]
+---------------------------------------------------------------------------
+-- Hits
+---------------------------------------------------------------------------
+
+--[[
+	Lands (or fails to land) a hit. Returns what happened:
+	"Hit" | "Blocked" | "Parried" | "GuardBreak" | "Countered" | "Immune" | "None"
+]]
+function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
+	local humanoid = victim:FindFirstChildOfClass("Humanoid")
+	local victimRoot = getRoot(victim)
+	local attackerRoot = getRoot(attacker)
+	if not humanoid or not victimRoot or not attackerRoot or humanoid.Health <= 0 then
+		return "None"
+	end
+	-- No hitting people on the floor: stops infinites.
+	if CombatState.HasIFrames(victim) or CombatState.IsRagdolled(victim) then
+		return "Immune"
+	end
+
+	local attackerData = registry[attacker]
+	local victimData = registry[victim]
+	local now = os.clock()
+	if attackerData then
+		attackerData.lastCombat = now
+	end
+	if victimData then
+		victimData.lastCombat = now
+	end
+
+	local attackType = hit.attackType or "Melee"
+	local counter = victimData and victimData.counter
+	if counter and now <= counter.untilTime and counter.types[attackType] then
+		victimData.counter = nil
+		task.spawn(counter.onCounter, attacker, hit)
+		return "Countered"
+	end
+
+	local toAttacker = flat(attackerRoot.Position - victimRoot.Position)
+	local look = flat(attackerRoot.CFrame.LookVector)
+	local contact = victimRoot.Position + toAttacker * 1.2
+
+	local facing = victimRoot.CFrame.LookVector:Dot(toAttacker) > Config.Block.FacingDot
+	if CombatState.IsBlocking(victim) and facing and not hit.unblockable then
+		local blockAge = CombatState.Now() - (tonumber(victim:GetAttribute("BlockStart")) or 0)
+
+		if blockAge <= Config.Block.PerfectWindow then
+			CombatState.Stun(attacker, Config.Block.ParryStun)
+			CombatService.FireVFX("PerfectBlock", { position = contact, attacker = attacker, victim = victim })
+			CombatService.Shake(attacker, 0.6)
+			CombatService.Shake(victim, 0.35)
+			return "Parried"
+		end
+
+		if hit.guardBreak then
+			CombatState.SetBlocking(victim, false)
+			CombatState.Stun(victim, Config.Block.GuardBreakStun)
+			CombatService.FireVFX("GuardBreak", { position = contact, victim = victim })
+			CombatService.Shake(attacker, 0.4)
+			CombatService.Shake(victim, 0.6)
+			return "GuardBreak"
+		end
+
+		CombatService.FireVFX("Block", { position = contact, victim = victim })
+		CombatService.ApplyVelocity(victim, -toAttacker * Config.Block.Pushback, 0.12)
+		CombatService.Shake(victim, 0.12)
+		return "Blocked"
+	end
+
+	-- The hit lands.
+	local awakening = awakeningOf(attacker)
+	local damage = hit.damage * (if awakening then awakening.damageMultiplier else 1)
+	humanoid:TakeDamage(damage)
+	CombatState.SetBlocking(victim, false)
+	CombatState.Stun(victim, hit.stun)
+
+	if victimData then
+		victimData.lastDamaged = now
+	end
+	addMeter(victim, "Evasive", damage * Config.Evasive.GainPerDamage, Config.Evasive.Max)
+	if not CombatState.IsAwakened(attacker) then
+		addMeter(attacker, "Awakening", damage * Config.Awakening.GainPerDamageDealt, Config.Awakening.Max)
+	end
+	if not CombatState.IsAwakened(victim) then
+		addMeter(victim, "Awakening", damage * Config.Awakening.GainPerDamageTaken, Config.Awakening.Max)
+	end
+
+	local variant = hit.variant
+	local heavy = hit.heavy == true or (variant ~= nil and variant ~= "Normal")
+	if variant == "Knockback" then
+		CombatService.Ragdoll(victim, Config.Ragdoll.Duration)
+		CombatService.ApplyVelocity(
+			victim,
+			look * Config.M1.KnockbackForce + Vector3.new(0, Config.M1.KnockbackLift, 0),
+			0.2
+		)
+	elseif variant == "Uppercut" then
+		local lift = Vector3.new(0, Config.M1.UppercutForce, 0)
+		CombatService.ApplyVelocity(victim, lift + look * 4, 0.25)
+		CombatService.ApplyVelocity(attacker, lift, 0.25)
+	elseif variant == "Downslam" then
+		CombatService.Ragdoll(victim, Config.Ragdoll.Duration)
+		CombatService.ApplyVelocity(victim, look * 10 + Vector3.new(0, -Config.M1.DownslamForce, 0), 0.2)
+		scheduleCrater(victim, attacker)
+	elseif variant == "Normal" then
+		if hit.airborne then
+			local float = Vector3.new(0, 3, 0) + look * 3
+			CombatService.ApplyVelocity(victim, float, Config.M1.AirFloat)
+			CombatService.ApplyVelocity(attacker, float, Config.M1.AirFloat)
+		else
+			CombatService.ApplyVelocity(victim, look * Config.M1.Push, 0.15)
+		end
+	else
+		-- Skill hits.
+		if hit.ragdoll then
+			CombatService.Ragdoll(victim, hit.ragdoll)
+		end
+		if hit.velocity then
+			CombatService.ApplyVelocity(victim, hit.velocity, hit.velocityTime or 0.2)
+		end
+	end
+
+	CombatService.FireVFX(hit.effect or (if heavy then "HeavyHit" else "Hit"), {
+		position = contact,
+		direction = look,
+		attacker = attacker,
+		victim = victim,
+		damage = math.floor(damage * 10 + 0.5) / 10,
+		variant = variant,
+		kit = attacker:GetAttribute("Kit"),
+		hitConfirm = true,
+	})
+	CombatService.Shake(attacker, if heavy then 0.45 else 0.18)
+	CombatService.Shake(victim, if heavy then 0.7 else 0.3)
+	return "Hit"
 end
+
+---------------------------------------------------------------------------
+-- Core moves
+---------------------------------------------------------------------------
+
+-- One swing of the M1 string. `jump` = jump held, turns the finisher into an uppercut.
+function CombatService.M1(character: Model, jump: boolean?)
+	local data = registry[character]
+	if
+		not data
+		or not CombatState.CanAct(character)
+		or CombatState.IsBlocking(character)
+		or CombatState.IsCasting(character)
+	then
+		return
+	end
+	local t = os.clock()
+	if t < data.nextM1 - Config.M1.InputTolerance then
+		return
+	end
+	if t - data.lastM1 > Config.M1.ResetTime then
+		data.combo = 0
+	end
+
+	data.combo += 1
+	data.lastM1 = t
+	local index = data.combo
+	local finisher = index >= Config.M1.ComboLength
+	local airborne = CombatService.IsAirborne(character)
+
+	local variant = "Normal"
+	if finisher then
+		data.combo = 0
+		data.nextM1 = t + Config.M1.EndLag
+		if jump then
+			variant = "Uppercut"
+		elseif airborne then
+			variant = "Downslam"
+		else
+			variant = "Knockback"
+		end
+	else
+		data.nextM1 = t + Config.M1.SwingCooldown
+	end
+	CombatState.SetBusy(character, if finisher then Config.M1.FinisherBusy else Config.M1.Busy)
+
+	CombatService.FireVFX("Swing", {
+		character = character,
+		index = index,
+		finisher = finisher,
+		variant = variant,
+	})
+
+	task.delay(if finisher then Config.M1.FinisherWindUp else Config.M1.WindUp, function()
+		-- Getting hit during wind-up cancels the swing.
+		if not CombatState.CanAct(character) then
+			return
+		end
+		local root = getRoot(character)
+		if not root then
+			return
+		end
+		local hitboxCFrame = root.CFrame * CFrame.new(0, 0, -m1Value(character, "HitboxOffset"))
+		for _, victim in Hitbox.Box(character, hitboxCFrame, m1Value(character, "HitboxSize")) do
+			CombatService.Hit(character, victim, {
+				damage = if finisher then m1Value(character, "FinisherDamage") else m1Value(character, "Damage"),
+				stun = if variant == "Uppercut" then Config.M1.UppercutStun else Config.M1.HitStun,
+				attackType = "Melee",
+				guardBreak = finisher,
+				variant = variant,
+				airborne = airborne,
+			})
+		end
+	end)
+end
+
+function CombatService.SetBlock(character: Model, wantBlock: boolean)
+	local data = registry[character]
+	if not data then
+		return
+	end
+	if wantBlock then
+		if
+			CombatState.IsBlocking(character)
+			or not CombatState.CanAct(character)
+			or CombatState.IsBusy(character)
+			or CombatState.IsCasting(character)
+		then
+			return
+		end
+		if os.clock() < data.nextBlock then
+			return
+		end
+		CombatState.SetBlocking(character, true)
+	elseif CombatState.IsBlocking(character) then
+		CombatState.SetBlocking(character, false)
+		data.nextBlock = os.clock() + Config.Block.Cooldown
+	end
+end
+
+-- Movement is client-side (the client owns its character), the server only
+-- validates the cooldown and tells everyone else to draw the effect.
+function CombatService.Dash(character: Model, direction: string): boolean
+	local data = registry[character]
+	if
+		not data
+		or not DASH_DIRECTIONS[direction]
+		or not CombatState.CanAct(character)
+		or CombatState.IsCasting(character)
+	then
+		return false
+	end
+	local t = os.clock()
+	if t < data.nextDash - Config.Dash.Tolerance then
+		return false
+	end
+	local awakening = awakeningOf(character)
+	data.nextDash = t + Config.Dash.Cooldown * (if awakening then awakening.cooldownMultiplier else 1)
+	CombatState.SetBlocking(character, false)
+	return true
+end
+
+-- Breaks out of a combo or ragdoll when the Evasive bar is full.
+function CombatService.Evasive(character: Model): boolean
+	local data = registry[character]
+	if not data or not CombatState.IsAlive(character) then
+		return false
+	end
+	if not (CombatState.IsStunned(character) or CombatState.IsRagdolled(character)) then
+		return false
+	end
+	if (tonumber(character:GetAttribute("Evasive")) or 0) < Config.Evasive.Max then
+		return false
+	end
+
+	data.ragdollToken += 1
+	character:SetAttribute("Evasive", 0)
+	Ragdoll.Disable(character)
+	CombatState.ClearStun(character)
+	CombatState.ClearCasting(character)
+	CombatState.GiveIFrames(character, Config.Evasive.IFrames)
+
+	local root = getRoot(character)
+	if root then
+		local back = -flat(root.CFrame.LookVector)
+		CombatService.ApplyVelocity(character, back * Config.Evasive.Speed + Vector3.new(0, 8, 0), 0.2)
+	end
+	CombatService.FireVFX("Evasive", { character = character })
+	return true
+end
+
+---------------------------------------------------------------------------
+-- Kits: skills, awakening, switching
+---------------------------------------------------------------------------
+
+local function makeContext(character: Model): Context?
+	local data = registry[character]
+	local kit = Kits.Of(character)
+	local root = getRoot(character)
+	if not data or not kit or not root then
+		return nil
+	end
+	return {
+		character = character,
+		humanoid = data.humanoid,
+		root = root,
+		player = Players:GetPlayerFromCharacter(character),
+		data = data,
+		kit = kit,
+		awakened = CombatState.IsAwakened(character),
+		combat = CombatService,
+	}
+end
+
+function CombatService.UseSkill(character: Model, slot: number)
+	local ctx = makeContext(character)
+	if not ctx then
+		return
+	end
+	local info = Kits.SkillsOf(character)[slot]
+	local serverKit = serverKits[ctx.kit.id]
+	local moveSet = serverKit and (if ctx.awakened then serverKit.AwakenedSkills else serverKit.Skills)
+	local run = moveSet and moveSet[slot]
+	if not info or not run then
+		return
+	end
+	-- Small tolerance for clients whose clock/ping makes them a hair early.
+	if CombatState.Cooldown(character, slot) > 0.1 then
+		-- Pressing a key that's on cooldown can still matter to the skill
+		-- that's running (e.g. timing the Black Divider).
+		ctx.data.skillInputs[slot] = os.clock()
+		return
+	end
+	if not CombatState.CanAct(character) or CombatState.IsCasting(character) then
+		return
+	end
+	ctx.data.skillInputs[slot] = nil
+
+	local awakening = awakeningOf(character)
+	CombatState.StartCooldown(character, slot, info.cooldown * (if awakening then awakening.cooldownMultiplier else 1))
+	CombatState.SetBlocking(character, false)
+	task.spawn(run, ctx)
+end
+
+local function endAwakening(character: Model)
+	local data = registry[character]
+	if data then
+		data.awakenToken += 1
+	end
+	if CombatState.IsAwakened(character) then
+		character:SetAttribute("Awakened", false)
+		CombatState.ResetCooldowns(character)
+		local kit = Kits.Of(character)
+		local serverKit = kit and serverKits[kit.id]
+		local ctx = makeContext(character)
+		if serverKit and serverKit.AwakenEnd and ctx then
+			task.spawn(serverKit.AwakenEnd, ctx)
+		end
+	end
+end
+
+function CombatService.Awaken(character: Model)
+	local ctx = makeContext(character)
+	if not ctx then
+		return
+	end
+	local awakening = ctx.kit.awakening
+	local serverKit = serverKits[ctx.kit.id]
+	if not awakening or not serverKit or not serverKit.Awaken then
+		return
+	end
+	if CombatState.IsAwakened(character) or not CombatState.CanAct(character) or CombatState.IsCasting(character) then
+		return
+	end
+	if (tonumber(character:GetAttribute("Awakening")) or 0) < Config.Awakening.Max then
+		return
+	end
+
+	local data = ctx.data
+	data.awakenToken += 1
+	local token = data.awakenToken
+	character:SetAttribute("Awakened", true)
+	CombatState.ResetCooldowns(character) -- fresh awakened move set
+	ctx.awakened = true
+	task.spawn(serverKit.Awaken, ctx)
+
+	-- The meter drains over the awakening's duration.
+	task.spawn(function()
+		local start = os.clock()
+		while data.awakenToken == token and registry[character] == data do
+			local remaining = 1 - (os.clock() - start) / awakening.duration
+			if remaining <= 0 then
+				character:SetAttribute("Awakening", 0)
+				endAwakening(character)
+				break
+			end
+			character:SetAttribute("Awakening", Config.Awakening.Max * remaining)
+			task.wait(0.25)
+		end
+	end)
+end
+
+-- Puts `kitId` on a character: weapon model, fresh cooldowns, no awakening.
+function CombatService.EquipKit(character: Model, kitId: string)
+	local oldId = character:GetAttribute("Kit")
+	if type(oldId) == "string" and serverKits[oldId] and serverKits[oldId].Unequip then
+		serverKits[oldId].Unequip(character)
+	end
+	endAwakening(character)
+	character:SetAttribute("Awakening", 0)
+	CombatState.ResetCooldowns(character)
+	CombatService.ClearCounter(character)
+
+	character:SetAttribute("Kit", kitId)
+	local serverKit = serverKits[kitId]
+	if serverKit and serverKit.Equip then
+		serverKit.Equip(character)
+	end
+end
+
+function CombatService.SelectKit(player: Player, kitId: string)
+	local kit = Kits.Get(kitId)
+	if not kit or not kit.playable then
+		return
+	end
+	local character = player.Character
+	local data = character and registry[character]
+	if not character or not data or not CombatState.IsAlive(character) then
+		player:SetAttribute("Kit", kitId) -- applies on next spawn
+		return
+	end
+	if character:GetAttribute("Kit") == kitId then
+		return
+	end
+	if
+		os.clock() - data.lastCombat < Config.KitSwitchCombatLock
+		or not CombatState.CanAct(character)
+		or CombatState.IsCasting(character)
+	then
+		CombatService.Notify(character, "You can't switch characters in combat!", Color3.fromRGB(255, 90, 90))
+		return
+	end
+
+	player:SetAttribute("Kit", kitId)
+	CombatService.EquipKit(character, kitId)
+	CombatService.FireVFX("KitSwitch", { character = character, kit = kitId })
+	CombatService.Notify(character, "Now playing: " .. kit.title, kit.color)
+end
+
+---------------------------------------------------------------------------
+-- Registration and the main loop
+---------------------------------------------------------------------------
 
 function CombatService.Register(character: Model)
 	local humanoid = character:WaitForChild("Humanoid", 10) :: Humanoid?
@@ -657,12 +1475,18 @@ function CombatService.Register(character: Model)
 		nextBlock = 0,
 		nextDash = 0,
 		ragdollToken = 0,
+		awakenToken = 0,
 		lastDamaged = 0,
+		lastCombat = 0,
+		counter = nil,
+		skillInputs = {},
+		grabbedBy = nil,
 	}
 	registry[character] = data
 
 	humanoid.Died:Connect(function()
 		data.ragdollToken += 1 -- stop any pending get-up
+		endAwakening(character)
 		Ragdoll.Enable(character)
 	end)
 
@@ -672,225 +1496,32 @@ function CombatService.Register(character: Model)
 			Ragdoll.Forget(character)
 		end
 	end)
-end
 
---[[
-	Lands (or fails to land) a hit. Returns what happened:
-	"Hit" | "Blocked" | "Parried" | "GuardBreak" | "Immune" | "None"
-]]
-function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
-	local humanoid = victim:FindFirstChildOfClass("Humanoid")
-	local victimRoot = getRoot(victim)
-	local attackerRoot = getRoot(attacker)
-	if not humanoid or not victimRoot or not attackerRoot or humanoid.Health <= 0 then
-		return "None"
-	end
-	-- No hitting people on the floor: stops infinites.
-	if CombatState.HasIFrames(victim) or CombatState.IsRagdolled(victim) then
-		return "Immune"
-	end
-
-	local toAttacker = flat(attackerRoot.Position - victimRoot.Position)
-	local look = flat(attackerRoot.CFrame.LookVector)
-	local contact = victimRoot.Position + toAttacker * 1.2
-
-	local facing = victimRoot.CFrame.LookVector:Dot(toAttacker) > Config.Block.FacingDot
-	if CombatState.IsBlocking(victim) and facing then
-		local blockAge = CombatState.Now() - (tonumber(victim:GetAttribute("BlockStart")) or 0)
-
-		if blockAge <= Config.Block.PerfectWindow then
-			CombatState.Stun(attacker, Config.Block.ParryStun)
-			fireVFX("PerfectBlock", { position = contact, attacker = attacker, victim = victim })
-			shake(attacker, 0.6)
-			shake(victim, 0.35)
-			return "Parried"
+	-- Players get their chosen character's kit. Dummies stay kit-less.
+	local player = Players:GetPlayerFromCharacter(character)
+	if player then
+		local kitId = player:GetAttribute("Kit")
+		local kit = Kits.Get(if type(kitId) == "string" then kitId else nil)
+		if not kit or not kit.playable then
+			kitId = Kits.Default
+			player:SetAttribute("Kit", kitId)
 		end
-
-		if hit.guardBreak then
-			CombatState.SetBlocking(victim, false)
-			CombatState.Stun(victim, Config.Block.GuardBreakStun)
-			fireVFX("GuardBreak", { position = contact, victim = victim })
-			shake(attacker, 0.4)
-			shake(victim, 0.6)
-			return "GuardBreak"
-		end
-
-		fireVFX("Block", { position = contact, victim = victim })
-		applyVelocity(victim, -toAttacker * Config.Block.Pushback, 0.12)
-		shake(victim, 0.12)
-		return "Blocked"
+		CombatService.EquipKit(character, kitId :: string)
 	end
-
-	-- The hit lands.
-	humanoid:TakeDamage(hit.damage)
-	CombatState.SetBlocking(victim, false)
-	CombatState.Stun(victim, hit.stun)
-
-	local victimData = registry[victim]
-	if victimData then
-		victimData.lastDamaged = os.clock()
-	end
-	addEvasive(victim, hit.damage * Config.Evasive.GainPerDamage)
-
-	local heavy = hit.variant ~= "Normal"
-	if hit.variant == "Knockback" then
-		ragdollFor(victim, Config.Ragdoll.Duration)
-		applyVelocity(victim, look * Config.M1.KnockbackForce + Vector3.new(0, Config.M1.KnockbackLift, 0), 0.2)
-	elseif hit.variant == "Uppercut" then
-		local lift = Vector3.new(0, Config.M1.UppercutForce, 0)
-		applyVelocity(victim, lift + look * 4, 0.25)
-		applyVelocity(attacker, lift, 0.25)
-	elseif hit.variant == "Downslam" then
-		ragdollFor(victim, Config.Ragdoll.Duration)
-		applyVelocity(victim, look * 10 + Vector3.new(0, -Config.M1.DownslamForce, 0), 0.2)
-		scheduleCrater(victim, attacker)
-	elseif hit.airborne then
-		local float = Vector3.new(0, 3, 0) + look * 3
-		applyVelocity(victim, float, Config.M1.AirFloat)
-		applyVelocity(attacker, float, Config.M1.AirFloat)
-	else
-		applyVelocity(victim, look * Config.M1.Push, 0.15)
-	end
-
-	fireVFX(if heavy then "HeavyHit" else "Hit", {
-		position = contact,
-		direction = look,
-		attacker = attacker,
-		victim = victim,
-		damage = hit.damage,
-		variant = hit.variant,
-	})
-	shake(attacker, if heavy then 0.45 else 0.18)
-	shake(victim, if heavy then 0.7 else 0.3)
-	return "Hit"
-end
-
--- One swing of the M1 string. `jump` = jump held, turns the finisher into an uppercut.
-function CombatService.M1(character: Model, jump: boolean?)
-	local data = registry[character]
-	if not data or not CombatState.CanAct(character) or CombatState.IsBlocking(character) then
-		return
-	end
-	local t = os.clock()
-	if t < data.nextM1 - Config.M1.InputTolerance then
-		return
-	end
-	if t - data.lastM1 > Config.M1.ResetTime then
-		data.combo = 0
-	end
-
-	data.combo += 1
-	data.lastM1 = t
-	local index = data.combo
-	local finisher = index >= Config.M1.ComboLength
-	local airborne = isAirborne(character)
-
-	local variant = "Normal"
-	if finisher then
-		data.combo = 0
-		data.nextM1 = t + Config.M1.EndLag
-		if jump then
-			variant = "Uppercut"
-		elseif airborne then
-			variant = "Downslam"
-		else
-			variant = "Knockback"
-		end
-	else
-		data.nextM1 = t + Config.M1.SwingCooldown
-	end
-	CombatState.SetBusy(character, if finisher then Config.M1.FinisherBusy else Config.M1.Busy)
-
-	fireVFX("Swing", { character = character, index = index, finisher = finisher, variant = variant })
-
-	task.delay(if finisher then Config.M1.FinisherWindUp else Config.M1.WindUp, function()
-		-- Getting hit during wind-up cancels the swing.
-		if not CombatState.CanAct(character) then
-			return
-		end
-		local root = getRoot(character)
-		if not root then
-			return
-		end
-		local hitboxCFrame = root.CFrame * CFrame.new(0, 0, -Config.M1.HitboxOffset)
-		for _, victim in Hitbox.Box(character, hitboxCFrame, Config.M1.HitboxSize) do
-			CombatService.Hit(character, victim, {
-				damage = if finisher then Config.M1.FinisherDamage else Config.M1.Damage,
-				stun = if variant == "Uppercut" then Config.M1.UppercutStun else Config.M1.HitStun,
-				guardBreak = finisher,
-				variant = variant,
-				airborne = airborne,
-			})
-		end
-	end)
-end
-
-function CombatService.SetBlock(character: Model, wantBlock: boolean)
-	local data = registry[character]
-	if not data then
-		return
-	end
-	if wantBlock then
-		if CombatState.IsBlocking(character) or not CombatState.CanAct(character) or CombatState.IsBusy(character) then
-			return
-		end
-		if os.clock() < data.nextBlock then
-			return
-		end
-		CombatState.SetBlocking(character, true)
-	elseif CombatState.IsBlocking(character) then
-		CombatState.SetBlocking(character, false)
-		data.nextBlock = os.clock() + Config.Block.Cooldown
-	end
-end
-
--- Movement is client-side (the client owns its character), the server only
--- validates the cooldown and tells everyone else to draw the effect.
-function CombatService.Dash(character: Model, direction: string): boolean
-	local data = registry[character]
-	if not data or not DASH_DIRECTIONS[direction] or not CombatState.CanAct(character) then
-		return false
-	end
-	local t = os.clock()
-	if t < data.nextDash - Config.Dash.Tolerance then
-		return false
-	end
-	data.nextDash = t + Config.Dash.Cooldown
-	CombatState.SetBlocking(character, false)
-	return true
-end
-
--- Breaks out of a combo or ragdoll when the Evasive bar is full.
-function CombatService.Evasive(character: Model): boolean
-	local data = registry[character]
-	if not data or not CombatState.IsAlive(character) then
-		return false
-	end
-	if not (CombatState.IsStunned(character) or CombatState.IsRagdolled(character)) then
-		return false
-	end
-	if (tonumber(character:GetAttribute("Evasive")) or 0) < Config.Evasive.Max then
-		return false
-	end
-
-	data.ragdollToken += 1
-	character:SetAttribute("Evasive", 0)
-	Ragdoll.Disable(character)
-	CombatState.ClearStun(character)
-	CombatState.GiveIFrames(character, Config.Evasive.IFrames)
-
-	local root = getRoot(character)
-	if root then
-		local back = -flat(root.CFrame.LookVector)
-		applyVelocity(character, back * Config.Evasive.Speed + Vector3.new(0, 8, 0), 0.2)
-	end
-	fireVFX("Evasive", { character = character })
-	return true
 end
 
 local function onAction(player: Player, action: unknown, payload: unknown)
 	local character = player.Character
-	if not character or not registry[character] or type(action) ~= "string" then
+	if type(action) ~= "string" then
+		return
+	end
+	if action == "SelectKit" then
+		if type(payload) == "string" then
+			CombatService.SelectKit(player, payload)
+		end
+		return
+	end
+	if not character or not registry[character] then
 		return
 	end
 
@@ -910,6 +1541,12 @@ local function onAction(player: Player, action: unknown, payload: unknown)
 		end
 	elseif action == "Evasive" then
 		CombatService.Evasive(character)
+	elseif action == "Skill" then
+		if type(payload) == "number" and payload >= 1 and payload <= CombatState.SkillSlots then
+			CombatService.UseSkill(character, math.floor(payload))
+		end
+	elseif action == "Awaken" then
+		CombatService.Awaken(character)
 	end
 end
 
@@ -918,15 +1555,19 @@ local function updateMovement()
 	for character, data in registry do
 		local humanoid = data.humanoid
 		if humanoid.Health > 0 then
-			local speed, jump = Config.Movement.WalkSpeed, Config.Movement.JumpHeight
+			local awakening = awakeningOf(character)
+			local bonus = if awakening then awakening.speedBonus else 0
+			local speed, jump = Config.Movement.WalkSpeed + bonus, Config.Movement.JumpHeight
 			if CombatState.IsRagdolled(character) then
 				speed, jump = 0, 0
 			elseif CombatState.IsStunned(character) then
 				speed, jump = Config.Movement.StunnedSpeed, 0
+			elseif CombatState.IsCasting(character) then
+				speed, jump = Config.Movement.CastingSpeed, 0
 			elseif CombatState.IsBlocking(character) then
 				speed, jump = Config.Movement.BlockingSpeed, 0
 			elseif CombatState.IsBusy(character) then
-				speed, jump = Config.Movement.AttackingSpeed, 0
+				speed, jump = Config.Movement.AttackingSpeed + bonus, 0
 			end
 			if humanoid.WalkSpeed ~= speed then
 				humanoid.WalkSpeed = speed
@@ -941,17 +1582,17 @@ end
 function CombatService.Start()
 	Remotes.Action.OnServerEvent:Connect(onAction)
 
-	local evasiveTimer = 0
+	local regenTimer = 0
 	RunService.Heartbeat:Connect(function(dt)
 		updateMovement()
 
 		-- Attribute writes replicate, so the passive regen ticks 4 times a second.
-		evasiveTimer += dt
-		if evasiveTimer >= 0.25 then
+		regenTimer += dt
+		if regenTimer >= 0.25 then
 			for character in registry do
-				addEvasive(character, Config.Evasive.RegenPerSecond * evasiveTimer)
+				addMeter(character, "Evasive", Config.Evasive.RegenPerSecond * regenTimer, Config.Evasive.Max)
 			end
-			evasiveTimer = 0
+			regenTimer = 0
 		end
 	end)
 end
@@ -960,7 +1601,7 @@ return CombatService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="15">
+      <Item class="ModuleScript" referent="16">
         <Properties>
           <string name="Name">Dummies</string>
           <string name="Source"><![CDATA[--[[
@@ -1118,7 +1759,7 @@ return Dummies
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="16">
+      <Item class="ModuleScript" referent="17">
         <Properties>
           <string name="Name">Hitbox</string>
           <string name="Source"><![CDATA[--[[
@@ -1183,11 +1824,793 @@ function Hitbox.Box(attacker: Model, cframe: CFrame, size: Vector3): { Model }
 	return found
 end
 
+function Hitbox.Sphere(attacker: Model, position: Vector3, radius: number): { Model }
+	if Config.Debug.ShowHitboxes then
+		local ball = Instance.new("Part")
+		ball.Shape = Enum.PartType.Ball
+		ball.Anchored = true
+		ball.CanCollide = false
+		ball.CanQuery = false
+		ball.CanTouch = false
+		ball.Material = Enum.Material.ForceField
+		ball.Color = Color3.fromRGB(255, 40, 40)
+		ball.Size = Vector3.one * radius * 2
+		ball.Position = position
+		ball.Parent = workspace
+		Debris:AddItem(ball, 0.25)
+	end
+
+	local params = OverlapParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { attacker }
+
+	local found: { Model } = {}
+	local seen: { [Model]: boolean } = {}
+	for _, part in workspace:GetPartBoundsInRadius(position, radius, params) do
+		local character = characterFromPart(part)
+		if character and not seen[character] and CombatState.IsAlive(character) then
+			seen[character] = true
+			table.insert(found, character)
+		end
+	end
+	return found
+end
+
 return Hitbox
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="17">
+      <Item class="Folder" referent="18">
+        <Properties>
+          <string name="Name">Kits</string>
+        </Properties>
+        <Item class="ModuleScript" referent="19">
+          <Properties>
+            <string name="Name">AntiMagic</string>
+            <string name="Source"><![CDATA[--[[
+	Anti-Magic Knight (Asta), server side.
+
+	Built like Vessel (JJS) / Hero Hunter (TSB): a close-range rushdown
+	character with a rush combo, a grab, a timing-based heavy and a counter.
+	Awakening swaps to a whole new move set like Sukuna / Rampage Mode.
+
+	Base
+	  1 Bull Thrust         charge in sword-first; on contact, slash flurry into a launcher
+	                        (in the air: dives diagonally down)
+	  2 Black Meteorite     anti-magic lunge grab, carry them up, slam into a crater (unblockable)
+	  3 Black Divider       charged cleave. Press 3 again on the red flash for a
+	                        perfect Divider: huge damage, unblockable
+	  4 Anti-Magic Deflect  counters EVERY attack type. Melee attackers get slashed
+	                        aside, ranged attacks are sent back as a Black Slash
+	Black Form (G)
+	  1 Black Hurricane     spinning anti-magic charge that drags enemies along
+	  2 Black Slash         piercing anti-magic slash wave
+	  3 Grand Divider       massive cleave plus a giant slash wave (guard break)
+	  4 Demon-Destroyer     grab, carve, then release all the absorbed magic. Heals 30%.
+
+	All visuals are in StarterPlayerScripts.Client.Kits.AntiMagic, which gets
+	("Skill", {skill, phase, ...}) events from here.
+]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
+local Projectile = require(script.Parent.Parent.Projectile)
+
+local KIT_ID = "AntiMagic"
+local UP = Vector3.yAxis
+
+-- Anti-magic cuts through everything.
+local ALL_TYPES = { Melee = true, Bolt = true, Explosion = true, Swarm = true, Zone = true }
+
+local Kit = {}
+
+---------------------------------------------------------------------------
+-- Demon-Slayer Sword model
+---------------------------------------------------------------------------
+
+local function swordPart(name: string, size: Vector3, cframe: CFrame, color: Color3, material: Enum.Material): Part
+	local part = Instance.new("Part")
+	part.Name = name
+	part.Size = size
+	part.CFrame = cframe
+	part.Color = color
+	part.Material = material
+	part.Massless = true
+	part.CanCollide = false
+	part.CanQuery = false
+	part.CanTouch = false
+	part.TopSurface = Enum.SurfaceType.Smooth
+	part.BottomSurface = Enum.SurfaceType.Smooth
+	return part
+end
+
+-- The blade runs along the handle's +Y axis. Built at the origin, then welded.
+local function buildSword(): Model
+	local model = Instance.new("Model")
+	model.Name = "KitWeapon"
+
+	local black = Color3.fromRGB(22, 22, 26)
+	local steel = Color3.fromRGB(40, 40, 46)
+
+	local handle = swordPart(
+		"Handle",
+		Vector3.new(0.32, 1.3, 0.32),
+		CFrame.new(),
+		Color3.fromRGB(45, 32, 26),
+		Enum.Material.Fabric
+	)
+	handle.Parent = model
+	model.PrimaryPart = handle
+
+	local parts = {
+		swordPart("Pommel", Vector3.new(0.45, 0.25, 0.45), CFrame.new(0, -0.75, 0), steel, Enum.Material.Metal),
+		swordPart("Guard", Vector3.new(0.4, 0.28, 1.6), CFrame.new(0, 0.78, 0), steel, Enum.Material.Metal),
+		-- Thin side faces forward so horizontal slashes lead with the edge.
+		swordPart("Blade", Vector3.new(0.22, 4.6, 1.2), CFrame.new(0, 3.2, 0), black, Enum.Material.Metal),
+		-- Jagged, broken-off tip.
+		swordPart(
+			"TipA",
+			Vector3.new(0.2, 0.5, 0.7),
+			CFrame.new(0, 5.7, 0.25) * CFrame.Angles(math.rad(18), 0, 0),
+			black,
+			Enum.Material.Metal
+		),
+		swordPart("TipB", Vector3.new(0.2, 0.35, 0.45), CFrame.new(0, 5.6, -0.4), black, Enum.Material.Metal),
+	}
+	for _, part in parts do
+		part.Parent = model
+		local weld = Instance.new("WeldConstraint")
+		weld.Part0 = handle
+		weld.Part1 = part
+		weld.Parent = part
+	end
+
+	-- Swing trail between the blade's base and tip. Clients switch it on during attacks.
+	local blade = model:FindFirstChild("Blade") :: Part
+	local base = Instance.new("Attachment")
+	base.Name = "TrailBase"
+	base.Position = Vector3.new(0, -2, 0)
+	base.Parent = blade
+	local tip = Instance.new("Attachment")
+	tip.Name = "TrailTip"
+	tip.Position = Vector3.new(0, 2.5, 0)
+	tip.Parent = blade
+
+	local trail = Instance.new("Trail")
+	trail.Name = "SwingTrail"
+	trail.Attachment0 = base
+	trail.Attachment1 = tip
+	trail.Color = ColorSequence.new(Color3.fromRGB(10, 10, 12), Color3.fromRGB(150, 20, 30))
+	trail.Transparency = NumberSequence.new(0.15, 1)
+	trail.LightEmission = 0
+	trail.LightInfluence = 0
+	trail.Lifetime = 0.16
+	trail.MinLength = 0
+	trail.Enabled = false
+	trail.Parent = blade
+
+	return model
+end
+
+function Kit.Equip(character: Model)
+	local arm = character:WaitForChild("Right Arm", 5) or character:FindFirstChild("RightHand")
+	if not arm or not arm:IsA("BasePart") then
+		return
+	end
+	local sword = buildSword()
+	local handle = sword.PrimaryPart :: BasePart
+
+	-- Held in the right hand, blade pointing down and 35 degrees forward
+	-- when the arm hangs, so it extends naturally when the arm swings.
+	local weld = Instance.new("Weld")
+	weld.Name = "SwordGrip"
+	weld.Part0 = arm
+	weld.Part1 = handle
+	weld.C0 = CFrame.new(0, -arm.Size.Y / 2, 0) * CFrame.Angles(math.rad(215), 0, 0)
+	weld.Parent = handle
+
+	sword.Parent = character
+end
+
+function Kit.Unequip(character: Model)
+	local sword = character:FindFirstChild("KitWeapon")
+	if sword then
+		sword:Destroy()
+	end
+end
+
+---------------------------------------------------------------------------
+-- Helpers
+---------------------------------------------------------------------------
+
+local function fx(ctx, skill: string, phase: string, extra: { [string]: any }?)
+	local data: { [string]: any } = { character = ctx.character, kit = KIT_ID, skill = skill, phase = phase }
+	if extra then
+		for key, value in extra do
+			data[key] = value
+		end
+	end
+	ctx.combat.FireVFX("Skill", data)
+end
+
+local function look(ctx): Vector3
+	return ctx.combat.Flat(ctx.root.CFrame.LookVector)
+end
+
+-- Interrupted by getting hit, ragdolled or dying.
+local function interrupted(ctx): boolean
+	local character = ctx.character
+	return not CombatState.IsAlive(character) or CombatState.IsStunned(character) or CombatState.IsRagdolled(character)
+end
+
+-- Charges forward for `duration`, returning the first character caught.
+local function lunge(ctx, velocity: Vector3, duration: number, reach: Vector3): Model?
+	ctx.combat.ApplyVelocity(ctx.character, velocity, duration)
+	local start = os.clock()
+	while os.clock() - start < duration + 0.05 do
+		if interrupted(ctx) then
+			return nil
+		end
+		local hits = ctx.combat.Box(ctx.character, ctx.root.CFrame * CFrame.new(0, 0, -reach.Z / 2), reach)
+		if #hits > 0 then
+			ctx.combat.ApplyVelocity(ctx.character, Vector3.zero, 0.05)
+			return hits[1]
+		end
+		task.wait()
+	end
+	return nil
+end
+
+local function waitForGround(ctx, timeout: number)
+	local start = os.clock()
+	repeat
+		task.wait()
+	until not ctx.combat.IsAirborne(ctx.character) or os.clock() - start > timeout
+end
+
+local function groundBelow(ctx): Vector3
+	return ctx.root.Position - Vector3.new(0, 3, 0)
+end
+
+-- Anti-magic slash wave. Used by Black Slash, Grand Divider and Deflect.
+local function blackSlash(
+	ctx,
+	origin: Vector3,
+	direction: Vector3,
+	options: {
+		damage: number,
+		size: Vector3?,
+		speed: number?,
+		range: number?,
+		grand: boolean?,
+		skip: { [Model]: boolean }?,
+	}
+)
+	local speed = options.speed or 130
+	local range = options.range or 90
+	local size = options.size or Vector3.new(9, 4, 2)
+	fx(ctx, "BlackSlash", "Projectile", {
+		origin = origin,
+		direction = direction,
+		speed = speed,
+		range = range,
+		width = size.X,
+		grand = options.grand == true,
+	})
+	Projectile.Fire({
+		owner = ctx.character,
+		origin = origin,
+		direction = direction,
+		speed = speed,
+		range = range,
+		size = size,
+		pierce = true,
+		onHit = function(victim)
+			if options.skip and options.skip[victim] then
+				return
+			end
+			ctx.combat.Hit(ctx.character, victim, {
+				damage = options.damage,
+				stun = 0.9,
+				attackType = "Bolt",
+				heavy = true,
+				guardBreak = options.grand == true,
+				velocity = direction * 38 + UP * 14,
+				velocityTime = 0.2,
+				ragdoll = if options.grand then 1.4 else nil,
+			})
+		end,
+	})
+end
+
+---------------------------------------------------------------------------
+-- Base moves
+---------------------------------------------------------------------------
+
+local function bullThrust(ctx)
+	local c, character = ctx.combat, ctx.character
+	local forward = look(ctx)
+	local airborne = c.IsAirborne(character)
+	local direction = if airborne then (forward + UP * -0.6).Unit else forward
+
+	CombatState.SetCasting(character, 0.6)
+	fx(ctx, "BullThrust", "Charge", { airborne = airborne })
+	local target = lunge(ctx, direction * 85, 0.35, Vector3.new(5, 6, 6))
+	if not target then
+		if airborne then
+			waitForGround(ctx, 0.5)
+			fx(ctx, "BullThrust", "Land", { position = groundBelow(ctx) })
+		end
+		CombatState.SetCasting(character, 0.3)
+		return
+	end
+
+	if c.Hit(character, target, { damage = 3, stun = 1.4, attackType = "Melee" }) ~= "Hit" then
+		CombatState.SetCasting(character, 0.4)
+		return
+	end
+
+	-- The flurry: quick slashes that keep them pinned, then a launcher.
+	CombatState.SetCasting(character, 1.1)
+	fx(ctx, "BullThrust", "Flurry", { target = target })
+	for _ = 1, 4 do
+		task.wait(0.11)
+		if interrupted(ctx) then
+			return
+		end
+		c.Hit(character, target, {
+			damage = 1.5,
+			stun = 0.9,
+			attackType = "Melee",
+			velocity = forward * 6,
+			velocityTime = 0.12,
+		})
+		c.ApplyVelocity(character, forward * 6, 0.12)
+	end
+	task.wait(0.14)
+	if interrupted(ctx) then
+		return
+	end
+	fx(ctx, "BullThrust", "Launch", { target = target })
+	c.Hit(character, target, {
+		damage = 4,
+		stun = 1,
+		attackType = "Melee",
+		heavy = true,
+		ragdoll = 1.3,
+		velocity = forward * 55 + UP * 30,
+	})
+	CombatState.SetCasting(character, 0.25)
+end
+
+-- Shared by Black Meteorite and Demon-Destroyer: lunge, and if someone is
+-- caught (and not countering/immune), grab them.
+local function lungeGrab(ctx, skill: string, grabTime: number): (Model?, (() -> ())?)
+	local c, character = ctx.combat, ctx.character
+	CombatState.SetCasting(character, 0.55)
+	fx(ctx, skill, "Lunge")
+	local target = lunge(ctx, look(ctx) * 72, 0.3, Vector3.new(4.5, 6, 5))
+	if not target then
+		CombatState.SetCasting(character, 0.35)
+		return nil, nil
+	end
+	-- Grabs can't be blocked, but counters and i-frames still beat them.
+	if c.Hit(character, target, { damage = 2, stun = 2, attackType = "Melee", unblockable = true }) ~= "Hit" then
+		CombatState.SetCasting(character, 0.4)
+		return nil, nil
+	end
+	CombatState.SetCasting(character, grabTime + 0.2)
+	CombatState.GiveIFrames(character, grabTime)
+	local release = c.Grab(character, target, CFrame.new(0, 0.3, -3.2), grabTime)
+	return target, release
+end
+
+local function blackMeteorite(ctx)
+	local c, character = ctx.combat, ctx.character
+	local target, release = lungeGrab(ctx, "BlackMeteorite", 1.7)
+	if not target or not release then
+		return
+	end
+	local forward = look(ctx)
+
+	fx(ctx, "BlackMeteorite", "Rise", { target = target })
+	c.ApplyVelocity(character, UP * 75 + forward * 6, 0.3)
+	task.wait(0.55)
+
+	fx(ctx, "BlackMeteorite", "Slam", { target = target })
+	c.ApplyVelocity(character, UP * -125 + forward * 8, 0.4)
+	waitForGround(ctx, 0.6)
+	release()
+
+	local impact = groundBelow(ctx) + forward * 3
+	c.FireVFX("Crater", { position = impact })
+	fx(ctx, "BlackMeteorite", "Impact", { position = impact })
+	c.ShakeArea(impact, 45, 0.6)
+	c.Hit(character, target, {
+		damage = 9,
+		stun = 1,
+		attackType = "Melee",
+		unblockable = true,
+		heavy = true,
+		ragdoll = 1.6,
+		velocity = forward * 25 + UP * 35,
+	})
+	CombatState.SetCasting(character, 0.3)
+end
+
+local DIVIDER_CHARGE = 0.62
+local PERFECT_FROM, PERFECT_TO = 0.36, 0.66 -- generous for ping; client shows the flash at 0.38
+
+local function blackDivider(ctx)
+	local c, character = ctx.combat, ctx.character
+	local data = ctx.data
+	CombatState.SetCasting(character, DIVIDER_CHARGE + 0.45)
+
+	local start = os.clock()
+	fx(ctx, "BlackDivider", "Charge", { flashAt = 0.38 })
+
+	-- Only the FIRST press after starting counts, so mashing doesn't work.
+	local firstPress: number? = nil
+	while os.clock() - start < DIVIDER_CHARGE do
+		if interrupted(ctx) then
+			fx(ctx, "BlackDivider", "Cancel")
+			return
+		end
+		local pressed = data.skillInputs[3]
+		if not firstPress and pressed and pressed > start then
+			firstPress = pressed
+		end
+		task.wait()
+	end
+	local perfect = firstPress ~= nil and firstPress - start >= PERFECT_FROM and firstPress - start <= PERFECT_TO
+
+	local forward = look(ctx)
+	fx(ctx, "BlackDivider", "Release", { perfect = perfect })
+	local box = ctx.root.CFrame * CFrame.new(0, 0, -4.5)
+	for _, victim in c.Box(character, box, Vector3.new(9, 7, 9)) do
+		if perfect then
+			c.Hit(character, victim, {
+				damage = 15,
+				stun = 1.2,
+				attackType = "Melee",
+				unblockable = true,
+				heavy = true,
+				ragdoll = 1.8,
+				velocity = forward * 85 + UP * 25,
+				effect = "PerfectDivider",
+			})
+		else
+			c.Hit(character, victim, {
+				damage = 8,
+				stun = 1,
+				attackType = "Melee",
+				guardBreak = true,
+				heavy = true,
+				ragdoll = 1.4,
+				velocity = forward * 60 + UP * 18,
+			})
+		end
+	end
+	c.ShakeArea(ctx.root.Position, if perfect then 60 else 25, if perfect then 0.8 else 0.35)
+	CombatState.SetCasting(character, 0.35)
+end
+
+local function antiMagicDeflect(ctx)
+	local c, character = ctx.combat, ctx.character
+	local countered = false
+	CombatState.SetCasting(character, 0.9)
+	fx(ctx, "Deflect", "Stance")
+
+	c.SetCounter(character, 0.8, ALL_TYPES, function(attacker: Model)
+		countered = true
+		CombatState.GiveIFrames(character, 0.7)
+		CombatState.SetCasting(character, 0.45)
+		local attackerRoot = attacker:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if not attackerRoot then
+			return
+		end
+		local offset = attackerRoot.Position - ctx.root.Position
+		if offset.Magnitude <= 14 then
+			-- Slash them aside, like Manji Kick.
+			fx(ctx, "Deflect", "Counter", { target = attacker })
+			c.Hit(character, attacker, {
+				damage = 8,
+				stun = 1.2,
+				attackType = "Melee",
+				unblockable = true,
+				heavy = true,
+				ragdoll = 1.4,
+				velocity = ctx.root.CFrame.RightVector * 45 + UP * 22,
+			})
+		else
+			-- Ranged attack: send it back as a Black Slash, like Prey's Peril.
+			local direction = c.Flat(offset)
+			fx(ctx, "Deflect", "Reflect", { direction = direction })
+			blackSlash(ctx, ctx.root.Position + direction * 2 + UP * 0.5, direction, { damage = 7 })
+		end
+	end)
+
+	task.wait(0.82)
+	if not countered then
+		c.ClearCounter(character)
+		fx(ctx, "Deflect", "End")
+		CombatState.SetCasting(character, 0.35)
+	end
+end
+
+---------------------------------------------------------------------------
+-- Black Form moves
+---------------------------------------------------------------------------
+
+local function blackHurricane(ctx)
+	local c, character = ctx.combat, ctx.character
+	local forward = look(ctx)
+	CombatState.SetCasting(character, 1.15)
+	fx(ctx, "BlackHurricane", "Spin", { duration = 0.9 })
+	c.ApplyVelocity(character, forward * 55, 0.9)
+
+	local caught: { [Model]: boolean } = {}
+	for _ = 1, 9 do
+		task.wait(0.1)
+		if interrupted(ctx) then
+			return
+		end
+		for _, victim in c.Sphere(character, ctx.root.Position, 7) do
+			-- Dragged along at the same speed as the spin.
+			if
+				c.Hit(character, victim, {
+					damage = 1.2,
+					stun = 0.6,
+					attackType = "Melee",
+					velocity = forward * 55 + UP * 2,
+					velocityTime = 0.12,
+				}) == "Hit"
+			then
+				caught[victim] = true
+			end
+		end
+	end
+
+	fx(ctx, "BlackHurricane", "Finish")
+	for victim in caught do
+		if CombatState.IsAlive(victim) then
+			c.Hit(character, victim, {
+				damage = 5,
+				stun = 1,
+				attackType = "Melee",
+				heavy = true,
+				ragdoll = 1.4,
+				velocity = forward * 45 + UP * 45,
+			})
+		end
+	end
+	CombatState.SetCasting(character, 0.3)
+end
+
+local function blackSlashMove(ctx)
+	local character = ctx.character
+	CombatState.SetCasting(character, 0.5)
+	fx(ctx, "BlackSlash", "Windup")
+	task.wait(0.22)
+	if interrupted(ctx) then
+		return
+	end
+	local forward = look(ctx)
+	blackSlash(ctx, ctx.root.Position + forward * 2 + UP * 0.5, forward, { damage = 10 })
+end
+
+local function grandDivider(ctx)
+	local c, character = ctx.combat, ctx.character
+	CombatState.SetCasting(character, 1.3)
+	fx(ctx, "GrandDivider", "Charge")
+	task.wait(0.7)
+	if interrupted(ctx) then
+		fx(ctx, "GrandDivider", "Cancel")
+		return
+	end
+
+	local forward = look(ctx)
+	fx(ctx, "GrandDivider", "Release")
+	local struck: { [Model]: boolean } = {}
+	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -5), Vector3.new(12, 9, 10)) do
+		struck[victim] = true
+		c.Hit(character, victim, {
+			damage = 12,
+			stun = 1.2,
+			attackType = "Explosion",
+			guardBreak = true,
+			heavy = true,
+			ragdoll = 1.6,
+			velocity = forward * 70 + UP * 25,
+		})
+	end
+	blackSlash(ctx, ctx.root.Position + forward * 4 + UP * 1, forward, {
+		damage = 10,
+		size = Vector3.new(18, 8, 3),
+		speed = 95,
+		range = 55,
+		grand = true,
+		skip = struck,
+	})
+	c.ShakeArea(ctx.root.Position, 70, 0.7)
+	task.wait(0.3)
+	CombatState.SetCasting(character, 0.3)
+end
+
+local function demonDestroyer(ctx)
+	local c, character = ctx.combat, ctx.character
+	local target, release = lungeGrab(ctx, "DemonDestroyer", 2.1)
+	if not target or not release then
+		return
+	end
+
+	fx(ctx, "DemonDestroyer", "Grab", { target = target })
+	task.wait(0.25)
+	for i = 1, 5 do
+		if not CombatState.IsAlive(character) then
+			release()
+			return
+		end
+		fx(ctx, "DemonDestroyer", "Carve", { target = target, index = i })
+		c.Hit(character, target, { damage = 2, stun = 1, attackType = "Melee", unblockable = true })
+		task.wait(0.15)
+	end
+
+	fx(ctx, "DemonDestroyer", "Release", { target = target })
+	task.wait(0.3)
+	release()
+	local forward = look(ctx)
+	c.Hit(character, target, {
+		damage = 12,
+		stun = 1.2,
+		attackType = "Melee",
+		unblockable = true,
+		heavy = true,
+		ragdoll = 2,
+		velocity = forward * 90 + UP * 30,
+		effect = "PerfectDivider",
+	})
+	-- Like Hero Hunter's Final Hunt: the finisher restores health.
+	c.Heal(character, ctx.humanoid.MaxHealth * 0.3)
+	fx(ctx, "DemonDestroyer", "Heal")
+	c.ShakeArea(ctx.root.Position, 70, 0.9)
+	CombatState.SetCasting(character, 0.35)
+end
+
+Kit.Skills = { bullThrust, blackMeteorite, blackDivider, antiMagicDeflect }
+Kit.AwakenedSkills = { blackHurricane, blackSlashMove, grandDivider, demonDestroyer }
+
+---------------------------------------------------------------------------
+-- Awakening: Black Form (Devil Union)
+---------------------------------------------------------------------------
+
+function Kit.Awaken(ctx)
+	local c, character = ctx.combat, ctx.character
+	CombatState.SetCasting(character, 1.4)
+	CombatState.GiveIFrames(character, 1.6)
+	fx(ctx, "Awaken", "Start")
+	c.ShakeArea(ctx.root.Position, 60, 0.4)
+	task.wait(0.9)
+
+	fx(ctx, "Awaken", "Burst")
+	c.ShakeArea(ctx.root.Position, 90, 0.9)
+	-- The anti-magic burst blows everyone nearby away.
+	for _, victim in c.Sphere(character, ctx.root.Position, 16) do
+		local victimRoot = victim:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if victimRoot and not CombatState.HasIFrames(victim) and not CombatState.IsRagdolled(victim) then
+			c.Ragdoll(victim, 1)
+			c.ApplyVelocity(victim, c.Flat(victimRoot.Position - ctx.root.Position) * 60 + UP * 22, 0.2)
+		end
+	end
+end
+
+function Kit.AwakenEnd(ctx)
+	fx(ctx, "Awaken", "End")
+end
+
+return Kit
+]]></string>
+          </Properties>
+        </Item>
+      </Item>
+      <Item class="ModuleScript" referent="20">
+        <Properties>
+          <string name="Name">Projectile</string>
+          <string name="Source"><![CDATA[--[[
+	Projectile
+	Server-simulated projectiles: moved every frame, swept hitbox between
+	frames (fast projectiles can't skip past people), stopped by walls.
+	The server only does the hit detection. Clients draw the projectile
+	themselves from (origin, direction, speed, range), so nothing is sent
+	per frame.
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local Hitbox = require(script.Parent.Hitbox)
+
+export type Options = {
+	owner: Model,
+	origin: Vector3,
+	direction: Vector3,
+	speed: number,
+	range: number,
+	size: Vector3, -- hitbox: X width, Y height, Z extra length
+	pierce: boolean?, -- keep going through people
+	onHit: (victim: Model, position: Vector3) -> (),
+	onEnd: ((position: Vector3) -> ())?,
+}
+
+local Projectile = {}
+
+local function wallParams(owner: Model): RaycastParams
+	local ignore: { Instance } = { owner }
+	for _, player in Players:GetPlayers() do
+		if player.Character then
+			table.insert(ignore, player.Character)
+		end
+	end
+	local dummies = workspace:FindFirstChild("Dummies")
+	if dummies then
+		table.insert(ignore, dummies)
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = ignore
+	return params
+end
+
+function Projectile.Fire(options: Options)
+	local direction = options.direction.Unit
+	local position = options.origin
+	local travelled = 0
+	local alreadyHit: { [Model]: boolean } = {}
+	local params = wallParams(options.owner)
+
+	local connection
+	local function finish()
+		connection:Disconnect()
+		if options.onEnd then
+			task.spawn(options.onEnd, position)
+		end
+	end
+
+	connection = RunService.Heartbeat:Connect(function(dt)
+		local step = math.min(options.speed * dt, options.range - travelled)
+		local wall = workspace:Raycast(position, direction * step, params)
+		local nextPosition = if wall then wall.Position else position + direction * step
+
+		-- Sweep the hitbox over everything covered this frame.
+		local center = (position + nextPosition) / 2
+		local length = (nextPosition - position).Magnitude + options.size.Z
+		local box = CFrame.lookAt(center, center + direction)
+		for _, victim in Hitbox.Box(options.owner, box, Vector3.new(options.size.X, options.size.Y, length)) do
+			if not alreadyHit[victim] then
+				alreadyHit[victim] = true
+				task.spawn(options.onHit, victim, center)
+				if not options.pierce then
+					position = center
+					finish()
+					return
+				end
+			end
+		end
+
+		travelled += step
+		position = nextPosition
+		if wall or travelled >= options.range then
+			finish()
+		end
+	end)
+end
+
+return Projectile
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="21">
         <Properties>
           <string name="Name">Ragdoll</string>
           <string name="Source"><![CDATA[--[[
@@ -1380,15 +2803,16 @@ return Ragdoll
       </Item>
     </Item>
   </Item>
-  <Item class="StarterPlayer" referent="18">
+  <Item class="StarterPlayer" referent="22">
     <Properties>
       <string name="Name">StarterPlayer</string>
+      <bool name="EnableMouseLockOption">false</bool>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="19">
+    <Item class="StarterPlayerScripts" referent="23">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="LocalScript" referent="20">
+      <Item class="LocalScript" referent="24">
         <Properties>
           <string name="Name">Client</string>
           <string name="Source"><![CDATA[--[[
@@ -1401,6 +2825,8 @@ local CameraShake = require(script.CameraShake)
 local HUD = require(script.HUD)
 local Input = require(script.Input)
 local Moves = require(script.Moves)
+local ShiftLock = require(script.ShiftLock)
+local TopBar = require(script.TopBar)
 local VFX = require(script.VFX)
 
 -- Our HUD replaces the default health bar.
@@ -1413,9 +2839,11 @@ VFX.Start()
 Moves.Start()
 HUD.Start()
 Input.Start()
+ShiftLock.Start()
+TopBar.Start()
 ]]></string>
         </Properties>
-        <Item class="ModuleScript" referent="21">
+        <Item class="ModuleScript" referent="25">
           <Properties>
             <string name="Name">CameraShake</string>
             <string name="Source"><![CDATA[--[[
@@ -1481,13 +2909,16 @@ return CameraShake
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="22">
+        <Item class="ModuleScript" referent="26">
           <Properties>
             <string name="Name">HUD</string>
             <string name="Source"><![CDATA[--[[
 	HUD
-	Health bar, Evasive bar, dash cooldown and combo counter. Built in code
-	so it can be restyled later without touching Studio.
+	Top right: character name, health, Evasive and Awakening bars.
+	Bottom:    move bar (Q dash, skills 1-4, G awakening) with cooldowns.
+	Right:     combo counter.
+	Top:       toast messages from the server.
+	Built in code so it can be restyled without touching Studio.
 ]]
 
 local Players = game:GetService("Players")
@@ -1496,36 +2927,65 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
+local CombatState = require(Shared.CombatState)
 local Config = require(Shared.Config)
+local Kits = require(Shared.Kits)
 local Remotes = require(Shared.Remotes)
 
 local localPlayer = Players.LocalPlayer
 
 local COLORS = {
-	Back = Color3.fromRGB(18, 18, 24),
+	Panel = Color3.fromRGB(14, 14, 18),
+	Back = Color3.fromRGB(28, 28, 34),
 	Health = Color3.fromRGB(90, 220, 110),
 	HealthLow = Color3.fromRGB(230, 60, 60),
 	Evasive = Color3.fromRGB(120, 235, 255),
+	Awakening = Color3.fromRGB(220, 40, 50),
 	Text = Color3.fromRGB(240, 240, 240),
+	SubText = Color3.fromRGB(170, 170, 180),
+	Locked = Color3.fromRGB(60, 60, 68),
 }
 
 local COMBO_TIMEOUT = 1.6
+local SLOT_SIZE = 74
+
+type Slot = {
+	frame: Frame,
+	stroke: UIStroke,
+	name: TextLabel,
+	overlay: Frame,
+	timer: TextLabel,
+}
 
 local HUD = {}
 
-local healthFill: Frame
-local healthText: TextLabel
-local evasiveFill: Frame
-local evasiveStroke: UIStroke
-local dashOverlay: Frame
-local comboLabel: TextLabel
-local comboScale: UIScale
+local ui: {
+	kitTitle: TextLabel,
+	kitStrip: Frame,
+	healthFill: Frame,
+	healthText: TextLabel,
+	evasiveFill: Frame,
+	evasiveStroke: UIStroke,
+	awakeningFill: Frame,
+	awakeningStroke: UIStroke,
+	awakeningLabel: TextLabel,
+	dash: Slot,
+	skills: { Slot },
+	awaken: Slot,
+	comboLabel: TextLabel,
+	comboScale: UIScale,
+	toast: TextLabel,
+} =
+	{} :: any
 
 local dashReadyAt = 0
 local dashDuration = 1
 local comboCount = 0
 local lastComboHit = 0
 local shownHealth = 1
+local shownKit: string? = "?"
+local shownAwakened = false
+local toastToken = 0
 
 local function corner(parent: Instance, radius: number)
 	local c = Instance.new("UICorner")
@@ -1533,16 +2993,27 @@ local function corner(parent: Instance, radius: number)
 	c.Parent = parent
 end
 
-local function bar(parent: Instance, name: string, position: UDim2, size: UDim2, color: Color3): (Frame, Frame)
+local function label(parent: Instance, props: { [string]: any }): TextLabel
+	local l = Instance.new("TextLabel")
+	l.BackgroundTransparency = 1
+	l.Font = Enum.Font.GothamBold
+	l.TextColor3 = COLORS.Text
+	l.TextStrokeTransparency = 0.6
+	for key, value in props do
+		(l :: any)[key] = value
+	end
+	l.Parent = parent
+	return l
+end
+
+local function bar(parent: Instance, position: UDim2, size: UDim2, color: Color3): (Frame, Frame)
 	local back = Instance.new("Frame")
-	back.Name = name
 	back.Position = position
 	back.Size = size
 	back.BackgroundColor3 = COLORS.Back
-	back.BackgroundTransparency = 0.15
 	back.BorderSizePixel = 0
 	back.Parent = parent
-	corner(back, 6)
+	corner(back, 4)
 
 	local fill = Instance.new("Frame")
 	fill.Name = "Fill"
@@ -1550,14 +3021,78 @@ local function bar(parent: Instance, name: string, position: UDim2, size: UDim2,
 	fill.BackgroundColor3 = color
 	fill.BorderSizePixel = 0
 	fill.Parent = back
-	corner(fill, 6)
+	corner(fill, 4)
 
 	local gradient = Instance.new("UIGradient")
-	gradient.Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(170, 170, 170))
+	gradient.Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(165, 165, 165))
 	gradient.Rotation = 90
 	gradient.Parent = fill
 
 	return back, fill
+end
+
+local function slot(parent: Instance, key: string, order: number): Slot
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.fromOffset(SLOT_SIZE, SLOT_SIZE)
+	frame.BackgroundColor3 = COLORS.Panel
+	frame.BackgroundTransparency = 0.2
+	frame.LayoutOrder = order
+	frame.ClipsDescendants = true
+	frame.Parent = parent
+	corner(frame, 8)
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = COLORS.Locked
+	stroke.Thickness = 2
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	stroke.Parent = frame
+
+	label(frame, {
+		Text = key,
+		Font = Enum.Font.GothamBlack,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(7, 4),
+		Size = UDim2.fromOffset(20, 16),
+		ZIndex = 4,
+	})
+
+	local name = label(frame, {
+		Text = "",
+		TextWrapped = true,
+		TextSize = 12,
+		Position = UDim2.new(0, 4, 0, 20),
+		Size = UDim2.new(1, -8, 1, -24),
+		ZIndex = 4,
+	})
+
+	-- Dark curtain that shrinks as the cooldown finishes.
+	local overlay = Instance.new("Frame")
+	overlay.AnchorPoint = Vector2.new(0, 1)
+	overlay.Position = UDim2.fromScale(0, 1)
+	overlay.Size = UDim2.fromScale(1, 0)
+	overlay.BackgroundColor3 = Color3.new(0, 0, 0)
+	overlay.BackgroundTransparency = 0.35
+	overlay.BorderSizePixel = 0
+	overlay.ZIndex = 2
+	overlay.Parent = frame
+
+	local timer = label(frame, {
+		Text = "",
+		Font = Enum.Font.GothamBlack,
+		TextSize = 22,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 5,
+		TextStrokeTransparency = 0.2,
+	})
+
+	return { frame = frame, stroke = stroke, name = name, overlay = overlay, timer = timer }
+end
+
+local function setSlotCooldown(s: Slot, remaining: number, length: number)
+	s.overlay.Size = UDim2.fromScale(1, math.clamp(remaining / math.max(length, 0.01), 0, 1))
+	s.timer.Text = if remaining > 0 then string.format(if remaining < 10 then "%.1f" else "%d", remaining) else ""
+	s.name.TextTransparency = if remaining > 0 then 0.5 else 0
 end
 
 local function build()
@@ -1567,126 +3102,222 @@ local function build()
 	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	gui.Parent = localPlayer:WaitForChild("PlayerGui")
 
-	local holder = Instance.new("Frame")
-	holder.Name = "Bars"
-	holder.AnchorPoint = Vector2.new(0.5, 1)
-	holder.Position = UDim2.new(0.5, 0, 1, -24)
-	holder.Size = UDim2.fromOffset(380, 44)
-	holder.BackgroundTransparency = 1
-	holder.Parent = gui
+	-- Top right status panel.
+	local status = Instance.new("Frame")
+	status.Name = "Status"
+	status.AnchorPoint = Vector2.new(1, 0)
+	status.Position = UDim2.new(1, -16, 0, 12)
+	status.Size = UDim2.fromOffset(320, 92)
+	status.BackgroundColor3 = COLORS.Panel
+	status.BackgroundTransparency = 0.25
+	status.Parent = gui
+	corner(status, 10)
+
+	local padding = Instance.new("UIPadding")
+	padding.PaddingLeft = UDim.new(0, 12)
+	padding.PaddingRight = UDim.new(0, 12)
+	padding.PaddingTop = UDim.new(0, 8)
+	padding.Parent = status
+
+	ui.kitStrip = Instance.new("Frame")
+	ui.kitStrip.Size = UDim2.fromOffset(4, 16)
+	ui.kitStrip.Position = UDim2.fromOffset(0, 1)
+	ui.kitStrip.BorderSizePixel = 0
+	ui.kitStrip.Parent = status
+	corner(ui.kitStrip, 2)
+
+	ui.kitTitle = label(status, {
+		Font = Enum.Font.GothamBlack,
+		TextSize = 15,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(10, 0),
+		Size = UDim2.new(1, -10, 0, 18),
+	})
 
 	local healthBack
-	healthBack, healthFill = bar(holder, "Health", UDim2.fromOffset(52, 0), UDim2.new(1, -52, 0, 24), COLORS.Health)
-
-	healthText = Instance.new("TextLabel")
-	healthText.BackgroundTransparency = 1
-	healthText.Size = UDim2.fromScale(1, 1)
-	healthText.Font = Enum.Font.GothamBold
-	healthText.TextSize = 14
-	healthText.TextColor3 = COLORS.Text
-	healthText.TextStrokeTransparency = 0.5
-	healthText.ZIndex = 2
-	healthText.Parent = healthBack
+	healthBack, ui.healthFill = bar(status, UDim2.fromOffset(0, 24), UDim2.new(1, 0, 0, 22), COLORS.Health)
+	ui.healthText = label(healthBack, {
+		TextSize = 14,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 2,
+	})
 
 	local evasiveBack
-	evasiveBack, evasiveFill =
-		bar(holder, "Evasive", UDim2.fromOffset(52, 30), UDim2.new(1, -52, 0, 10), COLORS.Evasive)
-	evasiveStroke = Instance.new("UIStroke")
-	evasiveStroke.Color = COLORS.Evasive
-	evasiveStroke.Thickness = 2
-	evasiveStroke.Transparency = 1
-	evasiveStroke.Parent = evasiveBack
+	evasiveBack, ui.evasiveFill = bar(status, UDim2.fromOffset(0, 52), UDim2.new(0.5, -3, 0, 8), COLORS.Evasive)
+	ui.evasiveStroke = Instance.new("UIStroke")
+	ui.evasiveStroke.Color = COLORS.Evasive
+	ui.evasiveStroke.Thickness = 2
+	ui.evasiveStroke.Transparency = 1
+	ui.evasiveStroke.Parent = evasiveBack
+	label(status, {
+		Text = "EVASIVE",
+		TextSize = 10,
+		TextColor3 = COLORS.SubText,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(0, 62),
+		Size = UDim2.new(0.5, 0, 0, 14),
+	})
 
-	-- Dash icon: dark overlay shrinks as the cooldown finishes.
-	local dash = Instance.new("Frame")
-	dash.Name = "Dash"
-	dash.Size = UDim2.fromOffset(44, 44)
-	dash.BackgroundColor3 = COLORS.Back
-	dash.BackgroundTransparency = 0.15
-	dash.BorderSizePixel = 0
-	dash.ClipsDescendants = true
-	dash.Parent = holder
-	corner(dash, 8)
+	local awakeningBack
+	awakeningBack, ui.awakeningFill = bar(status, UDim2.new(0.5, 3, 0, 52), UDim2.new(0.5, -3, 0, 8), COLORS.Awakening)
+	ui.awakeningStroke = Instance.new("UIStroke")
+	ui.awakeningStroke.Color = COLORS.Awakening
+	ui.awakeningStroke.Thickness = 2
+	ui.awakeningStroke.Transparency = 1
+	ui.awakeningStroke.Parent = awakeningBack
+	ui.awakeningLabel = label(status, {
+		Text = "AWAKENING",
+		TextSize = 10,
+		TextColor3 = COLORS.SubText,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		Position = UDim2.new(0.5, 3, 0, 62),
+		Size = UDim2.new(0.5, -3, 0, 14),
+	})
 
-	local dashLabel = Instance.new("TextLabel")
-	dashLabel.BackgroundTransparency = 1
-	dashLabel.Size = UDim2.fromScale(1, 1)
-	dashLabel.Font = Enum.Font.GothamBlack
-	dashLabel.Text = "Q"
-	dashLabel.TextSize = 20
-	dashLabel.TextColor3 = COLORS.Text
-	dashLabel.ZIndex = 3
-	dashLabel.Parent = dash
+	-- Bottom move bar.
+	local hotbar = Instance.new("Frame")
+	hotbar.Name = "Moves"
+	hotbar.AnchorPoint = Vector2.new(0.5, 1)
+	hotbar.Position = UDim2.new(0.5, 0, 1, -18)
+	hotbar.Size = UDim2.fromOffset(6 * SLOT_SIZE + 5 * 8 + 16, SLOT_SIZE)
+	hotbar.BackgroundTransparency = 1
+	hotbar.Parent = gui
 
-	dashOverlay = Instance.new("Frame")
-	dashOverlay.AnchorPoint = Vector2.new(0, 1)
-	dashOverlay.Position = UDim2.fromScale(0, 1)
-	dashOverlay.Size = UDim2.fromScale(1, 0)
-	dashOverlay.BackgroundColor3 = Color3.new(0, 0, 0)
-	dashOverlay.BackgroundTransparency = 0.35
-	dashOverlay.BorderSizePixel = 0
-	dashOverlay.ZIndex = 2
-	dashOverlay.Parent = dash
+	local layout = Instance.new("UIListLayout")
+	layout.FillDirection = Enum.FillDirection.Horizontal
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.Padding = UDim.new(0, 8)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Parent = hotbar
 
-	comboLabel = Instance.new("TextLabel")
-	comboLabel.Name = "Combo"
-	comboLabel.AnchorPoint = Vector2.new(1, 0.5)
-	comboLabel.Position = UDim2.new(1, -40, 0.45, 0)
-	comboLabel.Size = UDim2.fromOffset(260, 70)
-	comboLabel.BackgroundTransparency = 1
-	comboLabel.Font = Enum.Font.GothamBlack
-	comboLabel.TextScaled = true
-	comboLabel.TextXAlignment = Enum.TextXAlignment.Right
-	comboLabel.TextColor3 = Color3.new(1, 1, 1)
-	comboLabel.TextStrokeTransparency = 0
-	comboLabel.TextTransparency = 1
-	comboLabel.TextStrokeTransparency = 1
-	comboLabel.Rotation = -6
-	comboLabel.Parent = gui
+	ui.dash = slot(hotbar, "Q", 0)
+	ui.dash.name.Text = "Dash"
+	ui.dash.stroke.Color = Color3.fromRGB(200, 200, 210)
 
-	comboScale = Instance.new("UIScale")
-	comboScale.Parent = comboLabel
+	ui.skills = {}
+	for i = 1, CombatState.SkillSlots do
+		ui.skills[i] = slot(hotbar, tostring(i), i + 1)
+	end
+	ui.awaken = slot(hotbar, "G", 10)
+
+	-- Little gap between dash and the skills.
+	local spacer = Instance.new("Frame")
+	spacer.Size = UDim2.fromOffset(8, 1)
+	spacer.BackgroundTransparency = 1
+	spacer.LayoutOrder = 1
+	spacer.Parent = hotbar
+
+	ui.comboLabel = label(gui, {
+		Name = "Combo",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -40, 0.45, 0),
+		Size = UDim2.fromOffset(260, 70),
+		Font = Enum.Font.GothamBlack,
+		TextScaled = true,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		TextTransparency = 1,
+		TextStrokeTransparency = 1,
+		Rotation = -6,
+	})
+	ui.comboScale = Instance.new("UIScale")
+	ui.comboScale.Parent = ui.comboLabel
+
+	ui.toast = label(gui, {
+		Name = "Toast",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 70),
+		Size = UDim2.fromOffset(600, 30),
+		Font = Enum.Font.GothamBold,
+		TextSize = 18,
+		TextTransparency = 1,
+		TextStrokeTransparency = 1,
+	})
 end
 
-local function onHit(data)
-	if type(data) ~= "table" or data.attacker == nil or data.attacker ~= localPlayer.Character then
+-- Kit-dependent labels (title, colors, skill names) only change on switch.
+local function refreshKit(character: Model?)
+	local kitId = if character then character:GetAttribute("Kit") :: string? else nil
+	local awakened = character ~= nil and CombatState.IsAwakened(character)
+	if kitId == shownKit and awakened == shownAwakened then
+		return
+	end
+	shownKit = kitId
+	shownAwakened = awakened
+	local kit = Kits.Get(kitId)
+	local skills = if character then Kits.SkillsOf(character) else {}
+
+	ui.kitTitle.Text = if kit then string.upper(kit.title) else ""
+	ui.kitStrip.BackgroundColor3 = if kit then kit.color else COLORS.Locked
+	ui.kitStrip.Visible = kit ~= nil
+
+	for i, s in ui.skills do
+		local skill = skills[i]
+		s.name.Text = if skill then skill.name else ""
+		s.stroke.Color = if skill and kit then kit.color else COLORS.Locked
+		s.frame.BackgroundTransparency = if skill then 0.2 else 0.6
+	end
+	local awakening = kit and kit.awakening
+	ui.awaken.name.Text = if awakening then awakening.name else ""
+	ui.awaken.stroke.Color = if awakening then COLORS.Awakening else COLORS.Locked
+	ui.awakeningLabel.Text = if awakening then string.upper(awakening.name) else "AWAKENING"
+end
+
+local function onHitConfirm(data)
+	if type(data) ~= "table" or not data.hitConfirm or data.attacker ~= localPlayer.Character then
 		return
 	end
 	local t = os.clock()
 	comboCount = if t - lastComboHit < COMBO_TIMEOUT then comboCount + 1 else 1
 	lastComboHit = t
 
-	comboLabel.Text = comboCount .. " HIT" .. (if comboCount == 1 then "" else "S")
-	comboLabel.TextTransparency = 0
-	comboLabel.TextStrokeTransparency = 0
-	comboScale.Scale = 1.5
-	TweenService:Create(comboScale, TweenInfo.new(0.18, Enum.EasingStyle.Back), { Scale = 1 }):Play()
+	ui.comboLabel.Text = comboCount .. " HIT" .. (if comboCount == 1 then "" else "S")
+	ui.comboLabel.TextTransparency = 0
+	ui.comboLabel.TextStrokeTransparency = 0
+	ui.comboScale.Scale = 1.5
+	TweenService:Create(ui.comboScale, TweenInfo.new(0.18, Enum.EasingStyle.Back), { Scale = 1 }):Play()
 end
 
 local function update(dt: number)
 	local character = localPlayer.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	refreshKit(character)
 
-	if humanoid then
+	if character and humanoid then
 		local ratio = math.clamp(humanoid.Health / math.max(humanoid.MaxHealth, 1), 0, 1)
 		shownHealth += (ratio - shownHealth) * math.min(dt * 12, 1)
-		healthFill.Size = UDim2.fromScale(shownHealth, 1)
-		healthFill.BackgroundColor3 = COLORS.HealthLow:Lerp(COLORS.Health, ratio)
-		healthText.Text = string.format("%d / %d", math.ceil(humanoid.Health), humanoid.MaxHealth)
+		ui.healthFill.Size = UDim2.fromScale(shownHealth, 1)
+		ui.healthFill.BackgroundColor3 = COLORS.HealthLow:Lerp(COLORS.Health, ratio)
+		ui.healthText.Text = string.format("%d / %d", math.ceil(humanoid.Health), humanoid.MaxHealth)
 
-		local evasive = tonumber((character :: Model):GetAttribute("Evasive")) or 0
-		local evasiveRatio = math.clamp(evasive / Config.Evasive.Max, 0, 1)
-		evasiveFill.Size = UDim2.fromScale(evasiveRatio, 1)
-		-- Pulse the outline when Evasive is ready.
-		evasiveStroke.Transparency = if evasiveRatio >= 1 then 0.3 + 0.4 * math.sin(os.clock() * 8) else 1
+		local pulse = 0.3 + 0.4 * math.sin(os.clock() * 8)
+
+		local evasive = math.clamp((tonumber(character:GetAttribute("Evasive")) or 0) / Config.Evasive.Max, 0, 1)
+		ui.evasiveFill.Size = UDim2.fromScale(evasive, 1)
+		ui.evasiveStroke.Transparency = if evasive >= 1 then pulse else 1
+
+		local awakening = math.clamp((tonumber(character:GetAttribute("Awakening")) or 0) / Config.Awakening.Max, 0, 1)
+		local awakened = CombatState.IsAwakened(character)
+		local kit = Kits.Of(character)
+		local canAwaken = kit ~= nil and kit.awakening ~= nil
+		ui.awakeningFill.Size = UDim2.fromScale(awakening, 1)
+		ui.awakeningStroke.Transparency = if (awakening >= 1 and canAwaken) or awakened then pulse else 1
+
+		for i, s in ui.skills do
+			setSlotCooldown(s, CombatState.Cooldown(character, i))
+		end
+
+		-- G slot: dim until the meter is full, glowing while awakened.
+		ui.awaken.overlay.Size = UDim2.fromScale(1, if canAwaken then 1 - awakening else 1)
+		ui.awaken.timer.Text = ""
+		ui.awaken.stroke.Transparency = if canAwaken and (awakening >= 1 or awakened) then pulse else 0
 	end
 
-	local remaining = math.max(dashReadyAt - os.clock(), 0)
-	dashOverlay.Size = UDim2.fromScale(1, remaining / dashDuration)
+	setSlotCooldown(ui.dash, math.max(dashReadyAt - os.clock(), 0), dashDuration)
 
 	if comboCount > 0 and os.clock() - lastComboHit > COMBO_TIMEOUT then
 		comboCount = 0
-		TweenService:Create(comboLabel, TweenInfo.new(0.3), { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
+		TweenService:Create(ui.comboLabel, TweenInfo.new(0.3), { TextTransparency = 1, TextStrokeTransparency = 1 })
+			:Play()
 	end
 end
 
@@ -1695,11 +3326,30 @@ function HUD.SetDashCooldown(duration: number)
 	dashReadyAt = os.clock() + duration
 end
 
+-- Short message at the top of the screen.
+function HUD.Toast(text: string, color: Color3?)
+	toastToken += 1
+	local token = toastToken
+	ui.toast.Text = text
+	ui.toast.TextColor3 = color or COLORS.Text
+	ui.toast.TextTransparency = 0
+	ui.toast.TextStrokeTransparency = 0.3
+	task.delay(2.2, function()
+		if toastToken == token then
+			TweenService:Create(ui.toast, TweenInfo.new(0.4), { TextTransparency = 1, TextStrokeTransparency = 1 })
+				:Play()
+		end
+	end)
+end
+
 function HUD.Start()
 	build()
-	Remotes.VFX.OnClientEvent:Connect(function(name, data)
-		if name == "Hit" or name == "HeavyHit" then
-			onHit(data)
+	Remotes.VFX.OnClientEvent:Connect(function(_, data)
+		onHitConfirm(data)
+	end)
+	Remotes.Notify.OnClientEvent:Connect(function(text, color)
+		if type(text) == "string" then
+			HUD.Toast(text, if typeof(color) == "Color3" then color else nil)
 		end
 	end)
 	RunService.RenderStepped:Connect(update)
@@ -1709,7 +3359,7 @@ return HUD
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="23">
+        <Item class="ModuleScript" referent="27">
           <Properties>
             <string name="Name">Input</string>
             <string name="Source"><![CDATA[--[[
@@ -1718,6 +3368,9 @@ return HUD
 	  M1 (click, hold to chain)   basic attack, hold Space on the 4th hit to uppercut
 	  Q                           dash in your movement direction (Evasive when stunned)
 	  F (hold)                    block, press right before a hit to perfect block
+	  1-4                         character skills (sent even on cooldown: some skills
+	                              read follow-up presses, like timing Black Divider)
+	  G                           awaken when the meter is full
 ]]
 
 local ContextActionService = game:GetService("ContextActionService")
@@ -1730,6 +3383,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local CombatState = require(Shared.CombatState)
 local Impulse = require(Shared.Impulse)
+local Kits = require(Shared.Kits)
 local Remotes = require(Shared.Remotes)
 
 local CameraShake = require(script.Parent.CameraShake)
@@ -1808,7 +3462,7 @@ local function tryM1()
 	if not character or not humanoid or not root then
 		return
 	end
-	if not CombatState.CanAct(character) or CombatState.IsBlocking(character) then
+	if not CombatState.CanAct(character) or CombatState.IsBlocking(character) or CombatState.IsCasting(character) then
 		return
 	end
 	local t = os.clock()
@@ -1892,12 +3546,18 @@ local function tryDash()
 		return
 	end
 
+	if CombatState.IsCasting(character) then
+		return
+	end
 	local t = os.clock()
 	if t < dashReadyAt then
 		return
 	end
-	dashReadyAt = t + Config.Dash.Cooldown
-	HUD.SetDashCooldown(Config.Dash.Cooldown)
+	local kit = Kits.Of(character)
+	local awakening = kit and CombatState.IsAwakened(character) and kit.awakening
+	local cooldown = Config.Dash.Cooldown * (if awakening then awakening.cooldownMultiplier else 1)
+	dashReadyAt = t + cooldown
+	HUD.SetDashCooldown(cooldown)
 
 	local direction = dashDirection(humanoid)
 	Remotes.Action:FireServer("Dash", direction)
@@ -1958,6 +3618,26 @@ function Input.Start()
 	ContextActionService:SetTitle("CloverDash", "Dash")
 	ContextActionService:SetTitle("CloverBlock", "Block")
 
+	-- Skills 1-4 and awakening. The server checks cooldowns and state.
+	local skillKeys = { Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four }
+	for slot, key in skillKeys do
+		local action = "CloverSkill" .. slot
+		ContextActionService:BindAction(action, function(_, state)
+			if state == Enum.UserInputState.Begin and getCharacter() then
+				Remotes.Action:FireServer("Skill", slot)
+			end
+			return Enum.ContextActionResult.Sink
+		end, true, key)
+		ContextActionService:SetTitle(action, tostring(slot))
+	end
+	ContextActionService:BindAction("CloverAwaken", function(_, state)
+		if state == Enum.UserInputState.Begin and getCharacter() then
+			Remotes.Action:FireServer("Awaken")
+		end
+		return Enum.ContextActionResult.Sink
+	end, true, Enum.KeyCode.G)
+	ContextActionService:SetTitle("CloverAwaken", "G")
+
 	RunService.Heartbeat:Connect(function()
 		if m1Held then
 			tryM1()
@@ -1969,6 +3649,7 @@ function Input.Start()
 				and CombatState.CanAct(character)
 				and not CombatState.IsBlocking(character)
 				and not CombatState.IsBusy(character)
+				and not CombatState.IsCasting(character)
 			if canJump ~= jumpEnabled then
 				jumpEnabled = canJump
 				humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, canJump)
@@ -2001,7 +3682,1162 @@ return Input
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="24">
+        <Item class="Folder" referent="28">
+          <Properties>
+            <string name="Name">Kits</string>
+          </Properties>
+          <Item class="ModuleScript" referent="29">
+            <Properties>
+              <string name="Name">AntiMagic</string>
+              <string name="Source"><![CDATA[--[[
+	Anti-Magic Knight (Asta), client side: sword animations, skill VFX and
+	the Black Form look. The server sends ("Skill", {skill, phase, ...})
+	events; see ServerScriptService.Server.Kits.AntiMagic for the gameplay.
+
+	Visual language: black anti-magic with dark red edges, black smoke,
+	sharp slash arcs and rock-cracking impacts.
+]]
+
+local RunService = game:GetService("RunService")
+
+local CameraShake = require(script.Parent.Parent.CameraShake)
+local PoseAnimator = require(script.Parent.Parent.PoseAnimator)
+local VFX = require(script.Parent.Parent.VFX)
+
+local U = VFX.Util
+
+type Animation = PoseAnimator.Animation
+
+local BLACK = Color3.fromRGB(8, 8, 10)
+local RED = Color3.fromRGB(200, 25, 35)
+local DARK_RED = Color3.fromRGB(110, 8, 18)
+local WHITE = Color3.new(1, 1, 1)
+
+local rad = math.rad
+local UP = Vector3.yAxis
+
+local Kit = {}
+
+VFX.SetPalette("AntiMagic", {
+	hit = Color3.fromRGB(220, 50, 60),
+	heavy = Color3.fromRGB(170, 15, 25),
+	flash = Color3.fromRGB(255, 225, 225),
+})
+
+---------------------------------------------------------------------------
+-- Pose helpers (same conventions as M1Animations)
+---------------------------------------------------------------------------
+
+local function rot(x: number, y: number?, z: number?): CFrame
+	return CFrame.Angles(rad(x), rad(y or 0), rad(z or 0))
+end
+
+local function limb(pitch: number, yaw: number?, roll: number?): CFrame
+	return CFrame.Angles(0, rad(yaw or 0), 0) * CFrame.Angles(0, 0, rad(roll or 0)) * CFrame.Angles(rad(pitch), 0, 0)
+end
+
+-- Builds an animation from { {time, pose, easing?}, ... }.
+local function clip(keys: { any }, options: { [string]: any }?): Animation
+	local keyframes = {}
+	for _, key in keys do
+		table.insert(keyframes, { time = key[1], pose = key[2], easing = key[3] })
+	end
+	local animation: any = options or {}
+	animation.keyframes = keyframes
+	return animation :: Animation
+end
+
+local LEGS_ADDITIVE = { RightLeg = true, LeftLeg = true }
+local BACK = Enum.EasingStyle.Back
+
+-- The sword is in the right hand, angled 35 degrees forward of the arm,
+-- so an arm pitch of ~55 holds it level.
+local READY = {
+	Torso = rot(0, -5),
+	RightArm = limb(50, 15),
+	LeftArm = limb(40, -20),
+}
+
+---------------------------------------------------------------------------
+-- Sword M1s
+---------------------------------------------------------------------------
+
+local function swingClip(windup: { [string]: CFrame }, strike: { [string]: CFrame }, heavy: boolean): Animation
+	local windupTime = if heavy then 0.09 else 0.04
+	local strikeTime = if heavy then 0.16 else 0.11
+	return clip({
+		{ 0, READY },
+		{ windupTime, windup },
+		{ strikeTime, strike, BACK },
+		{ strikeTime + (if heavy then 0.16 else 0.09), strike },
+	}, {
+		fadeIn = 0.03,
+		fadeOut = if heavy then 0.22 else 0.16,
+		additive = LEGS_ADDITIVE,
+		events = { { time = windupTime, name = "Strike" } },
+	})
+end
+
+local M1 = {
+	-- Right to left.
+	Slash1 = swingClip({
+		Torso = rot(0, -25),
+		RightArm = limb(80, -70),
+		LeftArm = limb(40, -20),
+		RightLeg = rot(0, 25),
+		LeftLeg = rot(0, 25),
+	}, {
+		Torso = rot(-6, 30),
+		RightArm = limb(80, 65),
+		LeftArm = limb(30, -30),
+		Head = rot(0, -20),
+		RightLeg = rot(0, -30),
+		LeftLeg = rot(0, -30),
+	}, false),
+	-- Backhand, left to right.
+	Slash2 = swingClip({
+		Torso = rot(0, 25),
+		RightArm = limb(85, 70),
+		LeftArm = limb(40, -10),
+		RightLeg = rot(0, -25),
+		LeftLeg = rot(0, -25),
+	}, {
+		Torso = rot(-6, -30),
+		RightArm = limb(80, -70),
+		LeftArm = limb(40, -30),
+		Head = rot(0, 20),
+		RightLeg = rot(0, 30),
+		LeftLeg = rot(0, 30),
+	}, false),
+	-- Rising diagonal.
+	Slash3 = swingClip({
+		Torso = rot(-12, -20),
+		RightArm = limb(10, -35),
+		LeftArm = limb(50, -25),
+		RightLeg = rot(0, 20),
+		LeftLeg = rot(0, 20),
+	}, {
+		Torso = rot(10, 25),
+		RightArm = limb(150, 30),
+		LeftArm = limb(20, -20),
+		Head = rot(-10, -15),
+		RightLeg = rot(0, -25),
+		LeftLeg = rot(0, -25),
+	}, false),
+	-- Finisher: huge horizontal cleave.
+	Cleave = swingClip({
+		Torso = rot(0, -45),
+		RightArm = limb(85, -110),
+		LeftArm = limb(70, -30),
+		Head = rot(0, 30),
+		RightLeg = rot(0, 45),
+		LeftLeg = rot(0, 45),
+	}, {
+		Torso = rot(-10, 50),
+		RightArm = limb(85, 85),
+		LeftArm = limb(20, -40),
+		Head = rot(0, -35),
+		RightLeg = rot(0, -50),
+		LeftLeg = rot(0, -50),
+	}, true),
+	-- Finisher (jump held): rising vertical slash.
+	Rising = swingClip({
+		Torso = rot(-20, -15),
+		RightArm = limb(-30, -10),
+		LeftArm = limb(70, -25),
+		RightLeg = rot(-10, 15),
+		LeftLeg = rot(15, 15),
+	}, {
+		Torso = rot(15, 15),
+		RightArm = limb(175, 10),
+		LeftArm = limb(30, -20),
+		Head = rot(-20, -10),
+		RightLeg = rot(0, -15),
+		LeftLeg = rot(0, -15),
+	}, true),
+	-- Finisher (in the air): two-handed overhead chop.
+	Chop = swingClip({
+		Torso = rot(18),
+		RightArm = limb(175, 8),
+		LeftArm = limb(170, -8),
+		Head = rot(-12),
+	}, {
+		Torso = rot(-35),
+		RightArm = limb(35, 8),
+		LeftArm = limb(40, -8),
+		Head = rot(18),
+	}, true),
+}
+
+-- Slash arc endpoints (relative to the root) for each swing.
+local ARCS: { [string]: { CFrame } } = {
+	Slash1 = { CFrame.new(3.2, 1, -1.2), CFrame.new(-3.2, -0.3, -1.2) },
+	Slash2 = { CFrame.new(-3.2, 0.8, -1.2), CFrame.new(3.2, -0.4, -1.2) },
+	Slash3 = { CFrame.new(1.5, -2, -1.4), CFrame.new(-1.5, 4, -1.4) },
+	Cleave = { CFrame.new(4.5, 1, -0.5), CFrame.new(-4.5, 0, -0.5) },
+	Rising = { CFrame.new(0.4, -2.4, -1.6), CFrame.new(-0.4, 4.5, -1.6) },
+	Chop = { CFrame.new(0, 4.5, -1.6), CFrame.new(0, -2.4, -1.6) },
+}
+
+---------------------------------------------------------------------------
+-- Effects
+---------------------------------------------------------------------------
+
+local function getSword(character: Model): Model?
+	return character:FindFirstChild("KitWeapon") :: Model?
+end
+
+-- Turns the blade's swing trail on for `duration` (locally).
+local function swordTrail(character: Model, duration: number)
+	local sword = getSword(character)
+	local blade = sword and sword:FindFirstChild("Blade")
+	local trail = blade and blade:FindFirstChild("SwingTrail")
+	if trail and trail:IsA("Trail") then
+		trail.Enabled = true
+		task.delay(duration, function()
+			trail.Enabled = false
+		end)
+	end
+end
+
+-- Red glow on the sword (charging, perfect timing flash).
+local function swordGlow(character: Model, color: Color3, duration: number, fill: number?)
+	local sword = getSword(character)
+	if not sword then
+		return
+	end
+	local glow = Instance.new("Highlight")
+	glow.Adornee = sword
+	glow.FillColor = color
+	glow.OutlineColor = color
+	glow.FillTransparency = fill or 0.2
+	glow.OutlineTransparency = 0
+	glow.DepthMode = Enum.HighlightDepthMode.Occluded
+	glow.Parent = U.folder
+	U.tween(
+		glow,
+		duration,
+		{ FillTransparency = 1, OutlineTransparency = 1 },
+		Enum.EasingStyle.Quad,
+		Enum.EasingDirection.In
+	)
+	task.delay(duration, glow.Destroy, glow)
+end
+
+-- Black crescent with a red edge glow, following the character.
+local function slashArc(character: Model, from: CFrame, to: CFrame, width: number, duration: number)
+	local root = U.getRoot(character)
+	if not root then
+		return
+	end
+	local holder = U.newPart({ Size = Vector3.one * 0.1, Transparency = 1, CFrame = root.CFrame })
+	local forward = CFrame.Angles(0, rad(90), 0) -- attachment X axis forward, so the curve bulges out front
+	local a0 = Instance.new("Attachment")
+	a0.CFrame = from * forward
+	a0.Parent = holder
+	local a1 = Instance.new("Attachment")
+	a1.CFrame = to * forward
+	a1.Parent = holder
+
+	local function beam(color: Color3, emission: number, w: number, curve: number): Beam
+		local b = Instance.new("Beam")
+		b.Attachment0 = a0
+		b.Attachment1 = a1
+		b.CurveSize0 = curve
+		b.CurveSize1 = -curve
+		b.Segments = 24
+		b.FaceCamera = true
+		b.LightEmission = emission
+		b.LightInfluence = 0
+		b.Color = ColorSequence.new(color)
+		b.Width0 = 0.1
+		b.Width1 = w
+		b.Parent = holder
+		return b
+	end
+	local glow = beam(RED, 1, width * 1.35, 3.8)
+	local core = beam(BLACK, 0, width, 3.6)
+
+	local follow = RunService.RenderStepped:Connect(function()
+		if root.Parent then
+			holder.CFrame = root.CFrame
+		end
+	end)
+	local start = os.clock()
+	local fade
+	fade = RunService.RenderStepped:Connect(function()
+		local alpha = math.min((os.clock() - start) / duration, 1)
+		local sequence = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.35, 0.1 + 0.9 * alpha),
+			NumberSequenceKeypoint.new(1, alpha),
+		})
+		core.Transparency = sequence
+		glow.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.35, 0.5 + 0.5 * alpha),
+			NumberSequenceKeypoint.new(1, 0.4 + 0.6 * alpha),
+		})
+		if alpha >= 1 then
+			fade:Disconnect()
+			follow:Disconnect()
+			holder:Destroy()
+		end
+	end)
+end
+
+-- Black anti-magic smoke burst.
+local function blackSmoke(position: Vector3, count: number, size: number, speed: number?)
+	U.burst(position, {
+		texture = U.textures.Smoke,
+		color = BLACK,
+		count = count,
+		size = size,
+		speed = NumberRange.new((speed or 10) * 0.5, speed or 10),
+		lifetime = NumberRange.new(0.4, 0.8),
+		lightEmission = 0,
+		transparency = 0.1,
+		drag = 4,
+	})
+end
+
+local function redSparks(position: Vector3, count: number, size: number?, direction: Vector3?)
+	U.burst(position, {
+		color = RED,
+		count = count,
+		size = size or 1,
+		speed = NumberRange.new(25, 50),
+		streaks = true,
+		direction = direction,
+		spread = if direction then 40 else nil,
+	})
+end
+
+-- Short black lightning bolts crackling around a point.
+local function blackLightning(position: Vector3, count: number, radius: number)
+	for _ = 1, count do
+		local from = position + U.randomUnit() * radius * 0.3
+		local to = position + U.randomUnit() * radius
+		local mid = (from + to) / 2 + U.randomUnit() * radius * 0.25
+		for _, segment in { { from, mid }, { mid, to } } do
+			local a, b = segment[1], segment[2]
+			local length = (b - a).Magnitude
+			local bolt = U.newPart({
+				Size = Vector3.new(0.15, 0.15, length),
+				CFrame = CFrame.lookAt((a + b) / 2, b),
+				Color = BLACK,
+				Material = Enum.Material.SmoothPlastic,
+			})
+			U.tween(bolt, 0.18, { Transparency = 1, Size = Vector3.new(0.05, 0.05, length) })
+			task.delay(0.2, bolt.Destroy, bolt)
+		end
+	end
+end
+
+local function play(character: Model, animation: Animation, onEvent: ((string) -> ())?)
+	PoseAnimator.Play(character, animation, onEvent)
+end
+
+---------------------------------------------------------------------------
+-- M1
+---------------------------------------------------------------------------
+
+local STRING = { "Slash1", "Slash2", "Slash3" }
+local FINISHERS = { Knockback = "Cleave", Uppercut = "Rising", Downslam = "Chop" }
+
+function Kit.PlayM1(character: Model, index: number, variant: string)
+	local name = if variant ~= "Normal" then FINISHERS[variant] or "Cleave" else STRING[((index - 1) % #STRING) + 1]
+	local animation = (M1 :: any)[name] :: Animation
+	local heavy = variant ~= "Normal"
+	play(character, animation, function(event)
+		if event ~= "Strike" then
+			return
+		end
+		swordTrail(character, if heavy then 0.22 else 0.14)
+		local arc = ARCS[name]
+		slashArc(character, arc[1], arc[2], if heavy then 1.9 else 1.2, if heavy then 0.28 else 0.18)
+		if heavy then
+			local root = U.getRoot(character)
+			if root then
+				blackSmoke(root.Position + root.CFrame.LookVector * 3, 6, 2.5, 14)
+			end
+		end
+	end)
+end
+
+---------------------------------------------------------------------------
+-- Skills
+---------------------------------------------------------------------------
+
+local THRUST = {
+	Torso = rot(-22, 8),
+	RightArm = limb(55, 5),
+	LeftArm = limb(-30, 0, -20),
+	Head = rot(15),
+	RightLeg = rot(-30),
+	LeftLeg = rot(35),
+}
+
+local CLIPS = {
+	Thrust = clip({ { 0, READY }, { 0.08, THRUST, BACK }, { 0.45, THRUST } }, { fadeOut = 0.15 }),
+
+	Flurry = clip({
+		{ 0, { Torso = rot(-6, -20), RightArm = limb(80, -60), LeftArm = limb(40, -20) } },
+		{ 0.08, { Torso = rot(-6, 25), RightArm = limb(80, 60), LeftArm = limb(40, -20) }, BACK },
+		{ 0.16, { Torso = rot(-6, -25), RightArm = limb(85, -65), LeftArm = limb(40, -20) }, BACK },
+		{ 0.24, { Torso = rot(-6, 25), RightArm = limb(80, 60), LeftArm = limb(40, -20) }, BACK },
+		{ 0.32, { Torso = rot(-6, -25), RightArm = limb(85, -65), LeftArm = limb(40, -20) }, BACK },
+		{ 0.44, { Torso = rot(-15, -15), RightArm = limb(-20, -10), LeftArm = limb(60, -20) } },
+	}, { fadeOut = 0.05, additive = LEGS_ADDITIVE }),
+
+	Launch = clip({
+		{ 0, { Torso = rot(-15, -15), RightArm = limb(-20, -10), LeftArm = limb(60, -20) } },
+		{ 0.08, { Torso = rot(15, 15), RightArm = limb(175, 10), LeftArm = limb(20, -20), Head = rot(-20) }, BACK },
+		{ 0.3, { Torso = rot(12, 12), RightArm = limb(170, 10), LeftArm = limb(20, -20), Head = rot(-15) } },
+	}, { fadeOut = 0.2, additive = LEGS_ADDITIVE }),
+
+	Lunge = clip({
+		{ 0, READY },
+		{
+			0.08,
+			{
+				Torso = rot(-25),
+				RightArm = limb(-20, 0, 20),
+				LeftArm = limb(95, -5),
+				Head = rot(18),
+				RightLeg = rot(-30),
+				LeftLeg = rot(35),
+			},
+			BACK,
+		},
+		{
+			0.4,
+			{
+				Torso = rot(-25),
+				RightArm = limb(-20, 0, 20),
+				LeftArm = limb(95, -5),
+				Head = rot(18),
+				RightLeg = rot(-30),
+				LeftLeg = rot(35),
+			},
+		},
+	}, { fadeOut = 0.1 }),
+
+	Rise = clip({
+		{ 0, { Torso = rot(-10), RightArm = limb(100), LeftArm = limb(95, -5) } },
+		{
+			0.2,
+			{
+				Torso = rot(18),
+				RightArm = limb(178, 5),
+				LeftArm = limb(95, -5),
+				Head = rot(-15),
+				RightLeg = rot(-20),
+				LeftLeg = rot(40),
+			},
+			BACK,
+		},
+		{
+			0.55,
+			{
+				Torso = rot(20),
+				RightArm = limb(178, 5),
+				LeftArm = limb(95, -5),
+				Head = rot(-15),
+				RightLeg = rot(-20),
+				LeftLeg = rot(40),
+			},
+		},
+	}, { fadeOut = 0.05 }),
+
+	Slam = clip({
+		{ 0, { Torso = rot(20), RightArm = limb(178, 5), LeftArm = limb(95, -5) } },
+		{
+			0.1,
+			{
+				Torso = rot(-38),
+				RightArm = limb(30, 5),
+				LeftArm = limb(50, -5),
+				Head = rot(20),
+				RightLeg = rot(40),
+				LeftLeg = rot(10),
+			},
+			BACK,
+		},
+		{ 0.6, { Torso = rot(-35), RightArm = limb(30, 5), LeftArm = limb(50, -5), Head = rot(18) } },
+	}, { fadeOut = 0.25 }),
+
+	DividerCharge = clip({
+		{ 0, READY },
+		{
+			0.15,
+			{
+				Torso = rot(5, -45),
+				RightArm = limb(-40, -30),
+				LeftArm = limb(75, -30),
+				Head = rot(0, 35),
+				RightLeg = rot(0, 45),
+				LeftLeg = rot(0, 45),
+			},
+		},
+		{
+			0.62,
+			{
+				Torso = rot(8, -50),
+				RightArm = limb(-45, -35),
+				LeftArm = limb(80, -30),
+				Head = rot(0, 40),
+				RightLeg = rot(0, 50),
+				LeftLeg = rot(0, 50),
+			},
+		},
+	}, { fadeOut = 0.05, additive = LEGS_ADDITIVE }),
+
+	DividerRelease = clip({
+		{ 0, { Torso = rot(8, -50), RightArm = limb(-45, -35), LeftArm = limb(80, -30) } },
+		{
+			0.08,
+			{
+				Torso = rot(-10, 50),
+				RightArm = limb(85, 85),
+				LeftArm = limb(20, -40),
+				Head = rot(0, -40),
+				RightLeg = rot(0, -50),
+				LeftLeg = rot(0, -50),
+			},
+			BACK,
+		},
+		{
+			0.35,
+			{
+				Torso = rot(-8, 45),
+				RightArm = limb(80, 80),
+				LeftArm = limb(20, -40),
+				Head = rot(0, -35),
+				RightLeg = rot(0, -45),
+				LeftLeg = rot(0, -45),
+			},
+		},
+	}, { fadeOut = 0.25, additive = LEGS_ADDITIVE }),
+
+	Stance = clip({
+		{ 0, READY },
+		{
+			0.08,
+			{ Torso = rot(-6, 10), RightArm = limb(30, 30), LeftArm = limb(60, 35), Head = rot(8) },
+			BACK,
+		},
+		{ 0.82, { Torso = rot(-6, 10), RightArm = limb(30, 30), LeftArm = limb(60, 35), Head = rot(8) } },
+	}, { fadeOut = 0.12 }),
+
+	Counter = clip({
+		{ 0, { Torso = rot(-6, 10), RightArm = limb(30, 30), LeftArm = limb(60, 35) } },
+		{
+			0.08,
+			{ Torso = rot(-5, -40), RightArm = limb(80, -85), LeftArm = limb(20, 0, -40), Head = rot(0, 30) },
+			BACK,
+		},
+		{ 0.35, { Torso = rot(-5, -35), RightArm = limb(80, -80), LeftArm = limb(20, 0, -40), Head = rot(0, 25) } },
+	}, { fadeOut = 0.2, additive = LEGS_ADDITIVE }),
+
+	SlashThrow = clip({
+		{ 0, READY },
+		{ 0.15, { Torso = rot(10, -30), RightArm = limb(155, -40), LeftArm = limb(50, -20) } },
+		{ 0.24, { Torso = rot(-12, 35), RightArm = limb(40, 45), LeftArm = limb(20, -30), Head = rot(0, -25) }, BACK },
+		{ 0.45, { Torso = rot(-10, 30), RightArm = limb(40, 45), LeftArm = limb(20, -30), Head = rot(0, -20) } },
+	}, { fadeOut = 0.2, additive = LEGS_ADDITIVE }),
+
+	GrandCharge = clip({
+		{ 0, READY },
+		{
+			0.25,
+			{ Torso = rot(15), RightArm = limb(172, 6), LeftArm = limb(168, -6), Head = rot(-12) },
+		},
+		{ 0.7, { Torso = rot(18), RightArm = limb(175, 6), LeftArm = limb(170, -6), Head = rot(-15) } },
+	}, { fadeOut = 0.05 }),
+
+	GrandRelease = clip({
+		{ 0, { Torso = rot(18), RightArm = limb(175, 6), LeftArm = limb(170, -6) } },
+		{
+			0.09,
+			{
+				Torso = rot(-35),
+				RightArm = limb(40, 6),
+				LeftArm = limb(45, -6),
+				Head = rot(18),
+				RightLeg = rot(-25),
+				LeftLeg = rot(30),
+			},
+			BACK,
+		},
+		{ 0.5, { Torso = rot(-32), RightArm = limb(40, 6), LeftArm = limb(45, -6), Head = rot(15) } },
+	}, { fadeOut = 0.3 }),
+
+	Grabbing = clip({
+		{ 0, READY },
+		{ 0.1, { Torso = rot(-10), RightArm = limb(-15, 0, 25), LeftArm = limb(92, -5) }, BACK },
+		{ 0.3, { Torso = rot(-10), RightArm = limb(-15, 0, 25), LeftArm = limb(92, -5) } },
+	}, { fadeOut = 0.05 }),
+
+	Release = clip({
+		{ 0, { Torso = rot(-10), RightArm = limb(-15, 0, 25), LeftArm = limb(92, -5) } },
+		{ 0.15, { Torso = rot(10, -20), RightArm = limb(-40, -30), LeftArm = limb(95, -10) } },
+		{
+			0.3,
+			{ Torso = rot(-18, 20), RightArm = limb(95, 10), LeftArm = limb(95, -10), Head = rot(10) },
+			BACK,
+		},
+		{ 0.6, { Torso = rot(-15, 18), RightArm = limb(92, 10), LeftArm = limb(92, -10), Head = rot(8) } },
+	}, { fadeOut = 0.25, additive = LEGS_ADDITIVE }),
+
+	AwakenCrouch = clip({
+		{ 0, READY },
+		{
+			0.2,
+			{
+				Torso = rot(-28),
+				RightArm = limb(-15, 0, 35),
+				LeftArm = limb(-15, 0, -35),
+				Head = rot(18),
+				RightLeg = rot(25),
+				LeftLeg = rot(-5),
+			},
+		},
+		{
+			0.9,
+			{
+				Torso = rot(-30),
+				RightArm = limb(-15, 0, 38),
+				LeftArm = limb(-15, 0, -38),
+				Head = rot(20),
+				RightLeg = rot(28),
+				LeftLeg = rot(-5),
+			},
+		},
+	}, { fadeOut = 0.05 }),
+
+	AwakenRoar = clip({
+		{ 0, { Torso = rot(-30), RightArm = limb(-15, 0, 38), LeftArm = limb(-15, 0, -38) } },
+		{
+			0.1,
+			{ Torso = rot(18), RightArm = limb(30, 0, 80), LeftArm = limb(30, 0, -80), Head = rot(-28) },
+			BACK,
+		},
+		{ 0.6, { Torso = rot(15), RightArm = limb(30, 0, 75), LeftArm = limb(30, 0, -75), Head = rot(-22) } },
+	}, { fadeOut = 0.35 }),
+}
+
+-- Black Hurricane: the whole body spins (RootJoint yaw in 90 degree steps).
+do
+	local keys = {}
+	local spins, duration = 4, 0.9
+	local steps = spins * 4
+	for i = 0, steps do
+		table.insert(keys, {
+			i / steps * duration,
+			{
+				Torso = rot(-10, -90 * i),
+				RightArm = limb(0, 0, 95),
+				LeftArm = limb(0, 0, -95),
+				Head = rot(5),
+			},
+			Enum.EasingStyle.Linear,
+		})
+	end
+	CLIPS.Spin = clip(keys, { fadeIn = 0.05, fadeOut = 0.15 })
+end
+
+-- Anti-magic slash wave, drawn locally from the server's launch info.
+local function slashWave(data)
+	local origin: Vector3 = data.origin
+	local direction: Vector3 = data.direction
+	local speed: number = data.speed or 130
+	local range: number = data.range or 90
+	local width: number = data.width or 9
+	local grand = data.grand == true
+
+	local frame = CFrame.lookAt(origin, origin + direction)
+	local holder = U.newPart({ Size = Vector3.one * 0.1, Transparency = 1, CFrame = frame })
+	-- Crescent across the direction of travel, bulging forward.
+	local forward = CFrame.Angles(0, rad(90), 0)
+	local tilt = if grand then 0 else rad(-25)
+	local a0 = Instance.new("Attachment")
+	a0.CFrame = CFrame.Angles(0, 0, tilt) * CFrame.new(-width / 2, 0, 0) * forward
+	a0.Parent = holder
+	local a1 = Instance.new("Attachment")
+	a1.CFrame = CFrame.Angles(0, 0, tilt) * CFrame.new(width / 2, 0, 0) * forward
+	a1.Parent = holder
+
+	local function beam(color: Color3, emission: number, w: number, curve: number, transparency: number)
+		local b = Instance.new("Beam")
+		b.Attachment0 = a0
+		b.Attachment1 = a1
+		b.CurveSize0 = curve
+		b.CurveSize1 = -curve
+		b.Segments = 24
+		b.FaceCamera = true
+		b.LightEmission = emission
+		b.LightInfluence = 0
+		b.Color = ColorSequence.new(color)
+		b.Width0 = w * 0.15
+		b.Width1 = w * 0.15
+		-- Fades out at the tips so it reads as a crescent.
+		b.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.5, transparency),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		b.Parent = holder
+		return b
+	end
+	local scale = width / 9
+	beam(RED, 1, 5 * scale, width * 0.35, 0.3)
+	beam(BLACK, 0, 3.6 * scale, width * 0.32, 0)
+
+	local trail = Instance.new("ParticleEmitter")
+	trail.Texture = U.textures.Smoke
+	trail.Color = ColorSequence.new(BLACK)
+	trail.LightEmission = 0
+	trail.Size = NumberSequence.new(2 * scale, 0)
+	trail.Transparency = NumberSequence.new(0.2, 1)
+	trail.Lifetime = NumberRange.new(0.3, 0.5)
+	trail.Rate = 60
+	trail.Speed = NumberRange.new(2, 5)
+	trail.SpreadAngle = Vector2.new(180, 180)
+	trail.Parent = holder
+
+	local travelled = 0
+	local connection
+	connection = RunService.RenderStepped:Connect(function(dt)
+		travelled += speed * dt
+		holder.CFrame = frame + direction * travelled
+		if travelled >= range then
+			connection:Disconnect()
+			trail.Enabled = false
+			blackSmoke(holder.Position, 8, 3)
+			task.delay(0.6, holder.Destroy, holder)
+			for _, child in holder:GetChildren() do
+				if child:IsA("Attachment") then
+					child:Destroy()
+				end
+			end
+		end
+	end)
+end
+
+-- Persistent Black Form look per character.
+local awakenedVisuals: { [Model]: { cleanup: { () -> () } } } = {}
+
+local function setAwakened(character: Model, on: boolean)
+	local existing = awakenedVisuals[character]
+	if existing then
+		for _, cleanup in existing.cleanup do
+			cleanup()
+		end
+		awakenedVisuals[character] = nil
+	end
+	if not on then
+		return
+	end
+
+	local torso = character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
+	if not torso or not torso:IsA("BasePart") then
+		return
+	end
+	local cleanup: { () -> () } = {}
+	awakenedVisuals[character] = { cleanup = cleanup }
+
+	-- Rising black anti-magic aura.
+	local aura = Instance.new("ParticleEmitter")
+	aura.Texture = U.textures.Smoke
+	aura.Color = ColorSequence.new(BLACK)
+	aura.LightEmission = 0
+	aura.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1.5), NumberSequenceKeypoint.new(1, 3) })
+	aura.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.6),
+		NumberSequenceKeypoint.new(0.3, 0.35),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	aura.Lifetime = NumberRange.new(0.6, 1)
+	aura.Rate = 35
+	aura.Speed = NumberRange.new(2, 4)
+	aura.Acceleration = Vector3.new(0, 6, 0)
+	aura.SpreadAngle = Vector2.new(60, 60)
+	aura.Parent = torso
+	table.insert(cleanup, function()
+		aura:Destroy()
+	end)
+
+	local embers = Instance.new("ParticleEmitter")
+	embers.Color = ColorSequence.new(RED)
+	embers.LightEmission = 1
+	embers.Size = NumberSequence.new(0.25, 0)
+	embers.Lifetime = NumberRange.new(0.4, 0.8)
+	embers.Rate = 18
+	embers.Speed = NumberRange.new(3, 7)
+	embers.SpreadAngle = Vector2.new(180, 180)
+	embers.Acceleration = Vector3.new(0, 4, 0)
+	embers.Parent = torso
+	table.insert(cleanup, function()
+		embers:Destroy()
+	end)
+
+	-- Single black devil wing on the left shoulder blade.
+	local wing = Instance.new("Model")
+	wing.Name = "BlackWing"
+	local feathers = {
+		{ size = Vector3.new(0.25, 2.6, 0.9), offset = CFrame.new(-0.9, 1.4, 0.75) * rot(-15, 0, 35) },
+		{ size = Vector3.new(0.22, 2.2, 0.8), offset = CFrame.new(-1.7, 1.2, 0.85) * rot(-15, 0, 60) },
+		{ size = Vector3.new(0.2, 1.8, 0.7), offset = CFrame.new(-2.3, 0.6, 0.9) * rot(-15, 0, 85) },
+		{ size = Vector3.new(0.18, 1.3, 0.6), offset = CFrame.new(-2.6, -0.1, 0.95) * rot(-15, 0, 110) },
+	}
+	for _, feather in feathers do
+		local part = U.newPart({
+			Size = feather.size,
+			Color = BLACK,
+			Material = Enum.Material.SmoothPlastic,
+			CFrame = torso.CFrame * feather.offset,
+		})
+		part.Anchored = false
+		part.Massless = true
+		local weld = Instance.new("Weld")
+		weld.Part0 = torso
+		weld.Part1 = part
+		weld.C0 = feather.offset
+		weld.Parent = part
+		part.Parent = wing
+	end
+	wing.Parent = character
+	table.insert(cleanup, function()
+		wing:Destroy()
+	end)
+
+	-- Anti-magic creeping up the right arm.
+	local arm = character:FindFirstChild("Right Arm")
+	if arm and arm:IsA("BasePart") then
+		local original = arm.Color
+		arm.Color = BLACK
+		table.insert(cleanup, function()
+			if arm.Parent then
+				arm.Color = original
+			end
+		end)
+	end
+
+	local outline = Instance.new("Highlight")
+	outline.Adornee = character
+	outline.FillColor = BLACK
+	outline.FillTransparency = 0.8
+	outline.OutlineColor = DARK_RED
+	outline.OutlineTransparency = 0.2
+	outline.DepthMode = Enum.HighlightDepthMode.Occluded
+	outline.Parent = character
+	table.insert(cleanup, function()
+		outline:Destroy()
+	end)
+end
+
+local handlers: { [string]: (data: any, character: Model, root: BasePart) -> () } = {}
+
+function handlers.BullThrust(data, character, root)
+	local phase = data.phase
+	if phase == "Charge" then
+		play(character, CLIPS.Thrust)
+		swordTrail(character, 0.4)
+		U.afterimage(character, DARK_RED, 0.3)
+		U.bodyTrail(character, BLACK, 0.4)
+		blackSmoke(root.Position, 6, 2.5, 8)
+	elseif phase == "Flurry" then
+		play(character, CLIPS.Flurry)
+		swordTrail(character, 0.45)
+		for i = 0, 3 do
+			task.delay(0.02 + i * 0.08, function()
+				if character.Parent then
+					local from = if i % 2 == 0 then CFrame.new(3, 1, -1.2) else CFrame.new(-3, 0.8, -1.2)
+					local to = if i % 2 == 0 then CFrame.new(-3, -0.4, -1.2) else CFrame.new(3, -0.4, -1.2)
+					slashArc(character, from, to, 1.1, 0.14)
+				end
+			end)
+		end
+	elseif phase == "Launch" then
+		play(character, CLIPS.Launch)
+		swordTrail(character, 0.25)
+		slashArc(character, CFrame.new(0.4, -2.4, -1.6), CFrame.new(-0.4, 4.5, -1.6), 2, 0.3)
+	elseif phase == "Land" then
+		U.groundRocks(data.position, 8, 3, 1.6)
+		blackSmoke(data.position, 10, 3, 12)
+	end
+end
+
+function handlers.BlackMeteorite(data, character, root)
+	local phase = data.phase
+	if phase == "Lunge" then
+		play(character, CLIPS.Lunge)
+		U.afterimage(character, BLACK, 0.3)
+		U.bodyTrail(character, BLACK, 0.35)
+		blackLightning(root.Position, 3, 3)
+	elseif phase == "Rise" then
+		play(character, CLIPS.Rise)
+		blackSmoke(root.Position - UP * 2.5, 10, 3, 14)
+		U.ringBurst(CFrame.new(root.Position - UP * 2.8), RED, 1, 6, 0.3, 0.2)
+		U.bodyTrail(character, BLACK, 0.5)
+	elseif phase == "Slam" then
+		play(character, CLIPS.Slam)
+		swordTrail(character, 0.4)
+		U.bodyTrail(character, RED, 0.4)
+	elseif phase == "Impact" then
+		local position: Vector3 = data.position
+		U.groundRocks(position, 14, 5, 2.6)
+		blackSmoke(position, 18, 5, 20)
+		U.ringBurst(CFrame.new(position + UP * 0.3), BLACK, 1, 14, 0.4, 0.5)
+		U.ringBurst(CFrame.new(position + UP * 0.3), RED, 1, 10, 0.35, 0.3)
+		blackLightning(position + UP, 6, 7)
+		U.light(position, RED, 8, 24, 0.4)
+	end
+end
+
+function handlers.BlackDivider(data, character, root)
+	local phase = data.phase
+	if phase == "Charge" then
+		play(character, CLIPS.DividerCharge)
+		-- Anti-magic gathering into the blade.
+		for i = 0, 3 do
+			task.delay(i * 0.09, function()
+				local sword = getSword(character)
+				local blade = sword and sword:FindFirstChild("Blade")
+				if blade and blade:IsA("BasePart") then
+					blackSmoke(blade.Position, 3, 1.8, 4)
+				end
+			end)
+		end
+		swordGlow(character, BLACK, 0.6, 0.4)
+		-- The timing flash: press 3 right now for a perfect Divider.
+		task.delay(data.flashAt or 0.38, function()
+			if not character.Parent then
+				return
+			end
+			swordGlow(character, RED, 0.22, 0)
+			local sword = getSword(character)
+			local blade = sword and sword:FindFirstChild("Blade")
+			if blade and blade:IsA("BasePart") then
+				U.flash(blade.Position, RED, 4, 0.15)
+				U.light(blade.Position, RED, 10, 14, 0.2)
+			end
+			if U.isLocal(character) then
+				CameraShake.FovKick(-4)
+			end
+		end)
+	elseif phase == "Release" then
+		play(character, CLIPS.DividerRelease)
+		swordTrail(character, 0.3)
+		local perfect = data.perfect == true
+		slashArc(character, CFrame.new(4.8, 1, -0.6), CFrame.new(-4.8, -0.2, -0.6), if perfect then 3 else 2.2, 0.32)
+		local front = root.Position + root.CFrame.LookVector * 5
+		blackSmoke(front, if perfect then 16 else 8, 3.5, 22)
+		if perfect then
+			U.popup(root.Position + UP * 4, "PERFECT DIVIDER", RED, 1.6)
+			blackLightning(front, 8, 7)
+			if U.isLocal(character) then
+				U.screenFlash(RED, 0.35)
+			end
+		end
+	end
+end
+
+function handlers.Deflect(data, character, root)
+	local phase = data.phase
+	if phase == "Stance" then
+		play(character, CLIPS.Stance)
+		swordGlow(character, DARK_RED, 0.8, 0.6)
+		U.ringBurst(CFrame.new(root.Position - UP * 2.8), DARK_RED, 3, 3.5, 0.8, 0.1)
+	elseif phase == "Counter" then
+		play(character, CLIPS.Counter)
+		swordTrail(character, 0.25)
+		slashArc(character, CFrame.new(-3.5, 0.8, -1.2), CFrame.new(3.5, -0.4, -1.2), 2.2, 0.25)
+		U.flash(root.Position + root.CFrame.LookVector * 2, WHITE, 7, 0.2)
+		U.popup(root.Position + UP * 3.5, "DEFLECT", RED, 1.3)
+		blackLightning(root.Position, 5, 5)
+		if U.isLocal(character) then
+			U.screenFlash(BLACK, 0.25)
+		end
+	elseif phase == "Reflect" then
+		play(character, CLIPS.SlashThrow)
+		swordTrail(character, 0.3)
+		U.popup(root.Position + UP * 3.5, "REFLECT", RED, 1.3)
+	end
+end
+
+function handlers.BlackHurricane(data, character, root)
+	if data.phase == "Spin" then
+		play(character, CLIPS.Spin)
+		swordTrail(character, 0.9)
+		local start = os.clock()
+		local connection
+		connection = RunService.Heartbeat:Connect(function()
+			if os.clock() - start > (data.duration or 0.9) or not root.Parent then
+				connection:Disconnect()
+				return
+			end
+			if math.random() < 0.35 then
+				blackSmoke(root.Position + U.randomUnit() * 2, 2, 3, 10)
+			end
+		end)
+		for i = 0, 3 do
+			task.delay(i * 0.22, function()
+				if root.Parent then
+					U.ringBurst(CFrame.new(root.Position), BLACK, 2, 7, 0.25, 0.3)
+				end
+			end)
+		end
+	elseif data.phase == "Finish" then
+		redSparks(root.Position + UP, 16, 1.2)
+		U.flash(root.Position, RED, 8, 0.2)
+	end
+end
+
+function handlers.BlackSlash(data, character)
+	if data.phase == "Windup" then
+		play(character, CLIPS.SlashThrow)
+		task.delay(0.15, swordTrail, character, 0.2)
+	elseif data.phase == "Projectile" then
+		slashWave(data)
+		U.flash(data.origin, RED, if data.grand then 9 else 4, 0.15)
+	end
+end
+
+function handlers.GrandDivider(data, character, root)
+	if data.phase == "Charge" then
+		play(character, CLIPS.GrandCharge)
+		swordGlow(character, BLACK, 0.75, 0.3)
+		for i = 0, 6 do
+			task.delay(i * 0.1, function()
+				if root.Parent then
+					blackSmoke(root.Position + UP * 4, 4, 4, 6)
+					blackLightning(root.Position + UP * 5, 1, 3)
+				end
+			end)
+		end
+		U.ringBurst(CFrame.new(root.Position - UP * 2.8), BLACK, 8, 2, 0.7, 0.3)
+	elseif data.phase == "Release" then
+		play(character, CLIPS.GrandRelease)
+		swordTrail(character, 0.3)
+		slashArc(character, CFrame.new(0, 5, -1.8), CFrame.new(0, -2.6, -1.8), 3.5, 0.35)
+		local front = root.Position + root.CFrame.LookVector * 5
+		U.groundRocks(front, 12, 4, 2.4)
+		blackSmoke(front, 16, 5, 18)
+		if U.isLocal(character) then
+			U.screenFlash(RED, 0.3)
+		end
+	end
+end
+
+function handlers.DemonDestroyer(data, character, root)
+	local phase = data.phase
+	if phase == "Lunge" then
+		play(character, CLIPS.Lunge)
+		U.afterimage(character, RED, 0.3)
+		U.bodyTrail(character, BLACK, 0.35)
+	elseif phase == "Grab" then
+		play(character, CLIPS.Grabbing)
+		blackLightning(root.Position, 4, 4)
+	elseif phase == "Carve" then
+		local i = data.index or 1
+		local from = if i % 2 == 0 then CFrame.new(3, 1.5, -2) else CFrame.new(-3, 1.2, -2)
+		local to = if i % 2 == 0 then CFrame.new(-3, -1, -2) else CFrame.new(3, -1, -2)
+		swordTrail(character, 0.12)
+		slashArc(character, from, to, 1.4, 0.15)
+		redSparks(root.Position + root.CFrame.LookVector * 3, 5, 0.8)
+	elseif phase == "Release" then
+		play(character, CLIPS.Release)
+		local front = root.Position + root.CFrame.LookVector * 3
+		task.delay(0.28, function()
+			U.flash(front, BLACK, 12, 0.3)
+			U.flash(front, RED, 8, 0.25)
+			U.ringBurst(CFrame.lookAt(front, front + root.CFrame.LookVector) * rot(90), RED, 1, 12, 0.35, 0.4)
+			blackSmoke(front, 20, 5, 25)
+			blackLightning(front, 10, 9)
+			U.light(front, RED, 12, 30, 0.5)
+			if U.isLocal(character) then
+				U.screenFlash(BLACK, 0.4)
+			end
+		end)
+	elseif phase == "Heal" then
+		U.popup(root.Position + UP * 4, "+30% HP", Color3.fromRGB(120, 255, 140), 1.3)
+		U.highlight(character, Color3.fromRGB(120, 255, 140), 0.5)
+	end
+end
+
+function handlers.Awaken(data, character, root)
+	local phase = data.phase
+	if phase == "Start" then
+		play(character, CLIPS.AwakenCrouch)
+		for i = 0, 8 do
+			task.delay(i * 0.1, function()
+				if root.Parent then
+					blackSmoke(root.Position - UP * 2 + U.randomUnit() * 2, 3, 3, 4)
+					blackLightning(root.Position, 1, 4)
+				end
+			end)
+		end
+		U.ringBurst(CFrame.new(root.Position - UP * 2.8), BLACK, 10, 2, 0.9, 0.3)
+		if U.isLocal(character) then
+			U.screenFlash(BLACK, 0.9)
+		end
+	elseif phase == "Burst" then
+		play(character, CLIPS.AwakenRoar)
+		U.flash(root.Position, BLACK, 18, 0.4)
+		U.flash(root.Position, RED, 12, 0.3)
+		U.ringBurst(CFrame.new(root.Position - UP * 2.5), BLACK, 2, 22, 0.5, 0.6)
+		U.ringBurst(CFrame.new(root.Position - UP * 2.5), RED, 2, 16, 0.45, 0.35)
+		U.groundRocks(root.Position, 16, 7, 2.8)
+		blackSmoke(root.Position, 30, 6, 30)
+		blackLightning(root.Position, 12, 10)
+		U.light(root.Position, RED, 14, 40, 0.6)
+		U.popup(root.Position + UP * 5, "BLACK FORM", RED, 2)
+		if U.isLocal(character) then
+			U.screenFlash(RED, 0.5)
+			CameraShake.FovKick(12)
+		end
+	elseif phase == "End" then
+		blackSmoke(root.Position, 12, 3, 8)
+	end
+end
+
+function Kit.OnSkill(data)
+	local character = data.character
+	if typeof(character) ~= "Instance" or not character:IsA("Model") then
+		return
+	end
+	local root = U.getRoot(character)
+	local handler = handlers[data.skill]
+	if root and handler then
+		handler(data, character, root)
+	end
+end
+
+function Kit.SetAwakened(character: Model, on: boolean)
+	setAwakened(character, on)
+end
+
+-- A brighter, black-lightning version of the heavy hit for perfect Dividers
+-- and the Demon-Destroyer finisher.
+VFX.Register("PerfectDivider", function(data)
+	VFX.Play("HeavyHit", data)
+	local position: Vector3 = data.position
+	blackLightning(position, 8, 6)
+	blackSmoke(position, 12, 4, 20)
+	U.flash(position, BLACK, 9, 0.25)
+	if U.isLocal(data.attacker) or U.isLocal(data.victim) then
+		CameraShake.Add(0.5)
+	end
+end)
+
+return Kit
+]]></string>
+            </Properties>
+          </Item>
+        </Item>
+        <Item class="ModuleScript" referent="30">
           <Properties>
             <string name="Name">M1Animations</string>
             <string name="Source"><![CDATA[--[[
@@ -2389,22 +5225,25 @@ return M1Animations
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="25">
+        <Item class="ModuleScript" referent="31">
           <Properties>
             <string name="Name">Moves</string>
             <string name="Source"><![CDATA[--[[
 	Moves
-	Plays move animations + their VFX on characters.
+	Plays move animations + their VFX on characters, routed to each
+	character's kit (Client/Kits/<KitId>). Characters without a kit (the
+	dummies) use the default fist M1s.
 
-	Your own swings play instantly when you click (predicted by Input), so
-	they feel responsive at any ping. Everyone else's play when the server's
-	"Swing" event arrives.
+	Your own M1s play instantly when you click (predicted by Input), so they
+	feel responsive at any ping. Everyone else's play when the server's
+	"Swing" event arrives. Skills are driven by the server's "Skill" events.
 ]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Remotes = require(ReplicatedStorage:WaitForChild("Shared").Remotes)
+local Kits = require(ReplicatedStorage:WaitForChild("Shared").Kits)
 
 local M1Animations = require(script.Parent.M1Animations)
 local PoseAnimator = require(script.Parent.PoseAnimator)
@@ -2414,9 +5253,22 @@ local localPlayer = Players.LocalPlayer
 
 local TRAIL_TIME = 0.14
 
+local clientKits: { [string]: any } = {}
+for _, module in script.Parent:WaitForChild("Kits"):GetChildren() do
+	if module:IsA("ModuleScript") then
+		clientKits[module.Name] = require(module) :: any
+	end
+end
+
 local Moves = {}
 
-function Moves.PlayM1(character: Model, index: number, variant: string)
+local function kitOf(character: Model): any
+	local id = character:GetAttribute("Kit")
+	return if type(id) == "string" then clientKits[id] else nil
+end
+
+-- Default M1s: punches and a kick.
+local function playFistM1(character: Model, index: number, variant: string)
 	local name = M1Animations.NameFor(index, variant)
 	local animation = M1Animations.Clips[name]
 	if not animation then
@@ -2435,27 +5287,83 @@ function Moves.PlayM1(character: Model, index: number, variant: string)
 	end)
 end
 
+function Moves.PlayM1(character: Model, index: number, variant: string)
+	local kit = kitOf(character)
+	if kit and kit.PlayM1 then
+		kit.PlayM1(character, index, variant)
+	else
+		playFistM1(character, index, variant)
+	end
+end
+
+-- Black Form style looks follow the "Awakened" attribute on every player.
+local function watchCharacter(character: Model)
+	local function update()
+		local kit = kitOf(character)
+		if kit and kit.SetAwakened then
+			kit.SetAwakened(character, character:GetAttribute("Awakened") == true)
+		end
+	end
+	character:GetAttributeChangedSignal("Awakened"):Connect(update)
+	update()
+end
+
+local function watchPlayer(player: Player)
+	player.CharacterAdded:Connect(watchCharacter)
+	if player.Character then
+		task.spawn(watchCharacter, player.Character)
+	end
+end
+
 function Moves.Start()
 	PoseAnimator.Start()
 
 	Remotes.VFX.OnClientEvent:Connect(function(name, data)
-		if name ~= "Swing" or type(data) ~= "table" then
+		if type(data) ~= "table" then
 			return
 		end
 		local character = data.character
-		-- Our own swing already played the moment we clicked.
-		if typeof(character) ~= "Instance" or character == localPlayer.Character then
+		if typeof(character) ~= "Instance" or not character:IsA("Model") then
 			return
 		end
-		Moves.PlayM1(character :: Model, data.index or 1, data.variant or "Normal")
+
+		if name == "Swing" then
+			-- Our own swing already played the moment we clicked.
+			if character ~= localPlayer.Character then
+				Moves.PlayM1(character, data.index or 1, data.variant or "Normal")
+			end
+		elseif name == "Skill" then
+			local kit = if type(data.kit) == "string" then clientKits[data.kit] else nil
+			if kit and kit.OnSkill then
+				kit.OnSkill(data)
+			end
+		end
 	end)
+
+	-- Character switch: a flash in the new character's color.
+	VFX.Register("KitSwitch", function(data)
+		local character = data.character
+		local kit = Kits.Get(data.kit)
+		local root = VFX.Util.getRoot(character)
+		if not root or not kit then
+			return
+		end
+		VFX.Util.afterimage(character, kit.color, 0.5)
+		VFX.Util.flash(root.Position, kit.color, 8, 0.3)
+		VFX.Util.ringBurst(CFrame.new(root.Position - Vector3.new(0, 2.8, 0)), kit.color, 1, 8, 0.35, 0.25)
+	end)
+
+	Players.PlayerAdded:Connect(watchPlayer)
+	for _, player in Players:GetPlayers() do
+		watchPlayer(player)
+	end
 end
 
 return Moves
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="26">
+        <Item class="ModuleScript" referent="32">
           <Properties>
             <string name="Name">PoseAnimator</string>
             <string name="Source"><![CDATA[--[[
@@ -2688,7 +5596,403 @@ return PoseAnimator
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="27">
+        <Item class="ModuleScript" referent="33">
+          <Properties>
+            <string name="Name">ShiftLock</string>
+            <string name="Source"><![CDATA[--[[
+	ShiftLock
+	Our own shift lock (Roblox's built-in one is turned off in StarterPlayer):
+	LeftShift or the top bar button toggles it. While on, the mouse is locked
+	to the center, the camera sits over the right shoulder and the character
+	always faces where the camera looks, so attacks go where you aim.
+]]
+
+local ContextActionService = game:GetService("ContextActionService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
+
+local SHOULDER_OFFSET = Vector3.new(1.75, 0.25, 0)
+local LOCKED_CURSOR = "rbxasset://textures/MouseLockedCursor.png"
+
+local localPlayer = Players.LocalPlayer
+
+local ShiftLock = {}
+
+local enabled = false
+local suspended = false -- e.g. a menu is open and needs the mouse
+local listeners: { (boolean) -> () } = {}
+
+local function getHumanoid(): (Humanoid?, BasePart?)
+	local character = localPlayer.Character
+	if not character then
+		return nil, nil
+	end
+	return character:FindFirstChildOfClass("Humanoid"), character:FindFirstChild("HumanoidRootPart") :: BasePart?
+end
+
+local function apply()
+	local active = enabled and not suspended
+	local humanoid = getHumanoid()
+	if humanoid then
+		humanoid.AutoRotate = not active
+		humanoid.CameraOffset = if active then SHOULDER_OFFSET else Vector3.zero
+	end
+	UserInputService.MouseIcon = if active then LOCKED_CURSOR else ""
+	if not active then
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+	end
+end
+
+function ShiftLock.IsEnabled(): boolean
+	return enabled
+end
+
+function ShiftLock.Set(value: boolean)
+	if enabled == value then
+		return
+	end
+	enabled = value
+	apply()
+	for _, listener in listeners do
+		task.spawn(listener, enabled)
+	end
+end
+
+function ShiftLock.Toggle()
+	ShiftLock.Set(not enabled)
+end
+
+-- Temporarily frees the mouse (menus) without turning shift lock off.
+function ShiftLock.SetSuspended(value: boolean)
+	suspended = value
+	apply()
+end
+
+function ShiftLock.OnChanged(listener: (boolean) -> ())
+	table.insert(listeners, listener)
+end
+
+function ShiftLock.Start()
+	ContextActionService:BindAction("CloverShiftLock", function(_, state)
+		if state == Enum.UserInputState.Begin then
+			ShiftLock.Toggle()
+		end
+		return Enum.ContextActionResult.Sink
+	end, false, Enum.KeyCode.LeftShift)
+
+	-- After the camera has updated: keep the mouse locked and turn the
+	-- character to match the camera.
+	RunService:BindToRenderStep("CloverShiftLock", Enum.RenderPriority.Camera.Value + 2, function()
+		if not enabled or suspended then
+			return
+		end
+		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+
+		local humanoid, root = getHumanoid()
+		if not humanoid or not root or humanoid.Health <= 0 or humanoid.Sit then
+			return
+		end
+		local character = localPlayer.Character :: Model
+		if CombatState.IsRagdolled(character) then
+			return
+		end
+		local look = workspace.CurrentCamera.CFrame.LookVector
+		local flat = Vector3.new(look.X, 0, look.Z)
+		if flat.Magnitude > 1e-3 then
+			root.CFrame = CFrame.lookAt(root.Position, root.Position + flat.Unit)
+		end
+	end)
+
+	localPlayer.CharacterAdded:Connect(function(character)
+		character:WaitForChild("Humanoid")
+		apply()
+	end)
+end
+
+return ShiftLock
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="34">
+          <Properties>
+            <string name="Name">TopBar</string>
+            <string name="Source"><![CDATA[--[[
+	TopBar
+	Buttons in Roblox's top bar, right next to the menu/chat buttons:
+	  CHARACTERS  opens the character picker
+	  SHIFT LOCK  toggles shift lock (same as LeftShift)
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Kits = require(Shared.Kits)
+local Remotes = require(Shared.Remotes)
+
+local ShiftLock = require(script.Parent.ShiftLock)
+
+local localPlayer = Players.LocalPlayer
+
+local COLORS = {
+	Pill = Color3.fromRGB(0, 0, 0),
+	Panel = Color3.fromRGB(14, 14, 18),
+	Card = Color3.fromRGB(28, 28, 34),
+	Text = Color3.fromRGB(240, 240, 240),
+	SubText = Color3.fromRGB(165, 165, 175),
+	On = Color3.fromRGB(90, 200, 255),
+}
+
+local TopBar = {}
+
+local panel: Frame
+local cards: { [string]: { stroke: UIStroke, badge: TextLabel } } = {}
+local open = false
+
+local function corner(parent: Instance, radius: UDim)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = radius
+	c.Parent = parent
+end
+
+-- A pill-shaped button styled like Roblox's own top bar buttons.
+local function pillButton(parent: Instance, text: string, order: number): TextButton
+	local button = Instance.new("TextButton")
+	button.AutoButtonColor = true
+	button.AutomaticSize = Enum.AutomaticSize.X
+	button.Size = UDim2.fromOffset(0, 44)
+	button.BackgroundColor3 = COLORS.Pill
+	button.BackgroundTransparency = 0.3
+	button.Font = Enum.Font.GothamBold
+	button.TextSize = 14
+	button.TextColor3 = COLORS.Text
+	button.Text = text
+	button.LayoutOrder = order
+	button.Parent = parent
+	corner(button, UDim.new(1, 0))
+
+	local padding = Instance.new("UIPadding")
+	padding.PaddingLeft = UDim.new(0, 16)
+	padding.PaddingRight = UDim.new(0, 16)
+	padding.Parent = button
+	return button
+end
+
+local function selectedKit(): string
+	local character = localPlayer.Character
+	local id = (character and character:GetAttribute("Kit")) or localPlayer:GetAttribute("Kit")
+	return if type(id) == "string" then id else Kits.Default
+end
+
+local function refreshCards()
+	local current = selectedKit()
+	for id, card in cards do
+		local kit = Kits.List[id]
+		local isCurrent = id == current
+		card.stroke.Color = if isCurrent then kit.color else Color3.fromRGB(50, 50, 58)
+		card.stroke.Thickness = if isCurrent then 3 else 1
+		card.badge.Text = if not kit.playable then "COMING SOON" elseif isCurrent then "SELECTED" else ""
+	end
+end
+
+local function setOpen(value: boolean)
+	open = value
+	ShiftLock.SetSuspended(open)
+	if open then
+		refreshCards()
+		panel.Visible = true
+		panel.Position = UDim2.fromOffset(16, -10)
+		TweenService:Create(panel, TweenInfo.new(0.18, Enum.EasingStyle.Quad), { Position = UDim2.fromOffset(16, 8) })
+			:Play()
+	else
+		panel.Visible = false
+	end
+end
+
+local function buildCard(parent: Instance, kit: Kits.KitInfo, order: number)
+	local card = Instance.new("TextButton")
+	card.Name = kit.id
+	card.AutoButtonColor = kit.playable
+	card.Text = ""
+	card.BackgroundColor3 = COLORS.Card
+	card.LayoutOrder = order
+	card.Parent = parent
+	corner(card, UDim.new(0, 8))
+
+	local stroke = Instance.new("UIStroke")
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	stroke.Parent = card
+
+	local strip = Instance.new("Frame")
+	strip.Size = UDim2.new(1, 0, 0, 6)
+	strip.BackgroundColor3 = kit.color
+	strip.BackgroundTransparency = if kit.playable then 0 else 0.6
+	strip.BorderSizePixel = 0
+	strip.Parent = card
+	corner(strip, UDim.new(0, 3))
+
+	local title = Instance.new("TextLabel")
+	title.BackgroundTransparency = 1
+	title.Position = UDim2.fromOffset(10, 14)
+	title.Size = UDim2.new(1, -20, 0, 20)
+	title.Font = Enum.Font.GothamBlack
+	title.TextSize = 15
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.TextColor3 = if kit.playable then COLORS.Text else COLORS.SubText
+	title.Text = string.upper(kit.title)
+	title.Parent = card
+
+	local description = Instance.new("TextLabel")
+	description.BackgroundTransparency = 1
+	description.Position = UDim2.fromOffset(10, 36)
+	description.Size = UDim2.new(1, -20, 0, 44)
+	description.Font = Enum.Font.Gotham
+	description.TextSize = 12
+	description.TextWrapped = true
+	description.TextXAlignment = Enum.TextXAlignment.Left
+	description.TextYAlignment = Enum.TextYAlignment.Top
+	description.TextColor3 = COLORS.SubText
+	description.Text = kit.description
+	description.Parent = card
+
+	local badge = Instance.new("TextLabel")
+	badge.BackgroundTransparency = 1
+	badge.AnchorPoint = Vector2.new(0, 1)
+	badge.Position = UDim2.new(0, 10, 1, -8)
+	badge.Size = UDim2.new(1, -20, 0, 14)
+	badge.Font = Enum.Font.GothamBold
+	badge.TextSize = 11
+	badge.TextXAlignment = Enum.TextXAlignment.Left
+	badge.TextColor3 = kit.color
+	badge.Parent = card
+
+	cards[kit.id] = { stroke = stroke, badge = badge }
+
+	card.Activated:Connect(function()
+		if not kit.playable then
+			return
+		end
+		if kit.id ~= selectedKit() then
+			Remotes.Action:FireServer("SelectKit", kit.id)
+		end
+		setOpen(false)
+	end)
+end
+
+local function buildPanel(gui: ScreenGui)
+	panel = Instance.new("Frame")
+	panel.Name = "CharacterPicker"
+	panel.Size = UDim2.fromOffset(3 * 170 + 2 * 10 + 28, 0)
+	panel.AutomaticSize = Enum.AutomaticSize.Y
+	panel.BackgroundColor3 = COLORS.Panel
+	panel.BackgroundTransparency = 0.1
+	panel.Visible = false
+	panel.Parent = gui
+	corner(panel, UDim.new(0, 12))
+
+	local padding = Instance.new("UIPadding")
+	padding.PaddingLeft = UDim.new(0, 14)
+	padding.PaddingRight = UDim.new(0, 14)
+	padding.PaddingTop = UDim.new(0, 12)
+	padding.PaddingBottom = UDim.new(0, 14)
+	padding.Parent = panel
+
+	local heading = Instance.new("TextLabel")
+	heading.BackgroundTransparency = 1
+	heading.Size = UDim2.new(1, 0, 0, 24)
+	heading.Font = Enum.Font.GothamBlack
+	heading.TextSize = 18
+	heading.TextXAlignment = Enum.TextXAlignment.Left
+	heading.TextColor3 = COLORS.Text
+	heading.Text = "CHOOSE YOUR GRIMOIRE"
+	heading.Parent = panel
+
+	local grid = Instance.new("Frame")
+	grid.BackgroundTransparency = 1
+	grid.Position = UDim2.fromOffset(0, 34)
+	grid.Size = UDim2.new(1, 0, 0, 0)
+	grid.AutomaticSize = Enum.AutomaticSize.Y
+	grid.Parent = panel
+
+	local layout = Instance.new("UIGridLayout")
+	layout.CellSize = UDim2.fromOffset(170, 112)
+	layout.CellPadding = UDim2.fromOffset(10, 10)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Parent = grid
+
+	for order, id in Kits.Order do
+		local kit = Kits.List[id]
+		if kit then
+			buildCard(grid, kit, order)
+		end
+	end
+end
+
+function TopBar.Start()
+	local playerGui = localPlayer:WaitForChild("PlayerGui")
+
+	-- Lives in the free part of Roblox's top bar, next to the chat button.
+	local bar = Instance.new("ScreenGui")
+	bar.Name = "TopBar"
+	bar.ResetOnSpawn = false
+	bar.ScreenInsets = Enum.ScreenInsets.TopbarSafeInsets
+	bar.DisplayOrder = 10
+	bar.Parent = playerGui
+
+	local row = Instance.new("Frame")
+	row.BackgroundTransparency = 1
+	row.Size = UDim2.fromScale(1, 1)
+	row.Parent = bar
+
+	local layout = Instance.new("UIListLayout")
+	layout.FillDirection = Enum.FillDirection.Horizontal
+	layout.VerticalAlignment = Enum.VerticalAlignment.Center
+	layout.Padding = UDim.new(0, 8)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Parent = row
+
+	local charactersButton = pillButton(row, "CHARACTERS", 1)
+	local shiftLockButton = pillButton(row, "SHIFT LOCK: OFF", 2)
+
+	-- The picker opens below the top bar.
+	local menus = Instance.new("ScreenGui")
+	menus.Name = "Menus"
+	menus.ResetOnSpawn = false
+	menus.DisplayOrder = 10
+	menus.Parent = playerGui
+	buildPanel(menus)
+
+	charactersButton.Activated:Connect(function()
+		setOpen(not open)
+	end)
+
+	shiftLockButton.Activated:Connect(ShiftLock.Toggle)
+	ShiftLock.OnChanged(function(on)
+		shiftLockButton.Text = if on then "SHIFT LOCK: ON" else "SHIFT LOCK: OFF"
+		shiftLockButton.TextColor3 = if on then COLORS.On else COLORS.Text
+	end)
+
+	-- Keep the "SELECTED" badge right after a switch or respawn.
+	local function watch(character: Model)
+		character:GetAttributeChangedSignal("Kit"):Connect(refreshCards)
+		refreshCards()
+	end
+	localPlayer.CharacterAdded:Connect(watch)
+	if localPlayer.Character then
+		watch(localPlayer.Character)
+	end
+end
+
+return TopBar
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="35">
           <Properties>
             <string name="Name">VFX</string>
             <string name="Source"><![CDATA[--[[
@@ -2723,6 +6027,15 @@ local COLORS = {
 	Evasive = Color3.fromRGB(235, 255, 255),
 	Dust = Color3.fromRGB(150, 145, 135),
 }
+
+-- Characters can recolor their hit effects (VFX.SetPalette).
+type Palette = { hit: Color3, heavy: Color3, flash: Color3 }
+local DEFAULT_PALETTE: Palette = { hit = COLORS.Hit, heavy = COLORS.Heavy, flash = Color3.new(1, 1, 1) }
+local palettes: { [string]: Palette } = {}
+
+local function paletteFor(data): Palette
+	return (type(data.kit) == "string" and palettes[data.kit]) or DEFAULT_PALETTE
+end
 
 local localPlayer = Players.LocalPlayer
 
@@ -3131,17 +6444,18 @@ end
 function Effects.Hit(data)
 	local position: Vector3 = data.position
 	local direction: Vector3 = data.direction or Vector3.zAxis
+	local palette = paletteFor(data)
 
 	burst(position, {
-		color = COLORS.Hit,
+		color = palette.hit,
 		count = 10,
 		size = 0.9,
 		speed = NumberRange.new(20, 38),
 		streaks = true,
 	})
-	flash(position, Color3.new(1, 1, 1), 3.2, 0.12)
-	impactRing(position, direction, Color3.new(1, 1, 1), 0.5, 2.8, 0.18)
-	light(position, COLORS.Hit, 4, 10, 0.15)
+	flash(position, palette.flash, 3.2, 0.12)
+	impactRing(position, direction, palette.flash, 0.5, 2.8, 0.18)
+	light(position, palette.hit, 4, 10, 0.15)
 	highlight(data.victim, Color3.new(1, 1, 1), 0.15)
 	if data.damage then
 		popup(position, string.format("%g", data.damage), Color3.new(1, 1, 1))
@@ -3151,9 +6465,10 @@ end
 function Effects.HeavyHit(data)
 	local position: Vector3 = data.position
 	local direction: Vector3 = data.direction or Vector3.zAxis
+	local palette = paletteFor(data)
 
 	burst(position, {
-		color = COLORS.Heavy,
+		color = palette.heavy,
 		count = 22,
 		size = 1.4,
 		speed = NumberRange.new(30, 60),
@@ -3166,16 +6481,16 @@ function Effects.HeavyHit(data)
 		size = 2,
 		speed = NumberRange.new(5, 12),
 	})
-	flash(position, Color3.new(1, 1, 1), 6.5, 0.18)
-	impactRing(position, direction, COLORS.Heavy, 0.8, 5.5, 0.25)
-	task.delay(0.06, impactRing, position, direction, Color3.new(1, 1, 1), 0.5, 4, 0.22)
-	light(position, COLORS.Heavy, 8, 18, 0.3)
-	highlight(data.victim, COLORS.Heavy, 0.25)
+	flash(position, palette.flash, 6.5, 0.18)
+	impactRing(position, direction, palette.heavy, 0.8, 5.5, 0.25)
+	task.delay(0.06, impactRing, position, direction, palette.flash, 0.5, 4, 0.22)
+	light(position, palette.heavy, 8, 18, 0.3)
+	highlight(data.victim, palette.heavy, 0.25)
 	if data.damage then
-		popup(position, string.format("%g", data.damage), COLORS.Heavy, 1.3)
+		popup(position, string.format("%g", data.damage), palette.heavy, 1.3)
 	end
 
-	if data.variant == "Knockback" or data.variant == "Uppercut" then
+	if data.variant == "Knockback" or data.variant == "Uppercut" or data.variant == nil then
 		bodyTrail(data.victim, Color3.new(1, 1, 1), 0.6)
 	end
 	if isLocal(data.attacker) or isLocal(data.victim) then
@@ -3390,6 +6705,40 @@ function VFX.AirPop(character: Model, heavy: boolean)
 	end
 end
 
+-- Building blocks for character kits (Client/Kits/*).
+VFX.Util = {
+	folder = fxFolder,
+	textures = TEXTURES,
+	newPart = newPart,
+	tween = tween,
+	randomUnit = randomUnit,
+	randomAngles = randomAngles,
+	getRoot = getRoot,
+	isLocal = isLocal,
+	groundBelow = groundBelow,
+	burst = burst,
+	flash = flash,
+	ringBurst = ringBurst,
+	impactRing = impactRing,
+	light = light,
+	highlight = highlight,
+	afterimage = afterimage,
+	bodyTrail = bodyTrail,
+	shards = shards,
+	groundRocks = groundRocks,
+	popup = popup,
+	screenFlash = screenFlash,
+}
+
+-- Adds (or replaces) a named effect the server can trigger.
+function VFX.Register(name: string, effect: (data: any) -> ())
+	Effects[name] = effect
+end
+
+function VFX.SetPalette(kitId: string, palette: Palette)
+	palettes[kitId] = palette
+end
+
 -- Plays an effect locally (used for instant feedback on your own actions).
 function VFX.Play(name: string, data: any)
 	local effect = Effects[name]
@@ -3413,12 +6762,12 @@ return VFX
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="28">
+  <Item class="Workspace" referent="36">
     <Properties>
       <string name="Name">Workspace</string>
       <bool name="NeedsPivotMigration">false</bool>
     </Properties>
-    <Item class="Part" referent="29">
+    <Item class="Part" referent="37">
       <Properties>
         <string name="Name">Baseplate</string>
         <bool name="Anchored">true</bool>
@@ -3437,7 +6786,7 @@ return VFX
         </Vector3>
       </Properties>
     </Item>
-    <Item class="SpawnLocation" referent="30">
+    <Item class="SpawnLocation" referent="38">
       <Properties>
         <string name="Name">SpawnLocation</string>
         <bool name="Anchored">true</bool>

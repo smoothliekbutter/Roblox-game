@@ -31,6 +31,15 @@ local COLORS = {
 	Dust = Color3.fromRGB(150, 145, 135),
 }
 
+-- Characters can recolor their hit effects (VFX.SetPalette).
+type Palette = { hit: Color3, heavy: Color3, flash: Color3 }
+local DEFAULT_PALETTE: Palette = { hit = COLORS.Hit, heavy = COLORS.Heavy, flash = Color3.new(1, 1, 1) }
+local palettes: { [string]: Palette } = {}
+
+local function paletteFor(data): Palette
+	return (type(data.kit) == "string" and palettes[data.kit]) or DEFAULT_PALETTE
+end
+
 local localPlayer = Players.LocalPlayer
 
 local fxFolder = Instance.new("Folder")
@@ -438,17 +447,18 @@ end
 function Effects.Hit(data)
 	local position: Vector3 = data.position
 	local direction: Vector3 = data.direction or Vector3.zAxis
+	local palette = paletteFor(data)
 
 	burst(position, {
-		color = COLORS.Hit,
+		color = palette.hit,
 		count = 10,
 		size = 0.9,
 		speed = NumberRange.new(20, 38),
 		streaks = true,
 	})
-	flash(position, Color3.new(1, 1, 1), 3.2, 0.12)
-	impactRing(position, direction, Color3.new(1, 1, 1), 0.5, 2.8, 0.18)
-	light(position, COLORS.Hit, 4, 10, 0.15)
+	flash(position, palette.flash, 3.2, 0.12)
+	impactRing(position, direction, palette.flash, 0.5, 2.8, 0.18)
+	light(position, palette.hit, 4, 10, 0.15)
 	highlight(data.victim, Color3.new(1, 1, 1), 0.15)
 	if data.damage then
 		popup(position, string.format("%g", data.damage), Color3.new(1, 1, 1))
@@ -458,9 +468,10 @@ end
 function Effects.HeavyHit(data)
 	local position: Vector3 = data.position
 	local direction: Vector3 = data.direction or Vector3.zAxis
+	local palette = paletteFor(data)
 
 	burst(position, {
-		color = COLORS.Heavy,
+		color = palette.heavy,
 		count = 22,
 		size = 1.4,
 		speed = NumberRange.new(30, 60),
@@ -473,16 +484,16 @@ function Effects.HeavyHit(data)
 		size = 2,
 		speed = NumberRange.new(5, 12),
 	})
-	flash(position, Color3.new(1, 1, 1), 6.5, 0.18)
-	impactRing(position, direction, COLORS.Heavy, 0.8, 5.5, 0.25)
-	task.delay(0.06, impactRing, position, direction, Color3.new(1, 1, 1), 0.5, 4, 0.22)
-	light(position, COLORS.Heavy, 8, 18, 0.3)
-	highlight(data.victim, COLORS.Heavy, 0.25)
+	flash(position, palette.flash, 6.5, 0.18)
+	impactRing(position, direction, palette.heavy, 0.8, 5.5, 0.25)
+	task.delay(0.06, impactRing, position, direction, palette.flash, 0.5, 4, 0.22)
+	light(position, palette.heavy, 8, 18, 0.3)
+	highlight(data.victim, palette.heavy, 0.25)
 	if data.damage then
-		popup(position, string.format("%g", data.damage), COLORS.Heavy, 1.3)
+		popup(position, string.format("%g", data.damage), palette.heavy, 1.3)
 	end
 
-	if data.variant == "Knockback" or data.variant == "Uppercut" then
+	if data.variant == "Knockback" or data.variant == "Uppercut" or data.variant == nil then
 		bodyTrail(data.victim, Color3.new(1, 1, 1), 0.6)
 	end
 	if isLocal(data.attacker) or isLocal(data.victim) then
@@ -695,6 +706,40 @@ function VFX.AirPop(character: Model, heavy: boolean)
 	if heavy then
 		flash(position, COLORS.Swing, 2.5, 0.1)
 	end
+end
+
+-- Building blocks for character kits (Client/Kits/*).
+VFX.Util = {
+	folder = fxFolder,
+	textures = TEXTURES,
+	newPart = newPart,
+	tween = tween,
+	randomUnit = randomUnit,
+	randomAngles = randomAngles,
+	getRoot = getRoot,
+	isLocal = isLocal,
+	groundBelow = groundBelow,
+	burst = burst,
+	flash = flash,
+	ringBurst = ringBurst,
+	impactRing = impactRing,
+	light = light,
+	highlight = highlight,
+	afterimage = afterimage,
+	bodyTrail = bodyTrail,
+	shards = shards,
+	groundRocks = groundRocks,
+	popup = popup,
+	screenFlash = screenFlash,
+}
+
+-- Adds (or replaces) a named effect the server can trigger.
+function VFX.Register(name: string, effect: (data: any) -> ())
+	Effects[name] = effect
+end
+
+function VFX.SetPalette(kitId: string, palette: Palette)
+	palettes[kitId] = palette
 end
 
 -- Plays an effect locally (used for instant feedback on your own actions).

@@ -36,17 +36,34 @@ With live sync, every code change shows up in Studio instantly, without re-downl
 
 | Input | Action |
 |---|---|
-| Left click (hold to chain) | M1 combo: jab, cross, hook, then a front kick that ragdolls and guard-breaks |
-| Hold **Space** on the 4th hit | Rising uppercut that launches both of you into the air |
-| 4th hit while in the air | Double-fist hammer downslam with a crater |
-| **Q** + WASD | Dash: front, back, left or right. Front dash steers with the camera. |
+| Left click (hold to chain) | M1 combo, 4 hits. The 4th hit ragdolls and guard-breaks. |
+| Hold **Space** on the 4th hit | Uppercut finisher that launches both of you |
+| 4th hit while in the air | Downslam finisher with a crater |
+| **1 2 3 4** | Character skills |
+| **G** | Awaken when the red meter is full (it fills as you fight) |
+| **Q** + WASD | Dash: front, back, left or right |
 | Hold **F** | Block. Only works facing the attacker. |
 | Tap **F** right before a hit | Perfect block: stuns the attacker |
 | **Q** while stunned or ragdolled | Evasive breakout (needs a full cyan bar) |
+| **LeftShift** | Toggle shift lock (or the SHIFT LOCK button in the top bar) |
 
-Gamepad: R2 attack, B dash, L2 block. On mobile, on-screen buttons appear automatically.
+The **CHARACTERS** button in the top bar, next to chat, opens the character picker. Switching is blocked for 5 seconds after combat.
 
-Turn on **Shift Lock** (Settings → Shift Lock Switch, then press Shift) for the battlegrounds feel.
+## Characters
+
+### Anti-Magic Knight (Asta)
+
+A close-range rushdown character built like Vessel (Jujutsu Shenanigans) and Hero Hunter (The Strongest Battlegrounds). He swings a demon-slaying greatsword.
+
+| Key | Base | Black Form (after G) |
+|---|---|---|
+| 1 | **Bull Thrust**: charge in, slash flurry, launcher. In the air it's a diving thrust. | **Black Hurricane**: spinning charge that drags enemies along |
+| 2 | **Black Meteorite**: unblockable lunge grab, carries them up, crater slam | **Black Slash**: piercing anti-magic slash wave |
+| 3 | **Black Divider**: charged cleave. Press **3** again on the red flash for a Perfect Divider. | **Grand Divider**: huge guard-breaking cleave plus a giant slash wave |
+| 4 | **Anti-Magic Deflect**: counters every attack type. Slashes melee attackers aside and sends projectiles back. | **Demon-Destroyer**: grab, carve, explosive finisher that heals 30% |
+| G | **Black Form**: black aura, devil wing, +25% damage, faster, new moves for 40s | |
+
+More grimoires are listed as "coming soon" in the picker.
 
 ## Test dummies
 
@@ -60,12 +77,16 @@ Three dummies spawn in front of you:
 
 ```
 src/
-  shared/   ReplicatedStorage.Shared: Config, CombatState, Remotes, Impulse
-  server/   ServerScriptService.Server: CombatService, Hitbox, Ragdoll, Dummies, CharacterLoader
-  client/   StarterPlayerScripts.Client: Input, Moves, PoseAnimator, M1Animations, VFX, CameraShake, HUD
+  shared/   ReplicatedStorage.Shared: Config, Kits (roster), CombatState, Remotes, Impulse
+  server/   ServerScriptService.Server: CombatService, Hitbox, Projectile, Ragdoll, Dummies, CharacterLoader
+    Kits/   one module per character: skills, awakening, weapon model
+  client/   StarterPlayerScripts.Client: Input, Moves, PoseAnimator, M1Animations, VFX, CameraShake,
+            HUD, TopBar, ShiftLock
+    Kits/   one module per character: animations and VFX
 ```
 
-- **Balancing:** every number lives in `src/shared/Config.luau`. Set `Config.Debug.ShowHitboxes = true` to see hitboxes.
+- **Adding a character:** add an entry to `src/shared/Kits.luau`, a server module in `src/server/Kits/` (`Skills`, `AwakenedSkills`, `Awaken`, `Equip`) and a client module in `src/client/Kits/` (`PlayM1`, `OnSkill`, `SetAwakened`), all named after the kit id.
+- **Balancing:** general numbers live in `src/shared/Config.luau`, per-character ones in `src/shared/Kits.luau`. Set `Config.Debug.ShowHitboxes = true` to see hitboxes.
 - **Server-authoritative:** the server decides every hit, block and cooldown. Clients only send inputs and draw effects.
 - **Animations are code:** `src/client/M1Animations.luau` holds keyframed R6 poses, played by `PoseAnimator` by overriding Motor6Ds. Nothing needs uploading and there are no animation-permission problems. Uploaded animation IDs can replace them later.
 - **VFX are client-side:** the server sends `("EffectName", data)` and `src/client/VFX.luau` draws it. Effects use only textures built into Roblox, so nothing needs uploading.

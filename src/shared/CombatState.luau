@@ -9,13 +9,20 @@ local CombatState = {}
 
 local DEFAULTS = {
 	StunUntil = 0,
-	BusyUntil = 0,
+	BusyUntil = 0, -- swinging: slowed, can't jump
+	CastUntil = 0, -- using a skill: locked out of everything else
 	IFrameUntil = 0,
 	Blocking = false,
 	BlockStart = 0,
 	Ragdolled = false,
 	Evasive = 0,
+	Awakening = 0, -- meter, 0 to Config.Awakening.Max
+	Awakened = false,
 }
+
+-- Skill slots 1-4. "CD<n>" is the server time the skill is ready again,
+-- "CDLen<n>" how long that cooldown was (for drawing the HUD sweep).
+CombatState.SkillSlots = 4
 
 local function now(): number
 	return workspace:GetServerTimeNow()
@@ -25,6 +32,14 @@ CombatState.Now = now
 function CombatState.Setup(character: Model)
 	for name, value in DEFAULTS do
 		character:SetAttribute(name, value)
+	end
+	CombatState.ResetCooldowns(character)
+end
+
+function CombatState.ResetCooldowns(character: Model)
+	for slot = 1, CombatState.SkillSlots do
+		character:SetAttribute("CD" .. slot, 0)
+		character:SetAttribute("CDLen" .. slot, 1)
 	end
 end
 
@@ -44,6 +59,21 @@ function CombatState.IsBusy(character: Model): boolean
 	return (tonumber(character:GetAttribute("BusyUntil")) or 0) > now()
 end
 
+function CombatState.IsCasting(character: Model): boolean
+	return (tonumber(character:GetAttribute("CastUntil")) or 0) > now()
+end
+
+function CombatState.IsAwakened(character: Model): boolean
+	return character:GetAttribute("Awakened") == true
+end
+
+-- Seconds left on a skill's cooldown, and the cooldown's full length.
+function CombatState.Cooldown(character: Model, slot: number): (number, number)
+	local readyAt = tonumber(character:GetAttribute("CD" .. slot)) or 0
+	local length = tonumber(character:GetAttribute("CDLen" .. slot)) or 1
+	return math.max(readyAt - now(), 0), length
+end
+
 function CombatState.IsRagdolled(character: Model): boolean
 	return character:GetAttribute("Ragdolled") == true
 end
@@ -56,7 +86,8 @@ function CombatState.HasIFrames(character: Model): boolean
 	return (tonumber(character:GetAttribute("IFrameUntil")) or 0) > now()
 end
 
--- Alive, not stunned and not ragdolled. Busy (mid-swing) is checked separately.
+-- Alive, not stunned and not ragdolled. Busy (mid-swing) and casting are
+-- checked separately.
 function CombatState.CanAct(character: Model): boolean
 	return CombatState.IsAlive(character)
 		and not CombatState.IsStunned(character)
@@ -72,6 +103,19 @@ end
 
 function CombatState.ClearStun(character: Model)
 	character:SetAttribute("StunUntil", 0)
+end
+
+function CombatState.SetCasting(character: Model, duration: number)
+	character:SetAttribute("CastUntil", now() + duration)
+end
+
+function CombatState.ClearCasting(character: Model)
+	character:SetAttribute("CastUntil", 0)
+end
+
+function CombatState.StartCooldown(character: Model, slot: number, duration: number)
+	character:SetAttribute("CD" .. slot, now() + duration)
+	character:SetAttribute("CDLen" .. slot, math.max(duration, 0.01))
 end
 
 function CombatState.SetBusy(character: Model, duration: number)

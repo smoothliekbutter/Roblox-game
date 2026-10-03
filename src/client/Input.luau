@@ -4,6 +4,9 @@
 	  M1 (click, hold to chain)   basic attack, hold Space on the 4th hit to uppercut
 	  Q                           dash in your movement direction (Evasive when stunned)
 	  F (hold)                    block, press right before a hit to perfect block
+	  1-4                         character skills (sent even on cooldown: some skills
+	                              read follow-up presses, like timing Black Divider)
+	  G                           awaken when the meter is full
 ]]
 
 local ContextActionService = game:GetService("ContextActionService")
@@ -16,6 +19,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local CombatState = require(Shared.CombatState)
 local Impulse = require(Shared.Impulse)
+local Kits = require(Shared.Kits)
 local Remotes = require(Shared.Remotes)
 
 local CameraShake = require(script.Parent.CameraShake)
@@ -94,7 +98,7 @@ local function tryM1()
 	if not character or not humanoid or not root then
 		return
 	end
-	if not CombatState.CanAct(character) or CombatState.IsBlocking(character) then
+	if not CombatState.CanAct(character) or CombatState.IsBlocking(character) or CombatState.IsCasting(character) then
 		return
 	end
 	local t = os.clock()
@@ -178,12 +182,18 @@ local function tryDash()
 		return
 	end
 
+	if CombatState.IsCasting(character) then
+		return
+	end
 	local t = os.clock()
 	if t < dashReadyAt then
 		return
 	end
-	dashReadyAt = t + Config.Dash.Cooldown
-	HUD.SetDashCooldown(Config.Dash.Cooldown)
+	local kit = Kits.Of(character)
+	local awakening = kit and CombatState.IsAwakened(character) and kit.awakening
+	local cooldown = Config.Dash.Cooldown * (if awakening then awakening.cooldownMultiplier else 1)
+	dashReadyAt = t + cooldown
+	HUD.SetDashCooldown(cooldown)
 
 	local direction = dashDirection(humanoid)
 	Remotes.Action:FireServer("Dash", direction)
@@ -244,6 +254,26 @@ function Input.Start()
 	ContextActionService:SetTitle("CloverDash", "Dash")
 	ContextActionService:SetTitle("CloverBlock", "Block")
 
+	-- Skills 1-4 and awakening. The server checks cooldowns and state.
+	local skillKeys = { Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four }
+	for slot, key in skillKeys do
+		local action = "CloverSkill" .. slot
+		ContextActionService:BindAction(action, function(_, state)
+			if state == Enum.UserInputState.Begin and getCharacter() then
+				Remotes.Action:FireServer("Skill", slot)
+			end
+			return Enum.ContextActionResult.Sink
+		end, true, key)
+		ContextActionService:SetTitle(action, tostring(slot))
+	end
+	ContextActionService:BindAction("CloverAwaken", function(_, state)
+		if state == Enum.UserInputState.Begin and getCharacter() then
+			Remotes.Action:FireServer("Awaken")
+		end
+		return Enum.ContextActionResult.Sink
+	end, true, Enum.KeyCode.G)
+	ContextActionService:SetTitle("CloverAwaken", "G")
+
 	RunService.Heartbeat:Connect(function()
 		if m1Held then
 			tryM1()
@@ -255,6 +285,7 @@ function Input.Start()
 				and CombatState.CanAct(character)
 				and not CombatState.IsBlocking(character)
 				and not CombatState.IsBusy(character)
+				and not CombatState.IsCasting(character)
 			if canJump ~= jumpEnabled then
 				jumpEnabled = canJump
 				humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, canJump)

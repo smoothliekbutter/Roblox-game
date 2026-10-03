@@ -17,6 +17,7 @@ Config.Movement = {
 	AttackingSpeed = 10,
 	BlockingSpeed = 7,
 	StunnedSpeed = 3,
+	CastingSpeed = 5,
 }
 
 Config.M1 = {
@@ -70,6 +71,16 @@ Config.Dash = {
 		Right = 70,
 	},
 }
+
+-- Awakening: fills by dealing (and a bit by taking) damage. G when full.
+Config.Awakening = {
+	Max = 100,
+	GainPerDamageDealt = 3,
+	GainPerDamageTaken = 1.2,
+}
+
+-- Switching characters is blocked this long after dealing or taking damage.
+Config.KitSwitchCombatLock = 5
 
 Config.Ragdoll = {
 	Duration = 1.5,

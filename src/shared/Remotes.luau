@@ -3,15 +3,17 @@
 	The server creates every RemoteEvent; clients wait for them.
 
 	Action       client -> server   ("M1", {jump}) | ("Block", bool) | ("Dash", dir) | ("Evasive")
+	                                | ("Skill", slot) | ("Awaken") | ("SelectKit", kitId)
 	VFX          server -> clients  (effectName, data)
 	CameraShake  server -> client   (intensity 0-1)
 	Impulse      server -> client   (velocity, duration) applied to your own character
+	Notify       server -> client   (text, color?) toast message
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local NAMES = { "Action", "VFX", "CameraShake", "Impulse" }
+local NAMES = { "Action", "VFX", "CameraShake", "Impulse", "Notify" }
 
 local Remotes: { [string]: RemoteEvent } = {}
 
