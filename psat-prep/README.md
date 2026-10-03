@@ -9,11 +9,11 @@ It's plain HTML, CSS, and JavaScript. There's nothing to install and no server t
 1. Download this folder (`psat-prep`).
 2. Open `index.html` in Chrome, Edge, Firefox, or Safari.
 
-Until you load the real question bank (below), the site runs in **sample mode** with 24 original practice questions so you can try everything.
+All 3,629 questions from College Board's PSAT/NMSQT & PSAT 10 question bank are already included (1,844 Reading and Writing, 1,785 Math), downloaded October 3, 2026.
 
-## Load every College Board question
+## Refresh the questions
 
-The script `scripts/fetch-questions.mjs` downloads every question in the [SAT Suite Question Bank](https://satsuitequestionbank.collegeboard.org/) for the PSAT/NMSQT & PSAT 10, with the answer and the full explanation, and saves them into `data/`.
+College Board adds questions to the bank over time. The script `scripts/fetch-questions.mjs` downloads every question in the [SAT Suite Question Bank](https://satsuitequestionbank.collegeboard.org/) for the PSAT/NMSQT & PSAT 10, with the answer and the full explanation, and saves them into `data/`.
 
 1. Install [Node.js](https://nodejs.org) 18 or newer.
 2. In a terminal:
@@ -21,7 +21,7 @@ The script `scripts/fetch-questions.mjs` downloads every question in the [SAT Su
    cd psat-prep
    node scripts/fetch-questions.mjs
    ```
-3. Reload `index.html`. The yellow "Sample mode" banner disappears and the question bank shows every question.
+3. Reload `index.html`.
 
 It takes a few minutes. Downloads are cached in `.cache/`, so if it stops partway, run it again and it continues where it left off. Other options:
 
@@ -59,8 +59,8 @@ Progress is saved in your browser (`localStorage`), so it stays on the device an
 | Path | What it is |
 |---|---|
 | `index.html`, `styles.css`, `app.js` | The website |
-| `data/sample-questions.js` | 24 original sample questions used before the real bank is loaded |
-| `data/questions-rw.js`, `data/questions-math.js` | The College Board questions, written by the fetch script |
+| `data/questions-rw-*.js`, `data/questions-math-*.js` | The College Board questions, one file per domain, written by the fetch script |
+| `data/sample-questions.js` | 24 original sample questions, used only if the question files are missing |
 | `scripts/fetch-questions.mjs` | Downloads the question bank |
 
 Questions and explanations belong to College Board. This site is a personal study tool and isn't affiliated with or endorsed by College Board.
