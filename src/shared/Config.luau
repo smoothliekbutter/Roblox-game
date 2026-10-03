@@ -13,7 +13,7 @@ Config.Debug = {
 
 Config.Movement = {
 	WalkSpeed = 16,
-	JumpHeight = 7.2,
+	JumpHeight = 4.5, -- studs (Roblox default is 7.2)
 	AttackingSpeed = 10,
 	BlockingSpeed = 7,
 	StunnedSpeed = 3,
@@ -27,7 +27,7 @@ Config.M1 = {
 	SwingCooldown = 0.3, -- time between swings in a string
 	ResetTime = 1.1, -- idle time before the combo counter resets
 	EndLag = 1.1, -- lockout after the final hit
-	Busy = 0.25, -- slowed while swinging
+	Busy = 0.35, -- slowed and can't jump while swinging (> SwingCooldown, so a full string stays grounded)
 	FinisherBusy = 0.45,
 	WindUp = 0.08, -- delay between the swing starting and the hitbox
 	FinisherWindUp = 0.15, -- the 4th hit winds up longer (matches its animation)

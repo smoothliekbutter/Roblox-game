@@ -435,7 +435,7 @@ local function updateMovement()
 			elseif CombatState.IsBlocking(character) then
 				speed, jump = Config.Movement.BlockingSpeed, 0
 			elseif CombatState.IsBusy(character) then
-				speed = Config.Movement.AttackingSpeed
+				speed, jump = Config.Movement.AttackingSpeed, 0
 			end
 			if humanoid.WalkSpeed ~= speed then
 				humanoid.WalkSpeed = speed

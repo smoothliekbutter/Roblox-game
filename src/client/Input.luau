@@ -46,6 +46,10 @@ local dashReadyAt = 0
 local predictedCombo = 0
 local lastM1 = 0
 local nextM1 = 0
+-- Jumping is locked while swinging. The server enforces it too (JumpHeight 0),
+-- but locking it here as well means there's no ping delay.
+local noJumpUntil = 0
+local jumpEnabled = true
 
 local function getCharacter(): (Model?, Humanoid?, BasePart?)
 	local character = localPlayer.Character
@@ -109,6 +113,7 @@ local function tryM1()
 	if index >= Config.M1.ComboLength then
 		predictedCombo = 0
 		nextM1 = t + Config.M1.EndLag
+		noJumpUntil = t + Config.M1.FinisherBusy
 		if jump then
 			variant = "Uppercut"
 		elseif humanoid.FloorMaterial == Enum.Material.Air then
@@ -118,6 +123,7 @@ local function tryM1()
 		end
 	else
 		nextM1 = t + Config.M1.SwingCooldown
+		noJumpUntil = t + Config.M1.Busy
 	end
 
 	Remotes.Action:FireServer("M1", { jump = jump })
@@ -194,6 +200,7 @@ end
 -- or it fights the ragdoll / stays floppy after getting up.
 local function onCharacterAdded(character: Model)
 	local humanoid = character:WaitForChild("Humanoid") :: Humanoid
+	jumpEnabled = true
 	character:GetAttributeChangedSignal("Ragdolled"):Connect(function()
 		if character:GetAttribute("Ragdolled") then
 			humanoid:ChangeState(Enum.HumanoidStateType.Physics)
@@ -241,8 +248,20 @@ function Input.Start()
 		if m1Held then
 			tryM1()
 		end
+
+		local character, humanoid = getCharacter()
+		if character and humanoid then
+			local canJump = os.clock() >= noJumpUntil
+				and CombatState.CanAct(character)
+				and not CombatState.IsBlocking(character)
+				and not CombatState.IsBusy(character)
+			if canJump ~= jumpEnabled then
+				jumpEnabled = canJump
+				humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, canJump)
+			end
+		end
+
 		-- Holding F through a swing or stun: block as soon as it's allowed.
-		local character = localPlayer.Character
 		if blockHeld and character and not CombatState.IsBlocking(character) then
 			if os.clock() - lastBlockSent > BLOCK_RETRY then
 				lastBlockSent = os.clock()

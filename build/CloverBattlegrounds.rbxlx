@@ -174,7 +174,7 @@ Config.Debug = {
 
 Config.Movement = {
 	WalkSpeed = 16,
-	JumpHeight = 7.2,
+	JumpHeight = 4.5, -- studs (Roblox default is 7.2)
 	AttackingSpeed = 10,
 	BlockingSpeed = 7,
 	StunnedSpeed = 3,
@@ -188,7 +188,7 @@ Config.M1 = {
 	SwingCooldown = 0.3, -- time between swings in a string
 	ResetTime = 1.1, -- idle time before the combo counter resets
 	EndLag = 1.1, -- lockout after the final hit
-	Busy = 0.25, -- slowed while swinging
+	Busy = 0.35, -- slowed and can't jump while swinging (> SwingCooldown, so a full string stays grounded)
 	FinisherBusy = 0.45,
 	WindUp = 0.08, -- delay between the swing starting and the hitbox
 	FinisherWindUp = 0.15, -- the 4th hit winds up longer (matches its animation)
@@ -926,7 +926,7 @@ local function updateMovement()
 			elseif CombatState.IsBlocking(character) then
 				speed, jump = Config.Movement.BlockingSpeed, 0
 			elseif CombatState.IsBusy(character) then
-				speed = Config.Movement.AttackingSpeed
+				speed, jump = Config.Movement.AttackingSpeed, 0
 			end
 			if humanoid.WalkSpeed ~= speed then
 				humanoid.WalkSpeed = speed
@@ -1760,6 +1760,10 @@ local dashReadyAt = 0
 local predictedCombo = 0
 local lastM1 = 0
 local nextM1 = 0
+-- Jumping is locked while swinging. The server enforces it too (JumpHeight 0),
+-- but locking it here as well means there's no ping delay.
+local noJumpUntil = 0
+local jumpEnabled = true
 
 local function getCharacter(): (Model?, Humanoid?, BasePart?)
 	local character = localPlayer.Character
@@ -1823,6 +1827,7 @@ local function tryM1()
 	if index >= Config.M1.ComboLength then
 		predictedCombo = 0
 		nextM1 = t + Config.M1.EndLag
+		noJumpUntil = t + Config.M1.FinisherBusy
 		if jump then
 			variant = "Uppercut"
 		elseif humanoid.FloorMaterial == Enum.Material.Air then
@@ -1832,6 +1837,7 @@ local function tryM1()
 		end
 	else
 		nextM1 = t + Config.M1.SwingCooldown
+		noJumpUntil = t + Config.M1.Busy
 	end
 
 	Remotes.Action:FireServer("M1", { jump = jump })
@@ -1908,6 +1914,7 @@ end
 -- or it fights the ragdoll / stays floppy after getting up.
 local function onCharacterAdded(character: Model)
 	local humanoid = character:WaitForChild("Humanoid") :: Humanoid
+	jumpEnabled = true
 	character:GetAttributeChangedSignal("Ragdolled"):Connect(function()
 		if character:GetAttribute("Ragdolled") then
 			humanoid:ChangeState(Enum.HumanoidStateType.Physics)
@@ -1955,8 +1962,20 @@ function Input.Start()
 		if m1Held then
 			tryM1()
 		end
+
+		local character, humanoid = getCharacter()
+		if character and humanoid then
+			local canJump = os.clock() >= noJumpUntil
+				and CombatState.CanAct(character)
+				and not CombatState.IsBlocking(character)
+				and not CombatState.IsBusy(character)
+			if canJump ~= jumpEnabled then
+				jumpEnabled = canJump
+				humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, canJump)
+			end
+		end
+
 		-- Holding F through a swing or stun: block as soon as it's allowed.
-		local character = localPlayer.Character
 		if blockHeld and character and not CombatState.IsBlocking(character) then
 			if os.clock() - lastBlockSent > BLOCK_RETRY then
 				lastBlockSent = os.clock()
