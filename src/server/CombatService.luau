@@ -819,6 +819,15 @@ function CombatService.Register(character: Model)
 	-- Players get their chosen character's kit. Dummies stay kit-less.
 	local player = Players:GetPlayerFromCharacter(character)
 	if player then
+		-- Wait for the avatar to be applied: it can replace the limbs a
+		-- weapon would be welded to.
+		local waited = 0
+		while character:GetAttribute("AvatarLoaded") ~= true and waited < 6 and character.Parent do
+			waited += task.wait(0.1)
+		end
+		if not character.Parent then
+			return
+		end
 		local kitId = player:GetAttribute("Kit")
 		local kit = Kits.Get(if type(kitId) == "string" then kitId else nil)
 		if not kit or not kit.playable then

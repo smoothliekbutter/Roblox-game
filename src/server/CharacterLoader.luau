@@ -51,6 +51,9 @@ local function spawnCharacter(player: Player)
 	if not ok then
 		warn("[CharacterLoader] Couldn't apply avatar for", player.Name, err)
 	end
+	-- Applying the avatar can rebuild body parts, so weapons are only
+	-- attached after this (see CombatService.Register).
+	character:SetAttribute("AvatarLoaded", true)
 
 	humanoid.Died:Connect(function()
 		task.delay(Players.RespawnTime, function()

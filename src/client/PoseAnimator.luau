@@ -162,9 +162,18 @@ local function step()
 		if character:GetAttribute("Ragdolled") == true then
 			continue
 		end
+		-- Joints get recreated if the body is rebuilt (e.g. avatar applied).
+		for poseName, joint in idle.joints do
+			if not joint.Parent then
+				local fresh = findJoints(character)[poseName]
+				if fresh then
+					idle.joints[poseName] = fresh
+				end
+			end
+		end
 		local track = tracks[character]
 		for poseName, joint in idle.joints do
-			if not (track and track.joints[poseName]) then
+			if joint.Parent and not (track and track.joints[poseName]) then
 				local value = toJointSpace(joint, idle.pose[poseName])
 				joint.Transform = value
 				lastWritten[joint] = value

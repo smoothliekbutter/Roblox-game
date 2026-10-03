@@ -78,7 +78,15 @@ local function buildSword(): Model
 		swordPart("Pommel", Vector3.new(0.45, 0.25, 0.45), CFrame.new(0, -0.75, 0), steel, Enum.Material.Metal),
 		swordPart("Guard", Vector3.new(0.4, 0.28, 1.6), CFrame.new(0, 0.78, 0), steel, Enum.Material.Metal),
 		-- Thin side faces forward so horizontal slashes lead with the edge.
-		swordPart("Blade", Vector3.new(0.22, 4.6, 1.2), CFrame.new(0, 3.2, 0), black, Enum.Material.Metal),
+		swordPart("Blade", Vector3.new(0.24, 4.6, 1.3), CFrame.new(0, 3.2, 0), black, Enum.Material.Metal),
+		-- Worn grey cutting edge so the black blade reads against dark ground.
+		swordPart(
+			"Edge",
+			Vector3.new(0.18, 4.4, 0.16),
+			CFrame.new(0, 3.15, -0.68),
+			Color3.fromRGB(95, 95, 105),
+			Enum.Material.Metal
+		),
 		-- Jagged, broken-off tip.
 		swordPart(
 			"TipA",
@@ -125,23 +133,39 @@ local function buildSword(): Model
 end
 
 function Kit.Equip(character: Model)
-	local arm = character:WaitForChild("Right Arm", 5) or character:FindFirstChild("RightHand")
-	if not arm or not arm:IsA("BasePart") then
-		return
-	end
+	character:WaitForChild("Right Arm", 5)
 	local sword = buildSword()
 	local handle = sword.PrimaryPart :: BasePart
 
-	-- Held in the right hand, blade pointing down and 35 degrees forward
-	-- when the arm hangs, so it extends naturally when the arm swings.
+	-- Held in the right hand, blade 35 degrees forward of the arm, so it
+	-- extends naturally when the arm swings (the client holds the arm up
+	-- in a ready stance so the blade doesn't hang into the ground).
 	local weld = Instance.new("Weld")
 	weld.Name = "SwordGrip"
-	weld.Part0 = arm
 	weld.Part1 = handle
-	weld.C0 = CFrame.new(0, -arm.Size.Y / 2, 0) * CFrame.Angles(math.rad(215), 0, 0)
 	weld.Parent = handle
 
+	local function attach()
+		local arm = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+		if arm and arm:IsA("BasePart") then
+			weld.Part0 = arm
+			weld.C0 = CFrame.new(0, -arm.Size.Y / 2, 0) * CFrame.Angles(math.rad(215), 0, 0)
+			handle.CFrame = arm.CFrame * weld.C0
+		end
+	end
+	attach()
 	sword.Parent = character
+
+	-- If the arm is ever rebuilt (avatar changes), re-grip instead of
+	-- dropping the sword on the floor.
+	local connection
+	connection = character.ChildAdded:Connect(function(child)
+		if not sword.Parent then
+			connection:Disconnect()
+		elseif child.Name == "Right Arm" or child.Name == "RightHand" then
+			task.defer(attach)
+		end
+	end)
 end
 
 function Kit.Unequip(character: Model)

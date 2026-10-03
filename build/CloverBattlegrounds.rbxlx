@@ -639,6 +639,9 @@ local function spawnCharacter(player: Player)
 	if not ok then
 		warn("[CharacterLoader] Couldn't apply avatar for", player.Name, err)
 	end
+	-- Applying the avatar can rebuild body parts, so weapons are only
+	-- attached after this (see CombatService.Register).
+	character:SetAttribute("AvatarLoaded", true)
 
 	humanoid.Died:Connect(function()
 		task.delay(Players.RespawnTime, function()
@@ -1499,6 +1502,15 @@ function CombatService.Register(character: Model)
 	-- Players get their chosen character's kit. Dummies stay kit-less.
 	local player = Players:GetPlayerFromCharacter(character)
 	if player then
+		-- Wait for the avatar to be applied: it can replace the limbs a
+		-- weapon would be welded to.
+		local waited = 0
+		while character:GetAttribute("AvatarLoaded") ~= true and waited < 6 and character.Parent do
+			waited += task.wait(0.1)
+		end
+		if not character.Parent then
+			return
+		end
 		local kitId = player:GetAttribute("Kit")
 		local kit = Kits.Get(if type(kitId) == "string" then kitId else nil)
 		if not kit or not kit.playable then
@@ -1946,7 +1958,15 @@ local function buildSword(): Model
 		swordPart("Pommel", Vector3.new(0.45, 0.25, 0.45), CFrame.new(0, -0.75, 0), steel, Enum.Material.Metal),
 		swordPart("Guard", Vector3.new(0.4, 0.28, 1.6), CFrame.new(0, 0.78, 0), steel, Enum.Material.Metal),
 		-- Thin side faces forward so horizontal slashes lead with the edge.
-		swordPart("Blade", Vector3.new(0.22, 4.6, 1.2), CFrame.new(0, 3.2, 0), black, Enum.Material.Metal),
+		swordPart("Blade", Vector3.new(0.24, 4.6, 1.3), CFrame.new(0, 3.2, 0), black, Enum.Material.Metal),
+		-- Worn grey cutting edge so the black blade reads against dark ground.
+		swordPart(
+			"Edge",
+			Vector3.new(0.18, 4.4, 0.16),
+			CFrame.new(0, 3.15, -0.68),
+			Color3.fromRGB(95, 95, 105),
+			Enum.Material.Metal
+		),
 		-- Jagged, broken-off tip.
 		swordPart(
 			"TipA",
@@ -1993,23 +2013,39 @@ local function buildSword(): Model
 end
 
 function Kit.Equip(character: Model)
-	local arm = character:WaitForChild("Right Arm", 5) or character:FindFirstChild("RightHand")
-	if not arm or not arm:IsA("BasePart") then
-		return
-	end
+	character:WaitForChild("Right Arm", 5)
 	local sword = buildSword()
 	local handle = sword.PrimaryPart :: BasePart
 
-	-- Held in the right hand, blade pointing down and 35 degrees forward
-	-- when the arm hangs, so it extends naturally when the arm swings.
+	-- Held in the right hand, blade 35 degrees forward of the arm, so it
+	-- extends naturally when the arm swings (the client holds the arm up
+	-- in a ready stance so the blade doesn't hang into the ground).
 	local weld = Instance.new("Weld")
 	weld.Name = "SwordGrip"
-	weld.Part0 = arm
 	weld.Part1 = handle
-	weld.C0 = CFrame.new(0, -arm.Size.Y / 2, 0) * CFrame.Angles(math.rad(215), 0, 0)
 	weld.Parent = handle
 
+	local function attach()
+		local arm = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+		if arm and arm:IsA("BasePart") then
+			weld.Part0 = arm
+			weld.C0 = CFrame.new(0, -arm.Size.Y / 2, 0) * CFrame.Angles(math.rad(215), 0, 0)
+			handle.CFrame = arm.CFrame * weld.C0
+		end
+	end
+	attach()
 	sword.Parent = character
+
+	-- If the arm is ever rebuilt (avatar changes), re-grip instead of
+	-- dropping the sword on the floor.
+	local connection
+	connection = character.ChildAdded:Connect(function(child)
+		if not sword.Parent then
+			connection:Disconnect()
+		elseif child.Name == "Right Arm" or child.Name == "RightHand" then
+			task.defer(attach)
+		end
+	end)
 end
 
 function Kit.Unequip(character: Model)
@@ -2920,6 +2956,7 @@ return CameraShake
 	Built in code so it can be restyled without touching Studio.
 ]]
 
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -3092,11 +3129,12 @@ local function setSlotCooldown(s: Slot, remaining: number, length: number)
 end
 
 local function buildStatus(playerGui: Instance)
-	-- Lives in the top bar's right corner, lined up with Roblox's buttons.
+	-- Lives in the top right corner of the screen, at the same height as
+	-- Roblox's top bar buttons.
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "Status"
 	gui.ResetOnSpawn = false
-	gui.ScreenInsets = Enum.ScreenInsets.TopbarSafeInsets
+	gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets
 	gui.Parent = playerGui
 
 	local area = Instance.new("Frame")
@@ -3131,12 +3169,15 @@ local function buildStatus(playerGui: Instance)
 
 	-- Same vertical placement as the top bar buttons (see TopBar).
 	local function align()
-		local barHeight = area.AbsoluteSize.Y
+		local barHeight = GuiService.TopbarInset.Height
+		if barHeight <= 0 then
+			barHeight = 58
+		end
 		local height = math.clamp(barHeight - 14, 28, 44)
 		panel.Size = UDim2.fromOffset(STATUS_WIDTH, height)
-		panel.Position = UDim2.new(1, -4, 0, math.max(barHeight - height - 2, 0))
+		panel.Position = UDim2.new(1, -16, 0, math.max(barHeight - height - 2, 0))
 	end
-	area:GetPropertyChangedSignal("AbsoluteSize"):Connect(align)
+	GuiService:GetPropertyChangedSignal("TopbarInset"):Connect(align)
 	align()
 end
 
@@ -5527,9 +5568,18 @@ local function step()
 		if character:GetAttribute("Ragdolled") == true then
 			continue
 		end
+		-- Joints get recreated if the body is rebuilt (e.g. avatar applied).
+		for poseName, joint in idle.joints do
+			if not joint.Parent then
+				local fresh = findJoints(character)[poseName]
+				if fresh then
+					idle.joints[poseName] = fresh
+				end
+			end
+		end
 		local track = tracks[character]
 		for poseName, joint in idle.joints do
-			if not (track and track.joints[poseName]) then
+			if joint.Parent and not (track and track.joints[poseName]) then
 				local value = toJointSpace(joint, idle.pose[poseName])
 				joint.Transform = value
 				lastWritten[joint] = value
@@ -6063,6 +6113,7 @@ function TopBar.Start()
 	-- 44px tall and sit 12px from the top (2px from the bottom). Computed from
 	-- the bar's real height so it also lines up on smaller top bars.
 	local rowPadding = Instance.new("UIPadding")
+	rowPadding.PaddingLeft = UDim.new(0, 10) -- small gap after Roblox's chat button
 	rowPadding.Parent = row
 	local function align()
 		local barHeight = row.AbsoluteSize.Y

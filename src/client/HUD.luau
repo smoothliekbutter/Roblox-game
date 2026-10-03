@@ -7,6 +7,7 @@
 	Built in code so it can be restyled without touching Studio.
 ]]
 
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -179,11 +180,12 @@ local function setSlotCooldown(s: Slot, remaining: number, length: number)
 end
 
 local function buildStatus(playerGui: Instance)
-	-- Lives in the top bar's right corner, lined up with Roblox's buttons.
+	-- Lives in the top right corner of the screen, at the same height as
+	-- Roblox's top bar buttons.
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "Status"
 	gui.ResetOnSpawn = false
-	gui.ScreenInsets = Enum.ScreenInsets.TopbarSafeInsets
+	gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets
 	gui.Parent = playerGui
 
 	local area = Instance.new("Frame")
@@ -218,12 +220,15 @@ local function buildStatus(playerGui: Instance)
 
 	-- Same vertical placement as the top bar buttons (see TopBar).
 	local function align()
-		local barHeight = area.AbsoluteSize.Y
+		local barHeight = GuiService.TopbarInset.Height
+		if barHeight <= 0 then
+			barHeight = 58
+		end
 		local height = math.clamp(barHeight - 14, 28, 44)
 		panel.Size = UDim2.fromOffset(STATUS_WIDTH, height)
-		panel.Position = UDim2.new(1, -4, 0, math.max(barHeight - height - 2, 0))
+		panel.Position = UDim2.new(1, -16, 0, math.max(barHeight - height - 2, 0))
 	end
-	area:GetPropertyChangedSignal("AbsoluteSize"):Connect(align)
+	GuiService:GetPropertyChangedSignal("TopbarInset"):Connect(align)
 	align()
 end
 

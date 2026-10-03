@@ -241,6 +241,7 @@ function TopBar.Start()
 	-- 44px tall and sit 12px from the top (2px from the bottom). Computed from
 	-- the bar's real height so it also lines up on smaller top bars.
 	local rowPadding = Instance.new("UIPadding")
+	rowPadding.PaddingLeft = UDim.new(0, 10) -- small gap after Roblox's chat button
 	rowPadding.Parent = row
 	local function align()
 		local barHeight = row.AbsoluteSize.Y
