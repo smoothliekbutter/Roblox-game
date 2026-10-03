@@ -420,9 +420,8 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 			0.2
 		)
 	elseif variant == "Uppercut" then
-		local lift = Vector3.new(0, Config.M1.UppercutForce, 0)
-		CombatService.ApplyVelocity(victim, lift + look * 4, 0.25)
-		CombatService.ApplyVelocity(attacker, lift, 0.25)
+		-- Only the victim goes up; the attacker stays grounded.
+		CombatService.ApplyVelocity(victim, Vector3.new(0, Config.M1.UppercutForce, 0) + look * 4, 0.25)
 	elseif variant == "Downslam" then
 		CombatService.Ragdoll(victim, Config.Ragdoll.Duration)
 		CombatService.ApplyVelocity(victim, look * 10 + Vector3.new(0, -Config.M1.DownslamForce, 0), 0.2)

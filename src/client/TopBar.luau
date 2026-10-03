@@ -229,13 +229,28 @@ function TopBar.Start()
 
 	local layout = Instance.new("UIListLayout")
 	layout.FillDirection = Enum.FillDirection.Horizontal
-	layout.VerticalAlignment = Enum.VerticalAlignment.Center
+	layout.VerticalAlignment = Enum.VerticalAlignment.Top
 	layout.Padding = UDim.new(0, 8)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	layout.Parent = row
 
 	local charactersButton = pillButton(row, "CHARACTERS", 1)
 	local shiftLockButton = pillButton(row, "SHIFT LOCK: OFF", 2)
+
+	-- Line up exactly with Roblox's own buttons: in the 58px top bar they're
+	-- 44px tall and sit 12px from the top (2px from the bottom). Computed from
+	-- the bar's real height so it also lines up on smaller top bars.
+	local rowPadding = Instance.new("UIPadding")
+	rowPadding.Parent = row
+	local function align()
+		local barHeight = row.AbsoluteSize.Y
+		local buttonHeight = math.clamp(barHeight - 14, 28, 44)
+		rowPadding.PaddingTop = UDim.new(0, math.max(barHeight - buttonHeight - 2, 0))
+		charactersButton.Size = UDim2.fromOffset(0, buttonHeight)
+		shiftLockButton.Size = UDim2.fromOffset(0, buttonHeight)
+	end
+	row:GetPropertyChangedSignal("AbsoluteSize"):Connect(align)
+	align()
 
 	-- The picker opens below the top bar.
 	local menus = Instance.new("ScreenGui")

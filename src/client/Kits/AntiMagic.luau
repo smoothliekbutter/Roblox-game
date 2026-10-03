@@ -67,6 +67,12 @@ local READY = {
 	LeftArm = limb(40, -20),
 }
 
+-- Always-on stance: the sword is held up and forward instead of hanging
+-- (hanging, the long blade would point into the ground).
+Kit.IdlePose = {
+	RightArm = limb(50, 15),
+}
+
 ---------------------------------------------------------------------------
 -- Sword M1s
 ---------------------------------------------------------------------------

@@ -15,7 +15,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
 
 local SHOULDER_OFFSET = Vector3.new(1.75, 0.25, 0)
-local LOCKED_CURSOR = "rbxasset://textures/MouseLockedCursor.png"
+local DOT_SIZE = 6
 
 local localPlayer = Players.LocalPlayer
 
@@ -24,6 +24,37 @@ local ShiftLock = {}
 local enabled = false
 local suspended = false -- e.g. a menu is open and needs the mouse
 local listeners: { (boolean) -> () } = {}
+local dot: Frame? = nil
+
+-- Small aiming dot in the middle of the screen (replaces the mouse cursor).
+local function buildDot()
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "ShiftLockDot"
+	gui.IgnoreGuiInset = true
+	gui.ResetOnSpawn = false
+	gui.DisplayOrder = 50
+	gui.Parent = localPlayer:WaitForChild("PlayerGui")
+
+	local frame = Instance.new("Frame")
+	frame.AnchorPoint = Vector2.new(0.5, 0.5)
+	frame.Position = UDim2.fromScale(0.5, 0.5)
+	frame.Size = UDim2.fromOffset(DOT_SIZE, DOT_SIZE)
+	frame.BackgroundColor3 = Color3.new(1, 1, 1)
+	frame.Visible = false
+	frame.Parent = gui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(1, 0)
+	corner.Parent = frame
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.new(0, 0, 0)
+	stroke.Transparency = 0.4
+	stroke.Thickness = 1
+	stroke.Parent = frame
+
+	dot = frame
+end
 
 local function getHumanoid(): (Humanoid?, BasePart?)
 	local character = localPlayer.Character
@@ -40,7 +71,10 @@ local function apply()
 		humanoid.AutoRotate = not active
 		humanoid.CameraOffset = if active then SHOULDER_OFFSET else Vector3.zero
 	end
-	UserInputService.MouseIcon = if active then LOCKED_CURSOR else ""
+	UserInputService.MouseIconEnabled = not active
+	if dot then
+		dot.Visible = active
+	end
 	if not active then
 		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 	end
@@ -76,6 +110,7 @@ function ShiftLock.OnChanged(listener: (boolean) -> ())
 end
 
 function ShiftLock.Start()
+	buildDot()
 	ContextActionService:BindAction("CloverShiftLock", function(_, state)
 		if state == Enum.UserInputState.Begin then
 			ShiftLock.Toggle()

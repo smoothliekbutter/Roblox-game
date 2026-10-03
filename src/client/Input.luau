@@ -23,7 +23,6 @@ local Kits = require(Shared.Kits)
 local Remotes = require(Shared.Remotes)
 
 local CameraShake = require(script.Parent.CameraShake)
-local HUD = require(script.Parent.HUD)
 local Moves = require(script.Parent.Moves)
 local VFX = require(script.Parent.VFX)
 
@@ -193,7 +192,6 @@ local function tryDash()
 	local awakening = kit and CombatState.IsAwakened(character) and kit.awakening
 	local cooldown = Config.Dash.Cooldown * (if awakening then awakening.cooldownMultiplier else 1)
 	dashReadyAt = t + cooldown
-	HUD.SetDashCooldown(cooldown)
 
 	local direction = dashDirection(humanoid)
 	Remotes.Action:FireServer("Dash", direction)

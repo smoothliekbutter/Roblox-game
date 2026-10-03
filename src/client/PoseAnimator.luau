@@ -57,7 +57,15 @@ type Track = {
 	firedEvents: { [number]: boolean },
 }
 
+type Idle = {
+	pose: Pose,
+	joints: { [string]: Motor6D },
+}
+
 local tracks: { [Model]: Track } = {}
+-- Persistent stances (e.g. holding a sword up) that play whenever no
+-- animation is using those joints, and that animations blend from/to.
+local idles: { [Model]: Idle } = {}
 -- What we wrote to each joint last frame. If the default Animator didn't
 -- overwrite it, the joint has no base animation and its base is identity.
 local lastWritten: { [Motor6D]: CFrame } = {}
@@ -119,10 +127,21 @@ local function posedJoints(animation: Animation): { [string]: boolean }
 	return set
 end
 
-local function release(track: Track)
+-- Parent-part-space pose -> the joint's own space.
+local function toJointSpace(joint: Motor6D, pose: CFrame): CFrame
+	local c0 = joint.C0.Rotation
+	return c0:Inverse() * pose * c0
+end
+
+local function release(track: Track, character: Model)
 	-- Hand the joints back; the default Animator overwrites them next frame
-	-- if it's animating them.
-	for _, joint in track.joints do
+	-- if it's animating them. Joints with an idle stance stay put, the idle
+	-- takes over next frame.
+	local idle = idles[character]
+	for poseName, joint in track.joints do
+		if idle and idle.joints[poseName] then
+			continue
+		end
 		if lastWritten[joint] then
 			lastWritten[joint] = nil
 			if joint.Parent then
@@ -134,6 +153,25 @@ end
 
 local function step()
 	local now = os.clock()
+
+	for character, idle in idles do
+		if not character.Parent then
+			idles[character] = nil
+			continue
+		end
+		if character:GetAttribute("Ragdolled") == true then
+			continue
+		end
+		local track = tracks[character]
+		for poseName, joint in idle.joints do
+			if not (track and track.joints[poseName]) then
+				local value = toJointSpace(joint, idle.pose[poseName])
+				joint.Transform = value
+				lastWritten[joint] = value
+			end
+		end
+	end
+
 	for character, track in tracks do
 		local elapsed = now - track.start
 		local animation = track.animation
@@ -144,7 +182,7 @@ local function step()
 		local dead = not character.Parent or character:GetAttribute("Ragdolled") == true
 		if dead or elapsed >= total then
 			tracks[character] = nil
-			release(track)
+			release(track, character)
 			continue
 		end
 
@@ -165,12 +203,16 @@ local function step()
 		end
 
 		local additive = animation.additive or {}
+		local idle = idles[character]
 		for poseName, joint in track.joints do
-			local current = joint.Transform
-			local base = if lastWritten[joint] == current then CFrame.identity else current
-			-- Convert from parent-part space into the joint's own space.
-			local c0 = joint.C0.Rotation
-			local local_ = c0:Inverse() * sample(animation, poseName, elapsed) * c0
+			local base
+			if idle and idle.joints[poseName] then
+				base = toJointSpace(joint, idle.pose[poseName])
+			else
+				local current = joint.Transform
+				base = if lastWritten[joint] == current then CFrame.identity else current
+			end
+			local local_ = toJointSpace(joint, sample(animation, poseName, elapsed))
 			local target = if additive[poseName] then base * local_ else local_
 			local final = base:Lerp(target, weight)
 			joint.Transform = final
@@ -184,7 +226,7 @@ function PoseAnimator.Play(character: Model, animation: Animation, onEvent: ((na
 	local existing = tracks[character]
 	if existing then
 		tracks[character] = nil
-		release(existing)
+		release(existing, character)
 	end
 
 	local posed = posedJoints(animation)
@@ -214,7 +256,33 @@ function PoseAnimator.Stop(character: Model)
 	local track = tracks[character]
 	if track then
 		tracks[character] = nil
-		release(track)
+		release(track, character)
+	end
+end
+
+-- Sets (or clears, with nil) a persistent stance for some joints.
+function PoseAnimator.SetIdle(character: Model, pose: Pose?)
+	local old = idles[character]
+	if old then
+		idles[character] = nil
+		for _, joint in old.joints do
+			if lastWritten[joint] then
+				lastWritten[joint] = nil
+				joint.Transform = CFrame.identity
+			end
+		end
+	end
+	if not pose then
+		return
+	end
+	local joints = {}
+	for poseName, joint in findJoints(character) do
+		if pose[poseName] then
+			joints[poseName] = joint
+		end
+	end
+	if next(joints) ~= nil then
+		idles[character] = { pose = pose, joints = joints }
 	end
 end
 

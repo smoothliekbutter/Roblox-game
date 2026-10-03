@@ -37,7 +37,7 @@ With live sync, every code change shows up in Studio instantly, without re-downl
 | Input | Action |
 |---|---|
 | Left click (hold to chain) | M1 combo, 4 hits. The 4th hit ragdolls and guard-breaks. |
-| Hold **Space** on the 4th hit | Uppercut finisher that launches both of you |
+| Hold **Space** on the 4th hit | Uppercut finisher that launches the target into the air |
 | 4th hit while in the air | Downslam finisher with a crater |
 | **1 2 3 4** | Character skills |
 | **G** | Awaken when the red meter is full (it fills as you fight) |

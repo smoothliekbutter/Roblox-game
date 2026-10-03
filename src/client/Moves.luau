@@ -66,16 +66,29 @@ function Moves.PlayM1(character: Model, index: number, variant: string)
 	end
 end
 
--- Black Form style looks follow the "Awakened" attribute on every player.
+-- Kit stances and Black Form style looks follow the "Kit" and "Awakened"
+-- attributes on every player.
 local function watchCharacter(character: Model)
-	local function update()
+	-- The character can arrive before its joints have replicated.
+	local torso = character:WaitForChild("Torso", 5)
+	if torso then
+		torso:WaitForChild("Right Shoulder", 5)
+	end
+
+	local function updateAwakened()
 		local kit = kitOf(character)
 		if kit and kit.SetAwakened then
 			kit.SetAwakened(character, character:GetAttribute("Awakened") == true)
 		end
 	end
-	character:GetAttributeChangedSignal("Awakened"):Connect(update)
-	update()
+	local function updateKit()
+		local kit = kitOf(character)
+		PoseAnimator.SetIdle(character, if kit then kit.IdlePose else nil)
+	end
+	character:GetAttributeChangedSignal("Awakened"):Connect(updateAwakened)
+	character:GetAttributeChangedSignal("Kit"):Connect(updateKit)
+	updateAwakened()
+	updateKit()
 end
 
 local function watchPlayer(player: Player)
