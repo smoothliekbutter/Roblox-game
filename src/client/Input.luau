@@ -87,6 +87,12 @@ local function dashDirection(humanoid: Humanoid): string
 	return if relative.Z > 0 then "Back" else "Front"
 end
 
+-- Our own physics, so this is exact; the server sees us a ping late.
+local function airborne(): boolean
+	local _, humanoid = getCharacter()
+	return humanoid ~= nil and humanoid.FloorMaterial == Enum.Material.Air
+end
+
 local function jumpHeld(humanoid: Humanoid): boolean
 	return UserInputService:IsKeyDown(Enum.KeyCode.Space)
 		or UserInputService:IsGamepadButtonDown(Enum.UserInputType.Gamepad1, Enum.KeyCode.ButtonA)
@@ -130,7 +136,7 @@ local function tryM1()
 		noJumpUntil = t + Config.M1.Busy
 	end
 
-	Remotes.Action:FireServer("M1", { jump = jump })
+	Remotes.Action:FireServer("M1", { jump = jump, airborne = humanoid.FloorMaterial == Enum.Material.Air })
 	Moves.PlayM1(character, index, variant)
 
 	-- Step into the swing a little so strings stay connected.
@@ -308,7 +314,7 @@ function Input.Start()
 		local action = "CloverSkill" .. slot
 		ContextActionService:BindAction(action, function(_, state)
 			if state == Enum.UserInputState.Begin and getCharacter() then
-				Remotes.Action:FireServer("Skill", slot)
+				Remotes.Action:FireServer("Skill", slot, { airborne = airborne() })
 			end
 			return Enum.ContextActionResult.Sink
 		end, true, key)
@@ -316,7 +322,7 @@ function Input.Start()
 	end
 	ContextActionService:BindAction("CloverSpecial", function(_, state)
 		if state == Enum.UserInputState.Begin and getCharacter() then
-			Remotes.Action:FireServer("Special")
+			Remotes.Action:FireServer("Special", { airborne = airborne() })
 		end
 		return Enum.ContextActionResult.Sink
 	end, true, Enum.KeyCode.R, Enum.KeyCode.ButtonY)

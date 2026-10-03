@@ -87,7 +87,9 @@ function BlackMoon.Attacker(plan: Plan, t: number): CFrame
 		local p = plan.origin.Position:Lerp(plan.perch, easeOut(a)) + UP * math.sin(a * math.pi) * 4
 		return CFrame.lookAt(p, p + toVictim)
 	elseif t < T.Fly then
-		local p = plan.perch + UP * math.sin((t - T.Perch) * 4) * 0.25
+		-- Hovering on his wings: rising and falling with the beats, drifting.
+		local hover = t - T.Perch
+		local p = plan.perch + UP * math.sin(hover * 5.3) * 0.6 + plan.right * math.sin(hover * 1.8) * 0.35
 		return CFrame.lookAt(p, p + toVictim)
 	elseif t < T.Arrive then
 		-- Straight through them, flat out.

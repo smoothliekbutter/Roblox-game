@@ -132,12 +132,13 @@ local nights = 0
 local saved: { [string]: any }? = nil
 local grade: ColorCorrectionEffect? = nil
 
+-- Moonlit rather than pitch black: dark sky, but you can still read the fight.
 local NIGHT_LIGHTING = {
 	ClockTime = 23.8,
-	Brightness = 0.5,
-	Ambient = Color3.fromRGB(16, 16, 28),
-	OutdoorAmbient = Color3.fromRGB(26, 28, 46),
-	ExposureCompensation = -0.25,
+	Brightness = 1.2,
+	Ambient = Color3.fromRGB(46, 46, 66),
+	OutdoorAmbient = Color3.fromRGB(74, 78, 108),
+	ExposureCompensation = 0.1,
 }
 
 function Cinematic.Night(fadeIn: number): (fadeOut: number?) -> ()
@@ -154,7 +155,7 @@ function Cinematic.Night(fadeIn: number): (fadeOut: number?) -> ()
 		if atmosphere then
 			before.atmosphere = { Density = atmosphere.Density, Haze = atmosphere.Haze, Color = atmosphere.Color }
 			-- A clear night: the moon shouldn't fade into the haze.
-			tween(atmosphere, fadeIn, { Density = 0.06, Haze = 0, Color = Color3.fromRGB(40, 44, 70) })
+			tween(atmosphere, fadeIn, { Density = 0.06, Haze = 0, Color = Color3.fromRGB(62, 68, 102) })
 		end
 		saved = before
 		tween(Lighting, fadeIn, NIGHT_LIGHTING, Enum.EasingStyle.Sine)
@@ -162,9 +163,10 @@ function Cinematic.Night(fadeIn: number): (fadeOut: number?) -> ()
 		effect.Name = "CinematicNight"
 		effect.Parent = Lighting
 		tween(effect, fadeIn, {
-			Saturation = -0.45,
-			Contrast = 0.25,
-			TintColor = Color3.fromRGB(205, 215, 255),
+			Saturation = -0.3,
+			Contrast = 0.15,
+			Brightness = 0.04,
+			TintColor = Color3.fromRGB(216, 224, 255),
 		}, Enum.EasingStyle.Sine)
 		grade = effect
 	end
@@ -192,7 +194,7 @@ function Cinematic.Night(fadeIn: number): (fadeOut: number?) -> ()
 		local effect = grade
 		grade = nil
 		if effect then
-			tween(effect, duration, { Saturation = 0, Contrast = 0, TintColor = Color3.new(1, 1, 1) })
+			tween(effect, duration, { Saturation = 0, Contrast = 0, Brightness = 0, TintColor = Color3.new(1, 1, 1) })
 			task.delay(duration + 0.05, effect.Destroy, effect)
 		end
 	end

@@ -71,6 +71,9 @@ export type Context = {
 	data: CharData,
 	kit: Kits.KitInfo,
 	awakened: boolean,
+	-- In the air when the move was used (the player's own client says so,
+	-- see onAction; the server's view of them is a ping behind).
+	airborne: boolean,
 	combat: any, -- this module
 }
 
@@ -231,7 +234,15 @@ function CombatService.IsAirborne(character: Model): boolean
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = { character }
-	return workspace:Raycast(root.Position, Vector3.new(0, -4.5, 0), params) == nil
+	-- R6 stands with its root 3 studs up; a little more than that is air.
+	return workspace:Raycast(root.Position, Vector3.new(0, -3.6, 0), params) == nil
+end
+
+-- In the air, going by the player's own client when it says so (their
+-- physics are theirs, and the server sees them a ping late: a jump is over
+-- before the server notices it), or else by the server's raycast.
+local function inAir(character: Model, clientSaysAirborne: boolean?): boolean
+	return clientSaysAirborne == true or CombatService.IsAirborne(character)
 end
 
 function CombatService.Ragdoll(character: Model, duration: number)
@@ -605,7 +616,7 @@ end
 ---------------------------------------------------------------------------
 
 -- One swing of the M1 string. `jump` = jump held, turns the finisher into an uppercut.
-function CombatService.M1(character: Model, jump: boolean?)
+function CombatService.M1(character: Model, jump: boolean?, clientAirborne: boolean?)
 	local data = registry[character]
 	if
 		not data
@@ -627,7 +638,7 @@ function CombatService.M1(character: Model, jump: boolean?)
 	data.lastM1 = t
 	local index = data.combo
 	local finisher = index >= Config.M1.ComboLength
-	local airborne = CombatService.IsAirborne(character)
+	local airborne = inAir(character, clientAirborne)
 
 	local variant = "Normal"
 	if finisher then
@@ -754,7 +765,7 @@ end
 -- Kits: skills, awakening, switching
 ---------------------------------------------------------------------------
 
-local function makeContext(character: Model): Context?
+local function makeContext(character: Model, airborne: boolean?): Context?
 	local data = registry[character]
 	local kit = Kits.Of(character)
 	local root = getRoot(character)
@@ -769,12 +780,13 @@ local function makeContext(character: Model): Context?
 		data = data,
 		kit = kit,
 		awakened = CombatState.IsAwakened(character),
+		airborne = airborne == true,
 		combat = CombatService,
 	}
 end
 
-function CombatService.UseSkill(character: Model, slot: number)
-	local ctx = makeContext(character)
+function CombatService.UseSkill(character: Model, slot: number, clientAirborne: boolean?)
+	local ctx = makeContext(character, inAir(character, clientAirborne))
 	if not ctx then
 		return
 	end
@@ -806,8 +818,8 @@ end
 -- The R special (Kits.special, run by the server kit's Special). Presses
 -- while it's on cooldown are recorded like skill presses (PressedSince with
 -- CombatState.SpecialSlot), so a special can have a follow-up.
-function CombatService.UseSpecial(character: Model)
-	local ctx = makeContext(character)
+function CombatService.UseSpecial(character: Model, clientAirborne: boolean?)
+	local ctx = makeContext(character, inAir(character, clientAirborne))
 	if not ctx then
 		return
 	end
@@ -1023,7 +1035,11 @@ function CombatService.Register(character: Model)
 	end
 end
 
-local function onAction(player: Player, action: unknown, payload: unknown)
+local function onAction(player: Player, action: unknown, payload: unknown, extra: unknown)
+	-- Moves that have an air version say whether the player was in the air.
+	local function saysAirborne(value: unknown): boolean
+		return type(value) == "table" and (value :: any).airborne == true
+	end
 	local character = player.Character
 	if type(action) ~= "string" then
 		return
@@ -1040,7 +1056,7 @@ local function onAction(player: Player, action: unknown, payload: unknown)
 
 	if action == "M1" then
 		local jump = type(payload) == "table" and (payload :: any).jump == true
-		CombatService.M1(character, jump)
+		CombatService.M1(character, jump, saysAirborne(payload))
 	elseif action == "Block" then
 		CombatService.SetBlock(character, payload == true)
 	elseif action == "Dash" then
@@ -1056,10 +1072,10 @@ local function onAction(player: Player, action: unknown, payload: unknown)
 		CombatService.Evasive(character)
 	elseif action == "Skill" then
 		if type(payload) == "number" and payload >= 1 and payload <= CombatState.SkillSlots then
-			CombatService.UseSkill(character, math.floor(payload))
+			CombatService.UseSkill(character, math.floor(payload), saysAirborne(extra))
 		end
 	elseif action == "Special" then
-		CombatService.UseSpecial(character)
+		CombatService.UseSpecial(character, saysAirborne(payload))
 	elseif action == "Awaken" then
 		CombatService.Awaken(character)
 	end

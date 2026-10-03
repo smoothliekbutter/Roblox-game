@@ -344,7 +344,7 @@ local PROPEL_STEER = 200 -- degrees per second: up to a ~110 degree curve
 local function bullThrust(ctx)
 	local c, character = ctx.combat, ctx.character
 	local forward = look(ctx)
-	local airborne = c.IsAirborne(character)
+	local airborne = ctx.airborne
 	local direction = if airborne then (forward + UP * -0.6).Unit else forward
 
 	CombatState.SetCasting(character, PROPEL_TIME + 0.25)
@@ -458,7 +458,7 @@ local SURGE_AT = 0.2
 
 local function blackMeteorite(ctx)
 	local c, character = ctx.combat, ctx.character
-	local airborne = c.IsAirborne(character)
+	local airborne = ctx.airborne
 	local forward = look(ctx)
 	local velocity = if airborne then (forward + UP * -0.55).Unit * 80 else forward * 72
 	local target, release, hold = lungeGrab(ctx, "BlackMeteorite", if airborne then 1.5 else 2.1, velocity)
@@ -520,7 +520,7 @@ local PERFECT_FROM, PERFECT_TO = 0.36, 0.66 -- generous for ping; client shows t
 local function blackDivider(ctx)
 	local c, character = ctx.combat, ctx.character
 	local data = ctx.data
-	local airborne = c.IsAirborne(character)
+	local airborne = ctx.airborne
 	CombatState.SetCasting(character, DIVIDER_CHARGE + 0.45)
 	if airborne then
 		c.ApplyVelocity(character, HOVER, DIVIDER_CHARGE + 0.05)
@@ -603,7 +603,7 @@ local function antiMagicDeflect(ctx)
 	local countered = false
 	CombatState.SetCasting(character, DEFLECT_WINDOW + 0.1)
 	-- In the air he hangs there, guard up.
-	local airborne = c.IsAirborne(character)
+	local airborne = ctx.airborne
 	if airborne then
 		c.ApplyVelocity(character, HOVER, DEFLECT_WINDOW)
 	end
@@ -893,7 +893,9 @@ local function leap(ctx)
 			return
 		end
 		if c.PressedSince(character, SPECIAL, start + 0.1) then
-			if c.IsAirborne(character) then
+			-- Early in the leap he's certainly airborne, even if the server
+			-- (a ping behind) still sees him near the ground.
+			if os.clock() - start < 0.6 or c.IsAirborne(character) then
 				plunge(ctx)
 			end
 			return
@@ -906,7 +908,7 @@ local function leap(ctx)
 end
 
 function Kit.Special(ctx)
-	if ctx.combat.IsAirborne(ctx.character) then
+	if ctx.airborne then
 		plunge(ctx)
 	else
 		leap(ctx)

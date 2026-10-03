@@ -1916,6 +1916,10 @@ local WING_STATES: { [string]: WingParams } = {
 	stand = { lift = 30, back = 26, bend = -32, fan = 1, sway = 1, beat = 0.22, rate = 0.42 },
 	run = { lift = 26, back = 60, bend = -28, fan = 1.15, sway = 0.7, beat = 0.08, rate = 2.4 },
 	air = { lift = 26, back = 22, bend = -12, fan = 1.25, sway = 0.45, beat = 1, rate = 1.35 },
+	-- Cutscene poses (BlackFormVisual.setPose): opened all the way with slow,
+	-- heavy beats, and swept back for speed.
+	spread = { lift = 40, back = 10, bend = 0, fan = 1.4, sway = 0.5, beat = 0.55, rate = 0.85 },
+	glide = { lift = 16, back = 62, bend = -24, fan = 0.8, sway = 0.3, beat = 0.06, rate = 3 },
 }
 
 local UPPER_BONE, FOREARM = 2.2, 2.6
@@ -1944,6 +1948,10 @@ local HORN = {
 
 type BlackFormVisual = {
 	flap: (() -> ())?,
+	-- Force a wing pose (a WING_STATES name), or nil to go back to normal.
+	setPose: ((string?) -> ())?,
+	-- A second wing on his right, for cutscenes (he normally has one).
+	setPair: ((boolean) -> ())?,
 	cleanup: { () -> () },
 }
 local awakenedVisuals: { [Model]: BlackFormVisual } = {}
@@ -2126,23 +2134,149 @@ local function setAwakened(character: Model, on: boolean)
 		return part
 	end
 	local matte = Enum.Material.SmoothPlastic
-	local upperBone = piece({ Size = Vector3.new(UPPER_BONE, 0.32, 0.32), Color = BLACK, Material = matte })
-	local forearm = piece({ Size = Vector3.new(FOREARM, 0.24, 0.24), Color = BLACK, Material = matte })
-	local upperEdge = piece({ Size = Vector3.new(UPPER_BONE, 0.07, 0.07), Color = DARK_RED, Transparency = 0.2 })
-	local forearmEdge = piece({ Size = Vector3.new(FOREARM, 0.06, 0.06), Color = DARK_RED, Transparency = 0.2 })
-	local wrist = piece({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.42, Color = BLACK, Material = matte })
-	local claw = piece({ Size = Vector3.new(0.14, 0.7, 0.14), Color = BLACK, Material = matte })
-	local feathers: { { plate: BasePart, tip: BasePart } } = {}
-	for _, feather in FEATHERS do
-		table.insert(feathers, {
-			plate = piece({ Size = Vector3.new(feather.width, feather.length, 0.07), Color = BLACK, Material = matte }),
-			tip = piece({
-				Size = Vector3.new(feather.width * 0.7, feather.width * 0.7, 0.065),
-				Color = BLACK,
-				Material = matte,
+
+	--[[
+		One wing. mirror = 1 is his left wing (built out along -X from his
+		left shoulder blade), -1 the same wing mirrored onto his right.
+		Mirroring flips X offsets and the Y/Z rotations.
+	]]
+	type Wing = {
+		parts: { BasePart },
+		edges: { [BasePart]: boolean },
+		emitters: { ParticleEmitter },
+		shown: number,
+		target: number,
+		applied: number,
+		pose: (
+			torsoFrame: CFrame,
+			lift: number,
+			back: number,
+			bend: number,
+			fan: number,
+			sweep: number,
+			sway: number,
+			beat: number,
+			waveLag: number,
+			t: number,
+			running: boolean
+		) -> (),
+	}
+	local function newWing(mirror: number, shown: number): Wing
+		local m = mirror
+		local wingParts: { BasePart } = {}
+		local function wingPiece(props: { [string]: any }): BasePart
+			local part = piece(props)
+			table.insert(wingParts, part)
+			return part
+		end
+		local upperBone = wingPiece({ Size = Vector3.new(UPPER_BONE, 0.32, 0.32), Color = BLACK, Material = matte })
+		local forearm = wingPiece({ Size = Vector3.new(FOREARM, 0.24, 0.24), Color = BLACK, Material = matte })
+		local upperEdge = wingPiece({ Size = Vector3.new(UPPER_BONE, 0.07, 0.07), Color = DARK_RED })
+		local forearmEdge = wingPiece({ Size = Vector3.new(FOREARM, 0.06, 0.06), Color = DARK_RED })
+		local wrist =
+			wingPiece({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.42, Color = BLACK, Material = matte })
+		local claw = wingPiece({ Size = Vector3.new(0.14, 0.7, 0.14), Color = BLACK, Material = matte })
+		local feathers: { { plate: BasePart, tip: BasePart } } = {}
+		for _, feather in FEATHERS do
+			table.insert(feathers, {
+				plate = wingPiece({
+					Size = Vector3.new(feather.width, feather.length, 0.07),
+					Color = BLACK,
+					Material = matte,
+				}),
+				tip = wingPiece({
+					Size = Vector3.new(feather.width * 0.7, feather.width * 0.7, 0.065),
+					Color = BLACK,
+					Material = matte,
+				}),
+			})
+		end
+
+		-- Smoke streaming off the wingtip, embers off the forearm.
+		local wingEmitters = {
+			emitter(feathers[#feathers - 1].tip, {
+				Texture = U.textures.Smoke,
+				Color = ColorSequence.new(BLACK),
+				LightEmission = 0,
+				Size = NumberSequence.new(0.6, 1.6),
+				Transparency = NumberSequence.new(0.35, 1),
+				Lifetime = NumberRange.new(0.4, 0.7),
+				Rate = 16,
+				Speed = NumberRange.new(0.5, 1.5),
+				Acceleration = Vector3.new(0, 4, 0),
+				SpreadAngle = Vector2.new(180, 180),
 			}),
-		})
+			emitter(forearm, {
+				Texture = U.textures.Spark,
+				Color = ColorSequence.new(RED),
+				LightEmission = 1,
+				Size = NumberSequence.new(0.2, 0),
+				Lifetime = NumberRange.new(0.4, 0.8),
+				Rate = 6,
+				Speed = NumberRange.new(1, 3),
+				SpreadAngle = Vector2.new(180, 180),
+				Acceleration = Vector3.new(0, 3, 0),
+			}),
+		}
+
+		local function pose(
+			torsoFrame: CFrame,
+			lift: number,
+			back: number,
+			bend: number,
+			fan: number,
+			sweep: number,
+			sway: number,
+			beat: number,
+			waveLag: number,
+			t: number,
+			running: boolean
+		)
+			-- Bones.
+			local shoulderFrame = torsoFrame
+				* CFrame.new(-0.6 * m, 0.55, 0.55) -- upper back
+				* CFrame.Angles(0, rad(back) * m, 0)
+				* CFrame.Angles(0, 0, rad(-lift) * m)
+			local wristFrame = shoulderFrame
+				* CFrame.new(-UPPER_BONE * m, 0, 0)
+				* CFrame.Angles(0, rad(10 + sweep * 0.2) * m, 0)
+				* CFrame.Angles(0, 0, rad(-bend) * m)
+			upperBone.CFrame = shoulderFrame * CFrame.new(-UPPER_BONE / 2 * m, 0, 0)
+			upperEdge.CFrame = shoulderFrame * CFrame.new(-UPPER_BONE / 2 * m, 0.17, -0.05)
+			forearm.CFrame = wristFrame * CFrame.new(-FOREARM / 2 * m, 0, 0)
+			forearmEdge.CFrame = wristFrame * CFrame.new(-FOREARM / 2 * m, 0.13, -0.05)
+			wrist.CFrame = wristFrame
+			claw.CFrame = wristFrame * CFrame.Angles(0, 0, rad(40) * m) * CFrame.new(0, 0.4, 0)
+
+			-- Feathers: fanned out, rippling from the root to the tip.
+			for i, feather in FEATHERS do
+				local frame = if feather.bone == 1 then shoulderFrame else wristFrame
+				local length = if feather.bone == 1 then UPPER_BONE else FOREARM
+				local ripple = math.sin(t * 2.6 - i * 0.45) * 4 * sway
+					+ math.sin(t * 13 - i * 0.7) * 3 * (if running then 1 else 0)
+				local twist = math.sin(t * 1.9 - i * 0.5) * 7 * sway - 9 * beat * waveLag
+				local joint = frame
+					* CFrame.new(-length * feather.at * m, 0, 0.03 * i)
+					* CFrame.Angles(rad(twist), 0, 0)
+					* CFrame.Angles(0, 0, rad(-(feather.angle * fan + ripple)) * m)
+				local pair = feathers[i]
+				pair.plate.CFrame = joint * CFrame.new(0, -feather.length / 2, 0)
+				pair.tip.CFrame = joint * CFrame.new(0, -feather.length, 0) * CFrame.Angles(0, 0, rad(45))
+			end
+		end
+
+		return {
+			parts = wingParts,
+			edges = { [upperEdge] = true, [forearmEdge] = true },
+			emitters = wingEmitters,
+			shown = shown,
+			target = shown,
+			applied = -1,
+			pose = pose,
+		}
 	end
+	local wings = { newWing(1, 1), newWing(-1, 0) }
+
 	local hornParts: { BasePart } = {}
 	for _, segment in HORN do
 		table.insert(hornParts, piece({ Size = segment.size, Color = BLACK, Material = matte }))
@@ -2166,32 +2300,6 @@ local function setAwakened(character: Model, on: boolean)
 		part.Transparency = 1
 	end
 
-	-- Smoke streaming off the wingtip, embers off the forearm.
-	local tipFeather = feathers[#feathers - 1].tip
-	emitter(tipFeather, {
-		Texture = U.textures.Smoke,
-		Color = ColorSequence.new(BLACK),
-		LightEmission = 0,
-		Size = NumberSequence.new(0.6, 1.6),
-		Transparency = NumberSequence.new(0.35, 1),
-		Lifetime = NumberRange.new(0.4, 0.7),
-		Rate = 16,
-		Speed = NumberRange.new(0.5, 1.5),
-		Acceleration = Vector3.new(0, 4, 0),
-		SpreadAngle = Vector2.new(180, 180),
-	})
-	emitter(forearm, {
-		Texture = U.textures.Spark,
-		Color = ColorSequence.new(RED),
-		LightEmission = 1,
-		Size = NumberSequence.new(0.2, 0),
-		Lifetime = NumberRange.new(0.4, 0.8),
-		Rate = 6,
-		Speed = NumberRange.new(1, 3),
-		SpreadAngle = Vector2.new(180, 180),
-		Acceleration = Vector3.new(0, 3, 0),
-	})
-
 	local current: WingParams = table.clone(WING_STATES.folded)
 	local phase = 0
 	local state = "stand"
@@ -2209,8 +2317,18 @@ local function setAwakened(character: Model, on: boolean)
 	visual.flap = function()
 		flapStart = os.clock()
 	end
-
-	local shoulder = CFrame.new(-0.6, 0.55, 0.55) -- upper back, left side
+	local forcedPose: string? = nil
+	visual.setPose = function(name: string?)
+		forcedPose = if name and WING_STATES[name] then name else nil
+	end
+	visual.setPair = function(on: boolean)
+		local second = wings[2]
+		second.target = if on then 1 else 0
+		if on and second.shown < 0.5 then
+			-- It forms out of black smoke.
+			blackSmoke(torso.Position + torso.CFrame.RightVector * 2.5 + torso.CFrame.LookVector * -1, 10, 3, 6)
+		end
+	end
 	local hornBase = CFrame.new(0.42, 0.42, -0.1) * rot(0, 0, -34)
 	local face = CFrame.Angles(0, 0, rad(90)) -- cylinder X axis up
 
@@ -2242,7 +2360,7 @@ local function setAwakened(character: Model, on: boolean)
 		-- Ease toward the state's pose; unfurl from folded when it appears.
 		local unfurl = math.clamp((now - born) / 0.55, 0, 1)
 		local reveal = TweenService:GetValue(unfurl, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-		local target = lerpParams(WING_STATES.folded, WING_STATES[state], reveal)
+		local target = lerpParams(WING_STATES.folded, WING_STATES[forcedPose or state], reveal)
 		local ease = 1 - math.exp(-dt * (if unfurl < 1 then 30 else 7))
 		current = lerpParams(current, target, ease)
 		phase = (phase + dt * current.rate) % 1
@@ -2263,34 +2381,25 @@ local function setAwakened(character: Model, on: boolean)
 		local back = current.back - 10 * flap
 		local fan = current.fan + 0.3 * flap
 
-		-- Bones.
-		local shoulderFrame = torso.CFrame * shoulder * CFrame.Angles(0, rad(back), 0) * CFrame.Angles(0, 0, rad(-lift))
-		local wristFrame = shoulderFrame
-			* CFrame.new(-UPPER_BONE, 0, 0)
-			* CFrame.Angles(0, rad(10 + current.back * 0.2), 0)
-			* CFrame.Angles(0, 0, rad(-bend))
-		upperBone.CFrame = shoulderFrame * CFrame.new(-UPPER_BONE / 2, 0, 0)
-		upperEdge.CFrame = shoulderFrame * CFrame.new(-UPPER_BONE / 2, 0.17, -0.05)
-		forearm.CFrame = wristFrame * CFrame.new(-FOREARM / 2, 0, 0)
-		forearmEdge.CFrame = wristFrame * CFrame.new(-FOREARM / 2, 0.13, -0.05)
-		wrist.CFrame = wristFrame
-		claw.CFrame = wristFrame * CFrame.Angles(0, 0, rad(40)) * CFrame.new(0, 0.4, 0)
-
-		-- Feathers: fanned out, rippling from the root to the tip.
+		-- Both wings (the second only shows in cutscenes).
 		local t = now - born
-		for i, feather in FEATHERS do
-			local frame = if feather.bone == 1 then shoulderFrame else wristFrame
-			local length = if feather.bone == 1 then UPPER_BONE else FOREARM
-			local ripple = math.sin(t * 2.6 - i * 0.45) * 4 * current.sway
-				+ math.sin(t * 13 - i * 0.7) * 3 * (if state == "run" then 1 else 0)
-			local twist = math.sin(t * 1.9 - i * 0.5) * 7 * current.sway - 9 * current.beat * waveLag
-			local joint = frame
-				* CFrame.new(-length * feather.at, 0, 0.03 * i)
-				* CFrame.Angles(rad(twist), 0, 0)
-				* CFrame.Angles(0, 0, rad(-(feather.angle * fan + ripple)))
-			local pair = feathers[i]
-			pair.plate.CFrame = joint * CFrame.new(0, -feather.length / 2, 0)
-			pair.tip.CFrame = joint * CFrame.new(0, -feather.length, 0) * CFrame.Angles(0, 0, rad(45))
+		for _, wing in wings do
+			wing.shown += (wing.target - wing.shown) * math.min(dt * 6, 1)
+			if wing.shown > 0.01 then
+				wing.pose(
+					torso.CFrame,
+					lift,
+					back,
+					bend,
+					fan,
+					current.back,
+					current.sway,
+					current.beat,
+					waveLag,
+					t,
+					state == "run" and forcedPose == nil
+				)
+			end
 		end
 
 		-- Horn.
@@ -2338,10 +2447,20 @@ local function setAwakened(character: Model, on: boolean)
 			end
 		end
 		if visible < 1 or fading or now - born < 0.35 then
-			for _, part in parts do
-				if part ~= disc and part ~= discRim then
-					local base = if part == upperEdge or part == forearmEdge then 0.2 else 0
-					part.Transparency = base + (1 - base) * (1 - visible)
+			for _, part in hornParts do
+				part.Transparency = 1 - visible
+			end
+		end
+		for _, wing in wings do
+			local alpha = math.floor(visible * wing.shown * 50 + 0.5) / 50
+			if alpha ~= wing.applied then
+				wing.applied = alpha
+				for _, part in wing.parts do
+					local base = if wing.edges[part] then 0.2 else 0
+					part.Transparency = base + (1 - base) * (1 - alpha)
+				end
+				for _, e in wing.emitters do
+					e.Enabled = alpha > 0.5 and not fading
 				end
 			end
 		end
@@ -2955,6 +3074,44 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		end)
 	end
 
+	-- Pale moonlight on the two of them, so the fight still reads at night.
+	local moonlights: { PointLight } = {}
+	for _, part in { root, victimRoot } :: { BasePart? } do
+		if part then
+			local light = Instance.new("PointLight")
+			light.Color = Color3.fromRGB(200, 212, 255)
+			light.Brightness = 0
+			light.Range = 18
+			light.Shadows = false
+			light.Parent = part
+			table.insert(moonlights, light)
+		end
+	end
+	task.delay(T.Night, function()
+		for _, light in moonlights do
+			U.tween(light, 0.4, { Brightness = 1.6 })
+		end
+	end)
+	task.delay(T.Land + 0.4, function()
+		for _, light in moonlights do
+			U.tween(light, 0.8, { Brightness = 0 })
+			task.delay(0.85, light.Destroy, light)
+		end
+	end)
+
+	-- Afterwards the wings go back to normal (the second one dissolves).
+	task.delay(T.Land + 0.9, function()
+		local visual = awakenedVisuals[character]
+		if visual then
+			if visual.setPose then
+				visual.setPose(nil)
+			end
+			if visual.setPair then
+				visual.setPair(false)
+			end
+		end
+	end)
+
 	-- The throw.
 	play(character, ANIMS.MoonThrow)
 	at(T.Release, function()
@@ -3039,9 +3196,22 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		outline.DepthMode = Enum.HighlightDepthMode.Occluded
 		outline.Parent = U.folder
 		silhouette = outline
+		-- Both wings out, wide open, beating slowly in front of the moon.
 		local visual = awakenedVisuals[character]
-		if visual and visual.flap then
-			visual.flap()
+		if visual then
+			if visual.setPair then
+				visual.setPair(true)
+			end
+			if visual.setPose then
+				visual.setPose("spread")
+			end
+			if visual.flap then
+				visual.flap()
+			end
+		end
+		-- No moonlight on him here: he's a silhouette against the moon.
+		if moonlights[1] then
+			U.tween(moonlights[1], 0.2, { Brightness = 0 })
 		end
 		blackSmoke(root.Position, 14, 3.5, 7)
 		redSparks(root.Position, 14, 0.8)
@@ -3091,6 +3261,13 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 			silhouette:Destroy()
 			silhouette = nil
 		end
+		local visual = awakenedVisuals[character]
+		if visual and visual.setPose then
+			visual.setPose("glide") -- swept back for speed
+		end
+		if moonlights[1] then
+			U.tween(moonlights[1], 0.15, { Brightness = 1.6 })
+		end
 		heavyTrail(character, 0.45)
 		U.bodyTrail(character, BLACK, 0.3)
 		U.speedLines(root, plan.through, 0.25)
@@ -3133,8 +3310,12 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 	-- Past them, back turned. Everything goes still.
 	at(T.Arrive, function()
 		swordAura(character, T.Land - T.Arrive, 20)
+		local visual = awakenedVisuals[character]
+		if visual and visual.setPose then
+			visual.setPose("spread") -- flared open as he stops
+		end
 		if mine then
-			U.colorGrade({ Saturation = -1, Contrast = 0.5, Brightness = -0.05 }, 0.05, T.Land - T.Arrive - 0.1, 0.15)
+			U.colorGrade({ Saturation = -1, Contrast = 0.35, Brightness = 0.08 }, 0.05, T.Land - T.Arrive - 0.1, 0.15)
 		end
 	end)
 
