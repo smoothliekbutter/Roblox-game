@@ -368,6 +368,62 @@ function CombatService.Grab(
 	end
 end
 
+--[[
+	Cutscenes: holds characters on scripted paths. Each root is anchored and
+	moved every frame to paths[character](t) until `length` (or stop()),
+	then players get their physics back. Clients draw the same paths
+	themselves for smoothness (see Shared/BlackMoon).
+]]
+function CombatService.Cutscene(paths: { [Model]: (number) -> CFrame }, length: number): () -> ()
+	type Held = { character: Model, root: BasePart, path: (number) -> CFrame, player: Player? }
+	local held: { Held } = {}
+	for character, path in paths do
+		local root = getRoot(character)
+		if root then
+			root.Anchored = true
+			table.insert(held, {
+				character = character,
+				root = root,
+				path = path,
+				player = Players:GetPlayerFromCharacter(character),
+			})
+		end
+	end
+
+	local start = os.clock()
+	local stopped = false
+	local connection
+	local function stop()
+		if stopped then
+			return
+		end
+		stopped = true
+		connection:Disconnect()
+		for _, entry in held do
+			local root = entry.root
+			if root.Parent then
+				root.Anchored = false
+				root.AssemblyLinearVelocity = Vector3.zero
+				if entry.player and not Ragdoll.IsActive(entry.character) then
+					pcall(root.SetNetworkOwner, root, entry.player)
+				end
+			end
+		end
+	end
+	connection = RunService.Heartbeat:Connect(function()
+		local t = math.min(os.clock() - start, length)
+		for _, entry in held do
+			if entry.root.Parent then
+				entry.root.CFrame = entry.path(t)
+			end
+		end
+		if t >= length then
+			stop()
+		end
+	end)
+	return stop
+end
+
 -- Fires the crater effect roughly when a downslammed victim reaches the ground.
 local function scheduleCrater(victim: Model, attacker: Model)
 	local root = getRoot(victim)

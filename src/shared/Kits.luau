@@ -88,7 +88,7 @@ Kits.List = {
 			{ name = "Black Hurricane", cooldown = 9, type = "Melee" },
 			{ name = "Black Slash", cooldown = 7, type = "Bolt" },
 			{ name = "Grand Divider", cooldown = 13, type = "Explosion" },
-			{ name = "Demon-Destroyer", cooldown = 25, type = "Melee" },
+			{ name = "Black Moon", cooldown = 25, type = "Melee" },
 		},
 		awakening = {
 			name = "Black Form",

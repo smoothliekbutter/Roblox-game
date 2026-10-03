@@ -11,6 +11,7 @@
 	  GuardHit           a blocked hit pushes the guard back
 	  Stagger            guard broken or parried
 	  Grabbed            held up by the throat (faded out on release)
+	  Launched           thrown high into the air, flailing (cutscenes end it)
 ]]
 
 local PoseAnimator = require(script.Parent.PoseAnimator)
@@ -199,6 +200,24 @@ do
 		)
 	end
 	Reactions.Grabbed = clip(keys, { fadeIn = 0.08, fadeOut = 0.2 })
+end
+
+do
+	local function launched(flail: number)
+		return {
+			Torso = rot(20 + flail),
+			Head = rot(-30),
+			RightArm = limb(160 - flail * 3, 0, 30),
+			LeftArm = limb(150 + flail * 3, 0, -35),
+			RightLeg = rot(30 - flail * 2),
+			LeftLeg = rot(-20 + flail * 2),
+		}
+	end
+	local keys: { any } = { { 0, launched(0) } }
+	for i = 1, 12 do
+		table.insert(keys, { i * 0.25, launched(if i % 2 == 1 then 6 else -6), SINE, IN_OUT })
+	end
+	Reactions.Launched = clip(keys, { fadeIn = 0.1, fadeOut = 0.2 })
 end
 
 return Reactions

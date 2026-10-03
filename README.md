@@ -61,7 +61,7 @@ A close-range rushdown character built like Vessel (Jujutsu Shenanigans) and Her
 | 1 | **Bull Thrust**: rockets forward on anti-magic. **Steer it mid-move** with WASD or the camera to curve around and chase people. Catches the target in an 8-hit slash barrage, then pushes them back still stunned so you can M1 straight into them. **Air:** a diving thrust (also steerable). | **Black Hurricane**: spinning charge that drags enemies along |
 | 2 | **Black Meteorite** (grab): lunges and seizes them by the throat, unblockable. He hoists them up as anti-magic surges through them, rockets into the sky with them, charges the blade at the top, then slams them down like a meteor into a huge crater (shockwave dome, ground cracks, flying debris, black lightning). **Air:** dives at them, seizes them and spikes them straight into the ground. | **Black Slash**: piercing anti-magic slash wave |
 | 3 | **Black Divider**: anti-magic streams into the blade, then a huge sweeping crescent cleave. Press **3** again on the red glint for a Perfect Divider: bigger cut, impact frame, and a black crescent that keeps flying. **Air:** hangs in the air while charging, then front-flips the blade down onto whoever's below and spikes them into the ground. | **Grand Divider**: huge guard-breaking cleave plus a giant slash wave |
-| 4 | **Anti-Magic Deflect**: raises an anti-magic barrier on the blade that counters every attack type. Melee attackers get a frozen impact frame, then a diagonal slash that throws them aside. Projectiles get sent back. **Air:** hangs in the air with the guard up. | **Demon-Destroyer**: grab, carve, explosive finisher that heals 30% |
+| 4 | **Anti-Magic Deflect**: raises an anti-magic barrier on the blade that counters every attack type. Melee attackers get a frozen impact frame, then a diagonal slash that throws them aside. Projectiles get sent back. **Air:** hangs in the air with the guard up. | **Black Moon** (cutscene grab): seizes them by the throat and hurls them into the sky. Night falls, and he hangs in the air as a black silhouette in front of a giant moon. Then he flies straight through them, everything freezes, and the cut lands: an X slash, the moon splits in half and they're cut down into a crater. The two players get a cinematic camera with letterbox bars; everyone nearby sees night fall. |
 | R | **Anti-Magic Leap**: blasts off the ground in a big steerable leap. Press **R** again in the air (or use it while already airborne) for **Meteor Plunge**: hangs for a beat, then dives behind the sword and stabs it into the ground, blasting everyone nearby away. | (same) |
 | G | **Black Form**: a 2-second transformation. Anti-magic gathers as the world darkens, then explodes into a black pillar that blows everyone away, and he drops into his stance. For 40s you get +25% damage, more speed and new moves, plus the look: black flames, a horn, a black arm and sword, and a devil wing with its own idle (it breathes, stretches, tucks back when you run and beats in the air). | |
 
@@ -83,7 +83,7 @@ Everyone has 100 HP.
 | Black Hurricane | up to 9 + 5 | 9s | |
 | Black Slash | 9 | 7s | Piercing projectile |
 | Grand Divider | 10 + 9 wave | 13s | Guard-breaks. The wave skips whoever the slash hit. |
-| Demon-Destroyer | 19.5 (1 + 5 × 1.5 + 11) | 25s | Unblockable grab, heals 20% |
+| Black Moon | 21 (1 + 2 + 18) | 25s | Unblockable cutscene grab. Asta can't be hit while it plays. |
 
 #### Animations
 

@@ -17,7 +17,8 @@
 	  1 Black Hurricane     spinning anti-magic charge that drags enemies along
 	  2 Black Slash         piercing anti-magic slash wave
 	  3 Grand Divider       massive cleave plus a giant slash wave (guard break)
-	  4 Demon-Destroyer     grab, carve, then release all the absorbed magic. Heals 30%.
+	  4 Black Moon          cutscene grab: hurls them into the sky, hangs in front
+	                        of a giant moon, flies through them and cuts them down
 
 	All visuals are in StarterPlayerScripts.Client.Kits.AntiMagic, which gets
 	("Skill", {skill, phase, ...}) events from here.
@@ -25,6 +26,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local BlackMoon = require(ReplicatedStorage:WaitForChild("Shared").BlackMoon)
 local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
 local Projectile = require(script.Parent.Parent.Projectile)
 
@@ -419,7 +421,7 @@ local HOLD_RISE = CFrame.new(-1.5, 0.4, -1.7) * FACING
 -- landing; clients show them driven down in front of him.
 local HOLD_SLAM = CFrame.new(-1.3, 0, -1.8) * FACING
 
--- Shared by Black Meteorite and Demon-Destroyer: lunge, and if someone is
+-- Shared by Black Meteorite and Black Moon: lunge, and if someone is
 -- caught (and not countering/immune), seize them by the throat. Whiffing
 -- leaves him open for a moment.
 local function lungeGrab(
@@ -744,45 +746,72 @@ local function grandDivider(ctx)
 	CombatState.SetCasting(character, 0.3)
 end
 
-local function demonDestroyer(ctx)
+--[[
+	Black Moon (Black Form 4): seizes them by the throat and hurls them into
+	the sky. Night falls; he hangs in front of a giant moon, then flies
+	through them, and a beat later the cut lands. A cutscene for the two of
+	them: the timeline is Shared/BlackMoon, the camera work and effects are
+	client side.
+]]
+local MOON_SEIZE = 0.4
+
+local function blackMoon(ctx)
 	local c, character = ctx.combat, ctx.character
-	local target, release = lungeGrab(ctx, "DemonDestroyer", 2.1)
+	local target, release = lungeGrab(ctx, "BlackMoon", MOON_SEIZE + 0.3)
 	if not target or not release then
 		return
 	end
-	-- Five carves (1.5 each) and the finisher (11), healing 20%.
-
-	fx(ctx, "DemonDestroyer", "Grab", { target = target })
-	task.wait(0.25)
-	for i = 1, 5 do
-		if not CombatState.IsAlive(character) then
-			release()
-			return
-		end
-		fx(ctx, "DemonDestroyer", "Carve", { target = target, index = i })
-		c.Hit(character, target, { damage = 1.5, stun = 1, attackType = "Melee", unblockable = true })
-		task.wait(0.15)
+	fx(ctx, "BlackMoon", "Seize", { target = target })
+	c.ApplyVelocity(character, Vector3.zero, MOON_SEIZE)
+	task.wait(SURGE_AT)
+	if interrupted(ctx) then
+		release()
+		return
+	end
+	c.Hit(character, target, { damage = 2, stun = 3.5, attackType = "Melee", unblockable = true })
+	task.wait(MOON_SEIZE - SURGE_AT)
+	local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if interrupted(ctx) or not targetRoot or not CombatState.IsAlive(target) then
+		release()
+		return
 	end
 
-	fx(ctx, "DemonDestroyer", "Release", { target = target })
-	task.wait(0.3)
+	-- The cutscene takes over from the grab.
+	local plan = BlackMoon.Plan(ctx.root.CFrame, targetRoot.Position)
 	release()
-	local forward = look(ctx)
-	c.Hit(character, target, {
-		damage = 11,
-		stun = 1.2,
-		attackType = "Melee",
-		unblockable = true,
-		heavy = true,
-		ragdoll = 2,
-		velocity = forward * 90 + UP * 30,
-		effect = "PerfectDivider",
-	})
-	-- Like Hero Hunter's Final Hunt: the finisher restores health.
-	c.Heal(character, ctx.humanoid.MaxHealth * 0.2)
-	fx(ctx, "DemonDestroyer", "Heal")
-	c.ShakeArea(ctx.root.Position, 70, 0.9)
-	CombatState.SetCasting(character, 0.35)
+	local length = BlackMoon.Times.Land
+	CombatState.SetCasting(character, length + 0.6)
+	CombatState.GiveIFrames(character, length + 0.4)
+	CombatState.Stun(target, length + 0.6)
+	fx(ctx, "BlackMoon", "Begin", { target = target, origin = plan.origin, victimStart = plan.victimStart })
+	local stop = c.Cutscene({
+		[character] = function(t)
+			return BlackMoon.Attacker(plan, t)
+		end,
+		[target] = function(t)
+			return BlackMoon.Victim(plan, t)
+		end,
+	}, length)
+	task.wait(length)
+	stop()
+
+	-- The cut lands: they're cut down out of the sky.
+	if CombatState.IsAlive(target) then
+		c.Hit(character, target, {
+			damage = 18,
+			stun = 1.5,
+			attackType = "Melee",
+			unblockable = true,
+			heavy = true,
+			ragdoll = 2.4,
+			velocity = UP * -110 + plan.forward * 8,
+			effect = "BlackMoonCut",
+		})
+	end
+	c.ShakeArea(plan.apex, 120, 0.7)
+	-- He glides back down on his wing.
+	c.ApplyVelocity(character, UP * -32 + plan.forward * 4, 1)
+	CombatState.SetCasting(character, 0.7)
 end
 
 -- Spawn entrance: the grimoire appears, he draws the sword from it, twirls
@@ -885,7 +914,7 @@ function Kit.Special(ctx)
 end
 
 Kit.Skills = { bullThrust, blackMeteorite, blackDivider, antiMagicDeflect }
-Kit.AwakenedSkills = { blackHurricane, blackSlashMove, grandDivider, demonDestroyer }
+Kit.AwakenedSkills = { blackHurricane, blackSlashMove, grandDivider, blackMoon }
 
 ---------------------------------------------------------------------------
 -- Awakening: Black Form (Devil Union)

@@ -7,11 +7,17 @@
 	sharp slash arcs and rock-cracking impacts.
 ]]
 
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
+local BlackMoon = require(ReplicatedStorage:WaitForChild("Shared").BlackMoon)
+
 local CameraShake = require(script.Parent.Parent.CameraShake)
+local Cinematic = require(script.Parent.Parent.Cinematic)
 local PoseAnimator = require(script.Parent.Parent.PoseAnimator)
+local Reactions = require(script.Parent.Parent.Reactions)
 local VFX = require(script.Parent.Parent.VFX)
 
 local U = VFX.Util
@@ -152,6 +158,7 @@ Kit.Reactions = {
 	GuardHit = ANIMS.GuardHit,
 	Stagger = ANIMS.Stagger,
 	Grabbed = ANIMS.Grabbed,
+	Launched = ANIMS.Launched,
 }
 
 ---------------------------------------------------------------------------
@@ -350,23 +357,6 @@ local CLIPS = {
 		},
 		{ 0.5, { Torso = rot(-32), RightArm = limb(40, 6), LeftArm = limb(45, -6), Head = rot(15) } },
 	}, { fadeOut = 0.3 }),
-
-	Grabbing = clip({
-		{ 0, READY },
-		{ 0.1, { Torso = rot(-10), RightArm = limb(-15, 0, 25), LeftArm = limb(92, -5) }, BACK },
-		{ 0.3, { Torso = rot(-10), RightArm = limb(-15, 0, 25), LeftArm = limb(92, -5) } },
-	}, { fadeOut = 0.05 }),
-
-	Release = clip({
-		{ 0, { Torso = rot(-10), RightArm = limb(-15, 0, 25), LeftArm = limb(92, -5) } },
-		{ 0.15, { Torso = rot(10, -20), RightArm = limb(-40, -30), LeftArm = limb(95, -10) } },
-		{
-			0.3,
-			{ Torso = rot(-18, 20), RightArm = limb(95, 10), LeftArm = limb(95, -10), Head = rot(10) },
-			BACK,
-		},
-		{ 0.6, { Torso = rot(-15, 18), RightArm = limb(92, 10), LeftArm = limb(92, -10), Head = rot(8) } },
-	}, { fadeOut = 0.25, additive = LEGS_ADDITIVE }),
 }
 
 -- Black Hurricane: the whole body spins (RootJoint yaw in 90 degree steps).
@@ -1747,42 +1737,6 @@ function handlers.GrandDivider(data, character, root)
 	end
 end
 
-function handlers.DemonDestroyer(data, character, root)
-	local phase = data.phase
-	if phase == "Lunge" then
-		play(character, ANIMS.MeteorLunge)
-		U.afterimage(character, RED, 0.3)
-		U.bodyTrail(character, BLACK, 0.35)
-	elseif phase == "Grab" then
-		play(character, CLIPS.Grabbing)
-		blackLightning(root.Position, 4, 4)
-	elseif phase == "Carve" then
-		local i = data.index or 1
-		local from = if i % 2 == 0 then CFrame.new(3, 1.5, -2) else CFrame.new(-3, 1.2, -2)
-		local to = if i % 2 == 0 then CFrame.new(-3, -1, -2) else CFrame.new(3, -1, -2)
-		swordTrail(character, 0.12)
-		slashArc(character, from, to, 1.4, 0.15)
-		redSparks(root.Position + root.CFrame.LookVector * 3, 5, 0.8)
-	elseif phase == "Release" then
-		play(character, CLIPS.Release)
-		local front = root.Position + root.CFrame.LookVector * 3
-		task.delay(0.28, function()
-			U.flash(front, BLACK, 12, 0.3)
-			U.flash(front, RED, 8, 0.25)
-			U.ringBurst(CFrame.lookAt(front, front + root.CFrame.LookVector) * rot(90), RED, 1, 12, 0.35, 0.4)
-			blackSmoke(front, 20, 5, 25)
-			blackLightning(front, 10, 9)
-			U.light(front, RED, 12, 30, 0.5)
-			if U.isLocal(character) then
-				U.screenFlash(BLACK, 0.4)
-			end
-		end)
-	elseif phase == "Heal" then
-		U.popup(root.Position + UP * 4, "+30% HP", Color3.fromRGB(120, 255, 140), 1.3)
-		U.highlight(character, Color3.fromRGB(120, 255, 140), 0.5)
-	end
-end
-
 ---------------------------------------------------------------------------
 -- Special (R): Anti-Magic Leap / Meteor Plunge
 ---------------------------------------------------------------------------
@@ -2701,6 +2655,548 @@ function handlers.Awaken(data, character, root)
 end
 
 ---------------------------------------------------------------------------
+-- Black Moon (Black Form 4): the cutscene
+---------------------------------------------------------------------------
+
+local MOON_LIGHT = Color3.fromRGB(238, 234, 220)
+local MOON_SHADE = Color3.fromRGB(212, 207, 194)
+local MOON_HALO = Color3.fromRGB(255, 226, 214)
+local MOON_CUT = rad(35) -- angle of the cut across the moon's face
+local MOON_SEGMENTS = 24
+
+local function smoothstep(x: number): number
+	x = math.clamp(x, 0, 1)
+	return x * x * (3 - 2 * x)
+end
+
+local function newWedge(color: Color3): WedgePart
+	local wedge = Instance.new("WedgePart")
+	wedge.Anchored = true
+	wedge.CanCollide = false
+	wedge.CanQuery = false
+	wedge.CanTouch = false
+	wedge.CastShadow = false
+	wedge.Material = Enum.Material.Neon
+	wedge.Color = color
+	wedge.Transparency = 1
+	wedge.Parent = U.folder
+	return wedge
+end
+
+-- The triangle a-b-c as two wedges: their CFrames and sizes, in the
+-- space a, b and c are given in.
+local function triangle(a: Vector3, b: Vector3, c: Vector3, thickness: number): { { cframe: CFrame, size: Vector3 } }
+	local ab, ac, bc = b - a, c - a, c - b
+	local abd, acd, bcd = ab:Dot(ab), ac:Dot(ac), bc:Dot(bc)
+	if abd > acd and abd > bcd then
+		c, a = a, c
+	elseif acd > bcd and acd > abd then
+		a, b = b, a
+	end
+	ab, ac, bc = b - a, c - a, c - b
+	local right = ac:Cross(ab).Unit
+	local up = bc:Cross(right).Unit
+	local back = bc.Unit
+	local height = math.abs(ab:Dot(up))
+	return {
+		{
+			cframe = CFrame.fromMatrix((a + b) / 2, right, up, back),
+			size = Vector3.new(thickness, height, math.abs(ab:Dot(back))),
+		},
+		{
+			cframe = CFrame.fromMatrix((a + c) / 2, -right, up, -back),
+			size = Vector3.new(thickness, height, math.abs(ac:Dot(back))),
+		},
+	}
+end
+
+type MoonPiece = { part: BasePart, offset: CFrame, side: number, alpha: number }
+type Moon = {
+	update: (center: CFrame, visible: number, split: number, scar: number) -> (),
+	destroy: () -> (),
+}
+
+--[[
+	A giant full moon, built as a fan of flat triangles so it can be cut in
+	half: the two halves sit either side of a line at MOON_CUT and slide
+	apart as `split` goes 0 to 1. Faces the camera (center's -Z), with
+	darker seas, a soft halo behind, and a red scar along the cut.
+]]
+local function buildMoon(radius: number): Moon
+	local pieces: { MoonPiece } = {}
+	for i = 0, MOON_SEGMENTS - 1 do
+		local a0 = MOON_CUT + (i / MOON_SEGMENTS) * math.pi * 2
+		local a1 = MOON_CUT + ((i + 1) / MOON_SEGMENTS) * math.pi * 2
+		local p0 = Vector3.new(math.cos(a0), math.sin(a0), 0) * radius
+		local p1 = Vector3.new(math.cos(a1), math.sin(a1), 0) * radius
+		local side = if i < MOON_SEGMENTS / 2 then 1 else -1
+		for _, tri in triangle(Vector3.zero, p0, p1, 0.4) do
+			local part = newWedge(MOON_LIGHT)
+			part.Size = tri.size
+			table.insert(pieces, { part = part, offset = tri.cframe, side = side, alpha = 0 })
+		end
+	end
+	local face = CFrame.Angles(0, rad(90), 0) -- cylinders run along X; turn them to face the camera
+	local cut = Vector2.new(math.cos(MOON_CUT), math.sin(MOON_CUT))
+	for _, sea in
+		{
+			{ 0.25, 0.3, 0.28 },
+			{ -0.35, 0.1, 0.22 },
+			{ -0.1, -0.4, 0.18 },
+			{ 0.45, -0.25, 0.14 },
+			{ -0.5, 0.45, 0.12 },
+			{ 0.1, 0.62, 0.1 },
+		}
+	do
+		local x, y, r = sea[1] * radius, sea[2] * radius, sea[3] * radius
+		local part = U.newPart({
+			Shape = Enum.PartType.Cylinder,
+			Size = Vector3.new(0.3, r * 2, r * 2),
+			Color = MOON_SHADE,
+			Transparency = 1,
+		})
+		local side = if cut.X * y - cut.Y * x > 0 then 1 else -1
+		table.insert(pieces, { part = part, offset = CFrame.new(x, y, -0.35) * face, side = side, alpha = 0.15 })
+	end
+	for _, halo in { { 1.12, 0.72 }, { 1.32, 0.87 } } do
+		local part = U.newPart({
+			Shape = Enum.PartType.Cylinder,
+			Size = Vector3.new(0.2, radius * 2 * halo[1], radius * 2 * halo[1]),
+			Color = MOON_HALO,
+			Transparency = 1,
+		})
+		table.insert(pieces, { part = part, offset = CFrame.new(0, 0, 1 + halo[1]) * face, side = 0, alpha = halo[2] })
+	end
+	local scarGlow = U.newPart({ Size = Vector3.new(radius * 2.3, 1, 0.3), Color = RED, Transparency = 1 })
+	local scarCore = U.newPart({ Size = Vector3.new(radius * 2.3, 1, 0.3), Color = WHITE, Transparency = 1 })
+
+	local across = Vector3.new(-math.sin(MOON_CUT), math.cos(MOON_CUT), 0) -- toward side 1
+	return {
+		update = function(center: CFrame, visible: number, split: number, scar: number)
+			for _, piece in pieces do
+				local offset = piece.offset
+				if piece.side ~= 0 then
+					offset = CFrame.new(across * piece.side * split * radius * 0.4)
+						* CFrame.Angles(0, 0, piece.side * split * 0.12)
+						* offset
+				end
+				piece.part.CFrame = center * offset
+				local shown = if piece.side == 0 then math.max(visible - split, 0) else visible
+				piece.part.Transparency = 1 - shown * (1 - piece.alpha)
+			end
+			local line = center * CFrame.new(0, 0, -0.7) * CFrame.Angles(0, 0, MOON_CUT)
+			scarGlow.CFrame = line
+			scarGlow.Size = Vector3.new(radius * 2.3, math.max(scar * radius * 0.07, 0.05), 0.3)
+			scarGlow.Transparency = 1 - scar * 0.85
+			scarCore.CFrame = line * CFrame.new(0, 0, -0.1)
+			scarCore.Size = Vector3.new(radius * 2.3, math.max(scar * radius * 0.02, 0.05), 0.3)
+			scarCore.Transparency = 1 - scar
+		end,
+		destroy = function()
+			for _, piece in pieces do
+				piece.part:Destroy()
+			end
+			scarGlow:Destroy()
+			scarCore:Destroy()
+		end,
+	}
+end
+
+local function launchedFor(victim: Model): Animation?
+	if victim:GetAttribute("Kit") == "AntiMagic" then
+		return ANIMS.Launched
+	end
+	return Reactions.Launched
+end
+
+-- A straight streak hanging in the air along his flight path.
+local function flightStreak(from: Vector3, to: Vector3)
+	local length = (to - from).Magnitude
+	local cframe = CFrame.lookAt((from + to) / 2, to)
+	local glow = U.newPart({ Size = Vector3.new(1.2, 1.2, length), CFrame = cframe, Color = RED, Transparency = 0.45 })
+	local core = U.newPart({
+		Size = Vector3.new(0.45, 0.45, length),
+		CFrame = cframe,
+		Color = BLACK,
+		Material = Enum.Material.SmoothPlastic,
+	})
+	U.tween(glow, 0.6, { Size = Vector3.new(0.05, 0.05, length), Transparency = 1 })
+	U.tween(core, 0.8, { Size = Vector3.new(0.02, 0.02, length), Transparency = 1 })
+	task.delay(0.85, function()
+		glow:Destroy()
+		core:Destroy()
+	end)
+end
+
+-- The crater where they come down.
+local function moonCrater(position: Vector3)
+	U.flash(position + UP, BLACK, 14, 0.3)
+	U.flash(position + UP, RED, 8, 0.22)
+	U.shockwave(position, RED, 3, 24, 0.45)
+	U.shockwave(position, BLACK, 4, 28, 0.5, Enum.Material.Glass, 0.4)
+	U.ringBurst(CFrame.new(position + UP * 0.2), BLACK, 1, 22, 0.5, 0.8)
+	task.delay(0.05, U.ringBurst, CFrame.new(position + UP * 0.3), RED, 1, 16, 0.4, 0.35)
+	U.groundCracks(position, 16, 16, RED, 4)
+	U.groundRocks(position, 16, 7, 3)
+	task.delay(0.05, U.groundRocks, position, 9, 3.5, 2.2)
+	U.debris(position, 24, 60, 1.6)
+	U.pillar(position, BLACK, 3, 30, 0.6, Enum.Material.SmoothPlastic, 0.15)
+	blackSmoke(position + UP, 28, 6.5, 34)
+	U.burst(position, {
+		texture = U.textures.Smoke,
+		color = Color3.fromRGB(150, 140, 130),
+		count = 20,
+		size = 7,
+		speed = NumberRange.new(20, 42),
+		lifetime = NumberRange.new(0.8, 1.5),
+		lightEmission = 0,
+		transparency = 0.35,
+		drag = 2,
+		spread = 35,
+		direction = (UP + Vector3.new(0.01, 0, 0)).Unit,
+	})
+	for i = 1, 10 do
+		local angle = (i / 10) * math.pi * 2 + math.random() * 0.4
+		local out = Vector3.new(math.cos(angle), 0, math.sin(angle))
+		U.lightning(position + UP * 0.4, position + out * (10 + math.random() * 8) + UP * 0.3, BLACK, RED, 0.22, 0.32)
+	end
+	U.light(position + UP * 2, RED, 14, 45, 0.6)
+	lingerSmoke(position, 2.2, 10)
+	local mine = U.getRoot(Players.LocalPlayer.Character)
+	if mine then
+		local distance = (mine.Position - position).Magnitude
+		if distance < 70 then
+			CameraShake.Add(0.6 * (1 - distance / 70))
+		end
+	end
+end
+
+local function playBlackMoon(data, character: Model, root: BasePart)
+	if typeof(data.origin) ~= "CFrame" or typeof(data.victimStart) ~= "Vector3" then
+		return
+	end
+	local T = BlackMoon.Times
+	local plan = BlackMoon.Plan(data.origin, data.victimStart)
+	local victim: Model? = if typeof(data.target) == "Instance" and data.target:IsA("Model") then data.target else nil
+	local victimRoot = U.getRoot(victim)
+	local start = os.clock()
+	local mine = U.isLocal(character) or U.isLocal(victim)
+	local myRoot = U.getRoot(Players.LocalPlayer.Character)
+	local nearby = mine or (myRoot ~= nil and (myRoot.Position - plan.origin.Position).Magnitude < 180)
+	local cutAt = BlackMoon.Victim(plan, T.Cut).Position
+
+	-- Runs `fn` at `time` seconds into the cutscene (if he's still around).
+	local function at(time: number, fn: () -> ())
+		task.delay(math.max(time - (os.clock() - start), 0), function()
+			if character.Parent then
+				fn()
+			end
+		end)
+	end
+
+	-- Both of them on the shared paths (smooth on every screen), and the moon.
+	local moon = buildMoon(plan.moonRadius)
+	local bind = "CloverBlackMoon" .. tostring(start)
+	local done = false
+	local function finish()
+		if done then
+			return
+		end
+		done = true
+		RunService:UnbindFromRenderStep(bind)
+		moon.destroy()
+	end
+	RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
+		local t = os.clock() - start
+		if t <= T.Land then
+			if root.Parent then
+				root.CFrame = BlackMoon.Attacker(plan, t)
+			end
+			if victimRoot and victimRoot.Parent then
+				victimRoot.CFrame = BlackMoon.Victim(plan, t)
+			end
+		end
+		local visible = smoothstep((t - T.Leap) / 0.35) * (1 - smoothstep((t - T.Land - 0.3) / 1.1))
+		local split = TweenService:GetValue(
+			math.clamp((t - T.Land) / 0.9, 0, 1),
+			Enum.EasingStyle.Quart,
+			Enum.EasingDirection.Out
+		)
+		local scar = if t < T.Cut then 0 else math.min((t - T.Cut) / 0.08, 1) * (1 - smoothstep((t - T.Land) / 0.5))
+		moon.update(CFrame.lookAt(plan.moon, workspace.CurrentCamera.CFrame.Position), visible, split, scar)
+		if t > T.Land + 1.6 then
+			finish()
+		end
+	end)
+	task.delay(T.Land + 3, finish)
+
+	-- The camera, for the two of them.
+	if mine then
+		Cinematic.Camera(function(t)
+			if t < T.Land then
+				return BlackMoon.Camera(plan, t)
+			end
+			-- Following them down out of the sky.
+			local v = if victimRoot and victimRoot.Parent then victimRoot.Position else plan.apex
+			return CFrame.lookAt(v + plan.right * 14 + UP * 7 - plan.forward * 4, v), 65
+		end, T.Land + 0.85)
+	end
+
+	-- Night falls over everyone nearby.
+	local lift: ((number?) -> ())? = nil
+	if nearby then
+		at(T.Night, function()
+			lift = Cinematic.Night(0.4)
+		end)
+		task.delay(T.Land + 0.25, function()
+			if lift then
+				lift(1.1)
+			end
+		end)
+	end
+
+	-- The throw.
+	play(character, ANIMS.MoonThrow)
+	at(T.Release, function()
+		if victim then
+			local animation = launchedFor(victim)
+			if animation then
+				PoseAnimator.Play(victim, animation)
+			end
+		end
+		local hand = character:FindFirstChild("Left Arm")
+		local from = if hand and hand:IsA("BasePart")
+			then (hand.CFrame * CFrame.new(0, -1, 0)).Position
+			else root.Position
+		U.flash(from, WHITE, 4, 0.1)
+		U.flash(from, BLACK, 7, 0.2)
+		U.ringBurst(CFrame.new(from), BLACK, 1, 9, 0.3, 0.35)
+		task.delay(0.04, U.ringBurst, CFrame.new(from + UP), RED, 0.8, 6, 0.25, 0.2)
+		local feet = feetOf(character, root)
+		U.groundCracks(feet, 7, 5, RED, 2)
+		U.debris(feet, 8, 30, 0.9)
+		blackSmoke(feet + UP * 0.4, 12, 3, 14)
+		if victimRoot then
+			trailEmitter(victimRoot, {
+				Texture = U.textures.Smoke,
+				Color = ColorSequence.new(BLACK),
+				LightEmission = 0,
+				Size = NumberSequence.new(1.6, 3.2),
+				Transparency = NumberSequence.new(0.25, 1),
+				Lifetime = NumberRange.new(0.35, 0.6),
+				Rate = 90,
+				Speed = NumberRange.new(1, 3),
+				SpreadAngle = Vector2.new(180, 180),
+				Drag = 3,
+			}, 0.55)
+			trailEmitter(victimRoot, {
+				Texture = U.textures.Spark,
+				Color = ColorSequence.new(RED, DARK_RED),
+				LightEmission = 1,
+				Size = NumberSequence.new(0.35, 0),
+				Lifetime = NumberRange.new(0.2, 0.4),
+				Rate = 50,
+				Speed = NumberRange.new(4, 10),
+				SpreadAngle = Vector2.new(180, 180),
+			}, 0.55)
+			U.bodyTrail(victim, BLACK, 0.6)
+			U.speedLines(victimRoot, (UP + Vector3.new(0.01, 0, 0)).Unit, 0.45)
+		end
+		if mine then
+			CameraShake.Add(0.3)
+		end
+	end)
+
+	-- He leaps up after them.
+	at(T.Leap, function()
+		play(character, ANIMS.Leap)
+		local feet = feetOf(character, root)
+		U.flash(feet + UP * 0.5, BLACK, 8, 0.22)
+		U.shockwave(feet, RED, 2, 12, 0.3)
+		U.ringBurst(CFrame.new(feet + UP * 0.15), BLACK, 1, 10, 0.32, 0.45)
+		U.debris(feet, 8, 36, 1)
+		blackSmoke(feet + UP * 0.4, 14, 3.2, 16)
+		U.bodyTrail(character, BLACK, 0.35)
+		for i = 0, 3 do
+			task.delay(i * 0.05, function()
+				if character.Parent then
+					U.afterimage(character, if i % 2 == 0 then BLACK else DARK_RED, 0.3)
+				end
+			end)
+		end
+	end)
+
+	-- Perched in front of the moon: a black silhouette with a red rim.
+	local silhouette: Highlight? = nil
+	at(T.Perch, function()
+		play(character, ANIMS.MoonPerch)
+		local outline = Instance.new("Highlight")
+		outline.Adornee = character
+		outline.FillColor = BLACK
+		outline.FillTransparency = 0
+		outline.OutlineColor = RED
+		outline.OutlineTransparency = 0.1
+		outline.DepthMode = Enum.HighlightDepthMode.Occluded
+		outline.Parent = U.folder
+		silhouette = outline
+		local visual = awakenedVisuals[character]
+		if visual and visual.flap then
+			visual.flap()
+		end
+		blackSmoke(root.Position, 14, 3.5, 7)
+		redSparks(root.Position, 14, 0.8)
+		partEmitter(root, {
+			Texture = U.textures.Smoke,
+			Color = ColorSequence.new(BLACK),
+			LightEmission = 0,
+			Size = NumberSequence.new(1.6, 3.6),
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.7),
+				NumberSequenceKeypoint.new(0.3, 0.35),
+				NumberSequenceKeypoint.new(1, 1),
+			}),
+			Lifetime = NumberRange.new(0.5, 0.9),
+			Rate = 45,
+			Speed = NumberRange.new(2, 5),
+			Acceleration = Vector3.new(0, 7, 0),
+			SpreadAngle = Vector2.new(180, 180),
+		}, T.Fly - T.Perch)
+		partEmitter(root, {
+			Texture = U.textures.Spark,
+			Color = ColorSequence.new(RED),
+			LightEmission = 1,
+			Size = NumberSequence.new(0.25, 0),
+			Lifetime = NumberRange.new(0.5, 0.9),
+			Rate = 20,
+			Speed = NumberRange.new(2, 5),
+			SpreadAngle = Vector2.new(180, 180),
+		}, T.Fly - T.Perch)
+	end)
+
+	-- The blade catches the moonlight.
+	at(T.Glint, function()
+		local tip = bladePoint(character, 2.1)
+		if tip then
+			U.glint(tip, 2.6, RED)
+			task.delay(0.03, U.glint, tip, 1.4, WHITE)
+			U.impactRing(tip, workspace.CurrentCamera.CFrame.Position - tip, RED, 0.3, 4, 0.25)
+			U.light(tip, RED, 12, 18, 0.3)
+		end
+	end)
+
+	-- He flies straight through them.
+	at(T.Fly, function()
+		play(character, ANIMS.MoonFlight)
+		if silhouette then
+			silhouette:Destroy()
+			silhouette = nil
+		end
+		heavyTrail(character, 0.45)
+		U.bodyTrail(character, BLACK, 0.3)
+		U.speedLines(root, plan.through, 0.25)
+		U.flash(plan.perch, BLACK, 10, 0.2)
+		U.impactRing(plan.perch, plan.through, RED, 1, 7, 0.25)
+		blackSmoke(plan.perch, 14, 3.5, 16)
+		for i = 0, 6 do
+			task.delay(i * 0.03, function()
+				if character.Parent then
+					U.afterimage(character, if i % 2 == 0 then BLACK else DARK_RED, 0.35)
+				end
+			end)
+		end
+	end)
+
+	-- The cut.
+	at(T.Cut, function()
+		PoseAnimator.Freeze(character, 0.1)
+		flightStreak(plan.perch, plan.beyond)
+		U.flash(cutAt, WHITE, 8, 0.1)
+		U.flash(cutAt, BLACK, 12, 0.25)
+		slashMark(cutAt, -0.5, 16, 0.5)
+		U.burst(cutAt, {
+			color = RED,
+			count = 24,
+			size = 0.7,
+			speed = NumberRange.new(35, 70),
+			lifetime = NumberRange.new(0.15, 0.4),
+			streaks = true,
+			spread = 30,
+			direction = plan.through,
+		})
+		U.light(cutAt, RED, 12, 24, 0.3)
+		if mine then
+			impactFrame(1.4)
+			CameraShake.Add(0.4)
+		end
+	end)
+
+	-- Past them, back turned. Everything goes still.
+	at(T.Arrive, function()
+		swordAura(character, T.Land - T.Arrive, 20)
+		if mine then
+			U.colorGrade({ Saturation = -1, Contrast = 0.5, Brightness = -0.05 }, 0.05, T.Land - T.Arrive - 0.1, 0.15)
+		end
+	end)
+
+	-- The cut lands.
+	at(T.Land, function()
+		slashMark(cutAt, 0.6, 18, 0.6)
+		task.delay(0.04, slashMark, cutAt, -0.5, 18, 0.6)
+		U.flash(cutAt, WHITE, 6, 0.08)
+		U.flash(cutAt, BLACK, 22, 0.4)
+		U.flash(cutAt, RED, 14, 0.3)
+		U.shockwave(cutAt, BLACK, 4, 40, 0.6, Enum.Material.Glass, 0.3)
+		U.shockwave(cutAt, RED, 3, 32, 0.5)
+		local toCamera = workspace.CurrentCamera.CFrame.Position - cutAt
+		U.impactRing(cutAt, toCamera, BLACK, 2, 22, 0.5)
+		task.delay(0.05, U.impactRing, cutAt, toCamera, RED, 1.5, 16, 0.45)
+		blackLightning(cutAt, 12, 10, 0.35)
+		blackSmoke(cutAt, 30, 7, 35)
+		redSparks(cutAt, 40, 1.6)
+		U.light(cutAt, RED, 16, 60, 0.7)
+		U.popup(cutAt + UP * 5, "BLACK MOON", RED, 2.6)
+		if mine then
+			impactFrame(1.5)
+			U.screenFlash(RED, 0.5)
+			CameraShake.Add(0.8)
+		end
+		-- Watch them fall and make the crater where they hit.
+		if victimRoot then
+			local fallStart = os.clock()
+			local connection
+			connection = RunService.Heartbeat:Connect(function()
+				if not victimRoot.Parent or os.clock() - fallStart > 1.6 then
+					connection:Disconnect()
+					return
+				end
+				local ground = U.groundBelow(victimRoot.Position, { victim :: Model })
+				if ground and victimRoot.Position.Y - ground.Position.Y < 4 then
+					connection:Disconnect()
+					moonCrater(ground.Position)
+				end
+			end)
+		end
+	end)
+end
+
+function handlers.BlackMoon(data, character, root)
+	if data.phase == "Begin" then
+		playBlackMoon(data, character, root)
+	else
+		-- The lunge and the seize are the same as Black Meteorite's.
+		handlers.BlackMeteorite(data, character, root)
+	end
+end
+
+-- The cut landing (damage numbers; the cutscene draws the rest).
+VFX.Register("BlackMoonCut", function(data)
+	U.highlight(data.victim, RED, 0.4)
+	if data.damage and typeof(data.position) == "Vector3" then
+		U.popup(data.position, string.format("%g", data.damage), RED, 1.6)
+	end
+end)
+
+---------------------------------------------------------------------------
 -- Spawn entrance
 ---------------------------------------------------------------------------
 
@@ -3002,8 +3498,7 @@ function Kit.SetAwakened(character: Model, on: boolean)
 	setAwakened(character, on)
 end
 
--- A brighter, black-lightning version of the heavy hit for perfect Dividers
--- and the Demon-Destroyer finisher.
+-- A brighter, black-lightning version of the heavy hit for perfect Dividers.
 VFX.Register("PerfectDivider", function(data)
 	VFX.Play("HeavyHit", data)
 	local position: Vector3 = data.position
