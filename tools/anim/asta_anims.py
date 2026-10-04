@@ -363,14 +363,21 @@ THROW_HEAVE = {'Torso': R(14, -4), 'Head': R(-28), 'RightArm': L(-10, -10, 30), 
                'LeftArm': L(178, -4), 'RightLeg': R(-22), 'LeftLeg': R(20)}
 THROW_WATCH = {'Torso': R(10, -4), 'Head': R(-34), 'RightArm': L(-8, -10, 30), 'Sword': A(0.3, 0.3, 0.9),
                'LeftArm': L(160, -4), 'RightLeg': R(-20), 'LeftLeg': R(18)}
-MOON_THROW = [(0.0, SEIZE_LIFT), (0.09, THROW_DIP), (0.16, THROW_HEAVE), (0.55, THROW_WATCH)]
+THROW_FOLLOW = {'Torso': R(12, -6), 'Head': R(-40), 'RightArm': L(-6, -10, 30), 'Sword': A(0.3, 0.3, 0.9),
+                'LeftArm': L(150, -4), 'RightLeg': R(-20), 'LeftLeg': R(18)}
+MOON_THROW = [(0.0, SEIZE_LIFT), (0.09, THROW_DIP), (0.18, THROW_HEAVE), (0.6, THROW_WATCH), (1.0, THROW_FOLLOW)]
 
 # Perched in the sky in front of the moon: turned side-on, the sword held
 # out low to his right, one knee up, glaring at them. Breathes while he waits.
 def perch(lean, arm):
     return {'Torso': R(lean, -30), 'Head': R(-10, 24), 'RightArm': L(arm, 70), 'Sword': A(0.75, -0.55, 0.35),
             'LeftArm': L(22, 0, -28), 'RightLeg': R(-14), 'LeftLeg': R(44)}
-MOON_PERCH = [(0.0, LEAP_LAUNCH), (0.15, perch(-6, 50)), (0.4, perch(-8, 46)), (0.7, perch(-6, 50))]
+# Then he levels the sword at them: a challenge across the sky.
+def point(lean):
+    return {'Torso': R(lean, 6), 'Head': R(-8, -4), 'RightArm': L(98, 8), 'Sword': A(0.05, 0.22, -0.97),
+            'LeftArm': L(18, 0, -30), 'RightLeg': R(-14), 'LeftLeg': R(40)}
+MOON_PERCH = [(0.0, LEAP_LAUNCH), (0.15, perch(-6, 50)), (0.5, perch(-8, 46)), (0.85, perch(-6, 50)),
+              (1.2, perch(-8, 46)), (1.5, point(-4)), (1.95, point(-6)), (2.35, point(-4))]
 
 # The flight: body flat out, sword cocked back, then the cut through them
 # and the finish: past them, back turned, blade held out behind.
@@ -380,19 +387,57 @@ FLIGHT_CUT = {'Torso': R(-40, -10), 'Head': R(20, 8), 'RightArm': L(85, -5), 'Sw
               'LeftArm': L(30, 0, -40), 'RightLeg': R(-30), 'LeftLeg': R(-5)}
 FLIGHT_AFTER = {'Torso': R(-10, -50), 'Head': R(0, 34), 'RightArm': L(80, 100), 'Sword': A(-0.7, -0.5, 0.5),
                 'LeftArm': L(20, 0, -35), 'RightLeg': R(-20), 'LeftLeg': R(25)}
-MOON_FLIGHT = [(0.0, perch(-6, 50)), (0.06, FLIGHT_COCK), (0.14, FLIGHT_CUT), (0.22, FLIGHT_AFTER),
-               (0.75, FLIGHT_AFTER)]
+MOON_FLIGHT = [(0.0, point(-4)), (0.06, FLIGHT_COCK), (0.14, FLIGHT_CUT), (0.22, FLIGHT_AFTER),
+               (1.15, FLIGHT_AFTER)]
 
 # Victim thrown into the sky: flailing, held long (the cutscene ends it).
 def launched(flail):
     return {'Torso': R(20 + flail), 'Head': R(-30), 'RightArm': L(160 - flail * 3, 0, 30), 'Sword': A(0.3, 0.8, 0.5),
             'LeftArm': L(150 + flail * 3, 0, -35), 'RightLeg': R(30 - flail * 2), 'LeftLeg': R(-20 + flail * 2)}
 LAUNCHED = [(0.0, launched(0))]
-for i in range(1, 13):
+for i in range(1, 25):
     LAUNCHED.append((round(i * 0.25, 2), launched(6 if i % 2 else -6)))
+
+# ---------------- Black Form moves ----------------
+# Black Hurricane: four full spins with the blade held straight out, then a
+# final outward cut. The whole body turns on the root in 90 degree steps.
+def spin(step):
+    t = R(-8, -90 * step)
+    return {'Torso': t, 'Head': R(6), 'RightArm': L(88, 88), 'Sword': torso_dir(t, (0.98, -0.08, -0.18)),
+            'LeftArm': L(75, -85), 'RightLeg': R(-18), 'LeftLeg': R(16)}
+H_FINISH = {'Torso': R(-12, 40), 'Head': R(4, -30), 'RightArm': L(84, 95), 'Sword': A(-0.85, -0.1, 0.5),
+            'LeftArm': L(25, -40), 'RightLeg': R(-26), 'LeftLeg': R(24)}
+HURRICANE = [(0.0, UPPER), (0.1, spin(0))]
+for i in range(1, 17):
+    HURRICANE.append((round(0.1 + i * 0.05, 3), spin(i)))
+HURRICANE += [(1.0, H_FINISH), (1.25, H_FINISH)]
+
+# Black Slash: sword wound up high behind him, then a huge diagonal cut that
+# throws the wave.
+BS_COCK = {'Torso': R(6, -40), 'Head': R(0, 30), 'RightArm': L(150, -35), 'Sword': A(0.55, 0.65, 0.5),
+           'LeftArm': L(55, -20), 'RightLeg': R(-10), 'LeftLeg': R(12)}
+BS_STRIKE = {'Torso': R(-16, 42), 'Head': R(8, -30), 'RightArm': L(72, 62), 'Sword': A(-0.72, -0.4, -0.56),
+             'LeftArm': L(20, -35), 'RightLeg': R(-30), 'LeftLeg': R(28)}
+BS_SETTLE = {'Torso': R(-12, 36), 'Head': R(6, -26), 'RightArm': L(66, 56), 'Sword': A(-0.7, -0.45, -0.55),
+             'LeftArm': L(24, -32), 'RightLeg': R(-24), 'LeftLeg': R(22)}
+BLACK_SLASH = [(0.0, UPPER), (0.13, BS_COCK), (0.21, BS_STRIKE), (0.55, BS_SETTLE)]
+
+# Grand Divider: the sword raised straight to the sky, shaking as anti-magic
+# piles into it, then brought down in one crushing cleave.
+def raise_sword(tremble):
+    return {'Torso': R(12 + tremble), 'Head': R(-16), 'RightArm': L(176, 4), 'Sword': A(0.02, 1, 0.05),
+            'LeftArm': L(150, -18), 'RightLeg': R(-14, 0, 8), 'LeftLeg': R(14, 0, -8)}
+G_THROUGH = {'Torso': R(-6), 'Head': R(2), 'RightArm': L(115, 4), 'Sword': A(0, 0.35, -0.94),
+             'LeftArm': L(100, -10), 'RightLeg': R(-20), 'LeftLeg': R(16)}
+G_STRIKE = {'Torso': R(-36, 4), 'Head': R(18), 'RightArm': L(60, 6), 'Sword': A(0, -0.45, -0.89),
+            'LeftArm': L(35, -8), 'RightLeg': R(-46), 'LeftLeg': R(38)}
+GRAND_CHARGE = [(0.0, UPPER), (0.2, raise_sword(0)), (0.35, raise_sword(3)), (0.5, raise_sword(-1)),
+                (0.7, raise_sword(3))]
+GRAND_RELEASE = [(0.0, raise_sword(3)), (0.05, G_THROUGH), (0.1, G_STRIKE), (0.6, G_STRIKE)]
 
 ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grabbed': GRABBED,
        'MoonThrow': MOON_THROW, 'MoonPerch': MOON_PERCH, 'MoonFlight': MOON_FLIGHT, 'Launched': LAUNCHED,
+       'Hurricane': HURRICANE, 'BlackSlash': BLACK_SLASH, 'GrandCharge': GRAND_CHARGE, 'GrandRelease': GRAND_RELEASE,
        'Leap': LEAP, 'Plunge': PLUNGE, 'PlungeImpact': PLUNGE_IMPACT,
        'AirDividerCharge': AIR_DIVIDER_CHARGE, 'AirDividerRelease': AIR_DIVIDER_RELEASE, 'Propel': PROPEL, 'Barrage': BARRAGE,
        'MeteorLunge': METEOR_LUNGE, 'MeteorRise': METEOR_RISE, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
@@ -420,6 +465,7 @@ if __name__ == '__main__':
              'MeteorSlam': dict(floor=-3.6), 'MeteorImpact': dict(floor=-3.6), 'Awaken': dict(floor=-3.6),
              'PlungeImpact': dict(floor=-3.6),
              # Only ever played in the air.
+             'GrandRelease': dict(floor=-3.6),  # the cleave bites into the ground
              'Plunge': dict(floor=-10), 'Grabbed': dict(floor=-10), 'Launched': dict(floor=-10),
              'MoonPerch': dict(floor=-10), 'MoonFlight': dict(floor=-10), 'AirDividerCharge': dict(floor=-10), 'AirDividerRelease': dict(floor=-10)}
     ok = True

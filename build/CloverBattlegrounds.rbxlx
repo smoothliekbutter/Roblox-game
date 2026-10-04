@@ -75,17 +75,22 @@
 
 local BlackMoon = {}
 
+-- About six seconds, plus the grab before it.
 BlackMoon.Times = {
-	Release = 0.12, -- they leave his hand
-	Night = 0.45, -- night starts to fall
-	Leap = 0.55, -- he jumps up to his perch
-	Apex = 0.7, -- they reach the top
-	Perch = 0.85, -- he's in front of the moon
-	Glint = 1.35, -- the blade catches the moonlight
-	Fly = 1.55, -- he flies at them
-	Cut = 1.7, -- passing through them
-	Arrive = 1.8, -- stopped past them, back turned
-	Land = 2.25, -- the cut lands; both are let go
+	Release = 0.15, -- they leave his hand
+	Night = 0.5, -- night starts to fall
+	Rise = 0.6, -- shot: watching them rise against the moon
+	Leap = 1.0, -- he jumps up after them
+	Apex = 1.35, -- they reach the top
+	Perch = 1.4, -- he's hovering in front of the moon
+	Close = 2.5, -- shot: close on him, the moon behind
+	Point = 2.9, -- he levels the sword at them
+	Glint = 3.4, -- the blade catches the moonlight
+	Fly = 3.75, -- he flies at them
+	Cut = 3.9, -- passing through them
+	Arrive = 4.0, -- stopped past them, back turned; everything goes still
+	Land = 4.9, -- the cut lands; both are let go
+	Done = 5.9, -- the camera comes back
 }
 
 local UP = Vector3.yAxis
@@ -122,7 +127,7 @@ function BlackMoon.Plan(origin: CFrame, victimStart: Vector3): Plan
 	local through = (apex - perch).Unit
 	local beyond = apex + through * 14
 	local moonCamera = apex + (perch - apex) * 0.2 + right * 2.5 + UP * 0.8
-	local moon = perch + (perch - moonCamera).Unit * 260 + UP * 25
+	local moon = perch + (perch - moonCamera).Unit * 280 + UP * 30
 	return {
 		origin = level,
 		forward = forward,
@@ -134,7 +139,7 @@ function BlackMoon.Plan(origin: CFrame, victimStart: Vector3): Plan
 		beyond = beyond,
 		moonCamera = moonCamera,
 		moon = moon,
-		moonRadius = 75,
+		moonRadius = 95,
 	}
 end
 
@@ -177,33 +182,48 @@ function BlackMoon.Victim(plan: Plan, t: number): CFrame
 	else
 		p = plan.apex + UP * (held - T.Apex) * 1.2
 	end
-	local tumble = math.max(held - T.Release, 0) * math.rad(150)
+	local tumble = math.max(held - T.Release, 0) * math.rad(110)
 	return CFrame.lookAt(p, p + facing) * CFrame.Angles(-tumble, 0, 0)
 end
 
 --[[
 	The camera for the two people in the cutscene: (cframe, field of view).
-	Shots: the throw from low behind him, the moon shot (him silhouetted in
-	front of the moon), the flight coming straight at the camera through
-	them, the frozen moment after the cut, then whatever the client does
-	after the cut lands (following them down).
+	Shots: the throw from low behind him; a wide low shot of them rising
+	against the moon as he leaps after them; the moon shot (him a
+	silhouette in front of it, slowly pushing in); a close-up circling him
+	as he levels the sword; the flight straight at the camera through them;
+	the frozen moment after the cut, circling slowly. After the cut lands
+	the client follows them down.
 ]]
+local function orbit(center: Vector3, eye: Vector3, degrees: number): Vector3
+	return center + CFrame.Angles(0, math.rad(degrees), 0):VectorToWorldSpace(eye - center)
+end
+
 function BlackMoon.Camera(plan: Plan, t: number): (CFrame, number)
 	local T = BlackMoon.Times
 	local attacker = BlackMoon.Attacker(plan, t).Position
-	if t < T.Leap then
-		local victim = BlackMoon.Victim(plan, t).Position
+	local victim = BlackMoon.Victim(plan, t).Position
+	if t < T.Rise then
 		local eye = (plan.origin * CFrame.new(5.5, 1.2, 7)).Position
 		return CFrame.lookAt(eye, (attacker + UP * 2):Lerp(victim, 0.65)), 70
-	elseif t < T.Fly then
-		-- Slowly pushing in on him while he waits.
-		local eye = plan.moonCamera:Lerp(plan.perch, 0.05 * (t - T.Leap))
+	elseif t < T.Perch then
+		-- From the ground out in front, looking back up past them at the moon.
+		local eye = plan.origin.Position + plan.forward * 26 + plan.right * 6 + UP * 2.5
+		return CFrame.lookAt(eye, victim:Lerp(plan.perch, 0.35)), 62
+	elseif t < T.Close then
+		local eye = plan.moonCamera:Lerp(plan.perch, 0.05 * (t - T.Perch))
 		return CFrame.lookAt(eye, attacker + UP * 0.5), 45
+	elseif t < T.Fly then
+		-- Close and a little below him, drifting round; the moon fills the back.
+		local start = plan.perch + (plan.moonCamera - plan.perch).Unit * 10 - UP * 1.5
+		local eye = orbit(plan.perch, start, (t - T.Close) * 10 - 6)
+		return CFrame.lookAt(eye, attacker + UP * 1), 38
 	elseif t < T.Arrive then
 		local eye = plan.apex + plan.through * 10 + plan.right * 3 + UP * 1.5
 		return CFrame.lookAt(eye, plan.perch), 55
 	end
-	local eye = plan.beyond + plan.through * 8 - plan.right * 2.5 + UP * 1
+	local start = plan.beyond + plan.through * 8 - plan.right * 2.5 + UP * 1
+	local eye = orbit(plan.beyond, start, (t - T.Arrive) * -14)
 	return CFrame.lookAt(eye, plan.beyond - plan.through * 6), 50
 end
 
@@ -3902,10 +3922,10 @@ local grade: ColorCorrectionEffect? = nil
 -- Moonlit rather than pitch black: dark sky, but you can still read the fight.
 local NIGHT_LIGHTING = {
 	ClockTime = 23.8,
-	Brightness = 1.2,
-	Ambient = Color3.fromRGB(46, 46, 66),
-	OutdoorAmbient = Color3.fromRGB(74, 78, 108),
-	ExposureCompensation = 0.1,
+	Brightness = 2,
+	Ambient = Color3.fromRGB(72, 72, 98),
+	OutdoorAmbient = Color3.fromRGB(106, 110, 148),
+	ExposureCompensation = 0.3,
 }
 
 function Cinematic.Night(fadeIn: number): (fadeOut: number?) -> ()
@@ -3922,7 +3942,7 @@ function Cinematic.Night(fadeIn: number): (fadeOut: number?) -> ()
 		if atmosphere then
 			before.atmosphere = { Density = atmosphere.Density, Haze = atmosphere.Haze, Color = atmosphere.Color }
 			-- A clear night: the moon shouldn't fade into the haze.
-			tween(atmosphere, fadeIn, { Density = 0.06, Haze = 0, Color = Color3.fromRGB(62, 68, 102) })
+			tween(atmosphere, fadeIn, { Density = 0.06, Haze = 0, Color = Color3.fromRGB(82, 90, 132) })
 		end
 		saved = before
 		tween(Lighting, fadeIn, NIGHT_LIGHTING, Enum.EasingStyle.Sine)
@@ -3930,10 +3950,10 @@ function Cinematic.Night(fadeIn: number): (fadeOut: number?) -> ()
 		effect.Name = "CinematicNight"
 		effect.Parent = Lighting
 		tween(effect, fadeIn, {
-			Saturation = -0.3,
-			Contrast = 0.15,
-			Brightness = 0.04,
-			TintColor = Color3.fromRGB(216, 224, 255),
+			Saturation = -0.2,
+			Contrast = 0.1,
+			Brightness = 0.07,
+			TintColor = Color3.fromRGB(224, 230, 255),
 		}, Enum.EasingStyle.Sine)
 		grade = effect
 	end
@@ -4861,30 +4881,11 @@ VFX.SetPalette("AntiMagic", {
 })
 
 ---------------------------------------------------------------------------
--- Pose helpers (same conventions as M1Animations)
+-- Animations (generated by tools/anim, see Animations.luau)
 ---------------------------------------------------------------------------
 
 local function rot(x: number, y: number?, z: number?): CFrame
 	return CFrame.Angles(rad(x), rad(y or 0), rad(z or 0))
-end
-
-local function limb(pitch: number, yaw: number?, roll: number?): CFrame
-	return CFrame.Angles(0, rad(yaw or 0), 0) * CFrame.Angles(0, 0, rad(roll or 0)) * CFrame.Angles(rad(pitch), 0, 0)
-end
-
--- Builds an animation from { {time, pose, easing?, direction?}, ... }.
--- The sword's wrist joint is always posed (neutral grip if not given),
--- otherwise the idle's shoulder-rest wrist would leak into other moves.
-local function clip(keys: { any }, options: { [string]: any }?): Animation
-	local keyframes = {}
-	for _, key in keys do
-		local pose = table.clone(key[2])
-		pose.Sword = pose.Sword or CFrame.identity
-		table.insert(keyframes, { time = key[1], pose = pose, easing = key[3], direction = key[4] })
-	end
-	local animation: any = options or {}
-	animation.keyframes = keyframes
-	return animation :: Animation
 end
 
 -- The grip the server welds the sword with (see Server/Kits/AntiMagic).
@@ -4943,16 +4944,6 @@ local ANIMS: { [string]: Animation } = {}
 for name, raw in Generated do
 	ANIMS[name] = build(raw)
 end
-
-local LEGS_ADDITIVE = { RightLeg = true, LeftLeg = true }
-local BACK = Enum.EasingStyle.Back
-
--- Starting pose for skills: sword held up in front (neutral wrist).
-local READY = {
-	Torso = rot(0, -5),
-	RightArm = limb(50, 15),
-	LeftArm = limb(40, -20),
-}
 
 -- Signature stance: wide footing, the greatsword resting on the right
 -- shoulder, slow breathing. Runs leaning forward with the sword bobbing on
@@ -5025,68 +5016,6 @@ local function swordGlow(character: Model, color: Color3, duration: number, fill
 	task.delay(duration, glow.Destroy, glow)
 end
 
--- Black crescent with a red edge glow, following the character.
-local function slashArc(character: Model, from: CFrame, to: CFrame, width: number, duration: number)
-	local root = U.getRoot(character)
-	if not root then
-		return
-	end
-	local holder = U.newPart({ Size = Vector3.one * 0.1, Transparency = 1, CFrame = root.CFrame })
-	local forward = CFrame.Angles(0, rad(90), 0) -- attachment X axis forward, so the curve bulges out front
-	local a0 = Instance.new("Attachment")
-	a0.CFrame = from * forward
-	a0.Parent = holder
-	local a1 = Instance.new("Attachment")
-	a1.CFrame = to * forward
-	a1.Parent = holder
-
-	local function beam(color: Color3, emission: number, w: number, curve: number): Beam
-		local b = Instance.new("Beam")
-		b.Attachment0 = a0
-		b.Attachment1 = a1
-		b.CurveSize0 = curve
-		b.CurveSize1 = -curve
-		b.Segments = 24
-		b.FaceCamera = true
-		b.LightEmission = emission
-		b.LightInfluence = 0
-		b.Color = ColorSequence.new(color)
-		b.Width0 = 0.1
-		b.Width1 = w
-		b.Parent = holder
-		return b
-	end
-	local glow = beam(RED, 1, width * 1.35, 3.8)
-	local core = beam(BLACK, 0, width, 3.6)
-
-	local follow = RunService.RenderStepped:Connect(function()
-		if root.Parent then
-			holder.CFrame = root.CFrame
-		end
-	end)
-	local start = os.clock()
-	local fade
-	fade = RunService.RenderStepped:Connect(function()
-		local alpha = math.min((os.clock() - start) / duration, 1)
-		local sequence = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 1),
-			NumberSequenceKeypoint.new(0.35, 0.1 + 0.9 * alpha),
-			NumberSequenceKeypoint.new(1, alpha),
-		})
-		core.Transparency = sequence
-		glow.Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 1),
-			NumberSequenceKeypoint.new(0.35, 0.5 + 0.5 * alpha),
-			NumberSequenceKeypoint.new(1, 0.4 + 0.6 * alpha),
-		})
-		if alpha >= 1 then
-			fade:Disconnect()
-			follow:Disconnect()
-			holder:Destroy()
-		end
-	end)
-end
-
 -- Black anti-magic smoke burst.
 local function blackSmoke(position: Vector3, count: number, size: number, speed: number?)
 	U.burst(position, {
@@ -5143,62 +5072,15 @@ end
 -- Skills
 ---------------------------------------------------------------------------
 
-local CLIPS = {
-	SlashThrow = clip({
-		{ 0, READY },
-		{ 0.15, { Torso = rot(10, -30), RightArm = limb(155, -40), LeftArm = limb(50, -20) } },
-		{ 0.24, { Torso = rot(-12, 35), RightArm = limb(40, 45), LeftArm = limb(20, -30), Head = rot(0, -25) }, BACK },
-		{ 0.45, { Torso = rot(-10, 30), RightArm = limb(40, 45), LeftArm = limb(20, -30), Head = rot(0, -20) } },
-	}, { fadeOut = 0.2, additive = LEGS_ADDITIVE }),
+--[[
+	Anti-magic slash wave, drawn locally from the server's launch info: a
+	tapered crescent (red glow, black core, a white-hot leading edge)
+	flying out across the direction of travel, trailing black smoke and
+	embers, lighting up what it passes and carving a glowing groove into
+	the ground when it flies low. `grand` waves are flat and huge.
+]]
+local WAVE_POINTS = 12
 
-	GrandCharge = clip({
-		{ 0, READY },
-		{
-			0.25,
-			{ Torso = rot(15), RightArm = limb(172, 6), LeftArm = limb(168, -6), Head = rot(-12) },
-		},
-		{ 0.7, { Torso = rot(18), RightArm = limb(175, 6), LeftArm = limb(170, -6), Head = rot(-15) } },
-	}, { fadeOut = 0.05 }),
-
-	GrandRelease = clip({
-		{ 0, { Torso = rot(18), RightArm = limb(175, 6), LeftArm = limb(170, -6) } },
-		{
-			0.09,
-			{
-				Torso = rot(-35),
-				RightArm = limb(40, 6),
-				LeftArm = limb(45, -6),
-				Head = rot(18),
-				RightLeg = rot(-25),
-				LeftLeg = rot(30),
-			},
-			BACK,
-		},
-		{ 0.5, { Torso = rot(-32), RightArm = limb(40, 6), LeftArm = limb(45, -6), Head = rot(15) } },
-	}, { fadeOut = 0.3 }),
-}
-
--- Black Hurricane: the whole body spins (RootJoint yaw in 90 degree steps).
-do
-	local keys = {}
-	local spins, duration = 4, 0.9
-	local steps = spins * 4
-	for i = 0, steps do
-		table.insert(keys, {
-			i / steps * duration,
-			{
-				Torso = rot(-10, -90 * i),
-				RightArm = limb(0, 0, 95),
-				LeftArm = limb(0, 0, -95),
-				Head = rot(5),
-			},
-			Enum.EasingStyle.Linear,
-		})
-	end
-	CLIPS.Spin = clip(keys, { fadeIn = 0.05, fadeOut = 0.15 })
-end
-
--- Anti-magic slash wave, drawn locally from the server's launch info.
 local function slashWave(data)
 	local origin: Vector3 = data.origin
 	local direction: Vector3 = data.direction
@@ -5206,72 +5088,165 @@ local function slashWave(data)
 	local range: number = data.range or 90
 	local width: number = data.width or 9
 	local grand = data.grand == true
+	local scale = width / 9
 
 	local frame = CFrame.lookAt(origin, origin + direction)
 	local holder = U.newPart({ Size = Vector3.one * 0.1, Transparency = 1, CFrame = frame })
-	-- Crescent across the direction of travel, bulging forward.
-	local forward = CFrame.Angles(0, rad(90), 0)
-	local tilt = if grand then 0 else rad(-25)
-	local a0 = Instance.new("Attachment")
-	a0.CFrame = CFrame.Angles(0, 0, tilt) * CFrame.new(-width / 2, 0, 0) * forward
-	a0.Parent = holder
-	local a1 = Instance.new("Attachment")
-	a1.CFrame = CFrame.Angles(0, 0, tilt) * CFrame.new(width / 2, 0, 0) * forward
-	a1.Parent = holder
+	local tilt = CFrame.Angles(0, 0, if grand then 0 else rad(-25))
+	local bulge = width * 0.32
 
-	local function beam(color: Color3, emission: number, w: number, curve: number, transparency: number)
-		local b = Instance.new("Beam")
-		b.Attachment0 = a0
-		b.Attachment1 = a1
-		b.CurveSize0 = curve
-		b.CurveSize1 = -curve
-		b.Segments = 24
-		b.FaceCamera = true
-		b.LightEmission = emission
-		b.LightInfluence = 0
-		b.Color = ColorSequence.new(color)
-		b.Width0 = w * 0.15
-		b.Width1 = w * 0.15
-		-- Fades out at the tips so it reads as a crescent.
-		b.Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 1),
-			NumberSequenceKeypoint.new(0.5, transparency),
-			NumberSequenceKeypoint.new(1, 1),
-		})
-		b.Parent = holder
-		return b
+	-- Points along the crescent: tips level with the holder, the middle
+	-- bulging forward (-Z).
+	local function ring(lead: number): { Attachment }
+		local list = {}
+		for i = 0, WAVE_POINTS do
+			local theta = -math.pi / 2 + math.pi * i / WAVE_POINTS
+			local a = Instance.new("Attachment")
+			a.Position =
+				tilt:PointToWorldSpace(Vector3.new(math.sin(theta) * width / 2, 0, -math.cos(theta) * (bulge + lead)))
+			a.Parent = holder
+			list[i] = a
+		end
+		return list
 	end
-	local scale = width / 9
-	beam(RED, 1, 5 * scale, width * 0.35, 0.3)
-	beam(BLACK, 0, 3.6 * scale, width * 0.32, 0)
+	local body = ring(0)
+	local front = ring(width * 0.06)
+	local function profile(i: number): number
+		return math.sin(math.pi * i / WAVE_POINTS) ^ 0.8
+	end
+	local function layer(
+		points: { Attachment },
+		color: Color3,
+		emission: number,
+		thickness: number,
+		transparency: number,
+		z: number
+	)
+		for i = 0, WAVE_POINTS - 1 do
+			local b = Instance.new("Beam")
+			b.Attachment0 = points[i]
+			b.Attachment1 = points[i + 1]
+			b.FaceCamera = true
+			b.Segments = 2
+			b.Color = ColorSequence.new(color)
+			b.LightEmission = emission
+			b.LightInfluence = 0
+			b.ZOffset = z
+			b.Width0 = thickness * profile(i)
+			b.Width1 = thickness * profile(i + 1)
+			b.Transparency = NumberSequence.new(transparency)
+			b.Parent = holder
+		end
+	end
+	layer(body, RED, 1, 2.6 * scale, 0.3, 0)
+	layer(body, BLACK, 0, 1.7 * scale, 0, 0.05)
+	layer(front, Color3.fromRGB(255, 190, 190), 1, 0.35 * scale, 0.1, 0.1)
 
-	local trail = Instance.new("ParticleEmitter")
-	trail.Texture = U.textures.Smoke
-	trail.Color = ColorSequence.new(BLACK)
-	trail.LightEmission = 0
-	trail.Size = NumberSequence.new(2 * scale, 0)
-	trail.Transparency = NumberSequence.new(0.2, 1)
-	trail.Lifetime = NumberRange.new(0.3, 0.5)
-	trail.Rate = 60
-	trail.Speed = NumberRange.new(2, 5)
-	trail.SpreadAngle = Vector2.new(180, 180)
-	trail.Parent = holder
+	local glow = Instance.new("PointLight")
+	glow.Color = RED
+	glow.Brightness = 4
+	glow.Range = 10 * scale + 4
+	glow.Shadows = false
+	glow.Parent = holder
+
+	local smoke = Instance.new("ParticleEmitter")
+	smoke.Texture = U.textures.Smoke
+	smoke.Color = ColorSequence.new(BLACK)
+	smoke.LightEmission = 0
+	smoke.LightInfluence = 0
+	smoke.Size = NumberSequence.new(2.4 * scale, 0.5)
+	smoke.Transparency = NumberSequence.new(0.2, 1)
+	smoke.Lifetime = NumberRange.new(0.3, 0.6)
+	smoke.Rate = 80
+	smoke.Speed = NumberRange.new(2, 6)
+	smoke.SpreadAngle = Vector2.new(180, 180)
+	smoke.Parent = holder
+	local embers = Instance.new("ParticleEmitter")
+	embers.Texture = U.textures.Spark
+	embers.Color = ColorSequence.new(RED, DARK_RED)
+	embers.LightEmission = 1
+	embers.LightInfluence = 0
+	embers.Size = NumberSequence.new(0.35 * scale + 0.1, 0)
+	embers.Lifetime = NumberRange.new(0.2, 0.45)
+	embers.Rate = 60
+	embers.Speed = NumberRange.new(6, 14)
+	embers.SpreadAngle = Vector2.new(60, 60)
+	embers.EmissionDirection = Enum.NormalId.Back
+	embers.Orientation = Enum.ParticleOrientation.VelocityParallel
+	embers.Squash = NumberSequence.new(1.4)
+	embers.Parent = holder
+
+	-- Flying low: it carves a glowing groove behind it.
+	local floor = U.groundBelow(origin)
+	local low = floor ~= nil and origin.Y - floor.Position.Y < 4.5
+	local floorY = if floor then floor.Position.Y else 0
+	local lastGroove = origin
+	local nextDust = 0
 
 	local travelled = 0
 	local connection
 	connection = RunService.RenderStepped:Connect(function(dt)
 		travelled += speed * dt
 		holder.CFrame = frame + direction * travelled
+		local here = holder.Position
+		if low and (here - lastGroove).Magnitude > 3 then
+			local a = Vector3.new(lastGroove.X, floorY + 0.05, lastGroove.Z)
+			local b = Vector3.new(here.X, floorY + 0.05, here.Z)
+			local length = (b - a).Magnitude
+			local look = CFrame.lookAt((a + b) / 2, b)
+			local groove = U.newPart({
+				Size = Vector3.new(0.9 * scale + 0.4, 0.06, length + 0.3),
+				CFrame = look,
+				Color = Color3.fromRGB(14, 13, 13),
+				Material = Enum.Material.SmoothPlastic,
+			})
+			local hot = U.newPart({
+				Size = Vector3.new(0.35 * scale + 0.15, 0.08, length + 0.3),
+				CFrame = look + Vector3.new(0, 0.01, 0),
+				Color = RED,
+			})
+			U.tween(hot, 0.8, { Transparency = 1, Size = Vector3.new(0.05, 0.08, length) })
+			task.delay(1.6, function()
+				U.tween(groove, 0.6, { Transparency = 1 })
+			end)
+			task.delay(2.3, function()
+				groove:Destroy()
+				hot:Destroy()
+			end)
+			lastGroove = here
+			if travelled >= nextDust then
+				nextDust = travelled + (if grand then 6 else 9)
+				U.burst(b, {
+					texture = U.textures.Smoke,
+					color = Color3.fromRGB(150, 140, 130),
+					count = if grand then 5 else 3,
+					size = 2.5 * scale + 1,
+					speed = NumberRange.new(4, 10),
+					lifetime = NumberRange.new(0.4, 0.8),
+					lightEmission = 0,
+					transparency = 0.5,
+					drag = 3,
+					spread = 60,
+				})
+				if grand then
+					U.groundRocks(b, 4, 2, 1.3)
+				end
+			end
+		end
 		if travelled >= range then
 			connection:Disconnect()
-			trail.Enabled = false
-			blackSmoke(holder.Position, 8, 3)
-			task.delay(0.6, holder.Destroy, holder)
+			smoke.Enabled = false
+			embers.Enabled = false
+			glow:Destroy()
+			blackSmoke(here, if grand then 16 else 8, 3 * scale, 10)
+			U.flash(here, BLACK, 4 * scale + 2, 0.2)
+			redSparks(here, if grand then 16 else 8, 0.8)
 			for _, child in holder:GetChildren() do
-				if child:IsA("Attachment") then
+				if child:IsA("Attachment") or child:IsA("Beam") then
 					child:Destroy()
 				end
 			end
+			task.delay(0.7, holder.Destroy, holder)
 		end
 	end)
 end
@@ -6492,67 +6467,369 @@ function handlers.Deflect(data, character, root)
 	end
 end
 
+---------------------------------------------------------------------------
+-- Black Form moves
+---------------------------------------------------------------------------
+
+-- Black Hurricane: four spins with the blade out, a black tornado around
+-- him, a full circle of steel every turn, the ground torn up under him,
+-- and a final outward blast.
 function handlers.BlackHurricane(data, character, root)
 	if data.phase == "Spin" then
-		play(character, CLIPS.Spin)
-		swordTrail(character, 0.9)
-		local start = os.clock()
-		local connection
-		connection = RunService.Heartbeat:Connect(function()
-			if os.clock() - start > (data.duration or 0.9) or not root.Parent then
-				connection:Disconnect()
-				return
-			end
-			if math.random() < 0.35 then
-				blackSmoke(root.Position + U.randomUnit() * 2, 2, 3, 10)
-			end
-		end)
+		local duration = if type(data.duration) == "number" then data.duration else 0.9
+		play(character, ANIMS.Hurricane)
+		heavyTrail(character, duration + 0.1)
+		U.spiral(root, BLACK, 4.6, 3, duration + 0.05, 5, 0.9, 0.15)
+		U.spiral(root, RED, 3.8, 3, duration + 0.05, 3, 0.3, 0.15)
+		partEmitter(root, {
+			Texture = U.textures.Smoke,
+			Color = ColorSequence.new(BLACK),
+			LightEmission = 0,
+			Size = NumberSequence.new(1.6, 4),
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.3),
+				NumberSequenceKeypoint.new(1, 1),
+			}),
+			Lifetime = NumberRange.new(0.4, 0.7),
+			Rate = 90,
+			Speed = NumberRange.new(8, 16),
+			EmissionDirection = Enum.NormalId.Top,
+			SpreadAngle = Vector2.new(25, 25),
+			Rotation = NumberRange.new(0, 360),
+			RotSpeed = NumberRange.new(-300, 300),
+		}, duration)
+		local blade = bladeOf(character)
+		if blade then
+			partEmitter(blade, {
+				Texture = U.textures.Spark,
+				Color = ColorSequence.new(RED, DARK_RED),
+				LightEmission = 1,
+				Size = NumberSequence.new(0.35, 0),
+				Lifetime = NumberRange.new(0.15, 0.35),
+				Rate = 70,
+				Speed = NumberRange.new(14, 28),
+				SpreadAngle = Vector2.new(40, 40),
+				Orientation = Enum.ParticleOrientation.VelocityParallel,
+				Squash = NumberSequence.new(1.4),
+			}, duration)
+		end
+		crackle(root, duration, 0.05, 4.5)
+		-- A full circle of steel each turn (the body turns clockwise, blade out right).
 		for i = 0, 3 do
-			task.delay(i * 0.22, function()
-				if root.Parent then
-					U.ringBurst(CFrame.new(root.Position), BLACK, 2, 7, 0.25, 0.3)
+			task.delay(0.1 + i * 0.2, function()
+				if character.Parent then
+					crescent(character, {
+						center = CFrame.new(0, 0.1, 0),
+						radius = 5.4,
+						from = 90,
+						to = 450,
+						tilt = 0,
+						width = 1.5,
+						sweep = 0.18,
+						fade = 0.22,
+					})
 				end
 			end)
+		end
+		-- Tearing up the ground as he goes.
+		for i = 0, 8 do
+			task.delay(i * 0.1, function()
+				if not character.Parent then
+					return
+				end
+				local feet = feetOf(character, root)
+				U.groundCracks(feet, 3, 2.5, RED, 1)
+				U.ringBurst(CFrame.new(feet + UP * 0.1), BLACK, 2, 7, 0.25, 0.25)
+				U.debris(feet, 3, 26, 0.7)
+				U.burst(feet, {
+					texture = U.textures.Smoke,
+					color = Color3.fromRGB(150, 140, 130),
+					count = 3,
+					size = 3,
+					speed = NumberRange.new(8, 16),
+					lifetime = NumberRange.new(0.4, 0.7),
+					lightEmission = 0,
+					transparency = 0.5,
+					drag = 3,
+					spread = 80,
+				})
+				if U.isLocal(character) then
+					CameraShake.Add(0.05)
+				end
+			end)
+		end
+		if U.isLocal(character) then
+			CameraShake.FovKick(8)
 		end
 	elseif data.phase == "Finish" then
-		redSparks(root.Position + UP, 16, 1.2)
-		U.flash(root.Position, RED, 8, 0.2)
+		local position = root.Position
+		local feet = feetOf(character, root)
+		crescent(character, {
+			center = CFrame.new(0, 0.2, 0),
+			radius = 7,
+			from = -150,
+			to = 60,
+			tilt = -8,
+			width = 2.4,
+			sweep = 0.09,
+			fade = 0.3,
+		})
+		U.flash(position, BLACK, 14, 0.3)
+		U.flash(position, RED, 9, 0.22)
+		U.shockwave(position, RED, 2, 20, 0.4)
+		U.shockwave(feet, BLACK, 3, 18, 0.45, Enum.Material.Glass, 0.4)
+		U.ringBurst(CFrame.new(feet + UP * 0.2), BLACK, 1, 16, 0.4, 0.6)
+		task.delay(0.04, U.ringBurst, CFrame.new(feet + UP * 0.3), RED, 1, 12, 0.35, 0.3)
+		U.groundCracks(feet, 10, 8, RED, 2.5)
+		U.debris(feet, 14, 45, 1.1)
+		blackLightning(position, 10, 9, 0.3)
+		blackSmoke(position, 20, 5, 26)
+		redSparks(position + UP, 30, 1.2)
+		U.light(position, RED, 12, 30, 0.45)
+		if U.isLocal(character) then
+			impactFrame(0.8)
+			CameraShake.Add(0.4)
+		end
 	end
 end
 
-function handlers.BlackSlash(data, character)
+-- Black Slash: anti-magic floods the blade as he winds up, then the wave
+-- is thrown off it.
+function handlers.BlackSlash(data, character, root)
 	if data.phase == "Windup" then
-		play(character, CLIPS.SlashThrow)
-		task.delay(0.15, swordTrail, character, 0.2)
-	elseif data.phase == "Projectile" then
-		slashWave(data)
-		U.flash(data.origin, RED, if data.grand then 9 else 4, 0.15)
-	end
-end
-
-function handlers.GrandDivider(data, character, root)
-	if data.phase == "Charge" then
-		play(character, CLIPS.GrandCharge)
-		swordGlow(character, BLACK, 0.75, 0.3)
-		for i = 0, 6 do
-			task.delay(i * 0.1, function()
-				if root.Parent then
-					blackSmoke(root.Position + UP * 4, 4, 4, 6)
-					blackLightning(root.Position + UP * 5, 1, 3)
+		play(character, ANIMS.BlackSlash)
+		swordGlow(character, RED, 0.3, 0.3)
+		swordAura(character, 0.3, 40)
+		task.delay(0.11, heavyTrail, character, 0.25)
+		for i = 0, 5 do
+			task.delay(i * 0.03, function()
+				local blade = bladeOf(character)
+				if blade then
+					inflow(blade.Position, 5)
 				end
 			end)
 		end
-		U.ringBurst(CFrame.new(root.Position - UP * 2.8), BLACK, 8, 2, 0.7, 0.3)
-	elseif data.phase == "Release" then
-		play(character, CLIPS.GrandRelease)
-		swordTrail(character, 0.3)
-		slashArc(character, CFrame.new(0, 5, -1.8), CFrame.new(0, -2.6, -1.8), 3.5, 0.35)
-		local front = root.Position + root.CFrame.LookVector * 5
-		U.groundRocks(front, 12, 4, 2.4)
-		blackSmoke(front, 16, 5, 18)
+	elseif data.phase == "Projectile" then
+		local origin: Vector3 = data.origin
+		local direction: Vector3 = data.direction
+		local grand = data.grand == true
+		slashWave(data)
+		U.flash(origin, BLACK, if grand then 16 else 8, 0.22)
+		U.flash(origin, RED, if grand then 10 else 5, 0.15)
+		U.impactRing(origin, direction, RED, 1, if grand then 12 else 7, 0.25)
+		task.delay(0.04, U.impactRing, origin + direction * 2, direction, BLACK, 0.8, if grand then 10 else 6, 0.25)
+		U.burst(origin, {
+			color = RED,
+			count = if grand then 28 else 14,
+			size = 0.7,
+			speed = NumberRange.new(35, 65),
+			lifetime = NumberRange.new(0.15, 0.35),
+			streaks = true,
+			spread = 30,
+			direction = direction,
+		})
+		blackLightning(origin, if grand then 8 else 4, if grand then 7 else 4)
+		U.light(origin, RED, if grand then 12 else 7, if grand then 30 else 18, 0.35)
 		if U.isLocal(character) then
-			U.screenFlash(RED, 0.3)
+			CameraShake.FovKick(if grand then 12 else 6)
+			CameraShake.Add(if grand then 0.3 else 0.12)
 		end
+	end
+end
+
+-- A fissure splitting open along the ground: dark cracks with a red glow,
+-- rocks bursting up and black lightning running along it, one step at a time.
+local function fissure(start: Vector3, direction: Vector3, length: number)
+	local ground = U.groundBelow(start)
+	if not ground then
+		return
+	end
+	local floorY = ground.Position.Y
+	local flat = Vector3.new(direction.X, 0, direction.Z).Unit
+	local steps = math.floor(length / 3)
+	for i = 0, steps - 1 do
+		task.delay(i * 0.025, function()
+			local a = Vector3.new(start.X, floorY + 0.05, start.Z) + flat * (i * 3)
+			local b = a + flat * 3
+			local look = CFrame.lookAt((a + b) / 2, b)
+			local width = 1.6 * (1 - i / steps) + 0.5
+			local crack = U.newPart({
+				Size = Vector3.new(width, 0.08, 3.2),
+				CFrame = look,
+				Color = Color3.fromRGB(12, 11, 11),
+				Material = Enum.Material.SmoothPlastic,
+			})
+			local hot = U.newPart({
+				Size = Vector3.new(width * 0.45, 0.1, 3.2),
+				CFrame = look + Vector3.new(0, 0.01, 0),
+				Color = RED,
+			})
+			U.tween(hot, 1.2, { Transparency = 1 })
+			task.delay(2.4, function()
+				U.tween(crack, 0.6, { Transparency = 1 })
+			end)
+			task.delay(3.1, function()
+				crack:Destroy()
+				hot:Destroy()
+			end)
+			if i % 2 == 0 then
+				U.groundRocks(b, 4, 1.6 + width * 0.5, 1.2 + width * 0.6)
+				U.lightning(a + UP * 0.3, b + UP * 0.3 + U.randomUnit() * 0.8, BLACK, RED, 0.16, 0.25)
+			end
+			if i % 3 == 0 then
+				blackSmoke(b + UP * 0.5, 4, 2.5, 6)
+			end
+		end)
+	end
+end
+
+-- A giant anti-magic blade grown out of the sword while Grand Divider charges.
+local grandBlades: { [Model]: () -> () } = setmetatable({}, { __mode = "k" }) :: any
+
+local function growGrandBlade(character: Model, duration: number)
+	local blade = bladeOf(character)
+	if not blade then
+		return
+	end
+	local core = U.newPart({ Size = Vector3.new(0.5, 0.1, 1.6), Color = BLACK, Material = Enum.Material.SmoothPlastic })
+	local glow = U.newPart({ Size = Vector3.new(0.9, 0.1, 2.3), Color = RED, Transparency = 0.55 })
+	local start = os.clock()
+	local length = 0
+	local connection
+	connection = RunService.RenderStepped:Connect(function()
+		if not blade.Parent then
+			connection:Disconnect()
+			core:Destroy()
+			glow:Destroy()
+			return
+		end
+		local t = os.clock() - start
+		length = 10
+			* TweenService:GetValue(math.clamp(t / duration, 0, 1), Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		local wobble = 1 + 0.06 * math.sin(t * 40)
+		local base = blade.CFrame * CFrame.new(0, 2.1 + length / 2, 0)
+		core.Size = Vector3.new(0.45 * wobble, length + 0.1, 1.5)
+		core.CFrame = base
+		glow.Size = Vector3.new(0.9 * wobble, length + 0.6, 2.4 * wobble)
+		glow.CFrame = base
+	end)
+	local function dissolve()
+		grandBlades[character] = nil
+		connection:Disconnect()
+		U.tween(core, 0.3, { Transparency = 1, Size = core.Size * Vector3.new(0.2, 1, 0.2) })
+		U.tween(glow, 0.25, { Transparency = 1 })
+		task.delay(0.35, function()
+			core:Destroy()
+			glow:Destroy()
+		end)
+	end
+	grandBlades[character] = dissolve
+	task.delay(duration + 1.5, function()
+		if grandBlades[character] == dissolve then
+			dissolve()
+		end
+	end)
+end
+
+-- Grand Divider: the sword raised to the sky grows a giant blade of
+-- anti-magic, then comes down in one cleave that splits the ground open.
+function handlers.GrandDivider(data, character, root)
+	local phase = data.phase
+	local token = bump(character)
+	if phase == "Charge" then
+		play(character, ANIMS.GrandCharge)
+		swordGlow(character, BLACK, 0.75, 0.25)
+		swordAura(character, 0.75, 50)
+		growGrandBlade(character, 0.6)
+		local feet = feetOf(character, root)
+		U.ringBurst(CFrame.new(feet + UP * 0.1), BLACK, 12, 2, 0.7, 0.35)
+		task.delay(0.3, U.ringBurst, CFrame.new(feet + UP * 0.12), DARK_RED, 10, 1.5, 0.4, 0.2)
+		task.delay(0.25, U.groundCracks, feet, 8, 6, RED, 2)
+		blackSmoke(feet + UP * 0.3, 12, 3, 8)
+		-- Anti-magic piling in from everywhere, a column rising off the blade.
+		local start = os.clock()
+		task.spawn(function()
+			while os.clock() - start < 0.7 and live(character, token) do
+				local tip = bladePoint(character, 2.1)
+				if tip then
+					inflow(tip, 9)
+					inflow(tip, 6)
+					if math.random() < 0.5 then
+						blackLightning(tip + UP * 3, 1, 4, 0.14)
+					end
+				end
+				if U.isLocal(character) then
+					CameraShake.Add(0.04)
+				end
+				task.wait(0.04)
+			end
+		end)
+		for _, at in { 0.2, 0.45 } do
+			task.delay(at, function()
+				local tip = bladePoint(character, 2.1)
+				if tip and live(character, token) then
+					U.pillar(tip, BLACK, 1.2, 40, 0.5, Enum.Material.SmoothPlastic, 0.2)
+					U.pillar(tip, RED, 0.6, 46, 0.4)
+				end
+			end)
+		end
+		if U.isLocal(character) then
+			CameraShake.FovKick(-6)
+		end
+	elseif phase == "Cancel" then
+		local dissolve = grandBlades[character]
+		if dissolve then
+			dissolve()
+		end
+		blackSmoke(root.Position + UP * 3, 8, 3, 6)
+	elseif phase == "Release" then
+		play(character, ANIMS.GrandRelease)
+		heavyTrail(character, 0.35)
+		crescent(character, {
+			center = CFrame.new(0, 0.6, 0),
+			radius = 10,
+			from = 100,
+			to = -40,
+			tilt = 90,
+			width = 3.6,
+			sweep = 0.1,
+			fade = 0.35,
+		})
+		task.delay(0.35, function()
+			local dissolve = grandBlades[character]
+			if dissolve then
+				dissolve()
+			end
+		end)
+		local look = root.CFrame.LookVector
+		local forward = Vector3.new(look.X, 0, look.Z).Unit
+		task.delay(0.08, function()
+			if not character.Parent then
+				return
+			end
+			local feet = feetOf(character, root)
+			local strike = feet + forward * 4.5
+			U.flash(strike + UP, WHITE, 6, 0.08)
+			U.flash(strike + UP, BLACK, 16, 0.35)
+			U.flash(strike + UP, RED, 10, 0.25)
+			U.shockwave(strike, BLACK, 4, 28, 0.5, Enum.Material.Glass, 0.35)
+			U.shockwave(strike, RED, 3, 22, 0.45)
+			U.ringBurst(CFrame.new(strike + UP * 0.2), BLACK, 1, 18, 0.45, 0.7)
+			task.delay(0.05, U.ringBurst, CFrame.new(strike + UP * 0.3), RED, 1, 13, 0.4, 0.35)
+			U.groundCracks(strike, 12, 10, RED, 3)
+			U.groundRocks(strike, 14, 5, 2.6)
+			U.debris(strike, 18, 50, 1.3)
+			blackSmoke(strike + UP, 24, 6, 30)
+			blackLightning(strike + UP, 10, 9, 0.3)
+			U.light(strike + UP * 2, RED, 14, 40, 0.5)
+			fissure(strike, forward, 42)
+			if U.isLocal(character) then
+				impactFrame(1.2)
+				U.screenFlash(RED, 0.35)
+				CameraShake.FovKick(14)
+				CameraShake.Add(0.5)
+			end
+		end)
 	end
 end
 
@@ -7648,9 +7925,9 @@ local function triangle(a: Vector3, b: Vector3, c: Vector3, thickness: number): 
 	}
 end
 
-type MoonPiece = { part: BasePart, offset: CFrame, side: number, alpha: number }
+type MoonPiece = { part: BasePart, offset: CFrame, side: number, alpha: number, ray: boolean? }
 type Moon = {
-	update: (center: CFrame, visible: number, split: number, scar: number) -> (),
+	update: (center: CFrame, visible: number, split: number, scar: number, spin: number) -> (),
 	destroy: () -> (),
 }
 
@@ -7696,7 +7973,40 @@ local function buildMoon(radius: number): Moon
 		local side = if cut.X * y - cut.Y * x > 0 then 1 else -1
 		table.insert(pieces, { part = part, offset = CFrame.new(x, y, -0.35) * face, side = side, alpha = 0.15 })
 	end
-	for _, halo in { { 1.12, 0.72 }, { 1.32, 0.87 } } do
+	-- A thin blood-red rim, split with the halves.
+	local rimSegments = 36
+	for i = 0, rimSegments - 1 do
+		local angle = MOON_CUT + ((i + 0.5) / rimSegments) * math.pi * 2
+		local part = U.newPart({
+			Size = Vector3.new(2 * math.pi * radius * 1.015 / rimSegments * 1.1, radius * 0.025, 0.3),
+			Color = RED,
+			Transparency = 1,
+		})
+		table.insert(pieces, {
+			part = part,
+			offset = CFrame.Angles(0, 0, angle) * CFrame.new(radius * 1.015, 0, -0.2) * CFrame.Angles(0, 0, rad(90)),
+			side = if i < rimSegments / 2 then 1 else -1,
+			alpha = 0.3,
+		})
+	end
+	-- Pale rays fanning out from behind it, slowly turning.
+	for i = 1, 14 do
+		local angle = (i / 14) * math.pi * 2 + (if i % 2 == 0 then 0.1 else -0.07)
+		local length = radius * (if i % 2 == 0 then 1.9 else 1.4)
+		local part = U.newPart({
+			Size = Vector3.new(length, radius * (if i % 2 == 0 then 0.07 else 0.045), 0.2),
+			Color = MOON_HALO,
+			Transparency = 1,
+		})
+		table.insert(pieces, {
+			part = part,
+			offset = CFrame.Angles(0, 0, angle) * CFrame.new(radius * 0.95 + length / 2, 0, 3),
+			side = 0,
+			alpha = if i % 2 == 0 then 0.86 else 0.9,
+			ray = true,
+		})
+	end
+	for _, halo in { { 1.1, 0.68 }, { 1.28, 0.84 }, { 1.6, 0.93 } } do
 		local part = U.newPart({
 			Shape = Enum.PartType.Cylinder,
 			Size = Vector3.new(0.2, radius * 2 * halo[1], radius * 2 * halo[1]),
@@ -7710,10 +8020,12 @@ local function buildMoon(radius: number): Moon
 
 	local across = Vector3.new(-math.sin(MOON_CUT), math.cos(MOON_CUT), 0) -- toward side 1
 	return {
-		update = function(center: CFrame, visible: number, split: number, scar: number)
+		update = function(center: CFrame, visible: number, split: number, scar: number, spin: number)
 			for _, piece in pieces do
 				local offset = piece.offset
-				if piece.side ~= 0 then
+				if piece.ray then
+					offset = CFrame.Angles(0, 0, spin) * offset
+				elseif piece.side ~= 0 then
 					offset = CFrame.new(across * piece.side * split * radius * 0.4)
 						* CFrame.Angles(0, 0, piece.side * split * 0.12)
 						* offset
@@ -7809,6 +8121,235 @@ local function moonCrater(position: Vector3)
 	end
 end
 
+--[[
+	The night around the cutscene: a field of twinkling stars, cloud banks
+	drifting across the moon, mist creeping over the ground, rocks lifting
+	off the ground, ash and embers drifting through the air, and shooting
+	stars. Fades in with the night and out again after.
+]]
+type NightSetting = { update: (t: number, visible: number) -> (), destroy: () -> () }
+
+local function buildNightSetting(plan: BlackMoon.Plan): NightSetting
+	local made: { Instance } = {}
+	local function holder(cframe: CFrame, size: Vector3): BasePart
+		local part = U.newPart({ Size = size, CFrame = cframe, Transparency = 1 })
+		table.insert(made, part)
+		return part
+	end
+	local center = plan.origin.Position + UP * 30
+
+	-- Stars over the whole sky, thickest toward the moon.
+	type Star = { part: BasePart, phase: number, speed: number, base: number }
+	local stars: { Star } = {}
+	local toMoon = (plan.moon - center).Unit
+	for i = 1, 170 do
+		local direction
+		repeat
+			direction = U.randomUnit()
+		until direction.Y > 0.08
+		if i % 3 == 0 then
+			direction = (direction + toMoon * 1.2).Unit
+		end
+		local size = 0.6 + math.random() * 1.4
+		local part = U.newPart({
+			Shape = Enum.PartType.Ball,
+			Size = Vector3.one * size,
+			CFrame = CFrame.new(center + direction * (380 + math.random() * 60)),
+			Color = if i % 5 == 0 then Color3.fromRGB(255, 220, 220) else Color3.fromRGB(225, 232, 255),
+			Transparency = 1,
+		})
+		table.insert(made, part)
+		table.insert(
+			stars,
+			{ part = part, phase = math.random() * 6.28, speed = 2 + math.random() * 4, base = math.random() * 0.3 }
+		)
+	end
+
+	-- Cloud banks drifting across the face of the moon, and one low on the horizon.
+	local function clouds(position: Vector3, size: Vector3, color: Color3, scale: number, count: number)
+		local part = holder(CFrame.lookAt(position, plan.moonCamera), size)
+		local emitter = Instance.new("ParticleEmitter")
+		emitter.Texture = U.textures.Smoke
+		emitter.Color = ColorSequence.new(color, color:Lerp(Color3.fromRGB(120, 130, 170), 0.35))
+		emitter.LightEmission = 0.05
+		emitter.LightInfluence = 0
+		emitter.Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, scale * 0.7),
+			NumberSequenceKeypoint.new(1, scale * 1.2),
+		})
+		emitter.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.25, 0.55),
+			NumberSequenceKeypoint.new(0.75, 0.6),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		emitter.Lifetime = NumberRange.new(6, 9)
+		emitter.Rate = count / 7
+		emitter.Speed = NumberRange.new(2, 5)
+		emitter.SpreadAngle = Vector2.new(8, 8)
+		emitter.EmissionDirection = Enum.NormalId.Right
+		emitter.Rotation = NumberRange.new(0, 360)
+		emitter.RotSpeed = NumberRange.new(-4, 4)
+		emitter.Parent = part
+		emitter:Emit(count)
+		return emitter
+	end
+	local toMoonFromPerch = (plan.moon - plan.perch).Unit
+	local cloudFront = clouds(
+		plan.perch + toMoonFromPerch * 140 + UP * 10,
+		Vector3.new(260, 60, 30),
+		Color3.fromRGB(26, 28, 44),
+		46,
+		14
+	)
+	local cloudLow = clouds(
+		plan.perch + toMoonFromPerch * 210 - UP * 40,
+		Vector3.new(420, 30, 40),
+		Color3.fromRGB(20, 22, 36),
+		70,
+		12
+	)
+
+	-- Mist creeping over the ground.
+	local ground = U.groundBelow(plan.origin.Position)
+	local floorY = if ground then ground.Position.Y else plan.origin.Position.Y - 3
+	local mistHolder =
+		holder(CFrame.new(plan.origin.Position.X, floorY + 0.5, plan.origin.Position.Z), Vector3.new(110, 1, 110))
+	local mist = Instance.new("ParticleEmitter")
+	mist.Texture = U.textures.Smoke
+	mist.Color = ColorSequence.new(Color3.fromRGB(150, 162, 200))
+	mist.LightEmission = 0.1
+	mist.LightInfluence = 0
+	mist.Size = NumberSequence.new(8, 16)
+	mist.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.3, 0.78),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	mist.Lifetime = NumberRange.new(3, 5)
+	mist.Rate = 20
+	mist.Speed = NumberRange.new(0.5, 1.5)
+	mist.EmissionDirection = Enum.NormalId.Top
+	mist.SpreadAngle = Vector2.new(70, 70)
+	mist.Rotation = NumberRange.new(0, 360)
+	mist.Parent = mistHolder
+	mist:Emit(25)
+
+	-- Ash and embers drifting through the air around the fight.
+	local airHolder = holder(CFrame.new((plan.apex + plan.perch) / 2), Vector3.new(70, 40, 70))
+	local ash = Instance.new("ParticleEmitter")
+	ash.Texture = U.textures.Spark
+	ash.Color = ColorSequence.new(BLACK)
+	ash.LightEmission = 0
+	ash.LightInfluence = 0
+	ash.Size = NumberSequence.new(0.35, 0.2)
+	ash.Lifetime = NumberRange.new(2, 4)
+	ash.Rate = 40
+	ash.Speed = NumberRange.new(0.5, 2)
+	ash.Acceleration = Vector3.new(0, -1.5, 0)
+	ash.Rotation = NumberRange.new(0, 360)
+	ash.RotSpeed = NumberRange.new(-90, 90)
+	ash.SpreadAngle = Vector2.new(180, 180)
+	ash.Parent = airHolder
+	local embers = Instance.new("ParticleEmitter")
+	embers.Texture = U.textures.Spark
+	embers.Color = ColorSequence.new(RED)
+	embers.LightEmission = 1
+	embers.LightInfluence = 0
+	embers.Size = NumberSequence.new(0.3, 0)
+	embers.Lifetime = NumberRange.new(1.5, 3)
+	embers.Rate = 18
+	embers.Speed = NumberRange.new(0.5, 2)
+	embers.Acceleration = Vector3.new(0, 1.5, 0)
+	embers.SpreadAngle = Vector2.new(180, 180)
+	embers.Parent = airHolder
+	local emitters = { cloudFront, cloudLow, mist, ash, embers }
+
+	-- Rocks tearing loose from the ground and floating up.
+	type Rock = { part: BasePart, from: CFrame, rise: number, spin: Vector3 }
+	local rocks: { Rock } = {}
+	local rockColor = if ground and ground.Instance:IsA("BasePart")
+		then ground.Instance.Color
+		else Color3.fromRGB(90, 88, 85)
+	for i = 1, 14 do
+		local angle = (i / 14) * math.pi * 2 + math.random() * 0.4
+		local distance = 9 + math.random() * 20
+		local size = 0.7 + math.random() * 1.6
+		local from = CFrame.new(
+			plan.origin.Position.X + math.cos(angle) * distance,
+			floorY - size * 0.4,
+			plan.origin.Position.Z + math.sin(angle) * distance
+		) * U.randomAngles()
+		local part = U.newPart({
+			Size = Vector3.one * size,
+			CFrame = from,
+			Color = rockColor,
+			Material = if ground then ground.Material else Enum.Material.Slate,
+			Transparency = 1,
+		})
+		part.CastShadow = true
+		table.insert(made, part)
+		table.insert(rocks, { part = part, from = from, rise = 3 + math.random() * 7, spin = U.randomUnit() * 0.8 })
+	end
+
+	-- Shooting stars streaking across behind the moon.
+	local function shootingStar()
+		local side = plan.right * (if math.random() < 0.5 then 1 else -1)
+		local from = plan.moon + side * 220 + UP * (60 + math.random() * 60)
+		local to = from - side * 260 - UP * 70
+		local streak = U.newPart({
+			Size = Vector3.new(0.6, 0.6, 26),
+			CFrame = CFrame.lookAt(from, to),
+			Color = Color3.fromRGB(235, 240, 255),
+			Transparency = 0.1,
+		})
+		U.tween(
+			streak,
+			0.7,
+			{ CFrame = CFrame.lookAt(to, to + (to - from)), Transparency = 1 },
+			Enum.EasingStyle.Linear
+		)
+		task.delay(0.75, streak.Destroy, streak)
+	end
+	task.delay(BlackMoon.Times.Perch + 0.4, shootingStar)
+	task.delay(BlackMoon.Times.Close + 0.7, shootingStar)
+
+	local stopped = false
+	return {
+		update = function(t: number, visible: number)
+			for _, star in stars do
+				local twinkle = 0.5 + 0.5 * math.sin(t * star.speed + star.phase)
+				star.part.Transparency = 1 - visible * (1 - star.base - 0.35 * twinkle)
+			end
+			local lift =
+				TweenService:GetValue(math.clamp(visible, 0, 1), Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+			for _, rock in rocks do
+				local drift = math.sin(t * 1.3 + rock.rise) * 0.25
+				rock.part.CFrame = rock.from + UP * (rock.rise * lift + drift * lift)
+				rock.part.CFrame *= CFrame.Angles(rock.spin.X * t, rock.spin.Y * t, rock.spin.Z * t)
+				rock.part.Transparency = if visible > 0.02 then 0 else 1
+			end
+			for _, emitter in emitters do
+				emitter.Enabled = visible > 0.5 and not stopped
+			end
+		end,
+		destroy = function()
+			stopped = true
+			for _, emitter in emitters do
+				emitter.Enabled = false
+			end
+			for _, rock in rocks do
+				U.tween(rock.part, 0.6, { CFrame = rock.from - UP * 1, Transparency = 1 })
+			end
+			task.delay(2.5, function()
+				for _, instance in made do
+					instance:Destroy()
+				end
+			end)
+		end,
+	}
+end
+
 local function playBlackMoon(data, character: Model, root: BasePart)
 	if typeof(data.origin) ~= "CFrame" or typeof(data.victimStart) ~= "Vector3" then
 		return
@@ -7832,8 +8373,10 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		end)
 	end
 
-	-- Both of them on the shared paths (smooth on every screen), and the moon.
+	-- Both of them on the shared paths (smooth on every screen), the moon
+	-- and the night around it.
 	local moon = buildMoon(plan.moonRadius)
+	local setting = buildNightSetting(plan)
 	local bind = "CloverBlackMoon" .. tostring(start)
 	local done = false
 	local function finish()
@@ -7843,6 +8386,7 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		done = true
 		RunService:UnbindFromRenderStep(bind)
 		moon.destroy()
+		setting.destroy()
 	end
 	RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
 		local t = os.clock() - start
@@ -7854,14 +8398,15 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 				victimRoot.CFrame = BlackMoon.Victim(plan, t)
 			end
 		end
-		local visible = smoothstep((t - T.Leap) / 0.35) * (1 - smoothstep((t - T.Land - 0.3) / 1.1))
+		local visible = smoothstep((t - T.Night - 0.3) / 0.6) * (1 - smoothstep((t - T.Land - 0.3) / 1.2))
 		local split = TweenService:GetValue(
 			math.clamp((t - T.Land) / 0.9, 0, 1),
 			Enum.EasingStyle.Quart,
 			Enum.EasingDirection.Out
 		)
 		local scar = if t < T.Cut then 0 else math.min((t - T.Cut) / 0.08, 1) * (1 - smoothstep((t - T.Land) / 0.5))
-		moon.update(CFrame.lookAt(plan.moon, workspace.CurrentCamera.CFrame.Position), visible, split, scar)
+		moon.update(CFrame.lookAt(plan.moon, workspace.CurrentCamera.CFrame.Position), visible, split, scar, t * 0.05)
+		setting.update(t, visible)
 		if t > T.Land + 1.6 then
 			finish()
 		end
@@ -7877,18 +8422,18 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 			-- Following them down out of the sky.
 			local v = if victimRoot and victimRoot.Parent then victimRoot.Position else plan.apex
 			return CFrame.lookAt(v + plan.right * 14 + UP * 7 - plan.forward * 4, v), 65
-		end, T.Land + 0.85)
+		end, T.Done)
 	end
 
 	-- Night falls over everyone nearby.
 	local lift: ((number?) -> ())? = nil
 	if nearby then
 		at(T.Night, function()
-			lift = Cinematic.Night(0.4)
+			lift = Cinematic.Night(0.9)
 		end)
-		task.delay(T.Land + 0.25, function()
+		task.delay(T.Land + 0.3, function()
 			if lift then
-				lift(1.1)
+				lift(1.3)
 			end
 		end)
 	end
@@ -7900,7 +8445,7 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 			local light = Instance.new("PointLight")
 			light.Color = Color3.fromRGB(200, 212, 255)
 			light.Brightness = 0
-			light.Range = 18
+			light.Range = 24
 			light.Shadows = false
 			light.Parent = part
 			table.insert(moonlights, light)
@@ -7908,7 +8453,7 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 	end
 	task.delay(T.Night, function()
 		for _, light in moonlights do
-			U.tween(light, 0.4, { Brightness = 1.6 })
+			U.tween(light, 0.6, { Brightness = 2.6 })
 		end
 	end)
 	task.delay(T.Land + 0.4, function()
@@ -8062,6 +8607,27 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		}, T.Fly - T.Perch)
 	end)
 
+	-- He levels the sword at them: anti-magic flares off him and the blade.
+	at(T.Point, function()
+		swordGlow(character, RED, 0.5, 0.5)
+		swordAura(character, T.Fly - T.Point, 40)
+		local tip = bladePoint(character, 2.1)
+		if tip then
+			blackLightning(tip, 5, 3.5)
+			U.light(tip, RED, 8, 16, 0.4)
+		end
+		U.ringBurst(CFrame.new(root.Position) * CFrame.Angles(rad(90), 0, 0), BLACK, 1, 9, 0.45, 0.3)
+		blackSmoke(root.Position, 16, 4, 10)
+		redSparks(root.Position, 18, 1)
+		local visual = awakenedVisuals[character]
+		if visual and visual.flap then
+			visual.flap()
+		end
+		if mine then
+			CameraShake.Add(0.15)
+		end
+	end)
+
 	-- The blade catches the moonlight.
 	at(T.Glint, function()
 		local tip = bladePoint(character, 2.1)
@@ -8085,7 +8651,7 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 			visual.setPose("glide") -- swept back for speed
 		end
 		if moonlights[1] then
-			U.tween(moonlights[1], 0.15, { Brightness = 1.6 })
+			U.tween(moonlights[1], 0.15, { Brightness = 2.6 })
 		end
 		heavyTrail(character, 0.45)
 		U.bodyTrail(character, BLACK, 0.3)
@@ -8134,7 +8700,7 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 			visual.setPose("spread") -- flared open as he stops
 		end
 		if mine then
-			U.colorGrade({ Saturation = -1, Contrast = 0.35, Brightness = 0.08 }, 0.05, T.Land - T.Arrive - 0.1, 0.15)
+			U.colorGrade({ Saturation = -1, Contrast = 0.3, Brightness = 0.14 }, 0.05, T.Land - T.Arrive - 0.1, 0.15)
 		end
 	end)
 
@@ -11271,7 +11837,7 @@ Animations.MoonThrow = {
 			"Out",
 		},
 		{
-			0.16,
+			0.18,
 			{
 				Torso = body(0.029, 14, -4),
 				Head = rot(-28),
@@ -11285,7 +11851,7 @@ Animations.MoonThrow = {
 			"Out",
 		},
 		{
-			0.55,
+			0.6,
 			{
 				Torso = body(0.047, 10, -4),
 				Head = rot(-34),
@@ -11298,10 +11864,24 @@ Animations.MoonThrow = {
 			"Sine",
 			"Out",
 		},
+		{
+			1,
+			{
+				Torso = body(0.039, 12, -6),
+				Head = rot(-40),
+				RightArm = limb(-6, -10, 30),
+				Sword = aim(0.3, 0.3, 0.9),
+				LeftArm = limb(150, -4),
+				RightLeg = rot(-20),
+				LeftLeg = rot(18),
+			},
+			"Sine",
+			"InOut",
+		},
 	},
 }
 
--- Black Moon: perched in the sky in front of the moon, sword held out low, glaring.
+-- Black Moon: hovering in front of the moon, sword held out low, glaring; then levels the sword at them.
 Animations.MoonPerch = {
 	fadeIn = 0.05,
 	fadeOut = 0.05,
@@ -11334,7 +11914,7 @@ Animations.MoonPerch = {
 			"Out",
 		},
 		{
-			0.4,
+			0.5,
 			{
 				Torso = rot(-8, -30),
 				Head = rot(-10, 24),
@@ -11348,7 +11928,7 @@ Animations.MoonPerch = {
 			"InOut",
 		},
 		{
-			0.7,
+			0.85,
 			{
 				Torso = rot(-6, -30),
 				Head = rot(-10, 24),
@@ -11357,6 +11937,62 @@ Animations.MoonPerch = {
 				LeftArm = limb(22, 0, -28),
 				RightLeg = rot(-14),
 				LeftLeg = rot(44),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			1.2,
+			{
+				Torso = rot(-8, -30),
+				Head = rot(-10, 24),
+				RightArm = limb(46, 70),
+				Sword = aim(0.75, -0.55, 0.35),
+				LeftArm = limb(22, 0, -28),
+				RightLeg = rot(-14),
+				LeftLeg = rot(44),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			1.5,
+			{
+				Torso = rot(-4, 6),
+				Head = rot(-8, -4),
+				RightArm = limb(98, 8),
+				Sword = aim(0.05, 0.22, -0.97),
+				LeftArm = limb(18, 0, -30),
+				RightLeg = rot(-14),
+				LeftLeg = rot(40),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			1.95,
+			{
+				Torso = rot(-6, 6),
+				Head = rot(-8, -4),
+				RightArm = limb(98, 8),
+				Sword = aim(0.05, 0.22, -0.97),
+				LeftArm = limb(18, 0, -30),
+				RightLeg = rot(-14),
+				LeftLeg = rot(40),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			2.35,
+			{
+				Torso = rot(-4, 6),
+				Head = rot(-8, -4),
+				RightArm = limb(98, 8),
+				Sword = aim(0.05, 0.22, -0.97),
+				LeftArm = limb(18, 0, -30),
+				RightLeg = rot(-14),
+				LeftLeg = rot(40),
 			},
 			"Sine",
 			"InOut",
@@ -11373,13 +12009,13 @@ Animations.MoonFlight = {
 		{
 			0,
 			{
-				Torso = rot(-6, -30),
-				Head = rot(-10, 24),
-				RightArm = limb(50, 70),
-				Sword = aim(0.75, -0.55, 0.35),
-				LeftArm = limb(22, 0, -28),
+				Torso = rot(-4, 6),
+				Head = rot(-8, -4),
+				RightArm = limb(98, 8),
+				Sword = aim(0.05, 0.22, -0.97),
+				LeftArm = limb(18, 0, -30),
 				RightLeg = rot(-14),
-				LeftLeg = rot(44),
+				LeftLeg = rot(40),
 			},
 		},
 		{
@@ -11425,7 +12061,7 @@ Animations.MoonFlight = {
 			"Out",
 		},
 		{
-			0.75,
+			1.15,
 			{
 				Torso = rot(-10, -50),
 				Head = rot(0, 34),
@@ -11625,6 +12261,658 @@ Animations.Launched = {
 			},
 			"Sine",
 			"InOut",
+		},
+		{
+			3.25,
+			{
+				Torso = rot(26),
+				Head = rot(-30),
+				RightArm = limb(142, 0, 30),
+				Sword = aim(0.3, 0.8, 0.5),
+				LeftArm = limb(168, 0, -35),
+				RightLeg = rot(18),
+				LeftLeg = rot(-8),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			3.5,
+			{
+				Torso = rot(14),
+				Head = rot(-30),
+				RightArm = limb(178, 0, 30),
+				Sword = aim(0.3, 0.8, 0.5),
+				LeftArm = limb(132, 0, -35),
+				RightLeg = rot(42),
+				LeftLeg = rot(-32),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			3.75,
+			{
+				Torso = rot(26),
+				Head = rot(-30),
+				RightArm = limb(142, 0, 30),
+				Sword = aim(0.3, 0.8, 0.5),
+				LeftArm = limb(168, 0, -35),
+				RightLeg = rot(18),
+				LeftLeg = rot(-8),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			4,
+			{
+				Torso = rot(14),
+				Head = rot(-30),
+				RightArm = limb(178, 0, 30),
+				Sword = aim(0.3, 0.8, 0.5),
+				LeftArm = limb(132, 0, -35),
+				RightLeg = rot(42),
+				LeftLeg = rot(-32),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			4.25,
+			{
+				Torso = rot(26),
+				Head = rot(-30),
+				RightArm = limb(142, 0, 30),
+				Sword = aim(0.3, 0.8, 0.5),
+				LeftArm = limb(168, 0, -35),
+				RightLeg = rot(18),
+				LeftLeg = rot(-8),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			4.5,
+			{
+				Torso = rot(14),
+				Head = rot(-30),
+				RightArm = limb(178, 0, 30),
+				Sword = aim(0.3, 0.8, 0.5),
+				LeftArm = limb(132, 0, -35),
+				RightLeg = rot(42),
+				LeftLeg = rot(-32),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			4.75,
+			{
+				Torso = rot(26),
+				Head = rot(-30),
+				RightArm = limb(142, 0, 30),
+				Sword = aim(0.3, 0.8, 0.5),
+				LeftArm = limb(168, 0, -35),
+				RightLeg = rot(18),
+				LeftLeg = rot(-8),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			5,
+			{
+				Torso = rot(14),
+				Head = rot(-30),
+				RightArm = limb(178, 0, 30),
+				Sword = aim(0.3, 0.8, 0.5),
+				LeftArm = limb(132, 0, -35),
+				RightLeg = rot(42),
+				LeftLeg = rot(-32),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			5.25,
+			{
+				Torso = rot(26),
+				Head = rot(-30),
+				RightArm = limb(142, 0, 30),
+				Sword = aim(0.3, 0.8, 0.5),
+				LeftArm = limb(168, 0, -35),
+				RightLeg = rot(18),
+				LeftLeg = rot(-8),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			5.5,
+			{
+				Torso = rot(14),
+				Head = rot(-30),
+				RightArm = limb(178, 0, 30),
+				Sword = aim(0.3, 0.8, 0.5),
+				LeftArm = limb(132, 0, -35),
+				RightLeg = rot(42),
+				LeftLeg = rot(-32),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			5.75,
+			{
+				Torso = rot(26),
+				Head = rot(-30),
+				RightArm = limb(142, 0, 30),
+				Sword = aim(0.3, 0.8, 0.5),
+				LeftArm = limb(168, 0, -35),
+				RightLeg = rot(18),
+				LeftLeg = rot(-8),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			6,
+			{
+				Torso = rot(14),
+				Head = rot(-30),
+				RightArm = limb(178, 0, 30),
+				Sword = aim(0.3, 0.8, 0.5),
+				LeftArm = limb(132, 0, -35),
+				RightLeg = rot(42),
+				LeftLeg = rot(-32),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Black Hurricane: four full spins with the blade held straight out, then a final cut.
+Animations.Hurricane = {
+	fadeIn = 0.03,
+	fadeOut = 0.25,
+	delays = { Sword = 0.01 },
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.049, -6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.1,
+			{
+				Torso = body(0.04, -8),
+				Head = rot(6),
+				RightArm = limb(88, 88),
+				Sword = aim(0.98, -0.104, -0.167),
+				LeftArm = limb(75, -85),
+				RightLeg = rot(-18),
+				LeftLeg = rot(16),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.15,
+			{
+				Torso = body(0.1, -8, -90),
+				Head = rot(6),
+				RightArm = limb(88, 88),
+				Sword = aim(0.18, 0.057, 0.982),
+				LeftArm = limb(75, -85),
+				RightLeg = rot(-18),
+				LeftLeg = rot(16),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.2,
+			{
+				Torso = body(0.047, -8, -180),
+				Head = rot(6),
+				RightArm = limb(88, 88),
+				Sword = aim(-0.98, -0.054, 0.189),
+				LeftArm = limb(75, -85),
+				RightLeg = rot(-18),
+				LeftLeg = rot(16),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.25,
+			{
+				Torso = body(0.096, -8, -270),
+				Head = rot(6),
+				RightArm = limb(88, 88),
+				Sword = aim(-0.18, -0.216, -0.96),
+				LeftArm = limb(75, -85),
+				RightLeg = rot(-18),
+				LeftLeg = rot(16),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.3,
+			{
+				Torso = body(0.04, -8, -360),
+				Head = rot(6),
+				RightArm = limb(88, 88),
+				Sword = aim(0.98, -0.104, -0.167),
+				LeftArm = limb(75, -85),
+				RightLeg = rot(-18),
+				LeftLeg = rot(16),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.35,
+			{
+				Torso = body(0.1, -8, -450),
+				Head = rot(6),
+				RightArm = limb(88, 88),
+				Sword = aim(0.18, 0.057, 0.982),
+				LeftArm = limb(75, -85),
+				RightLeg = rot(-18),
+				LeftLeg = rot(16),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.4,
+			{
+				Torso = body(0.047, -8, -540),
+				Head = rot(6),
+				RightArm = limb(88, 88),
+				Sword = aim(-0.98, -0.054, 0.189),
+				LeftArm = limb(75, -85),
+				RightLeg = rot(-18),
+				LeftLeg = rot(16),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.45,
+			{
+				Torso = body(0.096, -8, -630),
+				Head = rot(6),
+				RightArm = limb(88, 88),
+				Sword = aim(-0.18, -0.216, -0.96),
+				LeftArm = limb(75, -85),
+				RightLeg = rot(-18),
+				LeftLeg = rot(16),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.5,
+			{
+				Torso = body(0.04, -8, -720),
+				Head = rot(6),
+				RightArm = limb(88, 88),
+				Sword = aim(0.98, -0.104, -0.167),
+				LeftArm = limb(75, -85),
+				RightLeg = rot(-18),
+				LeftLeg = rot(16),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.55,
+			{
+				Torso = body(0.1, -8, -810),
+				Head = rot(6),
+				RightArm = limb(88, 88),
+				Sword = aim(0.18, 0.057, 0.982),
+				LeftArm = limb(75, -85),
+				RightLeg = rot(-18),
+				LeftLeg = rot(16),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.6,
+			{
+				Torso = body(0.047, -8, -900),
+				Head = rot(6),
+				RightArm = limb(88, 88),
+				Sword = aim(-0.98, -0.054, 0.189),
+				LeftArm = limb(75, -85),
+				RightLeg = rot(-18),
+				LeftLeg = rot(16),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.65,
+			{
+				Torso = body(0.096, -8, -990),
+				Head = rot(6),
+				RightArm = limb(88, 88),
+				Sword = aim(-0.18, -0.216, -0.96),
+				LeftArm = limb(75, -85),
+				RightLeg = rot(-18),
+				LeftLeg = rot(16),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.7,
+			{
+				Torso = body(0.04, -8, -1080),
+				Head = rot(6),
+				RightArm = limb(88, 88),
+				Sword = aim(0.98, -0.104, -0.167),
+				LeftArm = limb(75, -85),
+				RightLeg = rot(-18),
+				LeftLeg = rot(16),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.75,
+			{
+				Torso = body(0.1, -8, -1170),
+				Head = rot(6),
+				RightArm = limb(88, 88),
+				Sword = aim(0.18, 0.057, 0.982),
+				LeftArm = limb(75, -85),
+				RightLeg = rot(-18),
+				LeftLeg = rot(16),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.8,
+			{
+				Torso = body(0.047, -8, -1260),
+				Head = rot(6),
+				RightArm = limb(88, 88),
+				Sword = aim(-0.98, -0.054, 0.189),
+				LeftArm = limb(75, -85),
+				RightLeg = rot(-18),
+				LeftLeg = rot(16),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.85,
+			{
+				Torso = body(0.096, -8, -1350),
+				Head = rot(6),
+				RightArm = limb(88, 88),
+				Sword = aim(-0.18, -0.216, -0.96),
+				LeftArm = limb(75, -85),
+				RightLeg = rot(-18),
+				LeftLeg = rot(16),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.9,
+			{
+				Torso = body(0.04, -8, -1440),
+				Head = rot(6),
+				RightArm = limb(88, 88),
+				Sword = aim(0.98, -0.104, -0.167),
+				LeftArm = limb(75, -85),
+				RightLeg = rot(-18),
+				LeftLeg = rot(16),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			1,
+			{
+				Torso = body(-0.046, -12, 40),
+				Head = rot(4, -30),
+				RightArm = limb(84, 95),
+				Sword = aim(-0.85, -0.1, 0.5),
+				LeftArm = limb(25, -40),
+				RightLeg = rot(-26),
+				LeftLeg = rot(24),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			1.25,
+			{
+				Torso = body(-0.046, -12, 40),
+				Head = rot(4, -30),
+				RightArm = limb(84, 95),
+				Sword = aim(-0.85, -0.1, 0.5),
+				LeftArm = limb(25, -40),
+				RightLeg = rot(-26),
+				LeftLeg = rot(24),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Black Slash: wound up high behind him, then a huge diagonal cut that throws the wave.
+Animations.BlackSlash = {
+	fadeIn = 0.03,
+	fadeOut = 0.25,
+	delays = { Sword = 0.02, Head = -0.01 },
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.049, -6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.13,
+			{
+				Torso = body(0.062, 6, -40),
+				Head = rot(0, 30),
+				RightArm = limb(150, -35),
+				Sword = aim(0.55, 0.65, 0.5),
+				LeftArm = limb(55, -20),
+				RightLeg = rot(-10),
+				LeftLeg = rot(12),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.21,
+			{
+				Torso = body(-0.106, -16, 42),
+				Head = rot(8, -30),
+				RightArm = limb(72, 62),
+				Sword = aim(-0.72, -0.4, -0.56),
+				LeftArm = limb(20, -35),
+				RightLeg = rot(-30),
+				LeftLeg = rot(28),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.55,
+			{
+				Torso = body(-0.035, -12, 36),
+				Head = rot(6, -26),
+				RightArm = limb(66, 56),
+				Sword = aim(-0.7, -0.45, -0.55),
+				LeftArm = limb(24, -32),
+				RightLeg = rot(-24),
+				LeftLeg = rot(22),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Grand Divider: the sword raised straight to the sky, shaking with anti-magic.
+Animations.GrandCharge = {
+	fadeIn = 0.05,
+	fadeOut = 0.05,
+	delays = { Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.049, -6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.2,
+			{
+				Torso = body(0.044, 12),
+				Head = rot(-16),
+				RightArm = limb(176, 4),
+				Sword = aim(0.02, 1, 0.05),
+				LeftArm = limb(150, -18),
+				RightLeg = rot(-14, 0, 8),
+				LeftLeg = rot(14, 0, -8),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.35,
+			{
+				Torso = body(0.024, 15),
+				Head = rot(-16),
+				RightArm = limb(176, 4),
+				Sword = aim(0.02, 1, 0.05),
+				LeftArm = limb(150, -18),
+				RightLeg = rot(-14, 0, 8),
+				LeftLeg = rot(14, 0, -8),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.5,
+			{
+				Torso = body(0.055, 11),
+				Head = rot(-16),
+				RightArm = limb(176, 4),
+				Sword = aim(0.02, 1, 0.05),
+				LeftArm = limb(150, -18),
+				RightLeg = rot(-14, 0, 8),
+				LeftLeg = rot(14, 0, -8),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.7,
+			{
+				Torso = body(0.024, 15),
+				Head = rot(-16),
+				RightArm = limb(176, 4),
+				Sword = aim(0.02, 1, 0.05),
+				LeftArm = limb(150, -18),
+				RightLeg = rot(-14, 0, 8),
+				LeftLeg = rot(14, 0, -8),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Grand Divider: one crushing cleave that bites into the ground.
+Animations.GrandRelease = {
+	fadeIn = 0.01,
+	fadeOut = 0.35,
+	delays = { Sword = 0.01, Head = -0.01 },
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.024, 15),
+				Head = rot(-16),
+				RightArm = limb(176, 4),
+				Sword = aim(0.02, 1, 0.05),
+				LeftArm = limb(150, -18),
+				RightLeg = rot(-14, 0, 8),
+				LeftLeg = rot(14, 0, -8),
+			},
+		},
+		{
+			0.05,
+			{
+				Torso = body(0.051, -6),
+				Head = rot(2),
+				RightArm = limb(115, 4),
+				Sword = aim(0, 0.35, -0.94),
+				LeftArm = limb(100, -10),
+				RightLeg = rot(-20),
+				LeftLeg = rot(16),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.1,
+			{
+				Torso = body(-0.196, -36, 4),
+				Head = rot(18),
+				RightArm = limb(60, 6),
+				Sword = aim(0, -0.45, -0.89),
+				LeftArm = limb(35, -8),
+				RightLeg = rot(-46),
+				LeftLeg = rot(38),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.6,
+			{
+				Torso = body(-0.196, -36, 4),
+				Head = rot(18),
+				RightArm = limb(60, 6),
+				Sword = aim(0, -0.45, -0.89),
+				LeftArm = limb(35, -8),
+				RightLeg = rot(-46),
+				LeftLeg = rot(38),
+			},
+			"Linear",
+			"Out",
 		},
 	},
 }
