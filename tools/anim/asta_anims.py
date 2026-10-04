@@ -322,6 +322,15 @@ R_OPEN = {'Torso': R(-22, -14), 'Head': R(14, 10), 'RightArm': L(-16, -10, 30), 
 METEOR_REACH = [(0.0, UPPER), (REACH_AT - 0.07, R_COCK), (REACH_AT, R_THRUST), (0.3, R_OPEN), (0.5, M_LUNGE),
                 (0.75, M_LUNGE)]
 METEOR_RISE = [(0.0, M_HOLD), (0.2, M_RISE), (0.55, M_APEX)]
+# The vortex: whirling round with them held out at arm's length, leaning
+# back against the pull, sword swept out wide in the other hand, legs
+# kicking as he bobs; at the end the sword comes up overhead for the slam.
+def m_spin(lean, kick):
+    t = R(lean, 8)
+    return {'Torso': t, 'Head': R(-6, -6), 'RightArm': L(86, -84), 'Sword': torso_dir(t, (0.97, -0.06, 0.2)),
+            'LeftArm': L(100, -6), 'RightLeg': R(24 + kick), 'LeftLeg': R(-10 - kick)}
+METEOR_SPIN = [(0.0, M_HOLD), (0.15, m_spin(10, 0)), (0.45, m_spin(6, 14)), (0.75, m_spin(10, -6)),
+               (0.95, M_RISE), (1.2, M_APEX)]
 METEOR_SLAM = [(0.0, M_APEX), (0.12, M_SLAM), (0.6, M_SLAM)]
 METEOR_IMPACT = [(0.0, M_SLAM), (0.25, M_RECOVER), (0.5, M_RECOVER)]
 
@@ -549,7 +558,7 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grab
        'AirPropel': AIR_PROPEL, 'AirMeteorLunge': AIR_METEOR_LUNGE, 'AirMeteorReach': AIR_METEOR_REACH,
        'AirSeize': AIR_SEIZE,
        'AirDeflectStance': AIR_DEFLECT_STANCE,
-       'MeteorLunge': METEOR_LUNGE, 'MeteorReach': METEOR_REACH, 'MeteorRise': METEOR_RISE, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
+       'MeteorLunge': METEOR_LUNGE, 'MeteorReach': METEOR_REACH, 'MeteorRise': METEOR_RISE, 'MeteorSpin': METEOR_SPIN, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
        'DividerCharge': DIVIDER_CHARGE, 'DividerRelease': DIVIDER_RELEASE,
        'DeflectStance': DEFLECT_STANCE, 'DeflectCounter': DEFLECT_COUNTER, 'DeflectReflect': DEFLECT_REFLECT,
        'Awaken': AWAKEN,
@@ -561,7 +570,7 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grab
 # Grounded animations get their feet planted (the body drops into lunges and
 # wide stances). These are played in the air instead, or leave the ground
 # (planted only up to the time given).
-AIRBORNE = {'Air', 'Grabbed', 'Launched', 'MoonPerch', 'MoonFlight', 'Plunge', 'AirDividerCharge', 'AirDividerRelease', 'MeteorRise', 'MeteorSlam', 'Chop',
+AIRBORNE = {'Air', 'Grabbed', 'Launched', 'MoonPerch', 'MoonFlight', 'Plunge', 'AirDividerCharge', 'AirDividerRelease', 'MeteorRise', 'MeteorSpin', 'MeteorSlam', 'Chop',
             'AirPropel', 'AirMeteorLunge', 'AirMeteorReach', 'AirSeize', 'AirDeflectStance'}
 PLANT_UNTIL = {'Leap': 0.1}
 UNPLANTED = dict(ALL)
@@ -577,7 +586,7 @@ if __name__ == '__main__':
              # Only ever played in the air.
              'GrandRelease': dict(floor=-3.6),  # the cleave bites into the ground
              'Plunge': dict(floor=-10), 'Grabbed': dict(floor=-10), 'Launched': dict(floor=-10),
-             'MoonPerch': dict(floor=-10), 'MoonFlight': dict(floor=-10), 'AirDividerCharge': dict(floor=-10), 'AirDividerRelease': dict(floor=-10),
+             'MoonPerch': dict(floor=-10), 'MoonFlight': dict(floor=-10), 'AirDividerCharge': dict(floor=-10), 'AirDividerRelease': dict(floor=-10), 'MeteorSpin': dict(floor=-10),
              'AirPropel': dict(floor=-10), 'AirMeteorLunge': dict(floor=-10), 'AirMeteorReach': dict(floor=-10),
              'AirSeize': dict(floor=-10),
              'AirDeflectStance': dict(floor=-10)}

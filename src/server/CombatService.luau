@@ -193,7 +193,7 @@ function CombatService.ApplyVelocity(
 	elseif player then
 		Remotes.Impulse:FireClient(player, velocity, duration, options)
 	else
-		Impulse.Apply(root, velocity, duration, "Knockback")
+		Impulse.Apply(root, velocity, duration, "Knockback", if options then nil else 0.45)
 	end
 end
 
@@ -584,8 +584,10 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 			Config.Physics.HitStop
 		)
 	elseif variant == "Uppercut" then
-		-- Only the victim goes up; the attacker stays grounded.
-		CombatService.ApplyVelocity(victim, Vector3.new(0, Config.M1.UppercutForce, 0) + look * 4, 0.12)
+		-- Knocked off their feet and sent up tumbling (about 8 studs, in
+		-- reach of a jump); the attacker stays grounded.
+		CombatService.Ragdoll(victim, Config.M1.UppercutRagdoll)
+		CombatService.Launch(victim, Vector3.new(0, Config.M1.UppercutForce, 0) + look * 6, 0.2, Config.Physics.HitStop)
 	elseif variant == "Downslam" then
 		CombatService.Ragdoll(victim, Config.Ragdoll.Duration)
 		CombatService.Launch(

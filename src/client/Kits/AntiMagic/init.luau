@@ -13,6 +13,7 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local BlackMoon = require(ReplicatedStorage:WaitForChild("Shared").BlackMoon)
+local MeteorVortex = require(ReplicatedStorage:WaitForChild("Shared").MeteorVortex)
 
 local CameraShake = require(script.Parent.Parent.CameraShake)
 local Cinematic = require(script.Parent.Parent.Cinematic)
@@ -1610,32 +1611,112 @@ function handlers.BlackMeteorite(data, character, root)
 				CameraShake.Add(0.2)
 			end
 		end)
-	elseif phase == "Rise" then
-		play(character, ANIMS.MeteorRise)
+	elseif phase == "Vortex" then
+		-- The vortex: he whirls round with them held out, bobbing up and down
+		-- as it carries them into the sky (Shared/MeteorVortex).
+		play(character, ANIMS.MeteorSpin)
 		local target = data.target
-		local feet = feetOf(character, root)
+		local air = data.airborne == true
+		local length = MeteorVortex.Length
+		if typeof(data.origin) == "CFrame" then
+			local origin: CFrame = data.origin
+			local top = if type(data.top) == "number" then data.top else MeteorVortex.Top
+			local start = os.clock()
+			local bind = "CloverVortex" .. tostring(start)
+			-- After shift lock and the camera, so the path has the last word.
+			RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
+				local t = os.clock() - start
+				if t >= length or not root.Parent then
+					RunService:UnbindFromRenderStep(bind)
+					return
+				end
+				root.CFrame = MeteorVortex.At(origin, t, top)
+			end)
+		end
 
 		-- Take-off: the ground blows out under them.
-		U.flash(feet + UP, BLACK, 9, 0.25)
-		U.shockwave(feet, RED, 2, 14, 0.35)
-		U.ringBurst(CFrame.new(feet + UP * 0.15), BLACK, 1, 10, 0.35, 0.45)
-		task.delay(0.04, U.ringBurst, CFrame.new(feet + UP * 0.2), RED, 0.8, 7, 0.3, 0.2)
-		U.groundCracks(feet, 7, 6, RED, 2)
-		U.groundRocks(feet, 8, 3, 1.6)
-		U.debris(feet, 8, 38, 1)
-		blackSmoke(feet + UP * 0.5, 16, 3.5, 18)
-		U.pillar(feet, BLACK, 1.6, 18, 0.45, Enum.Material.SmoothPlastic, 0.2)
-		U.light(feet, RED, 8, 18, 0.35)
+		local ground = U.groundBelow(root.Position, { character })
+		if ground and not air then
+			local feet = ground.Position
+			U.flash(feet + UP, BLACK, 9, 0.25)
+			U.shockwave(feet, RED, 2, 14, 0.35)
+			U.ringBurst(CFrame.new(feet + UP * 0.15), BLACK, 1, 12, 0.35, 0.45)
+			task.delay(0.04, U.ringBurst, CFrame.new(feet + UP * 0.2), RED, 0.8, 8, 0.3, 0.2)
+			U.groundCracks(feet, 8, 6, RED, 2)
+			U.groundRocks(feet, 8, 3, 1.6)
+			U.debris(feet, 8, 38, 1)
+			blackSmoke(feet + UP * 0.5, 16, 3.5, 18)
+			U.light(feet, RED, 8, 18, 0.35)
+		else
+			U.flash(root.Position, BLACK, 8, 0.25)
+			U.ringBurst(CFrame.new(root.Position), BLACK, 1, 10, 0.35, 0.4)
+		end
 
-		-- Rocketing up together: trails, spiralling anti-magic, speed lines.
-		U.bodyTrail(character, BLACK, 0.55)
-		U.bodyTrail(target, DARK_RED, 0.55)
-		U.spiral(root, BLACK, 3.2, 3, 0.5, 3, 0.55, 0.3)
-		U.spiral(root, RED, 2.6, 3, 0.5, 2, 0.22, 0.3)
-		U.speedLines(root, UP, 0.4)
+		-- The vortex itself: spirals, swirling smoke, the blade's circles,
+		-- rings of wind and lightning crawling round them.
+		U.bodyTrail(character, BLACK, length)
+		U.bodyTrail(target, DARK_RED, length)
+		U.spiral(root, BLACK, 4.8, 3, length, 5, 0.9, 0.15)
+		U.spiral(root, RED, 3.8, 3, length, 3, 0.3, 0.15)
+		partEmitter(root, {
+			Texture = U.textures.Smoke,
+			Color = ColorSequence.new(BLACK),
+			LightEmission = 0,
+			Size = NumberSequence.new(1.8, 4.5),
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.35),
+				NumberSequenceKeypoint.new(1, 1),
+			}),
+			Lifetime = NumberRange.new(0.4, 0.7),
+			Rate = 110,
+			Speed = NumberRange.new(6, 14),
+			SpreadAngle = Vector2.new(180, 30),
+			Rotation = NumberRange.new(0, 360),
+			RotSpeed = NumberRange.new(-360, 360),
+		}, length)
+		crackle(root, length, 0.08, 5)
+		for turn = 0, MeteorVortex.Turns - 1 do
+			-- A full circle of steel each time round (faster in the middle).
+			local at = length * (0.18 + turn * 0.27)
+			task.delay(at, function()
+				if character.Parent then
+					crescent(character, {
+						center = CFrame.new(0, 0.2, 0),
+						radius = 6,
+						from = 90,
+						to = 450,
+						tilt = 0,
+						width = 1.6,
+						sweep = 0.16,
+						fade = 0.22,
+					})
+				end
+			end)
+		end
+		for i = 0, math.floor(length / 0.1) - 1 do
+			task.delay(i * 0.1, function()
+				if not character.Parent then
+					return
+				end
+				local here = root.Position
+				U.ringBurst(CFrame.new(here - UP * 1.5), if i % 2 == 0 then BLACK else RED, 3, 9, 0.25, 0.25)
+				if i % 3 == 0 then
+					blackLightning(here, 2, 5, 0.15)
+				end
+				-- The ground below gets torn up into the vortex.
+				local below = if not air then U.groundBelow(here, { character }, 40) else nil
+				if below and i % 2 == 0 then
+					U.ringBurst(CFrame.new(below.Position + UP * 0.2), BLACK, 4, 12, 0.3, 0.35)
+					U.debris(below.Position, 3, 30, 0.8)
+				end
+				if U.isLocal(character) then
+					CameraShake.Add(0.05)
+				end
+			end)
+		end
 
 		-- At the top: the blade drinks in anti-magic before the slam.
-		task.delay(0.36, function()
+		task.delay(MeteorVortex.Length - 0.3, function()
 			if not character.Parent then
 				return
 			end

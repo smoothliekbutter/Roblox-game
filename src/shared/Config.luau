@@ -41,13 +41,14 @@ Config.M1 = {
 	HitboxOffset = 3.25, -- studs in front of the root
 
 	Push = 6, -- small push on normal hits keeps the victim in range
-	LungeSpeed = 12, -- attacker steps forward a little on every swing
-	LungeTime = 0.1,
+	LungeSpeed = 13, -- attacker steps forward a little on every swing (eased out)
+	LungeTime = 0.16,
 	AirFloat = 0.35, -- air hits hold both players up this long
 
 	KnockbackForce = 65,
 	KnockbackLift = 18,
-	UppercutForce = 40, -- with the short push below: about 8 studs up, in reach of a jump
+	UppercutForce = 60, -- a ragdoll launch: about 8 studs up, in reach of a jump
+	UppercutRagdoll = 1.2,
 	DownslamForce = 75,
 }
 

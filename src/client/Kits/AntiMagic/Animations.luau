@@ -257,6 +257,7 @@ Animations.Air = {
 
 -- M1 1: right to left horizontal slash.
 Animations.Slash1 = {
+	fadeIn = 0.07,
 	fadeOut = 0.22,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -334,6 +335,7 @@ Animations.Slash1 = {
 
 -- M1 2: backhand, left to right.
 Animations.Slash2 = {
+	fadeIn = 0.07,
 	fadeOut = 0.22,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -411,6 +413,7 @@ Animations.Slash2 = {
 
 -- M1 3: rising diagonal.
 Animations.Slash3 = {
+	fadeIn = 0.07,
 	fadeOut = 0.22,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -488,6 +491,7 @@ Animations.Slash3 = {
 
 -- Finisher: huge horizontal cleave that wraps around the body.
 Animations.Cleave = {
+	fadeIn = 0.1,
 	fadeOut = 0.28,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -565,6 +569,7 @@ Animations.Cleave = {
 
 -- Finisher (jump held): rising vertical slash.
 Animations.Rising = {
+	fadeIn = 0.1,
 	fadeOut = 0.28,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -642,6 +647,7 @@ Animations.Rising = {
 
 -- Finisher (airborne): two-handed overhead chop.
 Animations.Chop = {
+	fadeIn = 0.07,
 	fadeOut = 0.28,
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
 	keys = {
@@ -2337,6 +2343,97 @@ Animations.MeteorRise = {
 			},
 			"Sine",
 			"InOut",
+		},
+	},
+}
+
+-- Black Meteorite: whirling round in the vortex with them held out, then the sword up for the slam.
+Animations.MeteorSpin = {
+	fadeIn = 0.08,
+	fadeOut = 0.1,
+	delays = { Sword = 0.04, Head = 0.02 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-12, 10),
+				Head = rot(8, -6),
+				RightArm = limb(-10, -10, 30),
+				Sword = aim(0.3, 0.2, 0.93),
+				LeftArm = limb(122, -6),
+				RightLeg = rot(-10),
+				LeftLeg = rot(12),
+			},
+		},
+		{
+			0.15,
+			{
+				Torso = rot(10, 8),
+				Head = rot(-6, -6),
+				RightArm = limb(86, -84),
+				Sword = aim(0.996, -0.071, 0.052),
+				LeftArm = limb(100, -6),
+				RightLeg = rot(24),
+				LeftLeg = rot(-10),
+			},
+			"Quad",
+			"Out",
+		},
+		{
+			0.45,
+			{
+				Torso = rot(6, 8),
+				Head = rot(-6, -6),
+				RightArm = limb(86, -84),
+				Sword = aim(0.996, -0.067, 0.057),
+				LeftArm = limb(100, -6),
+				RightLeg = rot(38),
+				LeftLeg = rot(-24),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.75,
+			{
+				Torso = rot(10, 8),
+				Head = rot(-6, -6),
+				RightArm = limb(86, -84),
+				Sword = aim(0.996, -0.071, 0.052),
+				LeftArm = limb(100, -6),
+				RightLeg = rot(18),
+				LeftLeg = rot(-4),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.95,
+			{
+				Torso = rot(14, 5),
+				Head = rot(-12),
+				RightArm = limb(165, 15),
+				Sword = aim(0.15, 0.55, 0.82),
+				LeftArm = limb(108, -5),
+				RightLeg = rot(-25),
+				LeftLeg = rot(35),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			1.2,
+			{
+				Torso = rot(24),
+				Head = rot(-18),
+				RightArm = limb(178, 10),
+				Sword = aim(0.1, 0.2, 0.97),
+				LeftArm = limb(100, -5),
+				RightLeg = rot(-15),
+				LeftLeg = rot(30),
+			},
+			"Quad",
+			"Out",
 		},
 	},
 }

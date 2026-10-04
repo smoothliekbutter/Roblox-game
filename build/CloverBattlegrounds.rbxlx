@@ -435,13 +435,14 @@ Config.M1 = {
 	HitboxOffset = 3.25, -- studs in front of the root
 
 	Push = 6, -- small push on normal hits keeps the victim in range
-	LungeSpeed = 12, -- attacker steps forward a little on every swing
-	LungeTime = 0.1,
+	LungeSpeed = 13, -- attacker steps forward a little on every swing (eased out)
+	LungeTime = 0.16,
 	AirFloat = 0.35, -- air hits hold both players up this long
 
 	KnockbackForce = 65,
 	KnockbackLift = 18,
-	UppercutForce = 40, -- with the short push below: about 8 studs up, in reach of a jump
+	UppercutForce = 60, -- a ragdoll launch: about 8 studs up, in reach of a jump
+	UppercutRagdoll = 1.2,
 	DownslamForce = 75,
 }
 
@@ -518,13 +519,24 @@ return Config
 	character, the server for NPCs and ragdolled characters.
 ]]
 
+local RunService = game:GetService("RunService")
+
 local Impulse = {}
 
 -- Applies `velocity` for `duration` seconds. Only one impulse per `name`
 -- exists at a time, so a new dash replaces an old dash. Vertical force is
 -- only applied when velocity has a Y component, so gravity still works on
--- flat pushes. Returns the LinearVelocity so callers can steer it.
-function Impulse.Apply(root: BasePart, velocity: Vector3, duration: number, name: string?): LinearVelocity
+-- flat pushes. `taper` (a fraction of the duration) eases the push out to
+-- a stop over its last part instead of cutting it dead, which is what makes
+-- knockback feel snappy rather than jerky. Returns the LinearVelocity so
+-- callers can steer it (steered pushes shouldn't taper).
+function Impulse.Apply(
+	root: BasePart,
+	velocity: Vector3,
+	duration: number,
+	name: string?,
+	taper: number?
+): LinearVelocity
 	local id = "Impulse_" .. (name or "Default")
 	local existing = root:FindFirstChild(id)
 	if existing then
@@ -544,6 +556,26 @@ function Impulse.Apply(root: BasePart, velocity: Vector3, duration: number, name
 	mover.MaxAxesForce = Vector3.new(1e6, vertical, 1e6)
 	mover.VectorVelocity = velocity
 	mover.Parent = attachment
+
+	if taper and taper > 0 and duration > 0 then
+		local start = os.clock()
+		local easeFrom = duration * (1 - math.min(taper, 1))
+		local from: Vector3? = nil
+		local connection
+		connection = RunService.Heartbeat:Connect(function()
+			if not mover.Parent then
+				connection:Disconnect()
+				return
+			end
+			local t = os.clock() - start
+			if t < easeFrom then
+				return
+			end
+			from = from or mover.VectorVelocity
+			local a = math.clamp((t - easeFrom) / (duration - easeFrom), 0, 1)
+			mover.VectorVelocity = (from :: Vector3) * (1 - a * a * (3 - 2 * a))
+		end)
+	end
 
 	task.delay(duration, function()
 		attachment:Destroy()
@@ -708,6 +740,58 @@ return Kits
       </Item>
       <Item class="ModuleScript" referent="12">
         <Properties>
+          <string name="Name">MeteorVortex</string>
+          <string name="Source"><![CDATA[--[[
+	MeteorVortex
+	Black Meteorite's spin: holding them out by the throat, Asta whirls
+	round in an anti-magic vortex, bobbing up and down as it carries him
+	into the sky, and finishes facing the way he started, sword raised for
+	the slam.
+
+	Shared so the server (which holds him on the path) and every client
+	(which draws him on it smoothly) agree on where he is. t = 0 is the
+	start of the spin; `origin` is his root then, level.
+]]
+
+local MeteorVortex = {}
+
+MeteorVortex.Length = 1.2 -- seconds of spinning
+MeteorVortex.Turns = 3 -- whole turns, so he ends facing forward
+MeteorVortex.Top = 20 -- studs he ends up above where he started (on the ground)
+MeteorVortex.AirTop = 8 -- the same, when it starts in the air
+MeteorVortex.Bob = 4 -- how far each bob dips and rises
+MeteorVortex.Radius = 1.5 -- the little circle his body traces
+
+local UP = Vector3.yAxis
+
+local function smooth(a: number): number
+	return a * a * (3 - 2 * a)
+end
+
+-- How far round he has turned (radians) at fraction a: slow to start,
+-- fastest in the middle, easing out facing forward again.
+function MeteorVortex.Angle(a: number): number
+	return MeteorVortex.Turns * 2 * math.pi * smooth(math.clamp(a, 0, 1))
+end
+
+-- His root at time t. `top` is how high the spin carries him.
+function MeteorVortex.At(origin: CFrame, t: number, top: number?): CFrame
+	local a = math.clamp(t / MeteorVortex.Length, 0, 1)
+	local angle = MeteorVortex.Angle(a)
+	-- Rising overall, bobbing down and up twice on the way.
+	local height = (top or MeteorVortex.Top) * smooth(a) + MeteorVortex.Bob * math.sin(a * math.pi * 4)
+	local circle = (origin.RightVector * math.sin(angle) + origin.LookVector * (math.cos(angle) - 1))
+		* MeteorVortex.Radius
+	local position = origin.Position + UP * height + circle
+	return CFrame.new(position) * origin.Rotation * CFrame.Angles(0, -angle, 0)
+end
+
+return MeteorVortex
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="13">
+        <Properties>
           <string name="Name">Remotes</string>
           <string name="Source"><![CDATA[--[[
 	Remotes
@@ -758,11 +842,11 @@ return Remotes
       </Item>
     </Item>
   </Item>
-  <Item class="ServerScriptService" referent="13">
+  <Item class="ServerScriptService" referent="14">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Script" referent="14">
+    <Item class="Script" referent="15">
       <Properties>
         <string name="Name">Server</string>
         <token name="RunContext">0</token>
@@ -796,7 +880,7 @@ CharacterLoader.Start()
 Dummies.Start()
 ]]></string>
       </Properties>
-      <Item class="ModuleScript" referent="15">
+      <Item class="ModuleScript" referent="16">
         <Properties>
           <string name="Name">CharacterLoader</string>
           <string name="Source"><![CDATA[--[[
@@ -891,7 +975,7 @@ return CharacterLoader
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="16">
+      <Item class="ModuleScript" referent="17">
         <Properties>
           <string name="Name">CombatService</string>
           <string name="Source"><![CDATA[--[[
@@ -1089,7 +1173,7 @@ function CombatService.ApplyVelocity(
 	elseif player then
 		Remotes.Impulse:FireClient(player, velocity, duration, options)
 	else
-		Impulse.Apply(root, velocity, duration, "Knockback")
+		Impulse.Apply(root, velocity, duration, "Knockback", if options then nil else 0.45)
 	end
 end
 
@@ -1480,8 +1564,10 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 			Config.Physics.HitStop
 		)
 	elseif variant == "Uppercut" then
-		-- Only the victim goes up; the attacker stays grounded.
-		CombatService.ApplyVelocity(victim, Vector3.new(0, Config.M1.UppercutForce, 0) + look * 4, 0.12)
+		-- Knocked off their feet and sent up tumbling (about 8 studs, in
+		-- reach of a jump); the attacker stays grounded.
+		CombatService.Ragdoll(victim, Config.M1.UppercutRagdoll)
+		CombatService.Launch(victim, Vector3.new(0, Config.M1.UppercutForce, 0) + look * 6, 0.2, Config.Physics.HitStop)
 	elseif variant == "Downslam" then
 		CombatService.Ragdoll(victim, Config.Ragdoll.Duration)
 		CombatService.Launch(
@@ -2097,7 +2183,7 @@ return CombatService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="17">
+      <Item class="ModuleScript" referent="18">
         <Properties>
           <string name="Name">Dummies</string>
           <string name="Source"><![CDATA[--[[
@@ -2255,7 +2341,7 @@ return Dummies
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="18">
+      <Item class="ModuleScript" referent="19">
         <Properties>
           <string name="Name">Hitbox</string>
           <string name="Source"><![CDATA[--[[
@@ -2356,11 +2442,11 @@ return Hitbox
 ]]></string>
         </Properties>
       </Item>
-      <Item class="Folder" referent="19">
+      <Item class="Folder" referent="20">
         <Properties>
           <string name="Name">Kits</string>
         </Properties>
-        <Item class="ModuleScript" referent="20">
+        <Item class="ModuleScript" referent="21">
           <Properties>
             <string name="Name">AntiMagic</string>
             <string name="Source"><![CDATA[--[[
@@ -2394,6 +2480,7 @@ return Hitbox
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BlackMoon = require(ReplicatedStorage:WaitForChild("Shared").BlackMoon)
+local MeteorVortex = require(ReplicatedStorage:WaitForChild("Shared").MeteorVortex)
 local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
 local Projectile = require(script.Parent.Parent.Projectile)
 
@@ -2925,10 +3012,11 @@ end
 -- the server's hitboxes see; every client pins them to the actual hand.
 local FACING = CFrame.Angles(0, math.pi, 0)
 local HOLD_SEIZE = CFrame.new(-1.6, 0.35, -1.75) * FACING
-local HOLD_RISE = CFrame.new(-1.5, 0.4, -1.7) * FACING
 -- Kept level with him server-side so they never end up under the floor on
 -- landing; clients show them driven down in front of him.
 local HOLD_SLAM = CFrame.new(-1.3, 0, -1.8) * FACING
+-- Held out at arm's length while he spins them round.
+local HOLD_SPIN = CFrame.new(-1.7, 0.5, -2.3) * FACING
 
 -- Seizes `target` by the throat with his free hand. Grabs can't be
 -- blocked, but counters and i-frames still beat them, and leave him open
@@ -3037,17 +3125,18 @@ local function reachGrab(ctx, grabTime: number): (Model?, (() -> ())?, ((CFrame)
 end
 
 -- The grab. His free hand shoots out (no dash), seizes them by the throat
--- and hoists them up while anti-magic surges through them, then he leaps
--- into the sky with them and comes down like a meteor. In the air: hangs
--- there, seizes whoever is in front of him and spikes them straight into
--- the ground.
+-- and hoists them up while anti-magic surges through them. Then a vortex:
+-- he whirls round with them held out, bobbing up and down as it carries
+-- them into the sky (Shared/MeteorVortex), and slams them down like a
+-- meteor. In the air: hangs there, seizes whoever is in front of him and
+-- does the same from where he is, with a shorter climb.
 local SEIZE_TIME = 0.4 -- the Seize animation's hoist
 local SURGE_AT = 0.2
 
 local function blackMeteorite(ctx)
 	local c, character = ctx.combat, ctx.character
 	local airborne = ctx.airborne
-	local target, release, hold = reachGrab(ctx, if airborne then 1.5 else 2.1)
+	local target, release, hold = reachGrab(ctx, (if airborne then 0.3 else SEIZE_TIME) + MeteorVortex.Length + 1)
 	if not target or not release or not hold then
 		return
 	end
@@ -3070,12 +3159,34 @@ local function blackMeteorite(ctx)
 		return
 	end
 
-	if not airborne then
-		hold(HOLD_RISE)
-		fx(ctx, "BlackMeteorite", "Rise", { target = target })
-		c.ApplyVelocity(character, UP * 75 + forward * 6, 0.3)
-		task.wait(0.55)
+	-- The vortex: he's held on the shared path (every client draws the same).
+	CombatState.SetCasting(character, MeteorVortex.Length + 1)
+	hold(HOLD_SPIN)
+	local origin = CFrame.lookAt(ctx.root.Position, ctx.root.Position + forward)
+	local top = if airborne then MeteorVortex.AirTop else MeteorVortex.Top
+	fx(ctx, "BlackMeteorite", "Vortex", { target = target, origin = origin, top = top, airborne = airborne })
+	local stop = c.Cutscene({
+		[character] = function(t: number): CFrame
+			return MeteorVortex.At(origin, t, top)
+		end,
+	}, MeteorVortex.Length)
+	local spinStart = os.clock()
+	local ticks = 0
+	while os.clock() - spinStart < MeteorVortex.Length do
+		task.wait()
+		if interrupted(ctx) or not CombatState.IsAlive(target) then
+			stop()
+			release()
+			return
+		end
+		-- The vortex tears at them as it spins: three small hits.
+		local due = math.floor((os.clock() - spinStart) / (MeteorVortex.Length / 3))
+		if due > ticks and ticks < 3 then
+			ticks += 1
+			c.Hit(character, target, { damage = 1, stun = 1.5, attackType = "Melee", unblockable = true })
+		end
 	end
+	stop()
 
 	hold(HOLD_SLAM)
 	fx(ctx, "BlackMeteorite", "Slam", { target = target, airborne = airborne })
@@ -3097,7 +3208,7 @@ local function blackMeteorite(ctx)
 	fx(ctx, "BlackMeteorite", "Impact", { position = impact, target = target })
 	c.ShakeArea(impact, 45, 0.6)
 	c.Hit(character, target, {
-		damage = if airborne then 7 else 9,
+		damage = if airborne then 4 else 6, -- plus the seize and the vortex's three
 		stun = 1,
 		attackType = "Melee",
 		unblockable = true,
@@ -3608,7 +3719,7 @@ return Kit
           </Properties>
         </Item>
       </Item>
-      <Item class="ModuleScript" referent="21">
+      <Item class="ModuleScript" referent="22">
         <Properties>
           <string name="Name">Projectile</string>
           <string name="Source"><![CDATA[--[[
@@ -3704,7 +3815,7 @@ return Projectile
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="22">
+      <Item class="ModuleScript" referent="23">
         <Properties>
           <string name="Name">Ragdoll</string>
           <string name="Source"><![CDATA[--[[
@@ -3998,16 +4109,16 @@ return Ragdoll
       </Item>
     </Item>
   </Item>
-  <Item class="StarterPlayer" referent="23">
+  <Item class="StarterPlayer" referent="24">
     <Properties>
       <string name="Name">StarterPlayer</string>
       <bool name="EnableMouseLockOption">false</bool>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="24">
+    <Item class="StarterPlayerScripts" referent="25">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="LocalScript" referent="25">
+      <Item class="LocalScript" referent="26">
         <Properties>
           <string name="Name">Client</string>
           <string name="Source"><![CDATA[--[[
@@ -4038,7 +4149,7 @@ ShiftLock.Start()
 TopBar.Start()
 ]]></string>
         </Properties>
-        <Item class="ModuleScript" referent="26">
+        <Item class="ModuleScript" referent="27">
           <Properties>
             <string name="Name">CameraShake</string>
             <string name="Source"><![CDATA[--[[
@@ -4104,7 +4215,7 @@ return CameraShake
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="27">
+        <Item class="ModuleScript" referent="28">
           <Properties>
             <string name="Name">Cinematic</string>
             <string name="Source"><![CDATA[--[[
@@ -4333,7 +4444,7 @@ return Cinematic
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="28">
+        <Item class="ModuleScript" referent="29">
           <Properties>
             <string name="Name">HUD</string>
             <string name="Source"><![CDATA[--[[
@@ -4771,7 +4882,7 @@ return HUD
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="29">
+        <Item class="ModuleScript" referent="30">
           <Properties>
             <string name="Name">Input</string>
             <string name="Source"><![CDATA[--[[
@@ -4956,7 +5067,7 @@ local function tryM1()
 	-- Step into the swing a little so strings stay connected.
 	local look = root.CFrame.LookVector
 	local forward = Vector3.new(look.X, 0, look.Z).Unit
-	Impulse.Apply(root, forward * Config.M1.LungeSpeed, Config.M1.LungeTime, "Lunge")
+	Impulse.Apply(root, forward * Config.M1.LungeSpeed, Config.M1.LungeTime, "Lunge", 0.6)
 end
 
 local function performDash(direction: string)
@@ -5200,7 +5311,10 @@ function Input.Start()
 		if not (character and humanoid and root) or typeof(velocity) ~= "Vector3" or type(duration) ~= "number" then
 			return
 		end
-		local mover = Impulse.Apply(root, velocity, math.clamp(duration, 0, 1), "Knockback")
+		-- Plain knockback eases out; dives and steered pushes keep their speed.
+		local plain = type(options) ~= "table"
+		local mover =
+			Impulse.Apply(root, velocity, math.clamp(duration, 0, 1), "Knockback", if plain then 0.45 else nil)
 		-- Dives (air Bull Thrust, the Meteorite slam, Plunge): once we touch down,
 		-- stop pushing into the floor and carry on as a skid.
 		if type(options) == "table" and options.landStop == true and velocity.Y < 0 then
@@ -5238,11 +5352,11 @@ return Input
 ]]></string>
           </Properties>
         </Item>
-        <Item class="Folder" referent="30">
+        <Item class="Folder" referent="31">
           <Properties>
             <string name="Name">Kits</string>
           </Properties>
-          <Item class="ModuleScript" referent="31">
+          <Item class="ModuleScript" referent="32">
             <Properties>
               <string name="Name">AntiMagic</string>
               <string name="Source"><![CDATA[--[[
@@ -5260,6 +5374,7 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local BlackMoon = require(ReplicatedStorage:WaitForChild("Shared").BlackMoon)
+local MeteorVortex = require(ReplicatedStorage:WaitForChild("Shared").MeteorVortex)
 
 local CameraShake = require(script.Parent.Parent.CameraShake)
 local Cinematic = require(script.Parent.Parent.Cinematic)
@@ -6857,32 +6972,112 @@ function handlers.BlackMeteorite(data, character, root)
 				CameraShake.Add(0.2)
 			end
 		end)
-	elseif phase == "Rise" then
-		play(character, ANIMS.MeteorRise)
+	elseif phase == "Vortex" then
+		-- The vortex: he whirls round with them held out, bobbing up and down
+		-- as it carries them into the sky (Shared/MeteorVortex).
+		play(character, ANIMS.MeteorSpin)
 		local target = data.target
-		local feet = feetOf(character, root)
+		local air = data.airborne == true
+		local length = MeteorVortex.Length
+		if typeof(data.origin) == "CFrame" then
+			local origin: CFrame = data.origin
+			local top = if type(data.top) == "number" then data.top else MeteorVortex.Top
+			local start = os.clock()
+			local bind = "CloverVortex" .. tostring(start)
+			-- After shift lock and the camera, so the path has the last word.
+			RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
+				local t = os.clock() - start
+				if t >= length or not root.Parent then
+					RunService:UnbindFromRenderStep(bind)
+					return
+				end
+				root.CFrame = MeteorVortex.At(origin, t, top)
+			end)
+		end
 
 		-- Take-off: the ground blows out under them.
-		U.flash(feet + UP, BLACK, 9, 0.25)
-		U.shockwave(feet, RED, 2, 14, 0.35)
-		U.ringBurst(CFrame.new(feet + UP * 0.15), BLACK, 1, 10, 0.35, 0.45)
-		task.delay(0.04, U.ringBurst, CFrame.new(feet + UP * 0.2), RED, 0.8, 7, 0.3, 0.2)
-		U.groundCracks(feet, 7, 6, RED, 2)
-		U.groundRocks(feet, 8, 3, 1.6)
-		U.debris(feet, 8, 38, 1)
-		blackSmoke(feet + UP * 0.5, 16, 3.5, 18)
-		U.pillar(feet, BLACK, 1.6, 18, 0.45, Enum.Material.SmoothPlastic, 0.2)
-		U.light(feet, RED, 8, 18, 0.35)
+		local ground = U.groundBelow(root.Position, { character })
+		if ground and not air then
+			local feet = ground.Position
+			U.flash(feet + UP, BLACK, 9, 0.25)
+			U.shockwave(feet, RED, 2, 14, 0.35)
+			U.ringBurst(CFrame.new(feet + UP * 0.15), BLACK, 1, 12, 0.35, 0.45)
+			task.delay(0.04, U.ringBurst, CFrame.new(feet + UP * 0.2), RED, 0.8, 8, 0.3, 0.2)
+			U.groundCracks(feet, 8, 6, RED, 2)
+			U.groundRocks(feet, 8, 3, 1.6)
+			U.debris(feet, 8, 38, 1)
+			blackSmoke(feet + UP * 0.5, 16, 3.5, 18)
+			U.light(feet, RED, 8, 18, 0.35)
+		else
+			U.flash(root.Position, BLACK, 8, 0.25)
+			U.ringBurst(CFrame.new(root.Position), BLACK, 1, 10, 0.35, 0.4)
+		end
 
-		-- Rocketing up together: trails, spiralling anti-magic, speed lines.
-		U.bodyTrail(character, BLACK, 0.55)
-		U.bodyTrail(target, DARK_RED, 0.55)
-		U.spiral(root, BLACK, 3.2, 3, 0.5, 3, 0.55, 0.3)
-		U.spiral(root, RED, 2.6, 3, 0.5, 2, 0.22, 0.3)
-		U.speedLines(root, UP, 0.4)
+		-- The vortex itself: spirals, swirling smoke, the blade's circles,
+		-- rings of wind and lightning crawling round them.
+		U.bodyTrail(character, BLACK, length)
+		U.bodyTrail(target, DARK_RED, length)
+		U.spiral(root, BLACK, 4.8, 3, length, 5, 0.9, 0.15)
+		U.spiral(root, RED, 3.8, 3, length, 3, 0.3, 0.15)
+		partEmitter(root, {
+			Texture = U.textures.Smoke,
+			Color = ColorSequence.new(BLACK),
+			LightEmission = 0,
+			Size = NumberSequence.new(1.8, 4.5),
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.35),
+				NumberSequenceKeypoint.new(1, 1),
+			}),
+			Lifetime = NumberRange.new(0.4, 0.7),
+			Rate = 110,
+			Speed = NumberRange.new(6, 14),
+			SpreadAngle = Vector2.new(180, 30),
+			Rotation = NumberRange.new(0, 360),
+			RotSpeed = NumberRange.new(-360, 360),
+		}, length)
+		crackle(root, length, 0.08, 5)
+		for turn = 0, MeteorVortex.Turns - 1 do
+			-- A full circle of steel each time round (faster in the middle).
+			local at = length * (0.18 + turn * 0.27)
+			task.delay(at, function()
+				if character.Parent then
+					crescent(character, {
+						center = CFrame.new(0, 0.2, 0),
+						radius = 6,
+						from = 90,
+						to = 450,
+						tilt = 0,
+						width = 1.6,
+						sweep = 0.16,
+						fade = 0.22,
+					})
+				end
+			end)
+		end
+		for i = 0, math.floor(length / 0.1) - 1 do
+			task.delay(i * 0.1, function()
+				if not character.Parent then
+					return
+				end
+				local here = root.Position
+				U.ringBurst(CFrame.new(here - UP * 1.5), if i % 2 == 0 then BLACK else RED, 3, 9, 0.25, 0.25)
+				if i % 3 == 0 then
+					blackLightning(here, 2, 5, 0.15)
+				end
+				-- The ground below gets torn up into the vortex.
+				local below = if not air then U.groundBelow(here, { character }, 40) else nil
+				if below and i % 2 == 0 then
+					U.ringBurst(CFrame.new(below.Position + UP * 0.2), BLACK, 4, 12, 0.3, 0.35)
+					U.debris(below.Position, 3, 30, 0.8)
+				end
+				if U.isLocal(character) then
+					CameraShake.Add(0.05)
+				end
+			end)
+		end
 
 		-- At the top: the blade drinks in anti-magic before the slam.
-		task.delay(0.36, function()
+		task.delay(MeteorVortex.Length - 0.3, function()
 			if not character.Parent then
 				return
 			end
@@ -10213,7 +10408,7 @@ end)
 return Kit
 ]]></string>
             </Properties>
-            <Item class="ModuleScript" referent="32">
+            <Item class="ModuleScript" referent="33">
               <Properties>
                 <string name="Name">Animations</string>
                 <string name="Source"><![CDATA[--[[
@@ -10475,6 +10670,7 @@ Animations.Air = {
 
 -- M1 1: right to left horizontal slash.
 Animations.Slash1 = {
+	fadeIn = 0.07,
 	fadeOut = 0.22,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -10552,6 +10748,7 @@ Animations.Slash1 = {
 
 -- M1 2: backhand, left to right.
 Animations.Slash2 = {
+	fadeIn = 0.07,
 	fadeOut = 0.22,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -10629,6 +10826,7 @@ Animations.Slash2 = {
 
 -- M1 3: rising diagonal.
 Animations.Slash3 = {
+	fadeIn = 0.07,
 	fadeOut = 0.22,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -10706,6 +10904,7 @@ Animations.Slash3 = {
 
 -- Finisher: huge horizontal cleave that wraps around the body.
 Animations.Cleave = {
+	fadeIn = 0.1,
 	fadeOut = 0.28,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -10783,6 +10982,7 @@ Animations.Cleave = {
 
 -- Finisher (jump held): rising vertical slash.
 Animations.Rising = {
+	fadeIn = 0.1,
 	fadeOut = 0.28,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -10860,6 +11060,7 @@ Animations.Rising = {
 
 -- Finisher (airborne): two-handed overhead chop.
 Animations.Chop = {
+	fadeIn = 0.07,
 	fadeOut = 0.28,
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
 	keys = {
@@ -12555,6 +12756,97 @@ Animations.MeteorRise = {
 			},
 			"Sine",
 			"InOut",
+		},
+	},
+}
+
+-- Black Meteorite: whirling round in the vortex with them held out, then the sword up for the slam.
+Animations.MeteorSpin = {
+	fadeIn = 0.08,
+	fadeOut = 0.1,
+	delays = { Sword = 0.04, Head = 0.02 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-12, 10),
+				Head = rot(8, -6),
+				RightArm = limb(-10, -10, 30),
+				Sword = aim(0.3, 0.2, 0.93),
+				LeftArm = limb(122, -6),
+				RightLeg = rot(-10),
+				LeftLeg = rot(12),
+			},
+		},
+		{
+			0.15,
+			{
+				Torso = rot(10, 8),
+				Head = rot(-6, -6),
+				RightArm = limb(86, -84),
+				Sword = aim(0.996, -0.071, 0.052),
+				LeftArm = limb(100, -6),
+				RightLeg = rot(24),
+				LeftLeg = rot(-10),
+			},
+			"Quad",
+			"Out",
+		},
+		{
+			0.45,
+			{
+				Torso = rot(6, 8),
+				Head = rot(-6, -6),
+				RightArm = limb(86, -84),
+				Sword = aim(0.996, -0.067, 0.057),
+				LeftArm = limb(100, -6),
+				RightLeg = rot(38),
+				LeftLeg = rot(-24),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.75,
+			{
+				Torso = rot(10, 8),
+				Head = rot(-6, -6),
+				RightArm = limb(86, -84),
+				Sword = aim(0.996, -0.071, 0.052),
+				LeftArm = limb(100, -6),
+				RightLeg = rot(18),
+				LeftLeg = rot(-4),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.95,
+			{
+				Torso = rot(14, 5),
+				Head = rot(-12),
+				RightArm = limb(165, 15),
+				Sword = aim(0.15, 0.55, 0.82),
+				LeftArm = limb(108, -5),
+				RightLeg = rot(-25),
+				LeftLeg = rot(35),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			1.2,
+			{
+				Torso = rot(24),
+				Head = rot(-18),
+				RightArm = limb(178, 10),
+				Sword = aim(0.1, 0.2, 0.97),
+				LeftArm = limb(100, -5),
+				RightLeg = rot(-15),
+				LeftLeg = rot(30),
+			},
+			"Quad",
+			"Out",
 		},
 	},
 }
@@ -14814,7 +15106,7 @@ return Animations
             </Item>
           </Item>
         </Item>
-        <Item class="ModuleScript" referent="33">
+        <Item class="ModuleScript" referent="34">
           <Properties>
             <string name="Name">M1Animations</string>
             <string name="Source"><![CDATA[--[[
@@ -15202,7 +15494,7 @@ return M1Animations
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="34">
+        <Item class="ModuleScript" referent="35">
           <Properties>
             <string name="Name">Moves</string>
             <string name="Source"><![CDATA[--[[
@@ -15580,7 +15872,7 @@ return Moves
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="35">
+        <Item class="ModuleScript" referent="36">
           <Properties>
             <string name="Name">PoseAnimator</string>
             <string name="Source"><![CDATA[--[[
@@ -16140,7 +16432,7 @@ return PoseAnimator
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="36">
+        <Item class="ModuleScript" referent="37">
           <Properties>
             <string name="Name">Reactions</string>
             <string name="Source"><![CDATA[--[[
@@ -16369,7 +16661,7 @@ return Reactions
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="37">
+        <Item class="ModuleScript" referent="38">
           <Properties>
             <string name="Name">ShiftLock</string>
             <string name="Source"><![CDATA[--[[
@@ -16530,7 +16822,7 @@ return ShiftLock
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="38">
+        <Item class="ModuleScript" referent="39">
           <Properties>
             <string name="Name">TopBar</string>
             <string name="Source"><![CDATA[--[[
@@ -16820,7 +17112,7 @@ return TopBar
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="39">
+        <Item class="ModuleScript" referent="40">
           <Properties>
             <string name="Name">VFX</string>
             <string name="Source"><![CDATA[--[[
@@ -18189,13 +18481,13 @@ return VFX
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="40">
+  <Item class="Workspace" referent="41">
     <Properties>
       <string name="Name">Workspace</string>
       <float name="Gravity">225</float>
       <bool name="NeedsPivotMigration">false</bool>
     </Properties>
-    <Item class="Part" referent="41">
+    <Item class="Part" referent="42">
       <Properties>
         <string name="Name">Baseplate</string>
         <bool name="Anchored">true</bool>
@@ -18214,7 +18506,7 @@ return VFX
         </Vector3>
       </Properties>
     </Item>
-    <Item class="SpawnLocation" referent="42">
+    <Item class="SpawnLocation" referent="43">
       <Properties>
         <string name="Name">SpawnLocation</string>
         <bool name="Anchored">true</bool>

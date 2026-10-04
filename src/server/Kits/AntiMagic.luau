@@ -29,6 +29,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BlackMoon = require(ReplicatedStorage:WaitForChild("Shared").BlackMoon)
+local MeteorVortex = require(ReplicatedStorage:WaitForChild("Shared").MeteorVortex)
 local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
 local Projectile = require(script.Parent.Parent.Projectile)
 
@@ -560,10 +561,11 @@ end
 -- the server's hitboxes see; every client pins them to the actual hand.
 local FACING = CFrame.Angles(0, math.pi, 0)
 local HOLD_SEIZE = CFrame.new(-1.6, 0.35, -1.75) * FACING
-local HOLD_RISE = CFrame.new(-1.5, 0.4, -1.7) * FACING
 -- Kept level with him server-side so they never end up under the floor on
 -- landing; clients show them driven down in front of him.
 local HOLD_SLAM = CFrame.new(-1.3, 0, -1.8) * FACING
+-- Held out at arm's length while he spins them round.
+local HOLD_SPIN = CFrame.new(-1.7, 0.5, -2.3) * FACING
 
 -- Seizes `target` by the throat with his free hand. Grabs can't be
 -- blocked, but counters and i-frames still beat them, and leave him open
@@ -672,17 +674,18 @@ local function reachGrab(ctx, grabTime: number): (Model?, (() -> ())?, ((CFrame)
 end
 
 -- The grab. His free hand shoots out (no dash), seizes them by the throat
--- and hoists them up while anti-magic surges through them, then he leaps
--- into the sky with them and comes down like a meteor. In the air: hangs
--- there, seizes whoever is in front of him and spikes them straight into
--- the ground.
+-- and hoists them up while anti-magic surges through them. Then a vortex:
+-- he whirls round with them held out, bobbing up and down as it carries
+-- them into the sky (Shared/MeteorVortex), and slams them down like a
+-- meteor. In the air: hangs there, seizes whoever is in front of him and
+-- does the same from where he is, with a shorter climb.
 local SEIZE_TIME = 0.4 -- the Seize animation's hoist
 local SURGE_AT = 0.2
 
 local function blackMeteorite(ctx)
 	local c, character = ctx.combat, ctx.character
 	local airborne = ctx.airborne
-	local target, release, hold = reachGrab(ctx, if airborne then 1.5 else 2.1)
+	local target, release, hold = reachGrab(ctx, (if airborne then 0.3 else SEIZE_TIME) + MeteorVortex.Length + 1)
 	if not target or not release or not hold then
 		return
 	end
@@ -705,12 +708,34 @@ local function blackMeteorite(ctx)
 		return
 	end
 
-	if not airborne then
-		hold(HOLD_RISE)
-		fx(ctx, "BlackMeteorite", "Rise", { target = target })
-		c.ApplyVelocity(character, UP * 75 + forward * 6, 0.3)
-		task.wait(0.55)
+	-- The vortex: he's held on the shared path (every client draws the same).
+	CombatState.SetCasting(character, MeteorVortex.Length + 1)
+	hold(HOLD_SPIN)
+	local origin = CFrame.lookAt(ctx.root.Position, ctx.root.Position + forward)
+	local top = if airborne then MeteorVortex.AirTop else MeteorVortex.Top
+	fx(ctx, "BlackMeteorite", "Vortex", { target = target, origin = origin, top = top, airborne = airborne })
+	local stop = c.Cutscene({
+		[character] = function(t: number): CFrame
+			return MeteorVortex.At(origin, t, top)
+		end,
+	}, MeteorVortex.Length)
+	local spinStart = os.clock()
+	local ticks = 0
+	while os.clock() - spinStart < MeteorVortex.Length do
+		task.wait()
+		if interrupted(ctx) or not CombatState.IsAlive(target) then
+			stop()
+			release()
+			return
+		end
+		-- The vortex tears at them as it spins: three small hits.
+		local due = math.floor((os.clock() - spinStart) / (MeteorVortex.Length / 3))
+		if due > ticks and ticks < 3 then
+			ticks += 1
+			c.Hit(character, target, { damage = 1, stun = 1.5, attackType = "Melee", unblockable = true })
+		end
 	end
+	stop()
 
 	hold(HOLD_SLAM)
 	fx(ctx, "BlackMeteorite", "Slam", { target = target, airborne = airborne })
@@ -732,7 +757,7 @@ local function blackMeteorite(ctx)
 	fx(ctx, "BlackMeteorite", "Impact", { position = impact, target = target })
 	c.ShakeArea(impact, 45, 0.6)
 	c.Hit(character, target, {
-		damage = if airborne then 7 else 9,
+		damage = if airborne then 4 else 6, -- plus the seize and the vortex's three
 		stun = 1,
 		attackType = "Melee",
 		unblockable = true,

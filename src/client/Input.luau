@@ -180,7 +180,7 @@ local function tryM1()
 	-- Step into the swing a little so strings stay connected.
 	local look = root.CFrame.LookVector
 	local forward = Vector3.new(look.X, 0, look.Z).Unit
-	Impulse.Apply(root, forward * Config.M1.LungeSpeed, Config.M1.LungeTime, "Lunge")
+	Impulse.Apply(root, forward * Config.M1.LungeSpeed, Config.M1.LungeTime, "Lunge", 0.6)
 end
 
 local function performDash(direction: string)
@@ -424,7 +424,10 @@ function Input.Start()
 		if not (character and humanoid and root) or typeof(velocity) ~= "Vector3" or type(duration) ~= "number" then
 			return
 		end
-		local mover = Impulse.Apply(root, velocity, math.clamp(duration, 0, 1), "Knockback")
+		-- Plain knockback eases out; dives and steered pushes keep their speed.
+		local plain = type(options) ~= "table"
+		local mover =
+			Impulse.Apply(root, velocity, math.clamp(duration, 0, 1), "Knockback", if plain then 0.45 else nil)
 		-- Dives (air Bull Thrust, the Meteorite slam, Plunge): once we touch down,
 		-- stop pushing into the floor and carry on as a skid.
 		if type(options) == "table" and options.landStop == true and velocity.Y < 0 then
