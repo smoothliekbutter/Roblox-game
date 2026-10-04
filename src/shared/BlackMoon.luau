@@ -31,6 +31,7 @@ BlackMoon.Times = {
 }
 
 local UP = Vector3.yAxis
+local DRIFT = 1.2 -- studs a second they keep rising after the top
 
 export type Plan = {
 	origin: CFrame, -- his root at the throw, level
@@ -38,6 +39,7 @@ export type Plan = {
 	right: Vector3,
 	victimStart: Vector3,
 	apex: Vector3, -- where they hang in the sky
+	cut: Vector3, -- where they are when he passes through them
 	perch: Vector3, -- where he waits, in front of the moon
 	through: Vector3, -- direction of his flight
 	beyond: Vector3, -- where he stops after the cut
@@ -61,16 +63,20 @@ function BlackMoon.Plan(origin: CFrame, victimStart: Vector3): Plan
 	local level = CFrame.lookAt(origin.Position, origin.Position + forward)
 	local apex = origin.Position + forward * 5 + UP * 34
 	local perch = apex - forward * 22 - UP * 5 + right * 5
-	local through = (apex - perch).Unit
-	local beyond = apex + through * 14
-	local moonCamera = apex + (perch - apex) * 0.2 + right * 2.5 + UP * 0.8
-	local moon = perch + (perch - moonCamera).Unit * 280 + UP * 30
+	-- They keep drifting up while he hovers, so he aims where they'll be.
+	local cut = apex + UP * (BlackMoon.Times.Cut - BlackMoon.Times.Apex) * DRIFT
+	local through = (cut - perch).Unit
+	local beyond = cut + through * 14
+	-- The moon shot looks up at him from below, so the moon sits behind him.
+	local moonCamera = apex + (perch - apex) * 0.2 + right * 2.5 - UP * 7
+	local moon = perch + (perch - moonCamera).Unit * 280 + UP * 10
 	return {
 		origin = level,
 		forward = forward,
 		right = right,
 		victimStart = victimStart,
 		apex = apex,
+		cut = cut,
 		perch = perch,
 		through = through,
 		beyond = beyond,
@@ -117,7 +123,7 @@ function BlackMoon.Victim(plan: Plan, t: number): CFrame
 	elseif held < T.Apex then
 		p = plan.victimStart:Lerp(plan.apex, easeOut((held - T.Release) / (T.Apex - T.Release)))
 	else
-		p = plan.apex + UP * (held - T.Apex) * 1.2
+		p = plan.apex + UP * (held - T.Apex) * DRIFT
 	end
 	local tumble = math.max(held - T.Release, 0) * math.rad(110)
 	return CFrame.lookAt(p, p + facing) * CFrame.Angles(-tumble, 0, 0)
@@ -156,7 +162,7 @@ function BlackMoon.Camera(plan: Plan, t: number): (CFrame, number)
 		local eye = orbit(plan.perch, start, (t - T.Close) * 10 - 6)
 		return CFrame.lookAt(eye, attacker + UP * 1), 38
 	elseif t < T.Arrive then
-		local eye = plan.apex + plan.through * 10 + plan.right * 3 + UP * 1.5
+		local eye = plan.cut + plan.through * 10 + plan.right * 3 + UP * 1.5
 		return CFrame.lookAt(eye, plan.perch), 55
 	end
 	local start = plan.beyond + plan.through * 8 - plan.right * 2.5 + UP * 1

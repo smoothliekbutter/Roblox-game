@@ -102,7 +102,7 @@ local function isLocal(character: Model?): boolean
 	return character ~= nil and character == localPlayer.Character
 end
 
-local function groundBelow(position: Vector3, ignore: { Instance }?): RaycastResult?
+local function groundBelow(position: Vector3, ignore: { Instance }?, depth: number?): RaycastResult?
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	local filter: { Instance } = { fxFolder }
@@ -121,7 +121,7 @@ local function groundBelow(position: Vector3, ignore: { Instance }?): RaycastRes
 		end
 	end
 	params.FilterDescendantsInstances = filter
-	return workspace:Raycast(position + Vector3.new(0, 2, 0), Vector3.new(0, -14, 0), params)
+	return workspace:Raycast(position + Vector3.new(0, 2, 0), Vector3.new(0, -(depth or 14), 0), params)
 end
 
 type BurstOptions = {
@@ -659,9 +659,12 @@ end
 ]]
 local function debris(position: Vector3, count: number, speed: number, size: number)
 	local ground = groundBelow(position)
-	local color = if ground and ground.Instance:IsA("BasePart") then ground.Instance.Color else COLORS.Dust
-	local material = if ground then ground.Material else Enum.Material.Slate
-	local floorY = if ground then ground.Position.Y else position.Y - 3
+	if not ground then
+		return -- nothing to blast out of in mid-air
+	end
+	local color = if ground.Instance:IsA("BasePart") then ground.Instance.Color else COLORS.Dust
+	local material = ground.Material
+	local floorY = ground.Position.Y
 	local gravity = workspace.Gravity * 0.8
 
 	local chunks = {}

@@ -129,8 +129,11 @@ end
 ---------------------------------------------------------------------------
 
 local nights = 0
+-- The daylight to go back to. Kept until the fade back has finished, so a
+-- night that starts mid-fade doesn't take the half-dark sky for daylight.
 local saved: { [string]: any }? = nil
 local grade: ColorCorrectionEffect? = nil
+local generation = 0 -- bumped whenever a night starts or lifts
 
 -- Moonlit rather than pitch black: dark sky, but you can still read the fight.
 local NIGHT_LIGHTING = {
@@ -144,22 +147,28 @@ local NIGHT_LIGHTING = {
 function Cinematic.Night(fadeIn: number): (fadeOut: number?) -> ()
 	nights += 1
 	if nights == 1 then
+		generation += 1
 		local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
-		local before: { [string]: any } = {
-			ClockTime = Lighting.ClockTime,
-			Brightness = Lighting.Brightness,
-			Ambient = Lighting.Ambient,
-			OutdoorAmbient = Lighting.OutdoorAmbient,
-			ExposureCompensation = Lighting.ExposureCompensation,
-		}
+		if not saved then
+			local before: { [string]: any } = {
+				ClockTime = Lighting.ClockTime,
+				Brightness = Lighting.Brightness,
+				Ambient = Lighting.Ambient,
+				OutdoorAmbient = Lighting.OutdoorAmbient,
+				ExposureCompensation = Lighting.ExposureCompensation,
+			}
+			if atmosphere then
+				before.atmosphere = { Density = atmosphere.Density, Haze = atmosphere.Haze, Color = atmosphere.Color }
+			end
+			saved = before
+		end
 		if atmosphere then
-			before.atmosphere = { Density = atmosphere.Density, Haze = atmosphere.Haze, Color = atmosphere.Color }
 			-- A clear night: the moon shouldn't fade into the haze.
 			tween(atmosphere, fadeIn, { Density = 0.06, Haze = 0, Color = Color3.fromRGB(82, 90, 132) })
 		end
-		saved = before
 		tween(Lighting, fadeIn, NIGHT_LIGHTING, Enum.EasingStyle.Sine)
-		local effect = Instance.new("ColorCorrectionEffect")
+		-- Still fading out from the last night? Bring the same grade back.
+		local effect = if grade and grade.Parent then grade else Instance.new("ColorCorrectionEffect")
 		effect.Name = "CinematicNight"
 		effect.Parent = Lighting
 		tween(effect, fadeIn, {
@@ -183,7 +192,8 @@ function Cinematic.Night(fadeIn: number): (fadeOut: number?) -> ()
 		end
 		local duration = fadeOut or 1
 		local before = saved
-		saved = nil
+		generation += 1
+		local lifting = generation
 		local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
 		if atmosphere and before.atmosphere then
 			tween(atmosphere, duration, before.atmosphere)
@@ -192,11 +202,21 @@ function Cinematic.Night(fadeIn: number): (fadeOut: number?) -> ()
 		restore.atmosphere = nil
 		tween(Lighting, duration, restore, Enum.EasingStyle.Sine)
 		local effect = grade
-		grade = nil
 		if effect then
 			tween(effect, duration, { Saturation = 0, Contrast = 0, Brightness = 0, TintColor = Color3.new(1, 1, 1) })
-			task.delay(duration + 0.05, effect.Destroy, effect)
 		end
+		task.delay(duration + 0.05, function()
+			if generation ~= lifting then
+				return -- another night fell before this one finished lifting
+			end
+			saved = nil
+			if effect then
+				effect:Destroy()
+			end
+			if grade == effect then
+				grade = nil
+			end
+		end)
 	end
 end
 

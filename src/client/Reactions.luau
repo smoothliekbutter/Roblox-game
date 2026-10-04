@@ -214,7 +214,7 @@ do
 		}
 	end
 	local keys: { any } = { { 0, launched(0) } }
-	for i = 1, 12 do
+	for i = 1, 24 do -- long enough for the whole of Black Moon
 		table.insert(keys, { i * 0.25, launched(if i % 2 == 1 then 6 else -6), SINE, IN_OUT })
 	end
 	Reactions.Launched = clip(keys, { fadeIn = 0.1, fadeOut = 0.2 })

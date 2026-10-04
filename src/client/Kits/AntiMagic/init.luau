@@ -253,7 +253,7 @@ local function slashWave(data)
 
 	local frame = CFrame.lookAt(origin, origin + direction)
 	local holder = U.newPart({ Size = Vector3.one * 0.1, Transparency = 1, CFrame = frame })
-	local tilt = CFrame.Angles(0, 0, if grand then 0 else rad(-25))
+	local tilt = CFrame.Angles(0, 0, if grand then 0 else rad(25))
 	local bulge = width * 0.32
 
 	-- Points along the crescent: tips level with the holder, the middle
@@ -337,10 +337,8 @@ local function slashWave(data)
 	embers.Squash = NumberSequence.new(1.4)
 	embers.Parent = holder
 
-	-- Flying low: it carves a glowing groove behind it.
-	local floor = U.groundBelow(origin)
-	local low = floor ~= nil and origin.Y - floor.Position.Y < 4.5
-	local floorY = if floor then floor.Position.Y else 0
+	-- Flying low: it carves a glowing groove behind it, following the ground
+	-- (and leaving none where it passes over a drop).
 	local lastGroove = origin
 	local nextDust = 0
 
@@ -350,47 +348,51 @@ local function slashWave(data)
 		travelled += speed * dt
 		holder.CFrame = frame + direction * travelled
 		local here = holder.Position
-		if low and (here - lastGroove).Magnitude > 3 then
-			local a = Vector3.new(lastGroove.X, floorY + 0.05, lastGroove.Z)
-			local b = Vector3.new(here.X, floorY + 0.05, here.Z)
-			local length = (b - a).Magnitude
-			local look = CFrame.lookAt((a + b) / 2, b)
-			local groove = U.newPart({
-				Size = Vector3.new(0.9 * scale + 0.4, 0.06, length + 0.3),
-				CFrame = look,
-				Color = Color3.fromRGB(14, 13, 13),
-				Material = Enum.Material.SmoothPlastic,
-			})
-			local hot = U.newPart({
-				Size = Vector3.new(0.35 * scale + 0.15, 0.08, length + 0.3),
-				CFrame = look + Vector3.new(0, 0.01, 0),
-				Color = RED,
-			})
-			U.tween(hot, 0.8, { Transparency = 1, Size = Vector3.new(0.05, 0.08, length) })
-			task.delay(1.6, function()
-				U.tween(groove, 0.6, { Transparency = 1 })
-			end)
-			task.delay(2.3, function()
-				groove:Destroy()
-				hot:Destroy()
-			end)
+		if (here - lastGroove).Magnitude > 3 then
+			local floorA = U.groundBelow(lastGroove)
+			local floorB = U.groundBelow(here)
 			lastGroove = here
-			if travelled >= nextDust then
-				nextDust = travelled + (if grand then 6 else 9)
-				U.burst(b, {
-					texture = U.textures.Smoke,
-					color = Color3.fromRGB(150, 140, 130),
-					count = if grand then 5 else 3,
-					size = 2.5 * scale + 1,
-					speed = NumberRange.new(4, 10),
-					lifetime = NumberRange.new(0.4, 0.8),
-					lightEmission = 0,
-					transparency = 0.5,
-					drag = 3,
-					spread = 60,
+			if floorA and floorB and here.Y - floorB.Position.Y < 4.5 then
+				local a = floorA.Position + UP * 0.05
+				local b = floorB.Position + UP * 0.05
+				local length = (b - a).Magnitude
+				local look = CFrame.lookAt((a + b) / 2, b)
+				local groove = U.newPart({
+					Size = Vector3.new(0.9 * scale + 0.4, 0.06, length + 0.3),
+					CFrame = look,
+					Color = Color3.fromRGB(14, 13, 13),
+					Material = Enum.Material.SmoothPlastic,
 				})
-				if grand then
-					U.groundRocks(b, 4, 2, 1.3)
+				local hot = U.newPart({
+					Size = Vector3.new(0.35 * scale + 0.15, 0.08, length + 0.3),
+					CFrame = look + Vector3.new(0, 0.01, 0),
+					Color = RED,
+				})
+				U.tween(hot, 0.8, { Transparency = 1, Size = Vector3.new(0.05, 0.08, length) })
+				task.delay(1.6, function()
+					U.tween(groove, 0.6, { Transparency = 1 })
+				end)
+				task.delay(2.3, function()
+					groove:Destroy()
+					hot:Destroy()
+				end)
+				if travelled >= nextDust then
+					nextDust = travelled + (if grand then 6 else 9)
+					U.burst(b, {
+						texture = U.textures.Smoke,
+						color = Color3.fromRGB(150, 140, 130),
+						count = if grand then 5 else 3,
+						size = 2.5 * scale + 1,
+						speed = NumberRange.new(4, 10),
+						lifetime = NumberRange.new(0.4, 0.8),
+						lightEmission = 0,
+						transparency = 0.5,
+						drag = 3,
+						spread = 60,
+					})
+					if grand then
+						U.groundRocks(b, 4, 2, 1.3)
+					end
 				end
 			end
 		end
@@ -1808,20 +1810,33 @@ local function fissure(start: Vector3, direction: Vector3, length: number)
 	local floorY = ground.Position.Y
 	local flat = Vector3.new(direction.X, 0, direction.Z).Unit
 	local steps = math.floor(length / 3)
+	-- The ground under a point along the line (cast from above, so it climbs
+	-- slopes too); nil past a ledge, so the cracks stop at the edge.
+	local function floorAt(distance: number): Vector3?
+		local p = Vector3.new(start.X, floorY, start.Z) + flat * distance
+		local hit = U.groundBelow(p + UP * 3)
+		if not hit or hit.Position.Y < floorY - 4.5 then
+			return nil
+		end
+		return hit.Position + UP * 0.05
+	end
 	for i = 0, steps - 1 do
 		task.delay(i * 0.025, function()
-			local a = Vector3.new(start.X, floorY + 0.05, start.Z) + flat * (i * 3)
-			local b = a + flat * 3
+			local a, b = floorAt(i * 3), floorAt(i * 3 + 3)
+			if not (a and b) then
+				return
+			end
 			local look = CFrame.lookAt((a + b) / 2, b)
+			local segment = (b - a).Magnitude + 0.2
 			local width = 1.6 * (1 - i / steps) + 0.5
 			local crack = U.newPart({
-				Size = Vector3.new(width, 0.08, 3.2),
+				Size = Vector3.new(width, 0.08, segment),
 				CFrame = look,
 				Color = Color3.fromRGB(12, 11, 11),
 				Material = Enum.Material.SmoothPlastic,
 			})
 			local hot = U.newPart({
-				Size = Vector3.new(width * 0.45, 0.1, 3.2),
+				Size = Vector3.new(width * 0.45, 0.1, segment),
 				CFrame = look + Vector3.new(0, 0.01, 0),
 				Color = RED,
 			})
@@ -3371,30 +3386,34 @@ local function buildNightSetting(plan: BlackMoon.Plan): NightSetting
 		12
 	)
 
-	-- Mist creeping over the ground.
-	local ground = U.groundBelow(plan.origin.Position)
+	-- Mist creeping over the ground (if there's ground under the fight at all).
+	local ground = U.groundBelow(plan.origin.Position, nil, 300)
 	local floorY = if ground then ground.Position.Y else plan.origin.Position.Y - 3
-	local mistHolder =
-		holder(CFrame.new(plan.origin.Position.X, floorY + 0.5, plan.origin.Position.Z), Vector3.new(110, 1, 110))
-	local mist = Instance.new("ParticleEmitter")
-	mist.Texture = U.textures.Smoke
-	mist.Color = ColorSequence.new(Color3.fromRGB(150, 162, 200))
-	mist.LightEmission = 0.1
-	mist.LightInfluence = 0
-	mist.Size = NumberSequence.new(8, 16)
-	mist.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 1),
-		NumberSequenceKeypoint.new(0.3, 0.78),
-		NumberSequenceKeypoint.new(1, 1),
-	})
-	mist.Lifetime = NumberRange.new(3, 5)
-	mist.Rate = 20
-	mist.Speed = NumberRange.new(0.5, 1.5)
-	mist.EmissionDirection = Enum.NormalId.Top
-	mist.SpreadAngle = Vector2.new(70, 70)
-	mist.Rotation = NumberRange.new(0, 360)
-	mist.Parent = mistHolder
-	mist:Emit(25)
+	local groundMist: ParticleEmitter? = nil
+	if ground then
+		local mistHolder =
+			holder(CFrame.new(plan.origin.Position.X, floorY + 0.5, plan.origin.Position.Z), Vector3.new(110, 1, 110))
+		local mist = Instance.new("ParticleEmitter")
+		mist.Texture = U.textures.Smoke
+		mist.Color = ColorSequence.new(Color3.fromRGB(150, 162, 200))
+		mist.LightEmission = 0.1
+		mist.LightInfluence = 0
+		mist.Size = NumberSequence.new(8, 16)
+		mist.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.3, 0.78),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		mist.Lifetime = NumberRange.new(3, 5)
+		mist.Rate = 20
+		mist.Speed = NumberRange.new(0.5, 1.5)
+		mist.EmissionDirection = Enum.NormalId.Top
+		mist.SpreadAngle = Vector2.new(70, 70)
+		mist.Rotation = NumberRange.new(0, 360)
+		mist.Parent = mistHolder
+		mist:Emit(25)
+		groundMist = mist
+	end
 
 	-- Ash and embers drifting through the air around the fight.
 	local airHolder = holder(CFrame.new((plan.apex + plan.perch) / 2), Vector3.new(70, 40, 70))
@@ -3424,7 +3443,16 @@ local function buildNightSetting(plan: BlackMoon.Plan): NightSetting
 	embers.Acceleration = Vector3.new(0, 1.5, 0)
 	embers.SpreadAngle = Vector2.new(180, 180)
 	embers.Parent = airHolder
-	local emitters = { cloudFront, cloudLow, mist, ash, embers }
+	local emitters = { cloudFront, cloudLow, ash, embers }
+	if groundMist then
+		table.insert(emitters, groundMist)
+	end
+	-- Each emitter's own fade curve, so the live particles can fade with the night.
+	local baseFade: { { NumberSequenceKeypoint } } = {}
+	for i, emitter in emitters do
+		baseFade[i] = emitter.Transparency.Keypoints
+	end
+	local lastFade = -1
 
 	-- Rocks tearing loose from the ground and floating up.
 	type Rock = { part: BasePart, from: CFrame, rise: number, spin: Vector3 }
@@ -3432,7 +3460,7 @@ local function buildNightSetting(plan: BlackMoon.Plan): NightSetting
 	local rockColor = if ground and ground.Instance:IsA("BasePart")
 		then ground.Instance.Color
 		else Color3.fromRGB(90, 88, 85)
-	for i = 1, 14 do
+	for i = 1, if ground then 14 else 0 do
 		local angle = (i / 14) * math.pi * 2 + math.random() * 0.4
 		local distance = 9 + math.random() * 20
 		local size = 0.7 + math.random() * 1.6
@@ -3490,6 +3518,19 @@ local function buildNightSetting(plan: BlackMoon.Plan): NightSetting
 				rock.part.CFrame *= CFrame.Angles(rock.spin.X * t, rock.spin.Y * t, rock.spin.Z * t)
 				rock.part.Transparency = if visible > 0.02 then 0 else 1
 			end
+			-- Changing the curve fades particles already out there too, so no dark
+			-- clouds are left hanging in the daylight afterwards.
+			local fade = math.floor((1 - math.clamp(visible, 0, 1)) * 40 + 0.5) / 40
+			if fade ~= lastFade then
+				lastFade = fade
+				for i, emitter in emitters do
+					local points = {}
+					for j, point in baseFade[i] do
+						points[j] = NumberSequenceKeypoint.new(point.Time, point.Value + (1 - point.Value) * fade)
+					end
+					emitter.Transparency = NumberSequence.new(points)
+				end
+			end
 			for _, emitter in emitters do
 				emitter.Enabled = visible > 0.5 and not stopped
 			end
@@ -3498,6 +3539,7 @@ local function buildNightSetting(plan: BlackMoon.Plan): NightSetting
 			stopped = true
 			for _, emitter in emitters do
 				emitter.Enabled = false
+				emitter:Clear()
 			end
 			for _, rock in rocks do
 				U.tween(rock.part, 0.6, { CFrame = rock.from - UP * 1, Transparency = 1 })
@@ -3523,7 +3565,7 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 	local mine = U.isLocal(character) or U.isLocal(victim)
 	local myRoot = U.getRoot(Players.LocalPlayer.Character)
 	local nearby = mine or (myRoot ~= nil and (myRoot.Position - plan.origin.Position).Magnitude < 180)
-	local cutAt = BlackMoon.Victim(plan, T.Cut).Position
+	local cutAt = plan.cut
 
 	-- Runs `fn` at `time` seconds into the cutscene (if he's still around).
 	local function at(time: number, fn: () -> ())
@@ -3537,7 +3579,8 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 	-- Both of them on the shared paths (smooth on every screen), the moon
 	-- and the night around it.
 	local moon = buildMoon(plan.moonRadius)
-	local setting = buildNightSetting(plan)
+	-- The sky dressing only for people near enough to see the night fall.
+	local setting = if nearby then buildNightSetting(plan) else nil
 	local bind = "CloverBlackMoon" .. tostring(start)
 	local done = false
 	local function finish()
@@ -3547,7 +3590,9 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		done = true
 		RunService:UnbindFromRenderStep(bind)
 		moon.destroy()
-		setting.destroy()
+		if setting then
+			setting.destroy()
+		end
 	end
 	RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
 		local t = os.clock() - start
@@ -3559,7 +3604,7 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 				victimRoot.CFrame = BlackMoon.Victim(plan, t)
 			end
 		end
-		local visible = smoothstep((t - T.Night - 0.3) / 0.6) * (1 - smoothstep((t - T.Land - 0.3) / 1.2))
+		local visible = smoothstep((t - T.Night) / 0.6) * (1 - smoothstep((t - T.Land - 0.3) / 1.2))
 		local split = TweenService:GetValue(
 			math.clamp((t - T.Land) / 0.9, 0, 1),
 			Enum.EasingStyle.Quart,
@@ -3567,7 +3612,9 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		)
 		local scar = if t < T.Cut then 0 else math.min((t - T.Cut) / 0.08, 1) * (1 - smoothstep((t - T.Land) / 0.5))
 		moon.update(CFrame.lookAt(plan.moon, workspace.CurrentCamera.CFrame.Position), visible, split, scar, t * 0.05)
-		setting.update(t, visible)
+		if setting then
+			setting.update(t, visible)
+		end
 		if t > T.Land + 1.6 then
 			finish()
 		end
@@ -3655,9 +3702,11 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		U.ringBurst(CFrame.new(from), BLACK, 1, 9, 0.3, 0.35)
 		task.delay(0.04, U.ringBurst, CFrame.new(from + UP), RED, 0.8, 6, 0.25, 0.2)
 		local feet = feetOf(character, root)
-		U.groundCracks(feet, 7, 5, RED, 2)
-		U.debris(feet, 8, 30, 0.9)
-		blackSmoke(feet + UP * 0.4, 12, 3, 14)
+		if U.groundBelow(root.Position, { character }) then
+			U.groundCracks(feet, 7, 5, RED, 2)
+			U.debris(feet, 8, 30, 0.9)
+			blackSmoke(feet + UP * 0.4, 12, 3, 14)
+		end
 		if victimRoot then
 			trailEmitter(victimRoot, {
 				Texture = U.textures.Smoke,
@@ -3696,8 +3745,10 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		U.flash(feet + UP * 0.5, BLACK, 8, 0.22)
 		U.shockwave(feet, RED, 2, 12, 0.3)
 		U.ringBurst(CFrame.new(feet + UP * 0.15), BLACK, 1, 10, 0.32, 0.45)
-		U.debris(feet, 8, 36, 1)
-		blackSmoke(feet + UP * 0.4, 14, 3.2, 16)
+		if U.groundBelow(root.Position, { character }) then
+			U.debris(feet, 8, 36, 1)
+			blackSmoke(feet + UP * 0.4, 14, 3.2, 16)
+		end
 		U.bodyTrail(character, BLACK, 0.35)
 		for i = 0, 3 do
 			task.delay(i * 0.05, function()
@@ -3719,8 +3770,9 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		outline.OutlineColor = RED
 		outline.OutlineTransparency = 0.1
 		outline.DepthMode = Enum.HighlightDepthMode.Occluded
-		outline.Parent = U.folder
+		outline.Parent = character -- goes with him if he leaves mid-cutscene
 		silhouette = outline
+		task.delay(T.Fly - T.Perch + 0.1, outline.Destroy, outline)
 		-- Both wings out, wide open, beating slowly in front of the moon.
 		local visual = awakenedVisuals[character]
 		if visual then
@@ -3832,6 +3884,10 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 	-- The cut.
 	at(T.Cut, function()
 		PoseAnimator.Freeze(character, 0.1)
+		if victim then
+			-- They hang there, stopped mid-tumble, until the cut lands.
+			PoseAnimator.Freeze(victim, T.Land - T.Cut + 0.4)
+		end
 		flightStreak(plan.perch, plan.beyond)
 		U.flash(cutAt, WHITE, 8, 0.1)
 		U.flash(cutAt, BLACK, 12, 0.25)
