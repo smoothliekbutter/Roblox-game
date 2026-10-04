@@ -30,41 +30,85 @@ IDLE = [
     (2.6, idle_key((-6,-18), (5,16), 85, L(10,0,-14), R(-6,0,9), R(12,0,-10))),
 ]
 
-# Run and walk cycles. The phase follows the distance travelled (RUN_STRIDE
-# and WALK_STRIDE studs per loop, see Kit.Idle), so the feet stay planted at
-# any speed. Leg angles are against the leaning torso: a leg's angle in the
-# world is its own minus the lean, so the strides below swing evenly about
-# straight down. The free arm swings against the legs and the shoulders turn
-# with it; the head stays level and looking ahead. (Planting the feet drops
-# the body when the legs are apart, which gives the bob.)
-def run_key(torso, head, arm_pitch, larm, rleg, lleg):
-    t = R(*torso)
-    return {'Torso': t, 'Head': R(*head), 'RightArm': L(arm_pitch, 25, 10),
-            'Sword': torso_dir(t, SHOULDER), 'LeftArm': larm, 'RightLeg': R(rleg), 'LeftLeg': R(lleg)}
+# Run and walk cycles, built from smooth periodic curves and sampled densely
+# (played with linear easing, so nothing stalls at a keyframe). One loop is
+# two steps; phase 0 is the right leg passing under him on its way forward,
+# and walk and run share that phase so they blend into each other. Leg
+# angles are against the leaning torso: a leg's angle in the world is its
+# own minus the lean.
+#
+# The cadence comes from the swing (see Kit.Idle, moveStride/walkStride): a
+# foot passing under him sweeps back exactly as fast as he moves forward, so
+# it doesn't slide while it's down. That's about 11 studs per loop for the
+# sprint, like Roblox's own R6 run. (Stiff R6 legs that never leave the
+# ground only cover half that, which made him scurry.)
+from math import sin, cos, pi, radians
+TAU = 2 * pi
 
-# Sprint: leaning in hard, legs 46 degrees either side of straight down in
-# the world (lean 22), the sword steady on the shoulder.
-RUN_LEAN, RUN_SWING = 22, 46
-RUN_STRIDE = round(2 * 2 * 2 * __import__('math').sin(__import__('math').radians(RUN_SWING)), 2)
-RUN = [
-    (0.0, run_key((-RUN_LEAN, -8), (16, 8), 84, L(58, -6, -8), RUN_SWING + RUN_LEAN, -RUN_SWING + RUN_LEAN)),
-    (0.1, run_key((-RUN_LEAN - 2, 0), (18, 0), 88, L(8, -4, -10), RUN_LEAN - 2, RUN_LEAN + 8)),
-    (0.2, run_key((-RUN_LEAN, 8), (16, -8), 84, L(-42, 4, -12), -RUN_SWING + RUN_LEAN, RUN_SWING + RUN_LEAN)),
-    (0.3, run_key((-RUN_LEAN - 2, 0), (18, 0), 88, L(8, -4, -10), RUN_LEAN + 8, RUN_LEAN - 2)),
-    (0.4, run_key((-RUN_LEAN, -8), (16, 8), 84, L(58, -6, -8), RUN_SWING + RUN_LEAN, -RUN_SWING + RUN_LEAN)),
-]
+def _r(v): return round(v, 2)
 
-# Walk (when slowed: attacking, blocking, casting): upright, shorter steps,
-# same leg phase as the run so the two blend into each other.
-WALK_LEAN, WALK_SWING = 6, 32
-WALK_STRIDE = round(2 * 2 * 2 * __import__('math').sin(__import__('math').radians(WALK_SWING)), 2)
-WALK = [
-    (0.00, run_key((-WALK_LEAN, -4), (4, 4), 86, L(28, -6, -6), WALK_SWING + WALK_LEAN, -WALK_SWING + WALK_LEAN)),
-    (0.15, run_key((-WALK_LEAN + 1, 0), (3, 0), 87, L(4, -4, -8), WALK_LEAN + 2, WALK_LEAN + 6)),
-    (0.30, run_key((-WALK_LEAN, 4), (4, -4), 86, L(-20, 2, -10), -WALK_SWING + WALK_LEAN, WALK_SWING + WALK_LEAN)),
-    (0.45, run_key((-WALK_LEAN + 1, 0), (3, 0), 87, L(4, -4, -8), WALK_LEAN + 6, WALK_LEAN + 2)),
-    (0.60, run_key((-WALK_LEAN, -4), (4, 4), 86, L(28, -6, -6), WALK_SWING + WALK_LEAN, -WALK_SWING + WALK_LEAN)),
-]
+def stride(swing, reach):
+    return round(TAU * 2 * cos(radians(reach)) * radians(swing), 2)
+
+def cycle(pose, keys):
+    """One loop (1.0 long) of `pose(phase)`, `keys` evenly spaced keyframes."""
+    return [(round(i / keys, 4), pose(i / keys)) for i in range(keys + 1)]
+
+# Sprint: leaning in, the legs swinging 52 degrees either side of a point a
+# little forward of straight down, so the front leg drives up high and the
+# back one pushes off. The body is lowest just as each leg passes under it
+# (the moment its foot is down) and lifts between steps, a runner's bob. The
+# shoulders turn with the pumping free arm while the hips stay square (the
+# legs turn back against the torso), he rolls a touch over the leg that's
+# down, and the head stays level and looking ahead. The sword rides steady
+# on his shoulder with a small bounce.
+RUN_LEAN, RUN_SWING, RUN_REACH, RUN_LIFT = 17, 52, 7, 0.2
+RUN_STRIDE = stride(RUN_SWING, RUN_REACH)
+
+def run_lift(p):
+    return RUN_LIFT * (1 - cos(2 * TAU * p - 0.35)) / 2
+
+def run_pose(p, base=0.0):
+    s, bob = sin(TAU * p), cos(2 * TAU * p - 0.35)
+    twist, roll = -7 * s, 3 * cos(TAU * p)
+    torso = R(_r(-RUN_LEAN - 1.5 * (1 - bob) / 2), _r(twist), _r(roll))
+    return {
+        'Torso': ('body', _r(base + run_lift(p)), *torso[1:]),
+        'Head': R(_r(RUN_LEAN * 0.85 + bob), _r(-twist), _r(-roll)),
+        'RightArm': L(_r(86 + 3 * bob), 25, 10),
+        'Sword': torso_dir(torso, SHOULDER),
+        'LeftArm': L(_r(8 + 50 * s), _r(-10 * s), _r(-10 - 4 * s * s)),
+        'RightLeg': L(_r(RUN_REACH + RUN_SWING * s + RUN_LEAN), _r(-twist), _r(-0.6 * roll)),
+        'LeftLeg': L(_r(RUN_REACH - RUN_SWING * s + RUN_LEAN), _r(-twist), _r(-0.6 * roll)),
+    }
+
+# Body height where the foot that's down is flat on the floor (the bottom of
+# the bob, just after the passing pose).
+RUN_BASE = plant_pose(run_pose(0.35 / (2 * TAU)))['Torso'][1]
+RUN = cycle(lambda p: run_pose(p, RUN_BASE), 16)
+
+# Walk (when slowed: attacking, blocking, casting): upright, a shorter, easy
+# swing with the same phase as the run. Planted, so the body rides over each
+# step like a pendulum (high as a leg passes under him, low with both feet
+# down).
+WALK_LEAN, WALK_SWING, WALK_REACH = 5, 30, 3
+WALK_STRIDE = stride(WALK_SWING, WALK_REACH)
+
+def walk_pose(p):
+    s, c2 = sin(TAU * p), cos(2 * TAU * p)
+    twist, roll = -4 * s, 2 * cos(TAU * p)
+    torso = R(-WALK_LEAN, _r(twist), _r(roll))
+    return {
+        'Torso': torso,
+        'Head': R(_r(WALK_LEAN * 0.8 + 0.6 * c2), _r(-twist), _r(-roll)),
+        'RightArm': L(_r(86 + 1.5 * c2), 25, 10),
+        'Sword': torso_dir(torso, SHOULDER),
+        'LeftArm': L(_r(4 + 26 * s), _r(-6 * s), _r(-8 - 2 * s * s)),
+        'RightLeg': L(_r(WALK_REACH + WALK_SWING * s + WALK_LEAN), _r(-twist), _r(-0.6 * roll)),
+        'LeftLeg': L(_r(WALK_REACH - WALK_SWING * s + WALK_LEAN), _r(-twist), _r(-0.6 * roll)),
+    }
+
+WALK = cycle(walk_pose, 12)
 
 # In the air (jumping or falling): knee up, free arm out for balance.
 AIR = [
@@ -709,7 +753,9 @@ AIRBORNE = {'Air', 'Grabbed', 'Launched', 'MoonPerch', 'MoonFlight', 'Plunge', '
             'AirPropel', 'AirMeteorLunge', 'AirMeteorReach', 'AirSeize', 'AirDeflectStance'}
 PLANT_UNTIL = {'Leap': 0.1}
 UNPLANTED = dict(ALL)
-ALL = {name: keys if name in AIRBORNE else plant(keys, PLANT_UNTIL.get(name)) for name, keys in ALL.items()}
+# The run sets its own height (its bob lifts off the floor between steps).
+OWN_HEIGHT = {'Run'}
+ALL = {name: keys if name in AIRBORNE or name in OWN_HEIGHT else plant(keys, PLANT_UNTIL.get(name)) for name, keys in ALL.items()}
 
 if __name__ == '__main__':
     # Intentional floor contact: the air chop's tip grazes the floor, the

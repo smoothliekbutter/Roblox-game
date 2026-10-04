@@ -110,10 +110,11 @@ for name, raw in Generated do
 end
 
 -- Signature stance: wide footing, the greatsword resting on the right
--- shoulder, slow breathing. Sprints leaning in hard with the sword steady on
--- his shoulder, walks upright when slowed down; knee up and free arm out in
--- the air. The strides are how far one loop of each cycle carries him
--- (RUN_STRIDE / WALK_STRIDE in tools/anim/asta_anims.py).
+-- shoulder, slow breathing. Sprints leaning in with the sword riding on his
+-- shoulder, walks upright when slowed down; knee up and free arm out in the
+-- air. The strides are how far one loop (two steps) of each cycle carries
+-- him (RUN_STRIDE / WALK_STRIDE in tools/anim/asta_anims.py): the legs keep
+-- pace with the ground instead of scurrying.
 Kit.Idle = {
 	stand = ANIMS.Idle,
 	move = ANIMS.Run,
@@ -121,8 +122,8 @@ Kit.Idle = {
 	air = ANIMS.Air,
 	moveSpeed = 16,
 	walkSpeed = 8,
-	moveStride = 5.75,
-	walkStride = 4.24,
+	moveStride = 11.32,
+	walkStride = 6.57,
 }
 
 -- Getting hit / blocking, with the sword (see Client/Reactions for the names).
