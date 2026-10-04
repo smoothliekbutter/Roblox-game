@@ -36,7 +36,7 @@ With live sync, every code change shows up in Studio instantly, without re-downl
 
 | Input | Action |
 |---|---|
-| Left click (hold to chain) | M1 combo, 4 hits, a little over a third of a second apart. The 4th hit ragdolls and guard-breaks. |
+| Left click (hold to chain) | M1 combo, 4 hits, a little over a third of a second apart. The 4th hit ragdolls (it doesn't break a guard). |
 | Hold **Space** on the 4th hit | Uppercut finisher: a launcher. They go limp and tumble about 10 studs up on heavier gravity, so it snaps up and straight back down, and can still be hit on the way: let go of Space, jump after them and keep swinging (the 4th air hit is the downslam). Holding Space for the uppercut never makes you jump. Short recovery after it. |
 | 4th hit while in the air | Downslam finisher with a crater: 3 hits, jump, hit. The 3rd hit stuns long enough for it, the jump is free almost right away, and the swing reaches the ground below you |
 | **1 2 3 4** | Character skills. Most have an air version: use them mid-jump. |
@@ -63,7 +63,7 @@ A close-range rushdown character built like Vessel (Jujutsu Shenanigans) and Her
 | 3 | **Black Divider**: anti-magic streams into the blade, then a huge sweeping crescent cleave. Press **3** again on the red glint for a Perfect Divider: bigger cut, impact frame, and a black crescent that keeps flying. **Air:** hangs in the air while charging, then front-flips the blade down onto whoever's below and spikes them into the ground. It reaches all the way down and also hits people lying on the floor. The ground version can't hit downed players, but hits harder. | **Grand Divider**: he raises the sword to the sky and a giant blade of anti-magic grows out of it as pillars and lightning build. Then he brings it down in one guard-breaking cleave that splits the ground open in a fissure, and a giant wave rolls on. **Air:** a full front flip of the giant blade that cleaves down onto whoever's below, splitting the ground beneath. |
 | 4 | **Anti-Magic Deflect**: raises an anti-magic barrier on the blade that counters every attack type. Melee attackers get a frozen impact frame, then a diagonal slash that throws them aside. Projectiles get sent back. **Air:** hangs in the air with the guard up. | **Black Moon** (a roughly 6-second cutscene grab): a standing grab like Black Meteorite (no dash, his hand shoots out for whoever is right in front of him), seizes them by the throat and hurls them into the sky. Night falls, and he hovers in the sky in front of a giant moon, shadowed with a red rim (you can still see your avatar), both wings spread wide. Stars come out, clouds drift across the moon, mist creeps over the ground and rocks float up. He levels his sword at them, the blade catches the moonlight, then he flies straight through them in one backhand cut and stops past them, sword out at his side, everything freezes, and the cut lands: an X slash, the moon splits in half and they're cut down into a crater. The two players get a cinematic camera with letterbox bars; everyone nearby sees night fall. |
 | R | **Anti-Magic Leap**: blasts off the ground in a big steerable leap. Press **R** again in the air (or use it while already airborne) for **Meteor Plunge**: hangs for a beat, then dives behind the sword and stabs it into the ground, blasting everyone nearby away. | **Swap Sword**: the grimoire opens and he draws one of his other three swords at random (10s cooldown). The old sword dissolves into black smoke, the new one forms in his hand out of anti-magic and its name flashes up. Moves 1 and 2 change with it. Black Form always starts, and ends, with the Demon-Slayer Sword. |
-| G | **Black Form**: a 2-second transformation. Anti-magic gathers as the world darkens, then explodes into a black pillar that blows everyone away, and he drops into his stance. For 40s you get +25% damage, more speed and new moves, plus the look: black flames, a horn, a black arm and sword, and a devil wing with its own idle (it breathes, stretches, tucks back when you run and beats in the air). His grimoire comes out and circles him, open, its pages fluttering, for as long as Black Form lasts. | |
+| G | **Black Form**: a 2-second transformation. Anti-magic gathers as the world darkens, then explodes into a black pillar that blows everyone away, and he drops into his stance. For 55s you get +25% damage, more speed and new moves, plus the look: black flames, a horn, a black arm and sword, and a devil wing with its own idle (it breathes, stretches, tucks back when you run and beats in the air). His grimoire comes out and circles him, open, its pages fluttering, for as long as Black Form lasts. | |
 
 #### Black Form swords (R)
 
@@ -84,24 +84,24 @@ Everyone has 100 HP.
 
 | Move | Damage | Cooldown | Notes |
 |---|---|---|---|
-| M1 string | 4 / 4 / 4 / 6 | | 4th hit ragdolls and guard-breaks |
-| Bull Thrust | 11.5 (2 + 1.5 + 1.5 + 1.5 + 2 + 3), air landing slam 6 AoE | 8s | Blockable. Combo starter. Long recovery if it whiffs. The air landing slam guard-breaks and ragdolls everyone within about 11 studs. |
+| M1 string | 4 / 4 / 4 / 6 | | 4th hit ragdolls; blocking stops it |
+| Bull Thrust | 11.5 (2 + 1.5 + 1.5 + 1.5 + 2 + 3), air landing slam 6 AoE | 10s | Blockable. Combo starter. Long recovery if it whiffs. The air landing slam guard-breaks and ragdolls everyone within about 11 studs. |
 | Black Meteorite | 12 (1 + 2 + 3 in the vortex + 6), air 10 | 13s | Unblockable standing grab, no dash: about 0.16s startup, reaches about 6 studs. Counters and i-frames beat it. Long recovery if it whiffs. |
 | Black Divider | 11, perfect 17 (air 7 / 12) | 11s | Normal guard-breaks, perfect is unblockable. The air version reaches the ground below and also hits people lying on the floor; the ground version can't, but hits harder |
 | Anti-Magic Deflect | 7 counter, 6 reflected | 14s | 0.65s window. Long recovery if nothing hits it. |
 | Anti-Magic Leap (R) | 5 AoE plunge | 10s | Blockable |
-| Black Form (G) | ×1.2 damage | ×0.85 cooldowns | +6 speed for 40s. About 90 damage dealt to charge. |
+| Black Form (G) | ×1.25 damage | ×0.8 cooldowns | +6 speed for 55s. About 90 damage dealt to charge. |
 | Swap Sword (R in Black Form) | | 10s | Random other sword; per-slot cooldowns carry over |
 | Black Hurricane (Slayer) | up to 9 + 5 | 9s | |
 | Slayer Recall (Slayer) | 8 out, 6 back | 12s | The return drags them to him |
 | Black Slash (Dweller) | 9 | 7s | Piercing projectile |
-| Conquering Eon (Dweller) | 2 siphon, then 6 + 2 per charge | 15s | Absorbs spells; up to 4 charges; guard-breaks at 3 or more |
-| Causality Break (Destroyer) | 8 | 15s | Unblockable; 4 closest within 18 studs; clears their counters and guard |
-| Severance (Destroyer) | 10 | 12s | Seals all their moves for 3s |
-| Infinite Slash (Slasher) | 9 | 13s | Unblockable line, up to 60 studs |
-| Zetten (Slasher) | 13 (6 if nobody moves) | 16s | Counter stance: reacts to skills within 20 studs and melee hits |
+| Conquering Eon (Dweller) | 2 siphon, then 8 + 2 per charge | 15s | Absorbs spells; up to 4 charges; guard-breaks at 3 or more |
+| Causality Break (Destroyer) | 10 | 15s | Unblockable; 4 closest within 18 studs; clears their counters and guard |
+| Severance (Destroyer) | 11 | 12s | Seals all their moves for 3s |
+| Infinite Slash (Slasher) | 11 | 13s | Unblockable line, up to 60 studs |
+| Zetten (Slasher) | 15 (7 if nobody moves) | 16s | Counter stance: reacts to skills within 20 studs and melee hits |
 | Grand Divider | 10 + 9 wave | 13s | Guard-breaks. The wave skips whoever the slash hit. |
-| Black Moon | 21 (1 + 2 + 18) | 25s | Unblockable cutscene grab. Asta can't be hit while it plays. |
+| Black Moon | 29 (1 + 3 + 25) | 25s | Unblockable cutscene grab. Asta can't be hit while it plays. |
 
 #### Animations
 

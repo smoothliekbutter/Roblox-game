@@ -1701,9 +1701,6 @@ function handlers.BlackMeteorite(data, character, root)
 			end)
 		end
 		U.light(root.Position, RED, 3, 10, 0.45)
-		if U.isLocal(character) then
-			CameraShake.FovKick(-5)
-		end
 	elseif phase == "Whiff" then
 		-- Nobody there: the hand closes on nothing and the anti-magic
 		-- gutters out of it.
@@ -1735,7 +1732,6 @@ function handlers.BlackMeteorite(data, character, root)
 		local air = data.airborne == true
 		play(character, if air then ANIMS.AirSeize else ANIMS.Seize)
 		local target = data.target
-		local mine = involves(data, character)
 		task.delay(0.07, function()
 			local at = gripPoint(character)
 			if not at or not character.Parent then
@@ -1755,10 +1751,6 @@ function handlers.BlackMeteorite(data, character, root)
 				U.ringBurst(CFrame.new(feetOf(character, root) + UP * 0.1), BLACK, 0.8, 5, 0.25, 0.2)
 			end
 			blackLightning(at, 3, 2.5, 0.2)
-			if mine then
-				CameraShake.Add(0.25)
-				CameraShake.FovKick(-6)
-			end
 		end)
 		-- The surge (it lands with the server's 2-damage hit).
 		task.delay(0.2, function()
@@ -1777,9 +1769,6 @@ function handlers.BlackMeteorite(data, character, root)
 			U.light(targetRoot.Position, RED, 9, 14, 0.3)
 			for _ = 1, 4 do
 				inflow(at, 3.5)
-			end
-			if mine then
-				CameraShake.Add(0.2)
 			end
 		end)
 	elseif phase == "Vortex" then
@@ -1882,9 +1871,6 @@ function handlers.BlackMeteorite(data, character, root)
 					U.ringBurst(CFrame.new(below.Position + UP * 0.2), BLACK, 4, 12, 0.3, 0.35)
 					U.debris(below.Position, 3, 30, 0.8)
 				end
-				if U.isLocal(character) then
-					CameraShake.Add(0.05)
-				end
 			end)
 		end
 
@@ -1908,10 +1894,6 @@ function handlers.BlackMeteorite(data, character, root)
 				end
 			end
 		end)
-		if involves(data, character) then
-			CameraShake.Add(0.3)
-			CameraShake.FovKick(10)
-		end
 	elseif phase == "Slam" then
 		-- Over the top and down head-first, spinning like a drill (the TSB
 		-- "Head First" dive), the meteor's tail streaming up behind them.
@@ -1977,9 +1959,6 @@ function handlers.BlackMeteorite(data, character, root)
 				end
 			end)
 		end
-		if U.isLocal(character) then
-			CameraShake.FovKick(12)
-		end
 	elseif phase == "Impact" then
 		local position: Vector3 = data.position
 		-- (He rolls back over onto his feet: the end of the shared path.)
@@ -2028,7 +2007,6 @@ function handlers.BlackMeteorite(data, character, root)
 		end
 		if involves(data, character) then
 			impactFrame()
-			CameraShake.FovKick(14)
 		end
 	end
 end

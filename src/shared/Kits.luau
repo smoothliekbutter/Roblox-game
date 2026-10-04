@@ -92,7 +92,7 @@ Kits.List = {
 		-- Close-range rushdown, built like Vessel (JJS) / Hero Hunter (TSB):
 		-- rush combo, grab, timing-crit heavy, counter.
 		skills = {
-			{ name = "Bull Thrust", cooldown = 8, type = "Melee", airHold = true },
+			{ name = "Bull Thrust", cooldown = 10, type = "Melee", airHold = true },
 			{ name = "Black Meteorite", cooldown = 13, type = "Melee", airHold = true },
 			{ name = "Black Divider", cooldown = 11, type = "Melee", airHold = true },
 			{ name = "Anti-Magic Deflect", cooldown = 14, type = "Counter", airHold = true },
@@ -140,9 +140,9 @@ Kits.List = {
 		},
 		awakening = {
 			name = "Black Form",
-			duration = 40,
-			damageMultiplier = 1.2,
-			cooldownMultiplier = 0.85,
+			duration = 55,
+			damageMultiplier = 1.25,
+			cooldownMultiplier = 0.8,
 			speedBonus = 6,
 		},
 	} :: KitInfo,

@@ -1042,7 +1042,7 @@ local function blackMeteorite(ctx)
 		release()
 		return
 	end
-	c.Hit(character, target, { damage = 2, stun = 1.5, attackType = "Melee", unblockable = true })
+	c.Hit(character, target, { damage = 2, stun = 1.5, attackType = "Melee", unblockable = true, noShake = true })
 	task.wait(seize - SURGE_AT)
 	if interrupted(ctx) then
 		release()
@@ -1092,7 +1092,7 @@ local function blackMeteorite(ctx)
 		if not waitUntil(MeteorVortex.Length * tick / 3) then
 			return
 		end
-		c.Hit(character, target, { damage = 1, stun = 1.5, attackType = "Melee", unblockable = true })
+		c.Hit(character, target, { damage = 1, stun = 1.5, attackType = "Melee", unblockable = true, noShake = true })
 	end
 
 	-- Over the top and down, head-first, spinning.
@@ -1110,7 +1110,6 @@ local function blackMeteorite(ctx)
 	-- The client draws its own (much bigger) crater for this one.
 	local impact = Vector3.new(plan.diveEnd.X, floorY or (plan.diveEnd.Y - 3), plan.diveEnd.Z)
 	fx(ctx, "BlackMeteorite", "Impact", { position = impact, target = target, grounded = floorY ~= nil })
-	c.ShakeArea(impact, 45, 0.6)
 	local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
 	local away = if targetRoot then c.Flat(targetRoot.Position - ctx.root.Position) else Vector3.zero
 	away = if away.Magnitude > 0.1 then away.Unit else forward
@@ -1120,6 +1119,7 @@ local function blackMeteorite(ctx)
 		attackType = "Melee",
 		unblockable = true,
 		heavy = true,
+		noShake = true,
 		ragdoll = 1.6,
 		velocity = away * 25 + UP * 35,
 	})
@@ -1429,7 +1429,7 @@ local function blackMoon(ctx)
 		release()
 		return
 	end
-	c.Hit(character, target, { damage = 2, stun = 3.5, attackType = "Melee", unblockable = true })
+	c.Hit(character, target, { damage = 3, stun = 3.5, attackType = "Melee", unblockable = true })
 	task.wait(MOON_SEIZE - SURGE_AT)
 	local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
 	if interrupted(ctx) or not targetRoot or not CombatState.IsAlive(target) then
@@ -1459,7 +1459,7 @@ local function blackMoon(ctx)
 	-- The cut lands: they're cut down out of the sky.
 	if CombatState.IsAlive(target) then
 		c.Hit(character, target, {
-			damage = 18,
+			damage = 25,
 			stun = 1.5,
 			attackType = "Melee",
 			unblockable = true,
@@ -1772,7 +1772,7 @@ local function conqueringEon(ctx)
 	local origin = ctx.root.Position + direction * 3 + UP * 0.8
 	fx(ctx, "ConqueringEon", "Release", { airborne = airborne, charges = charges })
 	blackSlash(ctx, origin, direction, {
-		damage = 6 + 2 * charges,
+		damage = 8 + 2 * charges,
 		size = Vector3.new(10 + 2.5 * charges, 5 + charges, 3),
 		speed = 105,
 		range = if airborne then waveRange(ctx, origin, direction, 70) else 70,
@@ -1827,7 +1827,7 @@ local function causalityBreak(ctx)
 		c.StopWatchingSkills(victim)
 		CombatState.SetBlocking(victim, false)
 		c.Hit(character, victim, {
-			damage = 8,
+			damage = 10,
 			stun = 0.8,
 			attackType = "Zone",
 			unblockable = true,
@@ -1888,7 +1888,7 @@ local function severance(ctx)
 		if
 			CombatState.IsAlive(victim)
 			and c.Hit(character, victim, {
-					damage = 10,
+					damage = 11,
 					stun = 1.1,
 					attackType = "Melee",
 					heavy = true,
@@ -1939,7 +1939,7 @@ local function infiniteSlash(ctx)
 	local box = CFrame.lookAt(origin + direction * (length / 2), origin + direction * length)
 	for _, victim in c.Box(character, box, Vector3.new(3.5, 7, length)) do
 		c.Hit(character, victim, {
-			damage = 9,
+			damage = 11,
 			stun = 1.1,
 			attackType = "Melee",
 			unblockable = true,
@@ -1997,7 +1997,7 @@ local function zetten(ctx)
 		c.ApplyVelocity(character, if airborne then HOVER else Vector3.zero, 0.3)
 		fx(ctx, "Zetten", "Strike", { from = from, to = to, target = target })
 		c.Hit(character, target, {
-			damage = 13,
+			damage = 15,
 			stun = 1.3,
 			attackType = "Melee",
 			guardBreak = true,
@@ -2031,7 +2031,7 @@ local function zetten(ctx)
 	fx(ctx, "Zetten", "Cut", { airborne = airborne })
 	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -4.5), Vector3.new(9, 7, 9)) do
 		c.Hit(character, victim, {
-			damage = 6,
+			damage = 7,
 			stun = 0.8,
 			attackType = "Melee",
 			heavy = true,

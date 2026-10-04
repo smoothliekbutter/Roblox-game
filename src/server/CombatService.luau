@@ -65,6 +65,7 @@ export type HitInfo = {
 	velocityTime: number?,
 	ragdoll: number?, -- seconds of ragdoll
 	hitsDowned: boolean?, -- can hit someone lying on the floor (the air Black Divider)
+	noShake: boolean?, -- no camera shake for either of them (Black Meteorite)
 	heavy: boolean?, -- bigger hit effect
 	effect: string?, -- VFX name to play instead of Hit / HeavyHit
 }
@@ -732,8 +733,10 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 		kit = attacker:GetAttribute("Kit"),
 		hitConfirm = true,
 	})
-	CombatService.Shake(attacker, if heavy then 0.45 else 0.18)
-	CombatService.Shake(victim, if heavy then 0.7 else 0.3)
+	if not hit.noShake then
+		CombatService.Shake(attacker, if heavy then 0.45 else 0.18)
+		CombatService.Shake(victim, if heavy then 0.7 else 0.3)
+	end
 	return "Hit"
 end
 
@@ -831,7 +834,6 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 					elseif index == Config.M1.ComboLength - 1 then Config.M1.SetupStun
 					else Config.M1.HitStun,
 				attackType = "Melee",
-				guardBreak = finisher,
 				variant = variant,
 				airborne = airborne,
 			})

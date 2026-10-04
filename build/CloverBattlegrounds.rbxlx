@@ -711,7 +711,7 @@ Kits.List = {
 		-- Close-range rushdown, built like Vessel (JJS) / Hero Hunter (TSB):
 		-- rush combo, grab, timing-crit heavy, counter.
 		skills = {
-			{ name = "Bull Thrust", cooldown = 8, type = "Melee", airHold = true },
+			{ name = "Bull Thrust", cooldown = 10, type = "Melee", airHold = true },
 			{ name = "Black Meteorite", cooldown = 13, type = "Melee", airHold = true },
 			{ name = "Black Divider", cooldown = 11, type = "Melee", airHold = true },
 			{ name = "Anti-Magic Deflect", cooldown = 14, type = "Counter", airHold = true },
@@ -759,9 +759,9 @@ Kits.List = {
 		},
 		awakening = {
 			name = "Black Form",
-			duration = 40,
-			damageMultiplier = 1.2,
-			cooldownMultiplier = 0.85,
+			duration = 55,
+			damageMultiplier = 1.25,
+			cooldownMultiplier = 0.8,
 			speedBonus = 6,
 		},
 	} :: KitInfo,
@@ -1209,6 +1209,7 @@ export type HitInfo = {
 	velocityTime: number?,
 	ragdoll: number?, -- seconds of ragdoll
 	hitsDowned: boolean?, -- can hit someone lying on the floor (the air Black Divider)
+	noShake: boolean?, -- no camera shake for either of them (Black Meteorite)
 	heavy: boolean?, -- bigger hit effect
 	effect: string?, -- VFX name to play instead of Hit / HeavyHit
 }
@@ -1876,8 +1877,10 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 		kit = attacker:GetAttribute("Kit"),
 		hitConfirm = true,
 	})
-	CombatService.Shake(attacker, if heavy then 0.45 else 0.18)
-	CombatService.Shake(victim, if heavy then 0.7 else 0.3)
+	if not hit.noShake then
+		CombatService.Shake(attacker, if heavy then 0.45 else 0.18)
+		CombatService.Shake(victim, if heavy then 0.7 else 0.3)
+	end
 	return "Hit"
 end
 
@@ -1975,7 +1978,6 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 					elseif index == Config.M1.ComboLength - 1 then Config.M1.SetupStun
 					else Config.M1.HitStun,
 				attackType = "Melee",
-				guardBreak = finisher,
 				variant = variant,
 				airborne = airborne,
 			})
@@ -3799,7 +3801,7 @@ local function blackMeteorite(ctx)
 		release()
 		return
 	end
-	c.Hit(character, target, { damage = 2, stun = 1.5, attackType = "Melee", unblockable = true })
+	c.Hit(character, target, { damage = 2, stun = 1.5, attackType = "Melee", unblockable = true, noShake = true })
 	task.wait(seize - SURGE_AT)
 	if interrupted(ctx) then
 		release()
@@ -3849,7 +3851,7 @@ local function blackMeteorite(ctx)
 		if not waitUntil(MeteorVortex.Length * tick / 3) then
 			return
 		end
-		c.Hit(character, target, { damage = 1, stun = 1.5, attackType = "Melee", unblockable = true })
+		c.Hit(character, target, { damage = 1, stun = 1.5, attackType = "Melee", unblockable = true, noShake = true })
 	end
 
 	-- Over the top and down, head-first, spinning.
@@ -3867,7 +3869,6 @@ local function blackMeteorite(ctx)
 	-- The client draws its own (much bigger) crater for this one.
 	local impact = Vector3.new(plan.diveEnd.X, floorY or (plan.diveEnd.Y - 3), plan.diveEnd.Z)
 	fx(ctx, "BlackMeteorite", "Impact", { position = impact, target = target, grounded = floorY ~= nil })
-	c.ShakeArea(impact, 45, 0.6)
 	local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
 	local away = if targetRoot then c.Flat(targetRoot.Position - ctx.root.Position) else Vector3.zero
 	away = if away.Magnitude > 0.1 then away.Unit else forward
@@ -3877,6 +3878,7 @@ local function blackMeteorite(ctx)
 		attackType = "Melee",
 		unblockable = true,
 		heavy = true,
+		noShake = true,
 		ragdoll = 1.6,
 		velocity = away * 25 + UP * 35,
 	})
@@ -4186,7 +4188,7 @@ local function blackMoon(ctx)
 		release()
 		return
 	end
-	c.Hit(character, target, { damage = 2, stun = 3.5, attackType = "Melee", unblockable = true })
+	c.Hit(character, target, { damage = 3, stun = 3.5, attackType = "Melee", unblockable = true })
 	task.wait(MOON_SEIZE - SURGE_AT)
 	local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
 	if interrupted(ctx) or not targetRoot or not CombatState.IsAlive(target) then
@@ -4216,7 +4218,7 @@ local function blackMoon(ctx)
 	-- The cut lands: they're cut down out of the sky.
 	if CombatState.IsAlive(target) then
 		c.Hit(character, target, {
-			damage = 18,
+			damage = 25,
 			stun = 1.5,
 			attackType = "Melee",
 			unblockable = true,
@@ -4529,7 +4531,7 @@ local function conqueringEon(ctx)
 	local origin = ctx.root.Position + direction * 3 + UP * 0.8
 	fx(ctx, "ConqueringEon", "Release", { airborne = airborne, charges = charges })
 	blackSlash(ctx, origin, direction, {
-		damage = 6 + 2 * charges,
+		damage = 8 + 2 * charges,
 		size = Vector3.new(10 + 2.5 * charges, 5 + charges, 3),
 		speed = 105,
 		range = if airborne then waveRange(ctx, origin, direction, 70) else 70,
@@ -4584,7 +4586,7 @@ local function causalityBreak(ctx)
 		c.StopWatchingSkills(victim)
 		CombatState.SetBlocking(victim, false)
 		c.Hit(character, victim, {
-			damage = 8,
+			damage = 10,
 			stun = 0.8,
 			attackType = "Zone",
 			unblockable = true,
@@ -4645,7 +4647,7 @@ local function severance(ctx)
 		if
 			CombatState.IsAlive(victim)
 			and c.Hit(character, victim, {
-					damage = 10,
+					damage = 11,
 					stun = 1.1,
 					attackType = "Melee",
 					heavy = true,
@@ -4696,7 +4698,7 @@ local function infiniteSlash(ctx)
 	local box = CFrame.lookAt(origin + direction * (length / 2), origin + direction * length)
 	for _, victim in c.Box(character, box, Vector3.new(3.5, 7, length)) do
 		c.Hit(character, victim, {
-			damage = 9,
+			damage = 11,
 			stun = 1.1,
 			attackType = "Melee",
 			unblockable = true,
@@ -4754,7 +4756,7 @@ local function zetten(ctx)
 		c.ApplyVelocity(character, if airborne then HOVER else Vector3.zero, 0.3)
 		fx(ctx, "Zetten", "Strike", { from = from, to = to, target = target })
 		c.Hit(character, target, {
-			damage = 13,
+			damage = 15,
 			stun = 1.3,
 			attackType = "Melee",
 			guardBreak = true,
@@ -4788,7 +4790,7 @@ local function zetten(ctx)
 	fx(ctx, "Zetten", "Cut", { airborne = airborne })
 	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -4.5), Vector3.new(9, 7, 9)) do
 		c.Hit(character, victim, {
-			damage = 6,
+			damage = 7,
 			stun = 0.8,
 			attackType = "Melee",
 			heavy = true,
@@ -8276,9 +8278,6 @@ function handlers.BlackMeteorite(data, character, root)
 			end)
 		end
 		U.light(root.Position, RED, 3, 10, 0.45)
-		if U.isLocal(character) then
-			CameraShake.FovKick(-5)
-		end
 	elseif phase == "Whiff" then
 		-- Nobody there: the hand closes on nothing and the anti-magic
 		-- gutters out of it.
@@ -8310,7 +8309,6 @@ function handlers.BlackMeteorite(data, character, root)
 		local air = data.airborne == true
 		play(character, if air then ANIMS.AirSeize else ANIMS.Seize)
 		local target = data.target
-		local mine = involves(data, character)
 		task.delay(0.07, function()
 			local at = gripPoint(character)
 			if not at or not character.Parent then
@@ -8330,10 +8328,6 @@ function handlers.BlackMeteorite(data, character, root)
 				U.ringBurst(CFrame.new(feetOf(character, root) + UP * 0.1), BLACK, 0.8, 5, 0.25, 0.2)
 			end
 			blackLightning(at, 3, 2.5, 0.2)
-			if mine then
-				CameraShake.Add(0.25)
-				CameraShake.FovKick(-6)
-			end
 		end)
 		-- The surge (it lands with the server's 2-damage hit).
 		task.delay(0.2, function()
@@ -8352,9 +8346,6 @@ function handlers.BlackMeteorite(data, character, root)
 			U.light(targetRoot.Position, RED, 9, 14, 0.3)
 			for _ = 1, 4 do
 				inflow(at, 3.5)
-			end
-			if mine then
-				CameraShake.Add(0.2)
 			end
 		end)
 	elseif phase == "Vortex" then
@@ -8457,9 +8448,6 @@ function handlers.BlackMeteorite(data, character, root)
 					U.ringBurst(CFrame.new(below.Position + UP * 0.2), BLACK, 4, 12, 0.3, 0.35)
 					U.debris(below.Position, 3, 30, 0.8)
 				end
-				if U.isLocal(character) then
-					CameraShake.Add(0.05)
-				end
 			end)
 		end
 
@@ -8483,10 +8471,6 @@ function handlers.BlackMeteorite(data, character, root)
 				end
 			end
 		end)
-		if involves(data, character) then
-			CameraShake.Add(0.3)
-			CameraShake.FovKick(10)
-		end
 	elseif phase == "Slam" then
 		-- Over the top and down head-first, spinning like a drill (the TSB
 		-- "Head First" dive), the meteor's tail streaming up behind them.
@@ -8552,9 +8536,6 @@ function handlers.BlackMeteorite(data, character, root)
 				end
 			end)
 		end
-		if U.isLocal(character) then
-			CameraShake.FovKick(12)
-		end
 	elseif phase == "Impact" then
 		local position: Vector3 = data.position
 		-- (He rolls back over onto his feet: the end of the shared path.)
@@ -8603,7 +8584,6 @@ function handlers.BlackMeteorite(data, character, root)
 		end
 		if involves(data, character) then
 			impactFrame()
-			CameraShake.FovKick(14)
 		end
 	end
 end
