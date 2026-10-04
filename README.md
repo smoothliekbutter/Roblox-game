@@ -54,7 +54,7 @@ The **CHARACTERS** button in the top bar, next to chat, opens the character pick
 
 ### Anti-Magic Knight (Asta)
 
-A close-range rushdown character built like Vessel (Jujutsu Shenanigans) and Hero Hunter (The Strongest Battlegrounds). He swings the Demon-Slayer Sword as it looks in the series: a huge, broad black greatsword about as tall as he is, battered and stained, with a chisel tip, worn edges, a thin bronze crossbar and a long two-handed grip with a round pommel. (Only the look is big: hitboxes are the same as before.)
+A close-range rushdown character built like Vessel (Jujutsu Shenanigans) and Hero Hunter (The Strongest Battlegrounds). He swings the Demon-Slayer Sword as it looks in the series: a huge, broad black greatsword about as tall as he is, battered and stained, with a pointed tip, worn edges, a thin bronze crossbar and a long two-handed grip with a round pommel. (Only the look is big: hitboxes are the same as before.)
 
 | Key | Base | Black Form (after G) |
 |---|---|---|

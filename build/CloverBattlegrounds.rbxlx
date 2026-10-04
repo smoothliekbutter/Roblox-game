@@ -2720,7 +2720,7 @@ local function swordPart(
 end
 
 -- The Demon-Slayer Sword, as in the series: a huge, broad black greatsword
--- (about as tall as Asta), battered and stained, with a chisel tip, a faint
+-- (about as tall as Asta), battered and stained, with a pointed tip, a faint
 -- ridge down the middle and worn edges; a thin bronze crossbar and a long
 -- two-handed grip ending in a round pommel. The blade runs along the
 -- handle's +Y axis; built around the handle at the origin, then welded.
@@ -2772,21 +2772,35 @@ local function buildSword(): Model
 		swordPart("GuardCapA", Vector3.new(0.24, 0.22, 0.12), CFrame.new(0, 0.6, 0.94), darkBronze, metal),
 		swordPart("GuardCapB", Vector3.new(0.24, 0.22, 0.12), CFrame.new(0, 0.6, -0.94), darkBronze, metal),
 		swordPart("Collar", Vector3.new(0.26, 0.2, 0.72), CFrame.new(0, 0.77, 0), darkBronze, metal),
-		-- The blade: full width right up to the guard (from 0.86), and cut off
-		-- in one long straight slant across its whole width, from 4.3 on one
-		-- edge to the point at 5.8 on the other. The thin side faces forward
-		-- so swings lead with an edge.
-		swordPart("Blade", Vector3.new(0.2, 3.44, 1.4), CFrame.new(0, 2.58, 0), black, metal),
-		swordPart("Tip", Vector3.new(0.2, 1.5, 1.4), CFrame.new(0, 5.05, 0), black, metal, "WedgePart"),
-		swordPart("Ridge", Vector3.new(0.22, 3.7, 0.12), CFrame.new(0, 2.85, 0), ridge, Enum.Material.SmoothPlastic),
-		-- Worn edges: the short one stops at the cut, the long one runs on
-		-- to the point, and a worn bevel runs along the cut itself.
-		swordPart("EdgeA", Vector3.new(0.14, 3.37, 0.08), CFrame.new(0, 2.615, -0.69), worn, metal),
-		swordPart("EdgeB", Vector3.new(0.14, 4.87, 0.08), CFrame.new(0, 3.365, 0.69), worn, metal),
+		-- The blade: full width right up to the guard (from 0.86 to 4.6), then
+		-- a triangular point: both edges run in to meet on the centre line at
+		-- 5.8 (two mirrored wedges). The thin side faces forward so swings
+		-- lead with an edge.
+		swordPart("Blade", Vector3.new(0.2, 3.74, 1.4), CFrame.new(0, 2.73, 0), black, metal),
+		swordPart("TipA", Vector3.new(0.2, 1.2, 0.7), CFrame.new(0, 5.2, -0.35), black, metal, "WedgePart"),
 		swordPart(
-			"CutEdge",
-			Vector3.new(0.22, 0.1, 2.05),
-			CFrame.new(0, 5.016, 0.037) * CFrame.Angles(math.rad(-46.97), 0, 0),
+			"TipB",
+			Vector3.new(0.2, 1.2, 0.7),
+			CFrame.new(0, 5.2, 0.35) * CFrame.Angles(0, math.pi, 0),
+			black,
+			metal,
+			"WedgePart"
+		),
+		swordPart("Ridge", Vector3.new(0.22, 4.2, 0.12), CFrame.new(0, 3.1, 0), ridge, Enum.Material.SmoothPlastic),
+		-- Worn edges down both sides, carried on up the point to its tip.
+		swordPart("EdgeA", Vector3.new(0.14, 3.67, 0.08), CFrame.new(0, 2.765, -0.69), worn, metal),
+		swordPart("EdgeB", Vector3.new(0.14, 3.67, 0.08), CFrame.new(0, 2.765, 0.69), worn, metal),
+		swordPart(
+			"PointEdgeA",
+			Vector3.new(0.22, 0.1, 1.39),
+			CFrame.new(0, 5.175, -0.307) * CFrame.Angles(math.rad(-59.74), 0, 0),
+			worn,
+			metal
+		),
+		swordPart(
+			"PointEdgeB",
+			Vector3.new(0.22, 0.1, 1.39),
+			CFrame.new(0, 5.175, 0.307) * CFrame.Angles(math.rad(59.74), 0, 0),
 			worn,
 			metal
 		),
@@ -2820,15 +2834,15 @@ local function buildSword(): Model
 	local blade = model:FindFirstChild("Blade") :: Part
 	-- Where the guard and the business end are, along the blade, for the
 	-- clients' effects (see alongBlade in the client kit).
-	blade:SetAttribute("GuardY", -1.72)
-	blade:SetAttribute("TipY", 2.77)
+	blade:SetAttribute("GuardY", -1.87)
+	blade:SetAttribute("TipY", 2.62)
 	local base = Instance.new("Attachment")
 	base.Name = "TrailBase"
-	base.Position = Vector3.new(0, -1.49, 0)
+	base.Position = Vector3.new(0, -1.64, 0)
 	base.Parent = blade
 	local tip = Instance.new("Attachment")
 	tip.Name = "TrailTip"
-	tip.Position = Vector3.new(0, 2.31, 0)
+	tip.Position = Vector3.new(0, 2.16, 0)
 	tip.Parent = blade
 
 	local trail = Instance.new("Trail")
@@ -5184,6 +5198,10 @@ local noJumpUntil = 0
 -- The uppercut is thrown with Space held: that same press mustn't then jump
 -- you up after them. Jumping waits until Space has been let go.
 local jumpNeedsRelease = false
+-- Space already held when the 3rd hit lands: they're lining up the uppercut,
+-- so stay on the ground for the 4th (until it's thrown, the string runs out,
+-- or Space is let go: a fresh press then jumps, for the downslam).
+local uppercutPrimedUntil = 0
 local jumpEnabled = true
 
 local function getCharacter(): (Model?, Humanoid?, BasePart?)
@@ -5291,6 +5309,7 @@ local function tryM1()
 	local variant = "Normal"
 	if index >= Config.M1.ComboLength then
 		predictedCombo = 0
+		uppercutPrimedUntil = 0
 		nextM1 = t + Config.M1.EndLag
 		noJumpUntil = t + Config.M1.FinisherBusy
 		if inAir then
@@ -5306,10 +5325,12 @@ local function tryM1()
 		end
 	else
 		nextM1 = t + Config.M1.SwingCooldown
-		-- Before the finisher, stay on the ground for the whole window:
-		-- holding Space for the uppercut mustn't hop you into the air (which
-		-- would turn it into the downslam).
-		noJumpUntil = t + if index == Config.M1.ComboLength - 1 then Config.M1.ResetTime else Config.M1.Busy
+		noJumpUntil = t + Config.M1.Busy
+		-- Jumping after the 3rd hit is the downslam (3 hits, jump, hit). But
+		-- Space already held here means the uppercut is coming: no hop.
+		if index == Config.M1.ComboLength - 1 and jumpHeld(humanoid) then
+			uppercutPrimedUntil = t + Config.M1.ResetTime
+		end
 	end
 
 	-- Our count of the string goes along, so the server's swing is the one we see.
@@ -5528,12 +5549,14 @@ function Input.Start()
 		end
 
 		local character, humanoid = getCharacter()
-		if jumpNeedsRelease and humanoid and not jumpHeld(humanoid) then
+		if humanoid and not jumpHeld(humanoid) then
 			jumpNeedsRelease = false
+			uppercutPrimedUntil = 0
 		end
 		if character and humanoid then
 			local canJump = os.clock() >= noJumpUntil
 				and not jumpNeedsRelease
+				and os.clock() >= uppercutPrimedUntil
 				and CombatState.CanAct(character)
 				and not CombatState.IsBlocking(character)
 				and not CombatState.IsBusy(character)

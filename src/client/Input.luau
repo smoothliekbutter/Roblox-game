@@ -56,6 +56,10 @@ local noJumpUntil = 0
 -- The uppercut is thrown with Space held: that same press mustn't then jump
 -- you up after them. Jumping waits until Space has been let go.
 local jumpNeedsRelease = false
+-- Space already held when the 3rd hit lands: they're lining up the uppercut,
+-- so stay on the ground for the 4th (until it's thrown, the string runs out,
+-- or Space is let go: a fresh press then jumps, for the downslam).
+local uppercutPrimedUntil = 0
 local jumpEnabled = true
 
 local function getCharacter(): (Model?, Humanoid?, BasePart?)
@@ -163,6 +167,7 @@ local function tryM1()
 	local variant = "Normal"
 	if index >= Config.M1.ComboLength then
 		predictedCombo = 0
+		uppercutPrimedUntil = 0
 		nextM1 = t + Config.M1.EndLag
 		noJumpUntil = t + Config.M1.FinisherBusy
 		if inAir then
@@ -178,10 +183,12 @@ local function tryM1()
 		end
 	else
 		nextM1 = t + Config.M1.SwingCooldown
-		-- Before the finisher, stay on the ground for the whole window:
-		-- holding Space for the uppercut mustn't hop you into the air (which
-		-- would turn it into the downslam).
-		noJumpUntil = t + if index == Config.M1.ComboLength - 1 then Config.M1.ResetTime else Config.M1.Busy
+		noJumpUntil = t + Config.M1.Busy
+		-- Jumping after the 3rd hit is the downslam (3 hits, jump, hit). But
+		-- Space already held here means the uppercut is coming: no hop.
+		if index == Config.M1.ComboLength - 1 and jumpHeld(humanoid) then
+			uppercutPrimedUntil = t + Config.M1.ResetTime
+		end
 	end
 
 	-- Our count of the string goes along, so the server's swing is the one we see.
@@ -400,12 +407,14 @@ function Input.Start()
 		end
 
 		local character, humanoid = getCharacter()
-		if jumpNeedsRelease and humanoid and not jumpHeld(humanoid) then
+		if humanoid and not jumpHeld(humanoid) then
 			jumpNeedsRelease = false
+			uppercutPrimedUntil = 0
 		end
 		if character and humanoid then
 			local canJump = os.clock() >= noJumpUntil
 				and not jumpNeedsRelease
+				and os.clock() >= uppercutPrimedUntil
 				and CombatState.CanAct(character)
 				and not CombatState.IsBlocking(character)
 				and not CombatState.IsBusy(character)
