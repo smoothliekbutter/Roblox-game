@@ -1676,6 +1676,209 @@ Animations.Barrage = {
 	},
 }
 
+-- Air Bull Thrust: diving like a spear, blade out in front.
+Animations.AirPropel = {
+	fadeIn = 0.03,
+	fadeOut = 0.1,
+	delays = { Sword = 0.02 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.07,
+			{
+				Torso = rot(-48, 6),
+				Head = rot(34, -4),
+				RightArm = limb(70, 4),
+				Sword = aim(0, -0.5, -0.87),
+				LeftArm = limb(-40, 0, -30),
+				RightLeg = rot(-14),
+				LeftLeg = rot(-30),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.62,
+			{
+				Torso = rot(-48, 6),
+				Head = rot(34, -4),
+				RightArm = limb(70, 4),
+				Sword = aim(0, -0.5, -0.87),
+				LeftArm = limb(-40, 0, -30),
+				RightLeg = rot(-14),
+				LeftLeg = rot(-30),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Air Black Meteorite: swooping in hand-first.
+Animations.AirMeteorLunge = {
+	fadeIn = 0.03,
+	fadeOut = 0.1,
+	delays = { Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.07,
+			{
+				Torso = rot(-36, -8),
+				Head = rot(28, 6),
+				RightArm = limb(-15, -10, 30),
+				Sword = aim(0.3, 0.15, 0.94),
+				LeftArm = limb(95, -8),
+				RightLeg = rot(-16),
+				LeftLeg = rot(-30),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.35,
+			{
+				Torso = rot(-36, -8),
+				Head = rot(28, 6),
+				RightArm = limb(-15, -10, 30),
+				Sword = aim(0.3, 0.15, 0.94),
+				LeftArm = limb(95, -8),
+				RightLeg = rot(-16),
+				LeftLeg = rot(-30),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Air Black Meteorite: hanging on to their throat in mid-air.
+Animations.AirSeize = {
+	fadeIn = 0.02,
+	fadeOut = 0.1,
+	delays = { Sword = 0.03, Head = -0.01 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-36, -8),
+				Head = rot(28, 6),
+				RightArm = limb(-15, -10, 30),
+				Sword = aim(0.3, 0.15, 0.94),
+				LeftArm = limb(95, -8),
+				RightLeg = rot(-16),
+				LeftLeg = rot(-30),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = rot(-10, 12),
+				Head = rot(6, -8),
+				RightArm = limb(-20, -10, 30),
+				Sword = aim(0.3, 0.2, 0.93),
+				LeftArm = limb(100, -8),
+				RightLeg = rot(-22),
+				LeftLeg = rot(8),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.3,
+			{
+				Torso = rot(-4, 14),
+				Head = rot(-4, -10),
+				RightArm = limb(-15, -10, 32),
+				Sword = aim(0.3, 0.25, 0.92),
+				LeftArm = limb(120, -8),
+				RightLeg = rot(-10),
+				LeftLeg = rot(16),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.45,
+			{
+				Torso = rot(-4, 14),
+				Head = rot(-4, -10),
+				RightArm = limb(-15, -10, 32),
+				Sword = aim(0.3, 0.25, 0.92),
+				LeftArm = limb(120, -8),
+				RightLeg = rot(-10),
+				LeftLeg = rot(16),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Air Anti-Magic Deflect: the upright guard, knees tucked.
+Animations.AirDeflectStance = {
+	fadeIn = 0.03,
+	fadeOut = 0.15,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = rot(-6, 12),
+				Head = rot(8, -8),
+				RightArm = limb(40, 40),
+				Sword = aim(-0.1, 0.97, -0.2),
+				LeftArm = limb(70, -10),
+				RightLeg = rot(42),
+				LeftLeg = rot(18),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.82,
+			{
+				Torso = rot(-6, 12),
+				Head = rot(8, -8),
+				RightArm = limb(40, 40),
+				Sword = aim(-0.1, 0.97, -0.2),
+				LeftArm = limb(70, -10),
+				RightLeg = rot(42),
+				LeftLeg = rot(18),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
 -- Black Meteorite: lunging grab, free hand reaching out.
 Animations.MeteorLunge = {
 	fadeIn = 0.03,
@@ -3370,9 +3573,9 @@ Animations.Hurricane = {
 			{
 				Torso = body(0.04, -8),
 				Head = rot(6),
-				RightArm = limb(88, 88),
+				RightArm = limb(88, -88),
 				Sword = aim(0.98, -0.104, -0.167),
-				LeftArm = limb(75, -85),
+				LeftArm = limb(75, 85),
 				RightLeg = rot(-18),
 				LeftLeg = rot(16),
 			},
@@ -3384,9 +3587,9 @@ Animations.Hurricane = {
 			{
 				Torso = body(0.1, -8, -90),
 				Head = rot(6),
-				RightArm = limb(88, 88),
+				RightArm = limb(88, -88),
 				Sword = aim(0.18, 0.057, 0.982),
-				LeftArm = limb(75, -85),
+				LeftArm = limb(75, 85),
 				RightLeg = rot(-18),
 				LeftLeg = rot(16),
 			},
@@ -3398,9 +3601,9 @@ Animations.Hurricane = {
 			{
 				Torso = body(0.047, -8, -180),
 				Head = rot(6),
-				RightArm = limb(88, 88),
+				RightArm = limb(88, -88),
 				Sword = aim(-0.98, -0.054, 0.189),
-				LeftArm = limb(75, -85),
+				LeftArm = limb(75, 85),
 				RightLeg = rot(-18),
 				LeftLeg = rot(16),
 			},
@@ -3412,9 +3615,9 @@ Animations.Hurricane = {
 			{
 				Torso = body(0.096, -8, -270),
 				Head = rot(6),
-				RightArm = limb(88, 88),
+				RightArm = limb(88, -88),
 				Sword = aim(-0.18, -0.216, -0.96),
-				LeftArm = limb(75, -85),
+				LeftArm = limb(75, 85),
 				RightLeg = rot(-18),
 				LeftLeg = rot(16),
 			},
@@ -3426,9 +3629,9 @@ Animations.Hurricane = {
 			{
 				Torso = body(0.04, -8, -360),
 				Head = rot(6),
-				RightArm = limb(88, 88),
+				RightArm = limb(88, -88),
 				Sword = aim(0.98, -0.104, -0.167),
-				LeftArm = limb(75, -85),
+				LeftArm = limb(75, 85),
 				RightLeg = rot(-18),
 				LeftLeg = rot(16),
 			},
@@ -3440,9 +3643,9 @@ Animations.Hurricane = {
 			{
 				Torso = body(0.1, -8, -450),
 				Head = rot(6),
-				RightArm = limb(88, 88),
+				RightArm = limb(88, -88),
 				Sword = aim(0.18, 0.057, 0.982),
-				LeftArm = limb(75, -85),
+				LeftArm = limb(75, 85),
 				RightLeg = rot(-18),
 				LeftLeg = rot(16),
 			},
@@ -3454,9 +3657,9 @@ Animations.Hurricane = {
 			{
 				Torso = body(0.047, -8, -540),
 				Head = rot(6),
-				RightArm = limb(88, 88),
+				RightArm = limb(88, -88),
 				Sword = aim(-0.98, -0.054, 0.189),
-				LeftArm = limb(75, -85),
+				LeftArm = limb(75, 85),
 				RightLeg = rot(-18),
 				LeftLeg = rot(16),
 			},
@@ -3468,9 +3671,9 @@ Animations.Hurricane = {
 			{
 				Torso = body(0.096, -8, -630),
 				Head = rot(6),
-				RightArm = limb(88, 88),
+				RightArm = limb(88, -88),
 				Sword = aim(-0.18, -0.216, -0.96),
-				LeftArm = limb(75, -85),
+				LeftArm = limb(75, 85),
 				RightLeg = rot(-18),
 				LeftLeg = rot(16),
 			},
@@ -3482,9 +3685,9 @@ Animations.Hurricane = {
 			{
 				Torso = body(0.04, -8, -720),
 				Head = rot(6),
-				RightArm = limb(88, 88),
+				RightArm = limb(88, -88),
 				Sword = aim(0.98, -0.104, -0.167),
-				LeftArm = limb(75, -85),
+				LeftArm = limb(75, 85),
 				RightLeg = rot(-18),
 				LeftLeg = rot(16),
 			},
@@ -3496,9 +3699,9 @@ Animations.Hurricane = {
 			{
 				Torso = body(0.1, -8, -810),
 				Head = rot(6),
-				RightArm = limb(88, 88),
+				RightArm = limb(88, -88),
 				Sword = aim(0.18, 0.057, 0.982),
-				LeftArm = limb(75, -85),
+				LeftArm = limb(75, 85),
 				RightLeg = rot(-18),
 				LeftLeg = rot(16),
 			},
@@ -3510,9 +3713,9 @@ Animations.Hurricane = {
 			{
 				Torso = body(0.047, -8, -900),
 				Head = rot(6),
-				RightArm = limb(88, 88),
+				RightArm = limb(88, -88),
 				Sword = aim(-0.98, -0.054, 0.189),
-				LeftArm = limb(75, -85),
+				LeftArm = limb(75, 85),
 				RightLeg = rot(-18),
 				LeftLeg = rot(16),
 			},
@@ -3524,9 +3727,9 @@ Animations.Hurricane = {
 			{
 				Torso = body(0.096, -8, -990),
 				Head = rot(6),
-				RightArm = limb(88, 88),
+				RightArm = limb(88, -88),
 				Sword = aim(-0.18, -0.216, -0.96),
-				LeftArm = limb(75, -85),
+				LeftArm = limb(75, 85),
 				RightLeg = rot(-18),
 				LeftLeg = rot(16),
 			},
@@ -3538,9 +3741,9 @@ Animations.Hurricane = {
 			{
 				Torso = body(0.04, -8, -1080),
 				Head = rot(6),
-				RightArm = limb(88, 88),
+				RightArm = limb(88, -88),
 				Sword = aim(0.98, -0.104, -0.167),
-				LeftArm = limb(75, -85),
+				LeftArm = limb(75, 85),
 				RightLeg = rot(-18),
 				LeftLeg = rot(16),
 			},
@@ -3552,9 +3755,9 @@ Animations.Hurricane = {
 			{
 				Torso = body(0.1, -8, -1170),
 				Head = rot(6),
-				RightArm = limb(88, 88),
+				RightArm = limb(88, -88),
 				Sword = aim(0.18, 0.057, 0.982),
-				LeftArm = limb(75, -85),
+				LeftArm = limb(75, 85),
 				RightLeg = rot(-18),
 				LeftLeg = rot(16),
 			},
@@ -3566,9 +3769,9 @@ Animations.Hurricane = {
 			{
 				Torso = body(0.047, -8, -1260),
 				Head = rot(6),
-				RightArm = limb(88, 88),
+				RightArm = limb(88, -88),
 				Sword = aim(-0.98, -0.054, 0.189),
-				LeftArm = limb(75, -85),
+				LeftArm = limb(75, 85),
 				RightLeg = rot(-18),
 				LeftLeg = rot(16),
 			},
@@ -3580,9 +3783,9 @@ Animations.Hurricane = {
 			{
 				Torso = body(0.096, -8, -1350),
 				Head = rot(6),
-				RightArm = limb(88, 88),
+				RightArm = limb(88, -88),
 				Sword = aim(-0.18, -0.216, -0.96),
-				LeftArm = limb(75, -85),
+				LeftArm = limb(75, 85),
 				RightLeg = rot(-18),
 				LeftLeg = rot(16),
 			},
@@ -3594,9 +3797,9 @@ Animations.Hurricane = {
 			{
 				Torso = body(0.04, -8, -1440),
 				Head = rot(6),
-				RightArm = limb(88, 88),
+				RightArm = limb(88, -88),
 				Sword = aim(0.98, -0.104, -0.167),
-				LeftArm = limb(75, -85),
+				LeftArm = limb(75, 85),
 				RightLeg = rot(-18),
 				LeftLeg = rot(16),
 			},

@@ -467,6 +467,53 @@ end
 
 local barrageAngles = { 0.35, -0.5, 1.2, -1.25, 0.05, 2.6, -0.9, 0.7 }
 
+-- The black meteor tail and air rings while diving (Meteorite slam, Plunge).
+local function meteorTail(root: BasePart, duration: number)
+	trailEmitter(root, {
+		Texture = U.textures.Smoke,
+		Color = ColorSequence.new(BLACK),
+		LightEmission = 0,
+		Size = NumberSequence.new(1.8, 4),
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.2),
+			NumberSequenceKeypoint.new(1, 1),
+		}),
+		Lifetime = NumberRange.new(0.3, 0.55),
+		Rate = 140,
+		Speed = NumberRange.new(4, 10),
+		EmissionDirection = Enum.NormalId.Top,
+		SpreadAngle = Vector2.new(30, 30),
+		Drag = 3,
+	}, duration)
+	trailEmitter(root, {
+		Texture = U.textures.Spark,
+		Color = ColorSequence.new(RED, DARK_RED),
+		LightEmission = 1,
+		Size = NumberSequence.new(0.4, 0),
+		Lifetime = NumberRange.new(0.15, 0.3),
+		Rate = 70,
+		Speed = NumberRange.new(14, 24),
+		EmissionDirection = Enum.NormalId.Top,
+		SpreadAngle = Vector2.new(25, 25),
+		Orientation = Enum.ParticleOrientation.VelocityParallel,
+		Squash = NumberSequence.new(1.6),
+	}, duration)
+	for i = 0, math.floor(duration / 0.06) do
+		task.delay(i * 0.06, function()
+			if root.Parent then
+				U.ringBurst(
+					CFrame.new(root.Position - UP * 3.4),
+					if i % 2 == 0 then BLACK else RED,
+					1.2,
+					3.8,
+					0.18,
+					0.15
+				)
+			end
+		end)
+	end
+end
+
 function handlers.BullThrust(data, character, root)
 	local phase = data.phase
 	if phase == "Propel" then
@@ -475,7 +522,8 @@ function handlers.BullThrust(data, character, root)
 			else root.CFrame.LookVector
 		-- The server says how long the (steerable) propel lasts.
 		local duration = if type(data.duration) == "number" then data.duration else 0.55
-		play(character, ANIMS.Propel)
+		local air = data.airborne == true
+		play(character, if air then ANIMS.AirPropel else ANIMS.Propel)
 		swordTrail(character, duration + 0.05)
 
 		-- Ignition: an anti-magic blast behind him.
@@ -495,7 +543,39 @@ function handlers.BullThrust(data, character, root)
 			direction = -direction,
 		})
 		U.light(back, RED, 6, 14, 0.3)
-		U.ringBurst(CFrame.new(feetOf(character, root) + UP * 0.1), BLACK, 0.8, 5, 0.3, 0.2)
+		U.flash(back, RED, 3.5, 0.12)
+		blackLightning(back, 3, 3, 0.2)
+		task.delay(0.08, U.impactRing, back, direction, BLACK, 0.5, 6.5, 0.28)
+		if air then
+			-- Diving out of the sky like a meteor; the ground takes the hit
+			-- when he comes down (seen from each screen, no server delay).
+			meteorTail(root, duration)
+			task.spawn(function()
+				local started = os.clock()
+				while character.Parent and os.clock() - started < duration + 0.3 do
+					local ground = U.groundBelow(root.Position, { character })
+					if ground and root.Position.Y - ground.Position.Y < 3.6 then
+						local spot = ground.Position
+						U.flash(spot + UP, BLACK, 7, 0.2)
+						U.ringBurst(CFrame.new(spot + UP * 0.15), BLACK, 1, 10, 0.35, 0.45)
+						task.delay(0.04, U.ringBurst, CFrame.new(spot + UP * 0.2), RED, 0.8, 7, 0.3, 0.2)
+						U.shockwave(spot, RED, 2, 12, 0.3)
+						U.groundCracks(spot, 6, 5, RED, 1.6)
+						U.groundRocks(spot, 8, 3, 1.6)
+						U.debris(spot, 6, 30, 0.8)
+						blackSmoke(spot + UP * 0.4, 12, 3, 14)
+						if U.isLocal(character) then
+							CameraShake.Add(0.25)
+						end
+						break
+					end
+					task.wait()
+				end
+			end)
+		else
+			U.ringBurst(CFrame.new(feetOf(character, root) + UP * 0.1), BLACK, 0.8, 5, 0.3, 0.2)
+			task.delay(0.05, U.ringBurst, CFrame.new(feetOf(character, root) + UP * 0.15), RED, 0.6, 4, 0.25, 0.15)
+		end
 
 		-- The jet: smoke and embers streaming off his back, afterimages,
 		-- speed lines, dust kicked up along the ground.
@@ -529,12 +609,17 @@ function handlers.BullThrust(data, character, root)
 			Squash = NumberSequence.new(1.5),
 		}, duration)
 		U.bodyTrail(character, BLACK, duration + 0.05)
-		U.speedLines(root, nil, duration)
+		U.speedLines(root, if air then direction else nil, duration)
 		for i = 0, math.floor(duration / 0.06) do
 			task.delay(i * 0.06, function()
 				if character.Parent then
 					U.afterimage(character, if i % 2 == 0 then BLACK else DARK_RED, 0.28)
-					blackSmoke(feetOf(character, root) + UP * 0.3, 2, 1.6, 4)
+					if i % 3 == 1 then
+						blackLightning(root.Position, 1, 2.2, 0.12) -- anti-magic crackling off him
+					end
+					if not air then
+						blackSmoke(feetOf(character, root) + UP * 0.3, 2, 1.6, 4)
+					end
 				end
 			end)
 		end
@@ -548,9 +633,11 @@ function handlers.BullThrust(data, character, root)
 		U.flash(position, BLACK, 5, 0.15)
 		U.flash(position, WHITE, 3, 0.08)
 		U.impactRing(position, direction, RED, 0.6, 4.5, 0.22)
-		redSparks(position, 12, 0.8, direction)
-		blackLightning(position, 3, 3)
+		redSparks(position, 16, 0.8, direction)
+		blackLightning(position, 4, 3.2)
 		U.light(position, RED, 8, 14, 0.25)
+		task.delay(0.04, U.impactRing, position, direction, BLACK, 0.5, 5.5, 0.24)
+		U.highlight(data.target, RED, 0.15)
 		if U.isLocal(character) or U.isLocal(data.target) then
 			CameraShake.Add(0.25)
 		end
@@ -583,7 +670,10 @@ function handlers.BullThrust(data, character, root)
 		-- Two crossing phantom slashes on the target, then sparks.
 		slashMark(center + jitter, angle, 5, 0.16)
 		task.delay(0.03, slashMark, center - jitter * 0.5, angle + 1.4, 4, 0.14)
-		redSparks(center, 6, 0.6)
+		redSparks(center, 8, 0.6)
+		if index % 2 == 0 then
+			U.flash(center, BLACK, 3, 0.1)
+		end
 		U.burst(center, {
 			color = WHITE,
 			count = 4,
@@ -617,16 +707,15 @@ function handlers.BullThrust(data, character, root)
 			spread = 30,
 			direction = direction,
 		})
-		blackLightning(front, 4, 4)
+		blackLightning(front, 5, 4.5)
 		U.light(front, RED, 10, 18, 0.3)
+		U.flash(front, RED, 5, 0.15)
+		task.delay(0.08, U.impactRing, front + direction * 2, direction, BLACK, 0.5, 7, 0.3)
 		U.bodyTrail(data.target, WHITE, 0.3)
 		if U.isLocal(character) or U.isLocal(data.target) then
 			CameraShake.Add(0.3)
 			CameraShake.FovKick(5)
 		end
-	elseif phase == "Land" then
-		U.groundRocks(data.position, 8, 3, 1.6)
-		blackSmoke(data.position, 10, 3, 12)
 	end
 end
 
@@ -965,7 +1054,8 @@ function handlers.BlackMeteorite(data, character, root)
 	local phase = data.phase
 	if phase == "Lunge" then
 		local direction = root.CFrame.LookVector
-		play(character, ANIMS.MeteorLunge)
+		local air = data.airborne == true
+		play(character, if air then ANIMS.AirMeteorLunge else ANIMS.MeteorLunge)
 		swordTrail(character, 0.35)
 		-- Anti-magic coats him for the lunge.
 		U.highlight(character, BLACK, 0.35)
@@ -974,7 +1064,10 @@ function handlers.BlackMeteorite(data, character, root)
 		U.impactRing(back, direction, BLACK, 0.6, 4.5, 0.22)
 		task.delay(0.04, U.impactRing, back, direction, RED, 0.4, 3.2, 0.2)
 		blackSmoke(back, 10, 2.6, 14)
-		U.ringBurst(CFrame.new(feetOf(character, root) + UP * 0.1), BLACK, 0.6, 4, 0.25, 0.18)
+		local base = if air then root.Position - UP * 2.5 else feetOf(character, root) + UP * 0.1
+		U.ringBurst(CFrame.new(base), BLACK, 0.6, 4, 0.25, 0.18)
+		task.delay(0.04, U.ringBurst, CFrame.new(base + UP * 0.1), RED, 0.5, 3.2, 0.22, 0.12)
+		blackLightning(back, 2, 2.5, 0.18)
 		U.speedLines(root, direction, 0.3)
 		U.bodyTrail(character, BLACK, 0.35)
 		crackle(root, 0.3, 0.06, 2.6)
@@ -991,7 +1084,8 @@ function handlers.BlackMeteorite(data, character, root)
 	elseif phase == "Seize" then
 		-- The grab: his free hand clamps on their throat and hoists them,
 		-- anti-magic pouring out of his grip and through them.
-		play(character, ANIMS.Seize)
+		local air = data.airborne == true
+		play(character, if air then ANIMS.AirSeize else ANIMS.Seize)
 		local target = data.target
 		local mine = involves(data, character)
 		local function grip(): Vector3?
@@ -1008,8 +1102,15 @@ function handlers.BlackMeteorite(data, character, root)
 			U.impactRing(at, root.CFrame.LookVector, RED, 0.4, 3.5, 0.2)
 			redSparks(at, 12, 0.7)
 			U.highlight(target, BLACK, 0.3)
-			blackSmoke(feetOf(character, root) + UP * 0.3, 6, 2.2, 6)
-			U.ringBurst(CFrame.new(feetOf(character, root) + UP * 0.1), BLACK, 0.8, 5, 0.25, 0.2)
+			if air then
+				-- Nothing under them: the burst rings out around the grip.
+				blackSmoke(at, 6, 2.2, 6)
+				U.ringBurst(CFrame.new(at) * CFrame.Angles(rad(90), 0, 0), BLACK, 0.8, 5, 0.25, 0.2)
+			else
+				blackSmoke(feetOf(character, root) + UP * 0.3, 6, 2.2, 6)
+				U.ringBurst(CFrame.new(feetOf(character, root) + UP * 0.1), BLACK, 0.8, 5, 0.25, 0.2)
+			end
+			blackLightning(at, 3, 2.5, 0.2)
 			if mine then
 				CameraShake.Add(0.25)
 				CameraShake.FovKick(-6)
@@ -1152,6 +1253,8 @@ function handlers.BlackMeteorite(data, character, root)
 		U.ringBurst(CFrame.new(position + UP * 0.2), BLACK, 1.5, 20, 0.5, 0.7)
 		task.delay(0.05, U.ringBurst, CFrame.new(position + UP * 0.3), RED, 1, 15, 0.4, 0.35)
 		task.delay(0.1, U.ringBurst, CFrame.new(position + UP * 0.4), WHITE, 0.5, 10, 0.25, 0.12)
+		task.delay(0.12, U.shockwave, position, BLACK, 2, 36, 0.6, Enum.Material.Glass, 0.5)
+		blackLightning(position + UP, 8, 8, 0.3)
 		U.groundCracks(position, 12, 13, RED, 3)
 		U.groundRocks(position, 16, 6, 2.8)
 		task.delay(0.05, U.groundRocks, position, 9, 2.8, 2)
@@ -1344,6 +1447,18 @@ function handlers.BlackDivider(data, character, root)
 		-- The cut's wind: rings, dust and a cone of sparks.
 		U.ringBurst(CFrame.new(root.Position + UP * 0.2), WHITE, 2, if perfect then 16 else 10, 0.3, 0.12)
 		U.ringBurst(CFrame.new(root.Position + UP * 0.2), BLACK, 2, if perfect then 20 else 12, 0.4, 0.35)
+		task.delay(
+			0.05,
+			U.ringBurst,
+			CFrame.new(root.Position + UP * 0.3),
+			RED,
+			1.5,
+			if perfect then 15 else 9,
+			0.35,
+			0.2
+		)
+		blackLightning(front, if perfect then 6 else 4, 5, 0.22)
+		U.light(front, RED, 9, 18, 0.3)
 		blackSmoke(front, if perfect then 20 else 10, 4, 24)
 		U.burst(front, {
 			color = RED,
@@ -1520,7 +1635,8 @@ function handlers.Deflect(data, character, root)
 	local phase = data.phase
 	local look = root.CFrame.LookVector
 	if phase == "Stance" then
-		play(character, ANIMS.DeflectStance)
+		local air = data.airborne == true
+		play(character, if air then ANIMS.AirDeflectStance else ANIMS.DeflectStance)
 		swordGlow(character, BLACK, 0.85, 0.25)
 		swordAura(character, 0.8, 26)
 		task.delay(0.08, function()
@@ -1530,9 +1646,12 @@ function handlers.Deflect(data, character, root)
 			end
 		end)
 		openBarrier(character, root, if type(data.window) == "number" then data.window else 0.65)
-		local feet = feetOf(character, root)
-		U.ringBurst(CFrame.new(feet + UP * 0.1), DARK_RED, 1, 5, 0.3, 0.15)
-		blackSmoke(feet + UP * 0.3, 6, 2, 5)
+		local base = if air then root.Position - UP * 2.8 else feetOf(character, root) + UP * 0.1
+		U.ringBurst(CFrame.new(base), DARK_RED, 1, 5, 0.3, 0.15)
+		task.delay(0.05, U.ringBurst, CFrame.new(base + UP * 0.1), BLACK, 0.8, 6, 0.3, 0.2)
+		blackSmoke(base + UP * 0.2, 6, 2, 5)
+		U.flash(root.Position + root.CFrame.LookVector * 1.5, BLACK, 4, 0.15)
+		U.light(root.Position, RED, 5, 12, 0.3)
 		if U.isLocal(character) then
 			CameraShake.FovKick(-3)
 		end
@@ -1615,6 +1734,8 @@ function handlers.Deflect(data, character, root)
 			fade = 0.26,
 		})
 		local front = root.Position + direction * 3
+		task.delay(0.15, blackLightning, front, 4, 3.5, 0.2)
+		task.delay(0.15, U.flash, front, RED, 4, 0.12)
 		U.sparks(front, direction, 1.3)
 		U.flash(front, BLACK, 8, 0.2)
 		U.impactRing(front, direction, RED, 0.6, 6, 0.25)
@@ -1637,14 +1758,28 @@ end
 -- Black Hurricane: four spins with the blade out, a black tornado around
 -- him, a full circle of steel every turn, the ground torn up under him,
 -- and a final outward blast.
+-- The emitters of a spin in progress, so a hit can cut it short.
+local hurricaneEmitters: { [Model]: { ParticleEmitter } } = setmetatable({}, { __mode = "k" }) :: any
+
 function handlers.BlackHurricane(data, character, root)
+	local token = bump(character)
+	local spinning = hurricaneEmitters[character]
+	hurricaneEmitters[character] = nil
+	if spinning and data.phase ~= "Finish" then
+		for _, emitter in spinning do
+			emitter.Enabled = false
+		end
+	end
 	if data.phase == "Spin" then
 		local duration = if type(data.duration) == "number" then data.duration else 0.9
+		local air = data.airborne == true
 		play(character, ANIMS.Hurricane)
+		local emitters: { ParticleEmitter } = {}
+		hurricaneEmitters[character] = emitters
 		heavyTrail(character, duration + 0.1)
 		U.spiral(root, BLACK, 4.6, 3, duration + 0.05, 5, 0.9, 0.15)
 		U.spiral(root, RED, 3.8, 3, duration + 0.05, 3, 0.3, 0.15)
-		partEmitter(root, {
+		emitters[1] = partEmitter(root, {
 			Texture = U.textures.Smoke,
 			Color = ColorSequence.new(BLACK),
 			LightEmission = 0,
@@ -1663,7 +1798,7 @@ function handlers.BlackHurricane(data, character, root)
 		}, duration)
 		local blade = bladeOf(character)
 		if blade then
-			partEmitter(blade, {
+			emitters[2] = partEmitter(blade, {
 				Texture = U.textures.Spark,
 				Color = ColorSequence.new(RED, DARK_RED),
 				LightEmission = 1,
@@ -1680,7 +1815,7 @@ function handlers.BlackHurricane(data, character, root)
 		-- A full circle of steel each turn (the body turns clockwise, blade out right).
 		for i = 0, 3 do
 			task.delay(0.1 + i * 0.2, function()
-				if character.Parent then
+				if live(character, token) then
 					crescent(character, {
 						center = CFrame.new(0, 0.1, 0),
 						radius = 5.4,
@@ -1694,28 +1829,43 @@ function handlers.BlackHurricane(data, character, root)
 				end
 			end)
 		end
-		-- Tearing up the ground as he goes.
+		if air then
+			-- Drilling down out of the sky.
+			local dive = root.CFrame.LookVector * 40 - UP * 35
+			U.speedLines(root, dive.Unit, duration)
+			U.bodyTrail(character, BLACK, duration)
+		end
+		-- Tearing up the ground as he goes; in the air, a vortex of
+		-- anti-magic spinning off beneath him until he touches down.
 		for i = 0, 8 do
 			task.delay(i * 0.1, function()
-				if not character.Parent then
+				if not live(character, token) then
 					return
 				end
-				local feet = feetOf(character, root)
-				U.groundCracks(feet, 3, 2.5, RED, 1)
-				U.ringBurst(CFrame.new(feet + UP * 0.1), BLACK, 2, 7, 0.25, 0.25)
-				U.debris(feet, 3, 26, 0.7)
-				U.burst(feet, {
-					texture = U.textures.Smoke,
-					color = Color3.fromRGB(150, 140, 130),
-					count = 3,
-					size = 3,
-					speed = NumberRange.new(8, 16),
-					lifetime = NumberRange.new(0.4, 0.7),
-					lightEmission = 0,
-					transparency = 0.5,
-					drag = 3,
-					spread = 80,
-				})
+				local ground = U.groundBelow(root.Position, { character })
+				if ground and root.Position.Y - ground.Position.Y < 4.5 then
+					local feet = ground.Position
+					U.groundCracks(feet, 3, 2.5, RED, 1)
+					U.ringBurst(CFrame.new(feet + UP * 0.1), BLACK, 2, 7, 0.25, 0.25)
+					U.debris(feet, 3, 26, 0.7)
+					U.burst(feet, {
+						texture = U.textures.Smoke,
+						color = Color3.fromRGB(150, 140, 130),
+						count = 3,
+						size = 3,
+						speed = NumberRange.new(8, 16),
+						lifetime = NumberRange.new(0.4, 0.7),
+						lightEmission = 0,
+						transparency = 0.5,
+						drag = 3,
+						spread = 80,
+					})
+				else
+					local below = root.Position - UP * 2.6
+					U.ringBurst(CFrame.new(below), if i % 2 == 0 then BLACK else RED, 1.5, 6.5, 0.22, 0.2)
+					blackSmoke(below, 3, 2.2, 8)
+					redSparks(below, 4, 0.6, -UP)
+				end
 				if U.isLocal(character) then
 					CameraShake.Add(0.05)
 				end
@@ -1724,14 +1874,20 @@ function handlers.BlackHurricane(data, character, root)
 		if U.isLocal(character) then
 			CameraShake.FovKick(8)
 		end
+	elseif data.phase == "Stop" then
+		-- Knocked out of the spin: the trails above are already cut off.
+		blackSmoke(root.Position, 8, 3, 8)
 	elseif data.phase == "Finish" then
 		local position = root.Position
-		local feet = feetOf(character, root)
+		local ground = U.groundBelow(position, { character })
+		local grounded = ground ~= nil and position.Y - ground.Position.Y < 4.5
+		local feet = if ground and grounded then ground.Position else position - UP * 3
+		-- The last turn carries on round into the finishing cut (right to back-left).
 		crescent(character, {
 			center = CFrame.new(0, 0.2, 0),
 			radius = 7,
-			from = -150,
-			to = 60,
+			from = 80,
+			to = -150,
 			tilt = -8,
 			width = 2.4,
 			sweep = 0.09,
@@ -1740,11 +1896,18 @@ function handlers.BlackHurricane(data, character, root)
 		U.flash(position, BLACK, 14, 0.3)
 		U.flash(position, RED, 9, 0.22)
 		U.shockwave(position, RED, 2, 20, 0.4)
-		U.shockwave(feet, BLACK, 3, 18, 0.45, Enum.Material.Glass, 0.4)
-		U.ringBurst(CFrame.new(feet + UP * 0.2), BLACK, 1, 16, 0.4, 0.6)
-		task.delay(0.04, U.ringBurst, CFrame.new(feet + UP * 0.3), RED, 1, 12, 0.35, 0.3)
-		U.groundCracks(feet, 10, 8, RED, 2.5)
-		U.debris(feet, 14, 45, 1.1)
+		if grounded then
+			U.shockwave(feet, BLACK, 3, 18, 0.45, Enum.Material.Glass, 0.4)
+			U.ringBurst(CFrame.new(feet + UP * 0.2), BLACK, 1, 16, 0.4, 0.6)
+			task.delay(0.04, U.ringBurst, CFrame.new(feet + UP * 0.3), RED, 1, 12, 0.35, 0.3)
+			U.groundCracks(feet, 10, 8, RED, 2.5)
+			U.debris(feet, 14, 45, 1.1)
+		else
+			-- In the air: the cut spikes them down, a blast ringing out beneath.
+			U.impactRing(position - UP * 2, -UP, BLACK, 1.5, 16, 0.45)
+			task.delay(0.04, U.impactRing, position - UP * 3, -UP, RED, 1, 11, 0.35)
+			redSparks(position, 20, 1, -UP)
+		end
 		blackLightning(position, 10, 9, 0.3)
 		blackSmoke(position, 20, 5, 26)
 		redSparks(position + UP, 30, 1.2)
@@ -1912,16 +2075,25 @@ end
 function handlers.GrandDivider(data, character, root)
 	local phase = data.phase
 	local token = bump(character)
+	local air = data.airborne == true
 	if phase == "Charge" then
-		play(character, ANIMS.GrandCharge)
+		play(character, if air then ANIMS.AirDividerCharge else ANIMS.GrandCharge)
 		swordGlow(character, BLACK, 0.75, 0.25)
 		swordAura(character, 0.75, 50)
 		growGrandBlade(character, 0.6)
-		local feet = feetOf(character, root)
-		U.ringBurst(CFrame.new(feet + UP * 0.1), BLACK, 12, 2, 0.7, 0.35)
-		task.delay(0.3, U.ringBurst, CFrame.new(feet + UP * 0.12), DARK_RED, 10, 1.5, 0.4, 0.2)
-		task.delay(0.25, U.groundCracks, feet, 8, 6, RED, 2)
-		blackSmoke(feet + UP * 0.3, 12, 3, 8)
+		if air then
+			-- Hanging in the sky: the rings close in around him instead.
+			U.ringBurst(CFrame.new(root.Position), BLACK, 12, 2, 0.7, 0.35)
+			task.delay(0.3, U.ringBurst, CFrame.new(root.Position), DARK_RED, 10, 1.5, 0.4, 0.2)
+			U.ringBurst(CFrame.new(root.Position) * CFrame.Angles(rad(90), 0, 0), BLACK, 10, 2, 0.7, 0.3)
+			blackSmoke(root.Position, 12, 3, 8)
+		else
+			local feet = feetOf(character, root)
+			U.ringBurst(CFrame.new(feet + UP * 0.1), BLACK, 12, 2, 0.7, 0.35)
+			task.delay(0.3, U.ringBurst, CFrame.new(feet + UP * 0.12), DARK_RED, 10, 1.5, 0.4, 0.2)
+			task.delay(0.25, U.groundCracks, feet, 8, 6, RED, 2)
+			blackSmoke(feet + UP * 0.3, 12, 3, 8)
+		end
 		-- Anti-magic piling in from everywhere, a column rising off the blade.
 		local start = os.clock()
 		task.spawn(function()
@@ -1959,16 +2131,16 @@ function handlers.GrandDivider(data, character, root)
 		end
 		blackSmoke(root.Position + UP * 3, 8, 3, 6)
 	elseif phase == "Release" then
-		play(character, ANIMS.GrandRelease)
+		play(character, if air then ANIMS.AirDividerRelease else ANIMS.GrandRelease)
 		heavyTrail(character, 0.35)
 		crescent(character, {
 			center = CFrame.new(0, 0.6, 0),
 			radius = 10,
 			from = 100,
-			to = -40,
+			to = if air then -260 else -40, -- in the air, a whole front flip of steel
 			tilt = 90,
 			width = 3.6,
-			sweep = 0.1,
+			sweep = if air then 0.16 else 0.1,
 			fade = 0.35,
 		})
 		task.delay(0.35, function()
@@ -1979,12 +2151,8 @@ function handlers.GrandDivider(data, character, root)
 		end)
 		local look = root.CFrame.LookVector
 		local forward = Vector3.new(look.X, 0, look.Z).Unit
-		task.delay(0.08, function()
-			if not character.Parent then
-				return
-			end
-			local feet = feetOf(character, root)
-			local strike = feet + forward * 4.5
+		-- The ground takes the blow (in the air, wherever the cleave comes down).
+		local function groundStrike(strike: Vector3)
 			U.flash(strike + UP, WHITE, 6, 0.08)
 			U.flash(strike + UP, BLACK, 16, 0.35)
 			U.flash(strike + UP, RED, 10, 0.25)
@@ -1999,6 +2167,32 @@ function handlers.GrandDivider(data, character, root)
 			blackLightning(strike + UP, 10, 9, 0.3)
 			U.light(strike + UP * 2, RED, 14, 40, 0.5)
 			fissure(strike, forward, 42)
+		end
+		task.delay(0.08, function()
+			if not character.Parent then
+				return
+			end
+			if air then
+				-- The cleave bursts out below and in front of him.
+				local burst = root.Position + forward * 4 - UP * 3
+				U.flash(burst, WHITE, 5, 0.08)
+				U.flash(burst, BLACK, 13, 0.3)
+				U.flash(burst, RED, 8, 0.22)
+				U.impactRing(burst, -UP, BLACK, 2, 18, 0.45)
+				task.delay(0.04, U.impactRing, burst, -UP, RED, 1.5, 13, 0.4)
+				blackLightning(burst, 8, 7, 0.28)
+				redSparks(burst, 24, 1.1, -UP)
+				U.light(burst, RED, 12, 30, 0.4)
+				local ground = U.groundBelow(burst, { character }, 60)
+				if ground then
+					local drop = burst.Y - ground.Position.Y
+					task.delay(math.clamp(drop / 150, 0, 0.35), function()
+						groundStrike(ground.Position)
+					end)
+				end
+			else
+				groundStrike(feetOf(character, root) + forward * 4.5)
+			end
 			if U.isLocal(character) then
 				impactFrame(1.2)
 				U.screenFlash(RED, 0.35)
@@ -2012,53 +2206,6 @@ end
 ---------------------------------------------------------------------------
 -- Special (R): Anti-Magic Leap / Meteor Plunge
 ---------------------------------------------------------------------------
-
--- The black meteor tail and air rings while diving (Meteorite slam, Plunge).
-local function meteorTail(root: BasePart, duration: number)
-	trailEmitter(root, {
-		Texture = U.textures.Smoke,
-		Color = ColorSequence.new(BLACK),
-		LightEmission = 0,
-		Size = NumberSequence.new(1.8, 4),
-		Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0.2),
-			NumberSequenceKeypoint.new(1, 1),
-		}),
-		Lifetime = NumberRange.new(0.3, 0.55),
-		Rate = 140,
-		Speed = NumberRange.new(4, 10),
-		EmissionDirection = Enum.NormalId.Top,
-		SpreadAngle = Vector2.new(30, 30),
-		Drag = 3,
-	}, duration)
-	trailEmitter(root, {
-		Texture = U.textures.Spark,
-		Color = ColorSequence.new(RED, DARK_RED),
-		LightEmission = 1,
-		Size = NumberSequence.new(0.4, 0),
-		Lifetime = NumberRange.new(0.15, 0.3),
-		Rate = 70,
-		Speed = NumberRange.new(14, 24),
-		EmissionDirection = Enum.NormalId.Top,
-		SpreadAngle = Vector2.new(25, 25),
-		Orientation = Enum.ParticleOrientation.VelocityParallel,
-		Squash = NumberSequence.new(1.6),
-	}, duration)
-	for i = 0, math.floor(duration / 0.06) do
-		task.delay(i * 0.06, function()
-			if root.Parent then
-				U.ringBurst(
-					CFrame.new(root.Position - UP * 3.4),
-					if i % 2 == 0 then BLACK else RED,
-					1.2,
-					3.8,
-					0.18,
-					0.15
-				)
-			end
-		end)
-	end
-end
 
 function handlers.Special(data, character, root)
 	local phase = data.phase

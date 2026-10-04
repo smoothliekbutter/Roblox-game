@@ -355,6 +355,23 @@ AIR_DIVIDER_CHARGE = [(0.0, UPPER), (0.15, ad_charge(12)), (0.3, ad_charge(16)),
 AIR_DIVIDER_RELEASE = [(0.0, ad_charge(17)), (0.05, flip(-70)), (0.1, flip(-180)), (0.15, flip(-280)),
                        (0.2, AD_END), (0.45, AD_END)]
 
+# ---------------- Air versions of the base moves ----------------
+# Air Bull Thrust: a diving spear, pitched down along the dive with the
+# blade out in front and the legs streaming behind.
+AP_POSE = {'Torso': R(-48, 6), 'Head': R(34, -4), 'RightArm': L(70, 4), 'Sword': A(0, -0.5, -0.87),
+           'LeftArm': L(-40, 0, -30), 'RightLeg': R(-14), 'LeftLeg': R(-30)}
+AIR_PROPEL = [(0.0, UPPER), (0.07, AP_POSE), (0.62, AP_POSE)]
+# Air Black Meteorite: swoops in hand-first, then hangs on to their throat
+# with the legs dangling.
+AM_LUNGE = M_LUNGE | {'Torso': R(-36, -8), 'Head': R(28, 6), 'RightLeg': R(-16), 'LeftLeg': R(-30)}
+AS_CLAMP = SEIZE_CLAMP | {'RightLeg': R(-22), 'LeftLeg': R(8)}
+AS_LIFT = SEIZE_LIFT | {'RightLeg': R(-10), 'LeftLeg': R(16)}
+AIR_METEOR_LUNGE = [(0.0, UPPER), (0.07, AM_LUNGE), (0.35, AM_LUNGE)]
+AIR_SEIZE = [(0.0, AM_LUNGE), (0.08, AS_CLAMP), (0.3, AS_LIFT), (0.45, AS_LIFT)]
+# Air Deflect: the same guard, knees tucked up under him.
+AF_STANCE = F_STANCE | {'RightLeg': R(42), 'LeftLeg': R(18)}
+AIR_DEFLECT_STANCE = [(0.0, UPPER), (0.08, AF_STANCE), (0.82, AF_STANCE)]
+
 # ---------------- Black Moon (Black Form 4): the cutscene ----------------
 # Throw: dips with them, then heaves them straight up into the sky.
 THROW_DIP = {'Torso': R(-16, 10), 'Head': R(10, -6), 'RightArm': L(-20, -10, 30), 'Sword': A(0.3, 0.2, 0.93),
@@ -403,8 +420,8 @@ for i in range(1, 25):
 # final outward cut. The whole body turns on the root in 90 degree steps.
 def spin(step):
     t = R(-8, -90 * step)
-    return {'Torso': t, 'Head': R(6), 'RightArm': L(88, 88), 'Sword': torso_dir(t, (0.98, -0.08, -0.18)),
-            'LeftArm': L(75, -85), 'RightLeg': R(-18), 'LeftLeg': R(16)}
+    return {'Torso': t, 'Head': R(6), 'RightArm': L(88, -88), 'Sword': torso_dir(t, (0.98, -0.08, -0.18)),
+            'LeftArm': L(75, 85), 'RightLeg': R(-18), 'LeftLeg': R(16)}
 H_FINISH = {'Torso': R(-12, 40), 'Head': R(4, -30), 'RightArm': L(84, 95), 'Sword': A(-0.85, -0.1, 0.5),
             'LeftArm': L(25, -40), 'RightLeg': R(-26), 'LeftLeg': R(24)}
 HURRICANE = [(0.0, UPPER), (0.1, spin(0))]
@@ -440,6 +457,8 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grab
        'Hurricane': HURRICANE, 'BlackSlash': BLACK_SLASH, 'GrandCharge': GRAND_CHARGE, 'GrandRelease': GRAND_RELEASE,
        'Leap': LEAP, 'Plunge': PLUNGE, 'PlungeImpact': PLUNGE_IMPACT,
        'AirDividerCharge': AIR_DIVIDER_CHARGE, 'AirDividerRelease': AIR_DIVIDER_RELEASE, 'Propel': PROPEL, 'Barrage': BARRAGE,
+       'AirPropel': AIR_PROPEL, 'AirMeteorLunge': AIR_METEOR_LUNGE, 'AirSeize': AIR_SEIZE,
+       'AirDeflectStance': AIR_DEFLECT_STANCE,
        'MeteorLunge': METEOR_LUNGE, 'MeteorRise': METEOR_RISE, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
        'DividerCharge': DIVIDER_CHARGE, 'DividerRelease': DIVIDER_RELEASE,
        'DeflectStance': DEFLECT_STANCE, 'DeflectCounter': DEFLECT_COUNTER, 'DeflectReflect': DEFLECT_REFLECT,
@@ -452,7 +471,8 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grab
 # Grounded animations get their feet planted (the body drops into lunges and
 # wide stances). These are played in the air instead, or leave the ground
 # (planted only up to the time given).
-AIRBORNE = {'Air', 'Grabbed', 'Launched', 'MoonPerch', 'MoonFlight', 'Plunge', 'AirDividerCharge', 'AirDividerRelease', 'MeteorRise', 'MeteorSlam', 'Chop'}
+AIRBORNE = {'Air', 'Grabbed', 'Launched', 'MoonPerch', 'MoonFlight', 'Plunge', 'AirDividerCharge', 'AirDividerRelease', 'MeteorRise', 'MeteorSlam', 'Chop',
+            'AirPropel', 'AirMeteorLunge', 'AirSeize', 'AirDeflectStance'}
 PLANT_UNTIL = {'Leap': 0.1}
 UNPLANTED = dict(ALL)
 ALL = {name: keys if name in AIRBORNE else plant(keys, PLANT_UNTIL.get(name)) for name, keys in ALL.items()}
@@ -467,7 +487,9 @@ if __name__ == '__main__':
              # Only ever played in the air.
              'GrandRelease': dict(floor=-3.6),  # the cleave bites into the ground
              'Plunge': dict(floor=-10), 'Grabbed': dict(floor=-10), 'Launched': dict(floor=-10),
-             'MoonPerch': dict(floor=-10), 'MoonFlight': dict(floor=-10), 'AirDividerCharge': dict(floor=-10), 'AirDividerRelease': dict(floor=-10)}
+             'MoonPerch': dict(floor=-10), 'MoonFlight': dict(floor=-10), 'AirDividerCharge': dict(floor=-10), 'AirDividerRelease': dict(floor=-10),
+             'AirPropel': dict(floor=-10), 'AirMeteorLunge': dict(floor=-10), 'AirSeize': dict(floor=-10),
+             'AirDeflectStance': dict(floor=-10)}
     ok = True
     for name, keys in ALL.items():
         grounded = name not in AIRBORNE and name not in PLANT_UNTIL
