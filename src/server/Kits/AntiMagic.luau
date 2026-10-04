@@ -188,6 +188,7 @@ local function buildSword(): Model
 	-- clients' effects (see alongBlade in the client kit).
 	blade:SetAttribute("GuardY", -1.87)
 	blade:SetAttribute("TipY", 2.62)
+	blade:SetAttribute("PointY", 3.07) -- the very point
 	local base = Instance.new("Attachment")
 	base.Name = "TrailBase"
 	base.Position = Vector3.new(0, -1.64, 0)

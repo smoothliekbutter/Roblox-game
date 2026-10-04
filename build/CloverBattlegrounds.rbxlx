@@ -2836,6 +2836,7 @@ local function buildSword(): Model
 	-- clients' effects (see alongBlade in the client kit).
 	blade:SetAttribute("GuardY", -1.87)
 	blade:SetAttribute("TipY", 2.62)
+	blade:SetAttribute("PointY", 3.07) -- the very point
 	local base = Instance.new("Attachment")
 	base.Name = "TrailBase"
 	base.Position = Vector3.new(0, -1.64, 0)
@@ -5649,6 +5650,7 @@ return Input
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Lighting = game:GetService("Lighting")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
@@ -6206,6 +6208,9 @@ type CrescentOptions = {
 	width: number,
 	sweep: number?,
 	fade: number?,
+	-- Glowing slashes: a soft red aura round the cut and a white-hot line
+	-- along it (both emissive, so they bloom). 0 or nil for none.
+	glow: number?,
 }
 
 local CRESCENT_SEGMENTS = 14
@@ -6265,6 +6270,7 @@ local function crescent(character: Model, options: CrescentOptions)
 		return b
 	end
 	local w = options.width
+	local shine = options.glow or 0
 	for i = 0, n - 1 do
 		local list: { Layer } = {}
 		local glow = layer(inner[i], inner[i + 1], RED, 1, 0, 0)
@@ -6273,6 +6279,12 @@ local function crescent(character: Model, options: CrescentOptions)
 		table.insert(list, { beam = glow, width = w * 1.6, base = 0.3 })
 		table.insert(list, { beam = core, width = w, base = 0 })
 		table.insert(list, { beam = edge, width = w * 0.16, base = 0.1 })
+		if shine > 0 then
+			local aura = layer(inner[i], inner[i + 1], RED, 1, 0, -0.05)
+			local hot = layer(outer[i], outer[i + 1], Color3.fromRGB(255, 228, 228), 1, 0, 0.15)
+			table.insert(list, { beam = aura, width = w * 2.8 * shine, base = 0.62 })
+			table.insert(list, { beam = hot, width = w * 0.07 * (1 + shine), base = 0 })
+		end
 		segments[i + 1] = list
 	end
 
@@ -6462,6 +6474,150 @@ local function feetOf(character: Model, root: BasePart): Vector3
 	return if ground then ground.Position else root.Position - UP * 3
 end
 
+---------------------------------------------------------------------------
+-- Glow: emissive light for the big moments. Reds this deep don't bloom on
+-- their own, so these lay a hot, near-white core inside the red, add real
+-- light, and swell the bloom for whoever's close.
+---------------------------------------------------------------------------
+
+local HOT = Color3.fromRGB(255, 110, 110)
+local WHITE_HOT = Color3.fromRGB(255, 225, 225)
+
+-- The blade's edges and point burn red for `duration` (glowing lines laid
+-- along them and a light on the blade), then fade.
+local function edgeGlow(character: Model, duration: number, strength: number?)
+	local blade = bladeOf(character)
+	if not blade then
+		return
+	end
+	local k = strength or 1
+	local half = blade.Size.Z / 2
+	local top = blade.Size.Y / 2
+	local guard = bladeY(blade, -1.8)
+	local pointY = blade:GetAttribute("PointY")
+	local point = if type(pointY) == "number" then pointY else top + 0.6
+	local made: { Instance } = {}
+	local function at(y: number, z: number): Attachment
+		local a = Instance.new("Attachment")
+		a.Position = Vector3.new(0, y, z)
+		a.Parent = blade
+		table.insert(made, a)
+		return a
+	end
+	local apex = at(point, 0)
+	local beams: { Beam } = {}
+	for _, side in { -1, 1 } do
+		local base, shoulder = at(guard, side * half), at(top, side * half)
+		for _, pair in { { base, shoulder }, { shoulder, apex } } do
+			for layer = 1, 2 do
+				local beam = Instance.new("Beam")
+				beam.Attachment0 = pair[1]
+				beam.Attachment1 = pair[2]
+				beam.FaceCamera = true
+				beam.Segments = 1
+				beam.LightEmission = 1
+				beam.LightInfluence = 0
+				beam.Color = ColorSequence.new(if layer == 1 then RED else HOT)
+				local width = (if layer == 1 then 0.6 else 0.16) * k
+				beam.Width0 = width
+				beam.Width1 = width
+				beam.Transparency = NumberSequence.new(1)
+				beam.Parent = blade
+				table.insert(beams, beam)
+				table.insert(made, beam)
+			end
+		end
+	end
+	local glow = Instance.new("PointLight")
+	glow.Color = RED
+	glow.Range = 10
+	glow.Brightness = 0
+	glow.Shadows = false
+	glow.Parent = blade
+	table.insert(made, glow)
+	local start = os.clock()
+	local connection
+	connection = RunService.RenderStepped:Connect(function()
+		local t = os.clock() - start
+		local a = if t < 0.06 then t / 0.06 elseif t < duration then 1 else 1 - (t - duration) / 0.25
+		if a <= 0 or not blade.Parent then
+			connection:Disconnect()
+			for _, instance in made do
+				instance:Destroy()
+			end
+			return
+		end
+		local flicker = 0.88 + 0.12 * math.sin(t * 38)
+		for i, beam in beams do
+			local base = if i % 2 == 1 then 0.4 else 0.05
+			beam.Transparency = NumberSequence.new(1 - (1 - base) * a * flicker)
+		end
+		glow.Brightness = 3 * k * a
+	end)
+end
+
+-- A bright burst: a white-hot core inside a red halo (both bloom), hot
+-- sparks and a light that touches everything round it.
+local function glowBurst(position: Vector3, size: number, duration: number?)
+	local life = duration or 0.3
+	local halo = U.newPart({
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.one * size * 0.4,
+		CFrame = CFrame.new(position),
+		Color = RED,
+		Transparency = 0.3,
+	})
+	local core = U.newPart({
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.one * size * 0.16,
+		CFrame = CFrame.new(position),
+		Color = WHITE_HOT,
+	})
+	U.tween(halo, life, { Size = Vector3.one * size * 1.4, Transparency = 1 })
+	U.tween(core, life * 0.6, { Size = Vector3.one * size * 0.45, Transparency = 1 })
+	task.delay(life + 0.05, function()
+		halo:Destroy()
+		core:Destroy()
+	end)
+	U.burst(position, {
+		color = HOT,
+		count = math.floor(6 + size * 2),
+		size = 0.45,
+		speed = NumberRange.new(10, 26),
+		lifetime = NumberRange.new(0.15, 0.35),
+		streaks = true,
+		spread = 180,
+	})
+	U.light(position, RED, 8, size * 4, life * 1.5)
+end
+
+-- The scene's bloom swells for a moment, so the brightest effects glow.
+-- Only for people close enough to see it; overlapping swells are fine.
+local bloomSwells = 0
+local bloomBase: { Intensity: number, Threshold: number }? = nil
+local function bloomPulse(position: Vector3, strength: number, duration: number)
+	if (workspace.CurrentCamera.CFrame.Position - position).Magnitude > 140 then
+		return
+	end
+	local bloom = Lighting:FindFirstChildOfClass("BloomEffect")
+	if not bloom then
+		return
+	end
+	bloomBase = bloomBase or { Intensity = bloom.Intensity, Threshold = bloom.Threshold }
+	local base = bloomBase :: { Intensity: number, Threshold: number }
+	bloomSwells += 1
+	U.tween(bloom, 0.06, {
+		Intensity = base.Intensity + 0.7 * strength,
+		Threshold = math.max(base.Threshold - 0.5 * strength, 0.8),
+	})
+	task.delay(duration, function()
+		bloomSwells -= 1
+		if bloomSwells == 0 then
+			U.tween(bloom, 0.35, { Intensity = base.Intensity, Threshold = base.Threshold })
+		end
+	end)
+end
+
 -- The black meteor tail and air rings while diving (Meteorite slam, Plunge,
 -- air Bull Thrust). `alive` cuts it short when it turns false (he's landed).
 local function meteorTail(root: BasePart, duration: number, alive: (() -> boolean)?)
@@ -6594,7 +6750,9 @@ local function comboSwing(character: Model, root: BasePart, event: string)
 	local swing = COMBO_SWINGS[event]
 	if swing then
 		heavyTrail(character, (swing.sweep or 0.06) + 0.06)
+		swing.glow = swing.glow or 0.7 -- the cuts glow
 		crescent(character, swing)
+		edgeGlow(character, (swing.sweep or 0.06) + 0.1, 0.8)
 		-- His footwork scuffs up a little anti-magic.
 		blackSmoke(feetOf(character, root) + UP * 0.3, 3, 1.6, 5)
 		if event == "Spin" then
@@ -6661,6 +6819,7 @@ local function comboImpact(data, character: Model, root: BasePart)
 	slashMark(center, markAngle(center, cut), 4 + 1.6 * k, 0.2 + 0.05 * k)
 	U.flash(center, WHITE, 1.6 * k, 0.07)
 	U.flash(center, BLACK, 3 * k, 0.16)
+	glowBurst(center, 2.2 * k, 0.22)
 	redSparks(center, math.floor(8 * k), 0.45 + 0.15 * k, cut)
 	U.impactRing(center, toward, RED, 0.4 * k, 3.2 * k, 0.2)
 	task.delay(0.03, U.impactRing, center, toward, BLACK, 0.3 * k, 2.6 * k, 0.2)
@@ -6719,6 +6878,10 @@ local function comboFinisher(data, character: Model, root: BasePart)
 	U.flash(center, WHITE, 5, 0.1)
 	U.flash(center, BLACK, 9, 0.24)
 	U.flash(center, RED, 6, 0.18)
+	glowBurst(center, 6, 0.35)
+	task.delay(0.05, glowBurst, center + toward * 4, 3.5, 0.3)
+	edgeGlow(character, 0.35, 1.2)
+	bloomPulse(center, 0.9, 0.25)
 	U.shockwave(center, RED, 1.5, 9, 0.3)
 	U.impactRing(center, toward, WHITE, 0.8, 7, 0.25)
 	task.delay(0.04, U.impactRing, center + toward * 1.5, toward, RED, 0.6, 6, 0.28)
@@ -6774,6 +6937,8 @@ local function bullSlam(data, character: Model)
 	U.flash(center, WHITE, 6, 0.08)
 	U.flash(center, BLACK, 15, 0.32)
 	U.flash(center, RED, 10, 0.24)
+	glowBurst(center, 9, 0.45)
+	bloomPulse(center, 1, 0.3)
 	U.shockwave(position, BLACK, 4, 26, 0.45, Enum.Material.Glass, 0.4)
 	U.shockwave(position, RED, 3, 22, 0.4)
 	task.delay(0.1, U.shockwave, position, BLACK, 2, 32, 0.55, Enum.Material.Glass, 0.55)
@@ -6874,6 +7039,23 @@ function handlers.BullThrust(data, character, root)
 		U.flash(back, RED, 3.5, 0.12)
 		blackLightning(back, 3, 3, 0.2)
 		task.delay(0.08, U.impactRing, back, direction, BLACK, 0.5, 6.5, 0.28)
+		-- The glow: the blade's edges burn the whole way, a hot core flares
+		-- at the ignition and a glowing jet streams off behind him.
+		glowBurst(back, 5, 0.3)
+		edgeGlow(character, duration + 0.1, 1)
+		bloomPulse(root.Position, 0.6, 0.25)
+		trailEmitter(root, {
+			Texture = U.textures.Spark,
+			Color = ColorSequence.new(WHITE_HOT, HOT),
+			LightEmission = 1,
+			Size = NumberSequence.new(0.7, 0),
+			Transparency = NumberSequence.new(0.1, 1),
+			Lifetime = NumberRange.new(0.12, 0.22),
+			Rate = 80,
+			Speed = NumberRange.new(6, 12),
+			EmissionDirection = Enum.NormalId.Back,
+			SpreadAngle = Vector2.new(12, 12),
+		}, duration)
 		if air then
 			-- Diving out of the sky like a meteor, until he lands (the
 			-- server's Land, where the slam goes off) or catches someone.
@@ -7512,6 +7694,31 @@ function handlers.BlackDivider(data, character, root)
 			task.delay(0.15, U.groundCracks, center, 5, 3.5, RED, 1.2)
 		end
 
+		-- The edges burn brighter as it builds, and a glowing orb swells at
+		-- the point.
+		edgeGlow(character, 0.62, 0.7)
+		local orb = U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.2, Color = HOT, Transparency = 0.2 })
+		local orbHalo =
+			U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.4, Color = RED, Transparency = 0.5 })
+		local orbStart = os.clock()
+		local orbConnection
+		orbConnection = RunService.RenderStepped:Connect(function()
+			local t = os.clock() - orbStart
+			local tip = bladePoint(character, 2.1)
+			if t > 0.7 or not tip or not live(character, token) then
+				orbConnection:Disconnect()
+				orb:Destroy()
+				orbHalo:Destroy()
+				return
+			end
+			local grow = math.min(t / 0.6, 1)
+			local pulse = 1 + 0.12 * math.sin(t * 30)
+			orb.CFrame = CFrame.new(tip)
+			orb.Size = Vector3.one * (0.3 + 0.9 * grow) * pulse
+			orbHalo.CFrame = CFrame.new(tip)
+			orbHalo.Size = Vector3.one * (0.6 + 2 * grow) * pulse
+		end)
+
 		-- Anti-magic streaming into the blade, crackling as it builds.
 		local start = os.clock()
 		task.spawn(function()
@@ -7543,6 +7750,8 @@ function handlers.BlackDivider(data, character, root)
 				U.impactRing(tip, workspace.CurrentCamera.CFrame.Position - tip, RED, 0.3, 3.2, 0.2)
 				U.light(tip, RED, 12, 16, 0.25)
 				redSparks(tip, 10, 0.6)
+				glowBurst(tip, 3, 0.22)
+				bloomPulse(tip, 0.7, 0.2)
 			end
 			if U.isLocal(character) then
 				CameraShake.FovKick(-5)
@@ -7569,7 +7778,10 @@ function handlers.BlackDivider(data, character, root)
 			width = if perfect then 2.8 else 2,
 			sweep = 0.18,
 			fade = 0.3,
+			glow = if perfect then 1.4 else 1,
 		})
+		edgeGlow(character, 0.35, if perfect then 1.4 else 1)
+		bloomPulse(root.Position, if perfect then 1.1 else 0.7, 0.3)
 		blackSmoke(root.Position, if perfect then 16 else 8, 3.5, 14)
 		U.burst(root.Position - UP * 2 + look * 2, {
 			color = RED,
@@ -7626,6 +7838,7 @@ function handlers.BlackDivider(data, character, root)
 			width = if perfect then 3 else 2.1,
 			sweep = 0.09,
 			fade = if perfect then 0.35 else 0.26,
+			glow = if perfect then 1.4 else 1,
 		})
 		if perfect then
 			task.delay(0.03, crescent, character, {
@@ -7637,8 +7850,18 @@ function handlers.BlackDivider(data, character, root)
 				width = 1.2,
 				sweep = 0.09,
 				fade = 0.3,
+				glow = 1,
 			})
 		end
+		-- The cut burns: glowing edges, hot flares along the arc, the bloom swells.
+		edgeGlow(character, 0.3, if perfect then 1.4 else 1)
+		for i, angle in { 60, 0, -60 } do
+			local along = root.CFrame
+				* CFrame.Angles(0, rad(angle), 0)
+				* CFrame.new(0, 0.2, -(if perfect then 6.6 else 5.8))
+			task.delay(0.02 * i, glowBurst, along.Position, if perfect then 3.4 else 2.4, 0.25)
+		end
+		bloomPulse(root.Position, if perfect then 1.2 else 0.75, 0.3)
 
 		local front = root.Position + look * 5
 		local feet = feetOf(character, root)
@@ -7843,7 +8066,13 @@ function handlers.Deflect(data, character, root)
 				U.glint(tip, 1.6, RED)
 			end
 		end)
-		openBarrier(character, root, if type(data.window) == "number" then data.window else 0.65)
+		local window = if type(data.window) == "number" then data.window else 0.65
+		openBarrier(character, root, window)
+		-- The guard glows: the blade's edges burn for the whole window, a hot
+		-- flare as the barrier opens and its red light on everything in front.
+		edgeGlow(character, window, 0.9)
+		glowBurst(root.Position + root.CFrame.LookVector * 2.4 + UP * 0.6, 3, 0.25)
+		U.light(root.Position + root.CFrame.LookVector * 2.4, RED, 4, 14, window)
 		local base = if air then root.Position - UP * 2.8 else feetOf(character, root) + UP * 0.1
 		U.ringBurst(CFrame.new(base), DARK_RED, 1, 5, 0.3, 0.15)
 		task.delay(0.05, U.ringBurst, CFrame.new(base + UP * 0.1), BLACK, 0.8, 6, 0.3, 0.2)
@@ -7868,6 +8097,8 @@ function handlers.Deflect(data, character, root)
 		-- Their attack lands on the anti-magic blade.
 		U.sparks(contact, (flat + UP * 0.6).Unit, 1.6)
 		U.flash(contact, WHITE, 6, 0.12)
+		glowBurst(contact, 5, 0.3)
+		bloomPulse(contact, 1, 0.3)
 		if involves(data, character) then
 			impactFrame(1.2)
 			CameraShake.Add(0.45)
@@ -7889,7 +8120,9 @@ function handlers.Deflect(data, character, root)
 				width = 2.6,
 				sweep = 0.07,
 				fade = 0.3,
+				glow = 1.1,
 			})
+			edgeGlow(character, 0.3, 1.2)
 		end)
 		task.delay(0.2, function()
 			if not targetRoot then
@@ -7930,8 +8163,12 @@ function handlers.Deflect(data, character, root)
 			width = 2.2,
 			sweep = 0.08,
 			fade = 0.26,
+			glow = 1,
 		})
+		edgeGlow(character, 0.35, 1.1)
 		local front = root.Position + direction * 3
+		task.delay(0.12, glowBurst, front, 4, 0.28)
+		task.delay(0.12, bloomPulse, front, 0.8, 0.25)
 		task.delay(0.15, blackLightning, front, 4, 3.5, 0.2)
 		task.delay(0.15, U.flash, front, RED, 4, 0.12)
 		U.sparks(front, direction, 1.3)
