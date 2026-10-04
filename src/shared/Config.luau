@@ -25,23 +25,29 @@ Config.M1 = {
 	Damage = 3.5,
 	FinisherDamage = 5,
 
-	SwingCooldown = 0.3, -- time between swings in a string
-	ResetTime = 1.1, -- idle time before the combo counter resets
+	-- Swing timings match the swing animations (SWING_TIMES in tools/anim).
+	SwingCooldown = 0.36, -- time between swings in a string
+	ResetTime = 1.2, -- idle time before the combo counter resets
 	EndLag = 1.1, -- lockout after the final hit
-	Busy = 0.35, -- slowed and can't jump while swinging (> SwingCooldown, so a full string stays grounded)
-	FinisherBusy = 0.45,
-	WindUp = 0.08, -- delay between the swing starting and the hitbox
-	FinisherWindUp = 0.15, -- the 4th hit winds up longer (matches its animation)
+	Busy = 0.42, -- slowed and can't jump while swinging (> SwingCooldown, so a full string stays grounded)
+	FinisherBusy = 0.52,
+	WindUp = 0.1, -- delay between the swing starting and the hitbox
+	FinisherWindUp = 0.17, -- the 4th hit winds up longer (matches its animation)
 	InputTolerance = 0.1, -- accept swings this early to absorb network jitter
 
-	HitStun = 0.6, -- longer than SwingCooldown + WindUp, so strings are true combos
+	HitStun = 0.66, -- longer than SwingCooldown + WindUp (plus slack for ping), so strings are true combos
 	UppercutStun = 1.1,
 	-- The uppercut is a launcher: short end lag and an early jump, so you
 	-- can go up after them and carry on in the air.
-	UppercutEndLag = 0.35,
+	UppercutEndLag = 0.4,
 	UppercutJumpAfter = 0.2,
-	UppercutHang = 0.35, -- they hang at the top of the launch this long
-	JuggleTime = 1, -- how long a launched body can still be hit in the air
+	-- Near the top of the launch they drift: the climb and fall slow to a
+	-- float for UppercutHang seconds, starting UppercutFloatAt into the
+	-- flight and ending at UppercutFloatEnd studs/s.
+	UppercutFloatAt = 0.16,
+	UppercutHang = 0.45,
+	UppercutFloatEnd = -10,
+	JuggleTime = 1.1, -- how long a launched body can still be hit in the air
 
 	HitboxSize = Vector3.new(5.5, 6, 6),
 	HitboxOffset = 3.25, -- studs in front of the root
@@ -50,11 +56,11 @@ Config.M1 = {
 	PushTime = 0.18,
 	LungeSpeed = 13, -- attacker steps forward a little on every swing (eased out)
 	LungeTime = 0.16,
-	AirFloat = 0.35, -- air hits hold both players up this long
+	AirFloat = 0.45, -- air hits hold both players up this long (bridges the gap to the next swing)
 
 	KnockbackForce = 65,
 	KnockbackLift = 18,
-	UppercutForce = 56, -- a ragdoll launch: about 7 studs up, in reach of a jump
+	UppercutForce = 50, -- a ragdoll launch: with the float, about 7 studs up, in reach of a jump
 	UppercutRagdoll = 1.3,
 	DownslamForce = 75,
 }

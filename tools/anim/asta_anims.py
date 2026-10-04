@@ -68,8 +68,9 @@ READY = IDLE[0][1]
 
 LEGS = lambda y: {'RightLeg': R(0,y,0), 'LeftLeg': R(0,y,0)}  # additive counter-twist
 
-SWING_TIMES = (0.08, 0.12, 0.17, 0.32)
-HEAVY_SWING_TIMES = (0.12, 0.18, 0.24, 0.44)
+# (Wind-up, through, strike, settle.) Config.M1's swing timings match these.
+SWING_TIMES = (0.1, 0.15, 0.21, 0.4)
+HEAVY_SWING_TIMES = (0.14, 0.21, 0.28, 0.52)
 
 def swing(windup, through, strike, settle, heavy=False):
     t = HEAVY_SWING_TIMES if heavy else SWING_TIMES
@@ -340,7 +341,7 @@ METEOR_IMPACT = [(0.0, M_SLAM), (0.25, M_RECOVER), (0.5, M_RECOVER)]
 # ---------------- Black Divider (charge, release) ----------------
 LEGS_TWIST = lambda y: {'RightLeg': R(0, y), 'LeftLeg': R(0, y)}
 def d_charge(twist, lean):
-    return {'Torso': R(lean, twist), 'Head': R(0, -twist * 0.75), 'RightArm': L(-40, -35), 'Sword': A(0.55, -0.2, 0.8),
+    return {'Torso': R(lean, twist), 'Head': R(0, -twist * 0.75), 'RightArm': L(-40, -35), 'Sword': A(0.55, -0.14, 0.8),
             'LeftArm': L(80, -30), **LEGS_TWIST(-twist * 0.95)}
 D_THROUGH = {'Torso': R(-6, 5), 'Head': R(0, -4), 'RightArm': L(86, -10), 'Sword': A(0.3, 0, -0.95),
              'LeftArm': L(40, -35), **LEGS_TWIST(-5)}
@@ -536,7 +537,7 @@ BS_COCK = {'Torso': R(6, -40), 'Head': R(0, 30), 'RightArm': L(150, -35), 'Sword
            'LeftArm': L(55, -20), 'RightLeg': R(-10), 'LeftLeg': R(12)}
 BS_STRIKE = {'Torso': R(-16, 42), 'Head': R(8, -30), 'RightArm': L(72, 62), 'Sword': A(-0.72, -0.4, -0.56),
              'LeftArm': L(20, -35), 'RightLeg': R(-30), 'LeftLeg': R(28)}
-BS_SETTLE = {'Torso': R(-12, 36), 'Head': R(6, -26), 'RightArm': L(66, 56), 'Sword': A(-0.7, -0.45, -0.55),
+BS_SETTLE = {'Torso': R(-12, 36), 'Head': R(6, -26), 'RightArm': L(66, 56), 'Sword': A(-0.72, -0.38, -0.58),
              'LeftArm': L(24, -32), 'RightLeg': R(-24), 'LeftLeg': R(22)}
 BLACK_SLASH = [(0.0, UPPER), (0.13, BS_COCK), (0.21, BS_STRIKE), (0.55, BS_SETTLE)]
 
@@ -582,12 +583,14 @@ ALL = {name: keys if name in AIRBORNE else plant(keys, PLANT_UNTIL.get(name)) fo
 if __name__ == '__main__':
     # Intentional floor contact: the air chop's tip grazes the floor, the
     # entrance slam plants it. The entrance sword is hidden until the draw.
-    rules = {'Chop': dict(floor=-3.1), 'Entrance': dict(floor=-3.5, hidden_until=0.88),
+    # (The Demon-Slayer Sword is long: where the blade is driven into the
+    # ground on purpose, it may go in about a stud.)
+    rules = {'Chop': dict(floor=-3.1), 'Entrance': dict(floor=-3.9, hidden_until=0.88),
              # These plant the blade on purpose.
-             'MeteorSlam': dict(floor=-3.6), 'MeteorImpact': dict(floor=-3.6), 'Awaken': dict(floor=-3.6),
-             'PlungeImpact': dict(floor=-3.6),
+             'MeteorSlam': dict(floor=-4.0), 'MeteorImpact': dict(floor=-4.0), 'Awaken': dict(floor=-4.0),
+             'PlungeImpact': dict(floor=-4.0),
              # Only ever played in the air.
-             'GrandRelease': dict(floor=-3.6),  # the cleave bites into the ground
+             'GrandRelease': dict(floor=-4.0),  # the cleave bites into the ground
              'Plunge': dict(floor=-10), 'Grabbed': dict(floor=-10), 'Launched': dict(floor=-10),
              'MoonPerch': dict(floor=-10), 'MoonFlight': dict(floor=-10), 'AirDividerCharge': dict(floor=-10), 'AirDividerRelease': dict(floor=-10), 'MeteorSpin': dict(floor=-10),
              'AirPropel': dict(floor=-10), 'AirMeteorLunge': dict(floor=-10), 'AirMeteorReach': dict(floor=-10),

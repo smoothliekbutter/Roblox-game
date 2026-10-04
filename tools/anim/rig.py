@@ -42,8 +42,8 @@ def solve(pose):
     sword = arm @ T(0,-1,0) @ pose.get('Sword', I) @ cf(Rx(radians(215)))
     hand = apply(arm, (0,-1,0))
     # Blade runs from just above the guard to the tip (see buildSword).
-    base = apply(sword, (0,0.8,0))
-    tip = apply(sword, (0,5.0,0))
+    base = apply(sword, (0,0.86,0))
+    tip = apply(sword, (0,5.65,0))
     # Lowest heel or toe of either leg (the middle of the sole's front and
     # back edge; R6 legs are 1x2x1 boxes). The side edges are left out: R6
     # hips pivot at the leg's outer edge, so a leg turned out sinks its

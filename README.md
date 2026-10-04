@@ -36,8 +36,8 @@ With live sync, every code change shows up in Studio instantly, without re-downl
 
 | Input | Action |
 |---|---|
-| Left click (hold to chain) | M1 combo, 4 hits. The 4th hit ragdolls and guard-breaks. |
-| Hold **Space** on the 4th hit | Uppercut finisher: a launcher. They go limp and tumble about 7 studs up, hang there for a beat, and can still be hit in the air: jump after them and keep swinging (the 4th air hit is the downslam). Short recovery after it. |
+| Left click (hold to chain) | M1 combo, 4 hits, a little over a third of a second apart. The 4th hit ragdolls and guard-breaks. |
+| Hold **Space** on the 4th hit | Uppercut finisher: a launcher. They go limp and tumble about 7 studs up, drift through the top of the arc for a moment, and can still be hit in the air: jump after them and keep swinging (the 4th air hit is the downslam). Short recovery after it. |
 | 4th hit while in the air | Downslam finisher with a crater |
 | **1 2 3 4** | Character skills. Most have an air version: use them mid-jump. |
 | **R** | Character special (each character has their own) |
@@ -54,7 +54,7 @@ The **CHARACTERS** button in the top bar, next to chat, opens the character pick
 
 ### Anti-Magic Knight (Asta)
 
-A close-range rushdown character built like Vessel (Jujutsu Shenanigans) and Hero Hunter (The Strongest Battlegrounds). He swings a demon-slaying greatsword.
+A close-range rushdown character built like Vessel (Jujutsu Shenanigans) and Hero Hunter (The Strongest Battlegrounds). He swings the Demon-Slayer Sword as it looks in the series: a huge, broad black greatsword about as tall as he is, battered and stained, with a chisel tip, worn edges, a thin bronze crossbar and a long two-handed grip with a round pommel. (Only the look is big: hitboxes are the same as before.)
 
 | Key | Base | Black Form (after G) |
 |---|---|---|

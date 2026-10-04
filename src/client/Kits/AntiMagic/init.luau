@@ -428,10 +428,16 @@ local function bladeOf(character: Model): BasePart?
 	return if blade and blade:IsA("BasePart") then blade else nil
 end
 
+-- Distances along the blade below are written for a 3.6-stud blade (0 its
+-- middle, 2.1 the tip, -1.8 the guard); they stretch with the real one.
+local function alongBlade(blade: BasePart, along: number): CFrame
+	return blade.CFrame * CFrame.new(0, along * blade.Size.Y / 3.6, 0)
+end
+
 -- A point along the blade: 0 is its middle, 2.1 the tip, -1.8 the guard.
 local function bladePoint(character: Model, along: number): Vector3?
 	local blade = bladeOf(character)
-	return if blade then (blade.CFrame * CFrame.new(0, along, 0)).Position else nil
+	return if blade then alongBlade(blade, along).Position else nil
 end
 
 -- Heavy swing trail for skills: a black core inside a wider red glow that
@@ -444,7 +450,7 @@ local function heavyTrail(character: Model, duration: number)
 	local made: { Instance } = {}
 	local function attachment(y: number): Attachment
 		local a = Instance.new("Attachment")
-		a.Position = Vector3.new(0, y, 0)
+		a.Position = Vector3.new(0, y * blade.Size.Y / 3.6, 0)
 		a.Parent = blade
 		table.insert(made, a)
 		return a
@@ -2570,7 +2576,7 @@ local function growGrandBlade(character: Model, duration: number)
 		length = 10
 			* TweenService:GetValue(math.clamp(t / duration, 0, 1), Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 		local wobble = 1 + 0.06 * math.sin(t * 40)
-		local base = blade.CFrame * CFrame.new(0, 2.1 + length / 2, 0)
+		local base = alongBlade(blade, 2.1) * CFrame.new(0, length / 2, 0)
 		core.Size = Vector3.new(0.45 * wobble, length + 0.1, 1.5)
 		core.CFrame = base
 		glow.Size = Vector3.new(0.9 * wobble, length + 0.6, 2.4 * wobble)
@@ -4889,7 +4895,7 @@ function handlers.Entrance(data, character, root)
 			local sword = getSword(character)
 			local blade = sword and sword:FindFirstChild("Blade")
 			local tip = if blade and blade:IsA("BasePart")
-				then (blade.CFrame * CFrame.new(0, 2.1, 0)).Position
+				then alongBlade(blade, 2.1).Position
 				else root.Position + root.CFrame.LookVector * 5
 			U.groundRocks(tip, 9, 2, 1.4)
 			blackSmoke(tip, 12, 3.5, 14)

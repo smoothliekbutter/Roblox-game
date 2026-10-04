@@ -419,23 +419,29 @@ Config.M1 = {
 	Damage = 3.5,
 	FinisherDamage = 5,
 
-	SwingCooldown = 0.3, -- time between swings in a string
-	ResetTime = 1.1, -- idle time before the combo counter resets
+	-- Swing timings match the swing animations (SWING_TIMES in tools/anim).
+	SwingCooldown = 0.36, -- time between swings in a string
+	ResetTime = 1.2, -- idle time before the combo counter resets
 	EndLag = 1.1, -- lockout after the final hit
-	Busy = 0.35, -- slowed and can't jump while swinging (> SwingCooldown, so a full string stays grounded)
-	FinisherBusy = 0.45,
-	WindUp = 0.08, -- delay between the swing starting and the hitbox
-	FinisherWindUp = 0.15, -- the 4th hit winds up longer (matches its animation)
+	Busy = 0.42, -- slowed and can't jump while swinging (> SwingCooldown, so a full string stays grounded)
+	FinisherBusy = 0.52,
+	WindUp = 0.1, -- delay between the swing starting and the hitbox
+	FinisherWindUp = 0.17, -- the 4th hit winds up longer (matches its animation)
 	InputTolerance = 0.1, -- accept swings this early to absorb network jitter
 
-	HitStun = 0.6, -- longer than SwingCooldown + WindUp, so strings are true combos
+	HitStun = 0.66, -- longer than SwingCooldown + WindUp (plus slack for ping), so strings are true combos
 	UppercutStun = 1.1,
 	-- The uppercut is a launcher: short end lag and an early jump, so you
 	-- can go up after them and carry on in the air.
-	UppercutEndLag = 0.35,
+	UppercutEndLag = 0.4,
 	UppercutJumpAfter = 0.2,
-	UppercutHang = 0.35, -- they hang at the top of the launch this long
-	JuggleTime = 1, -- how long a launched body can still be hit in the air
+	-- Near the top of the launch they drift: the climb and fall slow to a
+	-- float for UppercutHang seconds, starting UppercutFloatAt into the
+	-- flight and ending at UppercutFloatEnd studs/s.
+	UppercutFloatAt = 0.16,
+	UppercutHang = 0.45,
+	UppercutFloatEnd = -10,
+	JuggleTime = 1.1, -- how long a launched body can still be hit in the air
 
 	HitboxSize = Vector3.new(5.5, 6, 6),
 	HitboxOffset = 3.25, -- studs in front of the root
@@ -444,11 +450,11 @@ Config.M1 = {
 	PushTime = 0.18,
 	LungeSpeed = 13, -- attacker steps forward a little on every swing (eased out)
 	LungeTime = 0.16,
-	AirFloat = 0.35, -- air hits hold both players up this long
+	AirFloat = 0.45, -- air hits hold both players up this long (bridges the gap to the next swing)
 
 	KnockbackForce = 65,
 	KnockbackLift = 18,
-	UppercutForce = 56, -- a ragdoll launch: about 7 studs up, in reach of a jump
+	UppercutForce = 50, -- a ragdoll launch: with the float, about 7 studs up, in reach of a jump
 	UppercutRagdoll = 1.3,
 	DownslamForce = 75,
 }
@@ -1233,8 +1239,10 @@ function CombatService.Tumble(root: BasePart, velocity: Vector3)
 	root.AssemblyAngularVelocity = spin
 end
 
--- Knockback for a hit. Ragdolled victims of heavy hits freeze for a split
--- second first (hit-stop), then fly.
+-- Knockback for a hit. Ragdolled victims of heavy hits go limp for a split
+-- second first (hit-stop), then fly. (Not by anchoring them: anchoring and
+-- releasing a body mid-air restarts its physics replication, which every
+-- screen sees as a hitch right as the launch starts.)
 function CombatService.Launch(victim: Model, velocity: Vector3, duration: number, hitStop: number?)
 	local root = getRoot(victim)
 	if not root then
@@ -1244,17 +1252,35 @@ function CombatService.Launch(victim: Model, velocity: Vector3, duration: number
 		CombatService.ApplyVelocity(victim, velocity, duration)
 		return
 	end
-	root.Anchored = true
 	task.delay(hitStop, function()
-		if not root.Parent then
-			return
-		end
-		root.Anchored = false
-		if Ragdoll.IsActive(victim) then
-			-- Anchoring resets network ownership; ragdolls stay with the server.
-			pcall(root.SetNetworkOwner, root, nil)
+		if root.Parent and Ragdoll.IsActive(victim) then
 			CombatService.Tumble(root, velocity)
 		end
+	end)
+end
+
+-- Eases a launched ragdoll through the top of its arc: its climb and fall
+-- slow to a drift (a fraction of gravity) for `duration`, ending at
+-- `endSpeed` (studs/s, negative is down), then gravity takes it back. Reads
+-- as hang time, not as the body stopping.
+function CombatService.Float(character: Model, duration: number, endSpeed: number)
+	local root = getRoot(character)
+	if not root or not Ragdoll.IsActive(character) then
+		return
+	end
+	local start = root.AssemblyLinearVelocity
+	local startY = if math.abs(start.Y) < 0.05 then 0.05 else start.Y
+	local mover = Impulse.Apply(root, Vector3.new(start.X, startY, start.Z), duration, "Knockback")
+	local began = os.clock()
+	local connection
+	connection = RunService.Heartbeat:Connect(function()
+		if not mover.Parent then
+			connection:Disconnect()
+			return
+		end
+		local a = math.clamp((os.clock() - began) / duration, 0, 1)
+		local drift = Vector3.new(start.X, 0, start.Z) * (1 - 0.6 * a)
+		mover.VectorVelocity = drift + Vector3.new(0, startY + (endSpeed - startY) * a, 0)
 	end)
 end
 
@@ -1623,10 +1649,10 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 		end
 		CombatService.Launch(victim, Vector3.new(0, Config.M1.UppercutForce, 0) + look * 5, 0.2, Config.Physics.HitStop)
 		local token = victimData and victimData.ragdollToken
-		task.delay(Config.Physics.HitStop + Config.M1.UppercutForce / workspace.Gravity, function()
+		task.delay(Config.Physics.HitStop + Config.M1.UppercutFloatAt, function()
 			-- Still flying from this uppercut (no new hit took over): the hang.
 			if victimData and victimData.ragdollToken == token and Ragdoll.IsActive(victim) then
-				CombatService.ApplyVelocity(victim, Vector3.new(0, 0.5, 0) + look, Config.M1.UppercutHang)
+				CombatService.Float(victim, Config.M1.UppercutHang, Config.M1.UppercutFloatEnd)
 			end
 		end)
 	elseif variant == "Downslam" then
@@ -1736,7 +1762,10 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 	end
 	CombatState.SetBusy(
 		character,
-		if finisher and variant ~= "Uppercut" then Config.M1.FinisherBusy else Config.M1.Busy
+		if variant == "Uppercut"
+			then Config.M1.UppercutJumpAfter + 0.05 -- free to jump after them almost at once
+			elseif finisher then Config.M1.FinisherBusy
+			else Config.M1.Busy
 	)
 
 	CombatService.FireVFX("Swing", {
@@ -2606,51 +2635,78 @@ local function swordPart(
 	return part
 end
 
--- The Demon-Slayer Sword: a broad black blade a bit taller than Asta, with
--- a chisel tip, a fuller down the middle, a worn grey edge and a chipped
--- spine. The blade runs along the handle's +Y axis; built around the
--- handle at the origin, then welded.
+-- The Demon-Slayer Sword, as in the series: a huge, broad black greatsword
+-- (about as tall as Asta), battered and stained, with a chisel tip, a faint
+-- ridge down the middle and worn edges; a thin bronze crossbar and a long
+-- two-handed grip ending in a round pommel. The blade runs along the
+-- handle's +Y axis; built around the handle at the origin, then welded.
+-- (Only the look: hitboxes don't depend on it. The animation checker in
+-- tools/anim/rig.py models the blade from 0.86 to the tip, keep in step.)
 local function buildSword(): Model
 	local model = Instance.new("Model")
 	model.Name = "KitWeapon"
 
-	local black = Color3.fromRGB(20, 20, 24)
-	local fuller = Color3.fromRGB(38, 38, 44)
-	local edge = Color3.fromRGB(110, 110, 120)
-	local steel = Color3.fromRGB(58, 58, 66)
-	local wrap = Color3.fromRGB(42, 31, 26)
+	local black = Color3.fromRGB(22, 22, 26)
+	local ridge = Color3.fromRGB(44, 44, 52)
+	local worn = Color3.fromRGB(64, 64, 72)
+	local stain = Color3.fromRGB(46, 48, 56)
+	local nick = Color3.fromRGB(14, 14, 16)
+	local bronze = Color3.fromRGB(92, 70, 42)
+	local darkBronze = Color3.fromRGB(52, 40, 28)
+	local wrap = Color3.fromRGB(60, 44, 30)
+	local band = Color3.fromRGB(34, 26, 20)
 	local metal, cloth = Enum.Material.Metal, Enum.Material.Fabric
 
 	local handle = swordPart("Handle", Vector3.new(0.28, 0.95, 0.28), CFrame.new(), wrap, cloth)
 	handle.Parent = model
 	model.PrimaryPart = handle
 
-	local band = Color3.fromRGB(26, 20, 18)
+	local function flat(name: string, size: Vector3, y: number, z: number, tilt: number): BasePart
+		-- A patch lying on both flats of the blade, turned `tilt` degrees.
+		return swordPart(
+			name,
+			size,
+			CFrame.new(0, y, z) * CFrame.Angles(math.rad(tilt), 0, 0),
+			stain,
+			Enum.Material.Slate
+		)
+	end
+
+	local pommel = swordPart("Pommel", Vector3.new(0.32, 0.32, 0.32), CFrame.new(0, -0.92, 0), bronze, metal) :: Part
+	pommel.Shape = Enum.PartType.Ball
+
 	local parts = {
-		-- Grip: diamond pommel and wrap bands.
-		swordPart(
-			"Pommel",
-			Vector3.new(0.3, 0.3, 0.3),
-			CFrame.new(0, -0.6, 0) * CFrame.Angles(0, 0, math.rad(45)),
-			steel,
-			metal
-		),
-		swordPart("WrapA", Vector3.new(0.32, 0.06, 0.32), CFrame.new(0, -0.3, 0), band, cloth),
-		swordPart("WrapB", Vector3.new(0.32, 0.06, 0.32), CFrame.new(0, 0.02, 0), band, cloth),
-		swordPart("WrapC", Vector3.new(0.32, 0.06, 0.32), CFrame.new(0, 0.34, 0), band, cloth),
-		-- Guard and collar.
-		swordPart("Guard", Vector3.new(0.36, 0.22, 1.15), CFrame.new(0, 0.6, 0), steel, metal),
-		swordPart("Collar", Vector3.new(0.24, 0.12, 0.78), CFrame.new(0, 0.76, 0), black, metal),
-		-- Blade (0.82 to 4.42). The thin side faces forward so horizontal
-		-- swings lead with the edge.
-		swordPart("Blade", Vector3.new(0.18, 3.6, 1.05), CFrame.new(0, 2.62, 0), black, metal),
-		swordPart("Fuller", Vector3.new(0.2, 2.9, 0.16), CFrame.new(0, 2.5, 0.09), fuller, Enum.Material.SmoothPlastic),
-		swordPart("Edge", Vector3.new(0.13, 3.5, 0.09), CFrame.new(0, 2.62, -0.55), edge, metal),
-		-- Chisel tip: a wedge sloping from the spine down to the edge.
-		swordPart("Tip", Vector3.new(0.18, 0.7, 1.05), CFrame.new(0, 4.77, 0), black, metal, "WedgePart"),
-		-- Chips along the spine.
-		swordPart("ChipA", Vector3.new(0.2, 0.2, 0.12), CFrame.new(0, 1.8, 0.55), black, metal),
-		swordPart("ChipB", Vector3.new(0.2, 0.16, 0.12), CFrame.new(0, 3.4, 0.55), black, metal),
+		-- Long two-handed grip, wrapped, with a round pommel.
+		swordPart("GripLower", Vector3.new(0.26, 0.4, 0.26), CFrame.new(0, -0.67, 0), wrap, cloth),
+		swordPart("WrapA", Vector3.new(0.3, 0.05, 0.3), CFrame.new(0, -0.76, 0), band, cloth),
+		swordPart("WrapB", Vector3.new(0.3, 0.05, 0.3), CFrame.new(0, -0.5, 0), band, cloth),
+		swordPart("WrapC", Vector3.new(0.32, 0.05, 0.32), CFrame.new(0, -0.15, 0), band, cloth),
+		swordPart("WrapD", Vector3.new(0.32, 0.05, 0.32), CFrame.new(0, 0.2, 0), band, cloth),
+		pommel,
+		-- Thin crossbar, a little wider than the blade, capped at the ends.
+		swordPart("Guard", Vector3.new(0.2, 0.15, 1.8), CFrame.new(0, 0.6, 0), bronze, metal),
+		swordPart("GuardCapA", Vector3.new(0.24, 0.22, 0.12), CFrame.new(0, 0.6, 0.94), darkBronze, metal),
+		swordPart("GuardCapB", Vector3.new(0.24, 0.22, 0.12), CFrame.new(0, 0.6, -0.94), darkBronze, metal),
+		swordPart("Collar", Vector3.new(0.26, 0.2, 0.72), CFrame.new(0, 0.77, 0), darkBronze, metal),
+		-- The blade (0.86 to 5.0, then the tip to 5.8): full width right up to
+		-- the guard. The thin side faces forward so swings lead with an edge.
+		swordPart("Blade", Vector3.new(0.2, 4.14, 1.4), CFrame.new(0, 2.93, 0), black, metal),
+		swordPart("Ridge", Vector3.new(0.22, 3.7, 0.12), CFrame.new(0, 2.85, 0), ridge, Enum.Material.SmoothPlastic),
+		-- Worn edges on both sides.
+		swordPart("EdgeA", Vector3.new(0.14, 4.0, 0.08), CFrame.new(0, 2.93, -0.69), worn, metal),
+		swordPart("EdgeB", Vector3.new(0.14, 4.0, 0.08), CFrame.new(0, 2.93, 0.69), worn, metal),
+		-- Chisel tip: a wedge cut at a slant across the blade.
+		swordPart("Tip", Vector3.new(0.2, 0.8, 1.4), CFrame.new(0, 5.4, 0), black, metal, "WedgePart"),
+		-- Stains and scars across the flats.
+		flat("StainA", Vector3.new(0.215, 0.9, 0.45), 1.7, 0.25, 20),
+		flat("StainB", Vector3.new(0.215, 0.6, 0.35), 2.6, -0.3, -15),
+		flat("StainC", Vector3.new(0.215, 1.1, 0.4), 3.6, 0.2, 10),
+		flat("StainD", Vector3.new(0.215, 0.5, 0.3), 4.5, -0.25, 30),
+		-- Nicks along the edges.
+		swordPart("NickA", Vector3.new(0.16, 0.22, 0.1), CFrame.new(0, 1.9, -0.66), nick, metal),
+		swordPart("NickB", Vector3.new(0.16, 0.16, 0.1), CFrame.new(0, 3.2, 0.66), nick, metal),
+		swordPart("NickC", Vector3.new(0.16, 0.26, 0.1), CFrame.new(0, 4.3, -0.66), nick, metal),
+		swordPart("NickD", Vector3.new(0.16, 0.18, 0.1), CFrame.new(0, 2.5, 0.66), nick, metal),
 	}
 	-- Plain Welds with the offset written into C0, not WeldConstraints:
 	-- a WeldConstraint works its offset out from where the parts happen to
@@ -2671,11 +2727,11 @@ local function buildSword(): Model
 	local blade = model:FindFirstChild("Blade") :: Part
 	local base = Instance.new("Attachment")
 	base.Name = "TrailBase"
-	base.Position = Vector3.new(0, -1.6, 0)
+	base.Position = Vector3.new(0, -1.84, 0)
 	base.Parent = blade
 	local tip = Instance.new("Attachment")
 	tip.Name = "TrailTip"
-	tip.Position = Vector3.new(0, 1.7, 0)
+	tip.Position = Vector3.new(0, 1.95, 0)
 	tip.Parent = blade
 
 	local trail = Instance.new("Trail")
@@ -5863,10 +5919,16 @@ local function bladeOf(character: Model): BasePart?
 	return if blade and blade:IsA("BasePart") then blade else nil
 end
 
+-- Distances along the blade below are written for a 3.6-stud blade (0 its
+-- middle, 2.1 the tip, -1.8 the guard); they stretch with the real one.
+local function alongBlade(blade: BasePart, along: number): CFrame
+	return blade.CFrame * CFrame.new(0, along * blade.Size.Y / 3.6, 0)
+end
+
 -- A point along the blade: 0 is its middle, 2.1 the tip, -1.8 the guard.
 local function bladePoint(character: Model, along: number): Vector3?
 	local blade = bladeOf(character)
-	return if blade then (blade.CFrame * CFrame.new(0, along, 0)).Position else nil
+	return if blade then alongBlade(blade, along).Position else nil
 end
 
 -- Heavy swing trail for skills: a black core inside a wider red glow that
@@ -5879,7 +5941,7 @@ local function heavyTrail(character: Model, duration: number)
 	local made: { Instance } = {}
 	local function attachment(y: number): Attachment
 		local a = Instance.new("Attachment")
-		a.Position = Vector3.new(0, y, 0)
+		a.Position = Vector3.new(0, y * blade.Size.Y / 3.6, 0)
 		a.Parent = blade
 		table.insert(made, a)
 		return a
@@ -8005,7 +8067,7 @@ local function growGrandBlade(character: Model, duration: number)
 		length = 10
 			* TweenService:GetValue(math.clamp(t / duration, 0, 1), Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 		local wobble = 1 + 0.06 * math.sin(t * 40)
-		local base = blade.CFrame * CFrame.new(0, 2.1 + length / 2, 0)
+		local base = alongBlade(blade, 2.1) * CFrame.new(0, length / 2, 0)
 		core.Size = Vector3.new(0.45 * wobble, length + 0.1, 1.5)
 		core.CFrame = base
 		glow.Size = Vector3.new(0.9 * wobble, length + 0.6, 2.4 * wobble)
@@ -10324,7 +10386,7 @@ function handlers.Entrance(data, character, root)
 			local sword = getSword(character)
 			local blade = sword and sword:FindFirstChild("Blade")
 			local tip = if blade and blade:IsA("BasePart")
-				then (blade.CFrame * CFrame.new(0, 2.1, 0)).Position
+				then alongBlade(blade, 2.1).Position
 				else root.Position + root.CFrame.LookVector * 5
 			U.groundRocks(tip, 9, 2, 1.4)
 			blackSmoke(tip, 12, 3.5, 14)
@@ -10728,7 +10790,7 @@ Animations.Air = {
 
 -- M1 1: right to left horizontal slash.
 Animations.Slash1 = {
-	fadeIn = 0.08,
+	fadeIn = 0.1,
 	fadeOut = 0.22,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -10746,7 +10808,7 @@ Animations.Slash1 = {
 			},
 		},
 		{
-			0.08,
+			0.1,
 			{
 				Torso = body(0.056, 3, -42),
 				Head = rot(0, 32),
@@ -10760,7 +10822,7 @@ Animations.Slash1 = {
 			"InOut",
 		},
 		{
-			0.12,
+			0.15,
 			{
 				Torso = body(0.034, -4, -5),
 				Head = rot(0, 4),
@@ -10774,7 +10836,7 @@ Animations.Slash1 = {
 			"In",
 		},
 		{
-			0.17,
+			0.21,
 			{
 				Torso = body(0.124, -8, 38),
 				Head = rot(0, -28),
@@ -10788,7 +10850,7 @@ Animations.Slash1 = {
 			"Out",
 		},
 		{
-			0.32,
+			0.4,
 			{
 				Torso = body(0.083, -6, 28),
 				Head = rot(0, -20),
@@ -10806,7 +10868,7 @@ Animations.Slash1 = {
 
 -- M1 2: backhand, left to right.
 Animations.Slash2 = {
-	fadeIn = 0.08,
+	fadeIn = 0.1,
 	fadeOut = 0.22,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -10824,7 +10886,7 @@ Animations.Slash2 = {
 			},
 		},
 		{
-			0.08,
+			0.1,
 			{
 				Torso = body(0.052, 3, 35),
 				Head = rot(0, -28),
@@ -10838,7 +10900,7 @@ Animations.Slash2 = {
 			"InOut",
 		},
 		{
-			0.12,
+			0.15,
 			{
 				Torso = body(0.028, -4),
 				Head = rot(0, -2),
@@ -10852,7 +10914,7 @@ Animations.Slash2 = {
 			"In",
 		},
 		{
-			0.17,
+			0.21,
 			{
 				Torso = body(0.124, -8, -38),
 				Head = rot(0, 28),
@@ -10866,7 +10928,7 @@ Animations.Slash2 = {
 			"Out",
 		},
 		{
-			0.32,
+			0.4,
 			{
 				Torso = body(0.08, -6, -26),
 				Head = rot(0, 18),
@@ -10884,7 +10946,7 @@ Animations.Slash2 = {
 
 -- M1 3: rising diagonal.
 Animations.Slash3 = {
-	fadeIn = 0.08,
+	fadeIn = 0.1,
 	fadeOut = 0.22,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -10902,7 +10964,7 @@ Animations.Slash3 = {
 			},
 		},
 		{
-			0.08,
+			0.1,
 			{
 				Torso = body(0.128, -14, -25),
 				Head = rot(10, 18),
@@ -10916,7 +10978,7 @@ Animations.Slash3 = {
 			"InOut",
 		},
 		{
-			0.12,
+			0.15,
 			{
 				Torso = body(0.022, -3),
 				Head = rot(0),
@@ -10930,7 +10992,7 @@ Animations.Slash3 = {
 			"In",
 		},
 		{
-			0.17,
+			0.21,
 			{
 				Torso = body(0.12, 10, 28),
 				Head = rot(-10, -15),
@@ -10944,7 +11006,7 @@ Animations.Slash3 = {
 			"Out",
 		},
 		{
-			0.32,
+			0.4,
 			{
 				Torso = body(0.07, 6, 20),
 				Head = rot(-6, -10),
@@ -10962,7 +11024,7 @@ Animations.Slash3 = {
 
 -- Finisher: huge horizontal cleave that wraps around the body.
 Animations.Cleave = {
-	fadeIn = 0.12,
+	fadeIn = 0.14,
 	fadeOut = 0.28,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -10980,7 +11042,7 @@ Animations.Cleave = {
 			},
 		},
 		{
-			0.12,
+			0.14,
 			{
 				Torso = body(0.085, 4, -60),
 				Head = rot(0, 40),
@@ -10994,7 +11056,7 @@ Animations.Cleave = {
 			"InOut",
 		},
 		{
-			0.18,
+			0.21,
 			{
 				Torso = body(0.038, -4, -10),
 				Head = rot(0, 8),
@@ -11008,7 +11070,7 @@ Animations.Cleave = {
 			"In",
 		},
 		{
-			0.24,
+			0.28,
 			{
 				Torso = body(0.214, -12, 62),
 				Head = rot(0, -42),
@@ -11022,7 +11084,7 @@ Animations.Cleave = {
 			"Out",
 		},
 		{
-			0.44,
+			0.52,
 			{
 				Torso = body(0.168, -10, 50),
 				Head = rot(0, -34),
@@ -11040,7 +11102,7 @@ Animations.Cleave = {
 
 -- Finisher (jump held): rising vertical slash.
 Animations.Rising = {
-	fadeIn = 0.12,
+	fadeIn = 0.14,
 	fadeOut = 0.28,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -11058,7 +11120,7 @@ Animations.Rising = {
 			},
 		},
 		{
-			0.12,
+			0.14,
 			{
 				Torso = body(0.035, -22, -15),
 				Head = rot(14, 10),
@@ -11072,7 +11134,7 @@ Animations.Rising = {
 			"InOut",
 		},
 		{
-			0.18,
+			0.21,
 			{
 				Torso = body(0.051, -8),
 				Head = rot(2),
@@ -11086,7 +11148,7 @@ Animations.Rising = {
 			"In",
 		},
 		{
-			0.24,
+			0.28,
 			{
 				Torso = body(0.094, 15, 15),
 				Head = rot(-20, -10),
@@ -11100,7 +11162,7 @@ Animations.Rising = {
 			"Out",
 		},
 		{
-			0.44,
+			0.52,
 			{
 				Torso = body(0.071, 10, 10),
 				Head = rot(-14, -8),
@@ -11118,7 +11180,7 @@ Animations.Rising = {
 
 -- Finisher (airborne): two-handed overhead chop.
 Animations.Chop = {
-	fadeIn = 0.12,
+	fadeIn = 0.14,
 	fadeOut = 0.28,
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
 	keys = {
@@ -11133,7 +11195,7 @@ Animations.Chop = {
 			},
 		},
 		{
-			0.12,
+			0.14,
 			{
 				Torso = rot(20),
 				Head = rot(-12),
@@ -11145,7 +11207,7 @@ Animations.Chop = {
 			"InOut",
 		},
 		{
-			0.18,
+			0.21,
 			{
 				Torso = rot(0),
 				Head = rot(0),
@@ -11157,7 +11219,7 @@ Animations.Chop = {
 			"In",
 		},
 		{
-			0.24,
+			0.28,
 			{
 				Torso = rot(-35),
 				Head = rot(18),
@@ -11169,7 +11231,7 @@ Animations.Chop = {
 			"Out",
 		},
 		{
-			0.44,
+			0.52,
 			{
 				Torso = rot(-28),
 				Head = rot(14),
@@ -13044,7 +13106,7 @@ Animations.DividerCharge = {
 				Torso = body(0.114, 6, -50),
 				Head = rot(0, 37.5),
 				RightArm = limb(-40, -35),
-				Sword = aim(0.55, -0.2, 0.8),
+				Sword = aim(0.55, -0.14, 0.8),
 				LeftArm = limb(80, -30),
 				RightLeg = rot(0, 47.5),
 				LeftLeg = rot(0, 47.5),
@@ -13058,7 +13120,7 @@ Animations.DividerCharge = {
 				Torso = body(0.148, 8, -53),
 				Head = rot(0, 39.75),
 				RightArm = limb(-40, -35),
-				Sword = aim(0.55, -0.2, 0.8),
+				Sword = aim(0.55, -0.14, 0.8),
 				LeftArm = limb(80, -30),
 				RightLeg = rot(0, 50.35),
 				LeftLeg = rot(0, 50.35),
@@ -13072,7 +13134,7 @@ Animations.DividerCharge = {
 				Torso = body(0.096, 5, -49),
 				Head = rot(0, 36.75),
 				RightArm = limb(-40, -35),
-				Sword = aim(0.55, -0.2, 0.8),
+				Sword = aim(0.55, -0.14, 0.8),
 				LeftArm = limb(80, -30),
 				RightLeg = rot(0, 46.55),
 				LeftLeg = rot(0, 46.55),
@@ -13086,7 +13148,7 @@ Animations.DividerCharge = {
 				Torso = body(0.164, 9, -54),
 				Head = rot(0, 40.5),
 				RightArm = limb(-40, -35),
-				Sword = aim(0.55, -0.2, 0.8),
+				Sword = aim(0.55, -0.14, 0.8),
 				LeftArm = limb(80, -30),
 				RightLeg = rot(0, 51.3),
 				LeftLeg = rot(0, 51.3),
@@ -13110,7 +13172,7 @@ Animations.DividerRelease = {
 				Torso = body(0.164, 9, -54),
 				Head = rot(0, 40.5),
 				RightArm = limb(-40, -35),
-				Sword = aim(0.55, -0.2, 0.8),
+				Sword = aim(0.55, -0.14, 0.8),
 				LeftArm = limb(80, -30),
 				RightLeg = rot(0, 51.3),
 				LeftLeg = rot(0, 51.3),
@@ -14814,7 +14876,7 @@ Animations.BlackSlash = {
 				Torso = body(-0.035, -12, 36),
 				Head = rot(6, -26),
 				RightArm = limb(66, 56),
-				Sword = aim(-0.7, -0.45, -0.55),
+				Sword = aim(-0.72, -0.38, -0.58),
 				LeftArm = limb(24, -32),
 				RightLeg = rot(-24),
 				LeftLeg = rot(22),

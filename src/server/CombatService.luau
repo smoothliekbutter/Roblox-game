@@ -232,8 +232,10 @@ function CombatService.Tumble(root: BasePart, velocity: Vector3)
 	root.AssemblyAngularVelocity = spin
 end
 
--- Knockback for a hit. Ragdolled victims of heavy hits freeze for a split
--- second first (hit-stop), then fly.
+-- Knockback for a hit. Ragdolled victims of heavy hits go limp for a split
+-- second first (hit-stop), then fly. (Not by anchoring them: anchoring and
+-- releasing a body mid-air restarts its physics replication, which every
+-- screen sees as a hitch right as the launch starts.)
 function CombatService.Launch(victim: Model, velocity: Vector3, duration: number, hitStop: number?)
 	local root = getRoot(victim)
 	if not root then
@@ -243,17 +245,35 @@ function CombatService.Launch(victim: Model, velocity: Vector3, duration: number
 		CombatService.ApplyVelocity(victim, velocity, duration)
 		return
 	end
-	root.Anchored = true
 	task.delay(hitStop, function()
-		if not root.Parent then
-			return
-		end
-		root.Anchored = false
-		if Ragdoll.IsActive(victim) then
-			-- Anchoring resets network ownership; ragdolls stay with the server.
-			pcall(root.SetNetworkOwner, root, nil)
+		if root.Parent and Ragdoll.IsActive(victim) then
 			CombatService.Tumble(root, velocity)
 		end
+	end)
+end
+
+-- Eases a launched ragdoll through the top of its arc: its climb and fall
+-- slow to a drift (a fraction of gravity) for `duration`, ending at
+-- `endSpeed` (studs/s, negative is down), then gravity takes it back. Reads
+-- as hang time, not as the body stopping.
+function CombatService.Float(character: Model, duration: number, endSpeed: number)
+	local root = getRoot(character)
+	if not root or not Ragdoll.IsActive(character) then
+		return
+	end
+	local start = root.AssemblyLinearVelocity
+	local startY = if math.abs(start.Y) < 0.05 then 0.05 else start.Y
+	local mover = Impulse.Apply(root, Vector3.new(start.X, startY, start.Z), duration, "Knockback")
+	local began = os.clock()
+	local connection
+	connection = RunService.Heartbeat:Connect(function()
+		if not mover.Parent then
+			connection:Disconnect()
+			return
+		end
+		local a = math.clamp((os.clock() - began) / duration, 0, 1)
+		local drift = Vector3.new(start.X, 0, start.Z) * (1 - 0.6 * a)
+		mover.VectorVelocity = drift + Vector3.new(0, startY + (endSpeed - startY) * a, 0)
 	end)
 end
 
@@ -622,10 +642,10 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 		end
 		CombatService.Launch(victim, Vector3.new(0, Config.M1.UppercutForce, 0) + look * 5, 0.2, Config.Physics.HitStop)
 		local token = victimData and victimData.ragdollToken
-		task.delay(Config.Physics.HitStop + Config.M1.UppercutForce / workspace.Gravity, function()
+		task.delay(Config.Physics.HitStop + Config.M1.UppercutFloatAt, function()
 			-- Still flying from this uppercut (no new hit took over): the hang.
 			if victimData and victimData.ragdollToken == token and Ragdoll.IsActive(victim) then
-				CombatService.ApplyVelocity(victim, Vector3.new(0, 0.5, 0) + look, Config.M1.UppercutHang)
+				CombatService.Float(victim, Config.M1.UppercutHang, Config.M1.UppercutFloatEnd)
 			end
 		end)
 	elseif variant == "Downslam" then
@@ -735,7 +755,10 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 	end
 	CombatState.SetBusy(
 		character,
-		if finisher and variant ~= "Uppercut" then Config.M1.FinisherBusy else Config.M1.Busy
+		if variant == "Uppercut"
+			then Config.M1.UppercutJumpAfter + 0.05 -- free to jump after them almost at once
+			elseif finisher then Config.M1.FinisherBusy
+			else Config.M1.Busy
 	)
 
 	CombatService.FireVFX("Swing", {
