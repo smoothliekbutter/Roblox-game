@@ -2452,6 +2452,116 @@ Animations.MeteorSpin = {
 	},
 }
 
+-- Black Meteorite: the head-first dive, streamlined, holding them out front, sword trailing.
+Animations.MeteorDrill = {
+	fadeIn = 0.03,
+	fadeOut = 0.05,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(24),
+				Head = rot(-18),
+				RightArm = limb(178, 10),
+				Sword = aim(0.1, 0.2, 0.97),
+				LeftArm = limb(100, -5),
+				RightLeg = rot(-15),
+				LeftLeg = rot(30),
+			},
+		},
+		{
+			0.14,
+			{
+				Torso = rot(0),
+				Head = rot(-12),
+				RightArm = limb(8, -10, 8),
+				Sword = aim(0.05, -1, 0.1),
+				LeftArm = limb(95, -6),
+				RightLeg = rot(2),
+				LeftLeg = rot(-2),
+			},
+			"Quad",
+			"Out",
+		},
+		{
+			1.2,
+			{
+				Torso = rot(0),
+				Head = rot(-12),
+				RightArm = limb(8, -10, 8),
+				Sword = aim(0.05, -1, 0.1),
+				LeftArm = limb(95, -6),
+				RightLeg = rot(2),
+				LeftLeg = rot(-2),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Black Meteorite: rolling back over after the impact and landing in a crouch.
+Animations.MeteorLand = {
+	fadeIn = 0.02,
+	fadeOut = 0.2,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(0),
+				Head = rot(-12),
+				RightArm = limb(8, -10, 8),
+				Sword = aim(0.05, -1, 0.1),
+				LeftArm = limb(95, -6),
+				RightLeg = rot(2),
+				LeftLeg = rot(-2),
+			},
+		},
+		{
+			0.1,
+			{
+				Torso = rot(22),
+				Head = rot(-10),
+				RightArm = limb(30, -25),
+				Sword = aim(0.45, -0.55, 0.7),
+				LeftArm = limb(55, 10, -10),
+				RightLeg = rot(78),
+				LeftLeg = rot(66),
+			},
+			"Quad",
+			"Out",
+		},
+		{
+			0.24,
+			{
+				Torso = rot(-20),
+				Head = rot(8),
+				RightArm = limb(55, 8),
+				Sword = aim(0, -0.4, -0.92),
+				LeftArm = limb(25, 0, -25),
+				RightLeg = rot(-40),
+				LeftLeg = rot(34),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.55,
+			{
+				Torso = rot(-20),
+				Head = rot(8),
+				RightArm = limb(55, 8),
+				Sword = aim(0, -0.4, -0.92),
+				LeftArm = limb(25, 0, -25),
+				RightLeg = rot(-40),
+				LeftLeg = rot(34),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
 -- Black Meteorite: crashing down, sword driven into the ground.
 Animations.MeteorSlam = {
 	fadeIn = 0.02,

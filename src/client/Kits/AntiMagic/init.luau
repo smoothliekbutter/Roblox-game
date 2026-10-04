@@ -1608,18 +1608,20 @@ function handlers.BlackMeteorite(data, character, root)
 		local air = data.airborne == true
 		local length = MeteorVortex.Length
 		if typeof(data.origin) == "CFrame" then
-			local origin: CFrame = data.origin
+			-- The whole move from here: spin, flip, head-first dive, landing.
 			local top = if type(data.top) == "number" then data.top else MeteorVortex.Top
+			local floorY = if type(data.floorY) == "number" then data.floorY else nil
+			local plan = MeteorVortex.Plan(data.origin, top, floorY)
 			local start = os.clock()
 			local bind = "CloverVortex" .. tostring(start)
 			-- After shift lock and the camera, so the path has the last word.
 			RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
 				local t = os.clock() - start
-				if t >= length or not root.Parent then
+				if t >= plan.length or not root.Parent then
 					RunService:UnbindFromRenderStep(bind)
 					return
 				end
-				root.CFrame = MeteorVortex.At(origin, t, top)
+				root.CFrame = MeteorVortex.At(plan, t)
 			end)
 		end
 
@@ -1729,13 +1731,26 @@ function handlers.BlackMeteorite(data, character, root)
 			CameraShake.FovKick(10)
 		end
 	elseif phase == "Slam" then
-		play(character, ANIMS.MeteorSlam)
-		heavyTrail(character, 0.5)
-		U.bodyTrail(character, RED, 0.5)
-		U.bodyTrail(data.target, BLACK, 0.5)
-		local down = (-UP + root.CFrame.LookVector * 0.05).Unit
-		U.speedLines(root, down, 0.45)
-		-- A meteor's tail: black smoke and red streaks pouring off upward.
+		-- Over the top and down head-first, spinning like a drill (the TSB
+		-- "Head First" dive), the meteor's tail streaming up behind them.
+		local dive = if type(data.dive) == "number" then data.dive else 0.55
+		play(character, ANIMS.MeteorDrill)
+		heavyTrail(character, dive)
+		U.bodyTrail(character, RED, dive)
+		U.bodyTrail(data.target, BLACK, dive)
+		U.speedLines(root, -UP, dive)
+		U.spiral(root, BLACK, 3.4, 3, dive, 4, 0.9, 0.12)
+		U.spiral(root, RED, 2.6, 3, dive, 3, 0.3, 0.12)
+		-- Spinning afterimages all the way down.
+		for i = 0, math.floor((dive - MeteorVortex.Flip) / 0.05) do
+			task.delay(MeteorVortex.Flip + i * 0.05, function()
+				if character.Parent then
+					U.afterimage(character, if i % 2 == 0 then BLACK else DARK_RED, 0.22)
+				end
+			end)
+		end
+		-- A meteor's tail: black smoke and red streaks pouring off upward
+		-- (he's head-down, so that's off the bottom of him).
 		trailEmitter(root, {
 			Texture = U.textures.Smoke,
 			Color = ColorSequence.new(BLACK),
@@ -1748,10 +1763,10 @@ function handlers.BlackMeteorite(data, character, root)
 			Lifetime = NumberRange.new(0.3, 0.55),
 			Rate = 140,
 			Speed = NumberRange.new(4, 10),
-			EmissionDirection = Enum.NormalId.Top,
+			EmissionDirection = Enum.NormalId.Bottom,
 			SpreadAngle = Vector2.new(30, 30),
 			Drag = 3,
-		}, 0.45)
+		}, dive)
 		trailEmitter(root, {
 			Texture = U.textures.Spark,
 			Color = ColorSequence.new(RED, DARK_RED),
@@ -1760,13 +1775,13 @@ function handlers.BlackMeteorite(data, character, root)
 			Lifetime = NumberRange.new(0.15, 0.3),
 			Rate = 70,
 			Speed = NumberRange.new(14, 24),
-			EmissionDirection = Enum.NormalId.Top,
+			EmissionDirection = Enum.NormalId.Bottom,
 			SpreadAngle = Vector2.new(25, 25),
 			Orientation = Enum.ParticleOrientation.VelocityParallel,
 			Squash = NumberSequence.new(1.6),
-		}, 0.45)
+		}, dive)
 		-- Air compressing under them on the way down.
-		for i = 0, 6 do
+		for i = 0, math.floor(dive / 0.06) do
 			task.delay(i * 0.06, function()
 				if root.Parent then
 					U.ringBurst(
@@ -1785,7 +1800,8 @@ function handlers.BlackMeteorite(data, character, root)
 		end
 	elseif phase == "Impact" then
 		local position: Vector3 = data.position
-		play(character, ANIMS.MeteorImpact)
+		-- (He rolls back over onto his feet: the end of the shared path.)
+		play(character, ANIMS.MeteorLand)
 		local victim = data.target
 		U.flash(position + UP, WHITE, 6, 0.08)
 		U.flash(position + UP, BLACK, 16, 0.35)

@@ -603,7 +603,8 @@ local FACING = CFrame.Angles(0, math.pi, 0)
 local HOLD_SEIZE = CFrame.new(-1.6, 0.35, -1.75) * FACING
 -- Kept level with him server-side so they never end up under the floor on
 -- landing; clients show them driven down in front of him.
-local HOLD_SLAM = CFrame.new(-1.3, 0, -1.8) * FACING
+-- In the head-first dive: out in front of his face, upside down like him.
+local HOLD_DRILL = CFrame.new(-0.6, 0.6, -2.4) * FACING
 -- Held out at arm's length while he spins them round.
 local HOLD_SPIN = CFrame.new(-1.7, 0.5, -2.3) * FACING
 
@@ -708,7 +709,8 @@ local SURGE_AT = 0.2
 local function blackMeteorite(ctx)
 	local c, character = ctx.combat, ctx.character
 	local airborne = ctx.airborne
-	local target, release, hold = reachGrab(ctx, (if airborne then 0.3 else SEIZE_TIME) + MeteorVortex.Length + 1)
+	-- (The grab lasts the whole move: spin, flip, the longest dive, landing.)
+	local target, release, hold = reachGrab(ctx, (if airborne then 0.3 else SEIZE_TIME) + MeteorVortex.Length + 1.8)
 	if not target or not release or not hold then
 		return
 	end
@@ -731,54 +733,71 @@ local function blackMeteorite(ctx)
 		return
 	end
 
-	-- The vortex: he's held on the shared path (every client draws the same).
-	CombatState.SetCasting(character, MeteorVortex.Length + 1)
+	-- The vortex, the head-first dive and the landing: he's held on the
+	-- shared path (Shared/MeteorVortex) the whole way; every client draws
+	-- the same.
 	hold(HOLD_SPIN)
 	local origin = CFrame.lookAt(ctx.root.Position, ctx.root.Position + forward)
 	local top = if airborne then MeteorVortex.AirTop else MeteorVortex.Top
-	fx(ctx, "BlackMeteorite", "Vortex", { target = target, origin = origin, top = top, airborne = airborne })
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { character, target }
+	local floor = workspace:Raycast(origin.Position + UP * 2, UP * -250, params)
+	local floorY = if floor then floor.Position.Y else nil
+	local plan = MeteorVortex.Plan(origin, top, floorY)
+	CombatState.SetCasting(character, plan.length + 0.3)
+	fx(ctx, "BlackMeteorite", "Vortex", {
+		target = target,
+		origin = origin,
+		top = top,
+		floorY = floorY,
+		airborne = airborne,
+	})
 	local stop = c.Cutscene({
 		[character] = function(t: number): CFrame
-			return MeteorVortex.At(origin, t, top)
+			return MeteorVortex.At(plan, t)
 		end,
-	}, MeteorVortex.Length)
-	local spinStart = os.clock()
-	local ticks = 0
-	while os.clock() - spinStart < MeteorVortex.Length do
-		task.wait()
-		if interrupted(ctx) or not CombatState.IsAlive(target) then
-			stop()
-			release()
+	}, plan.length)
+	local start = os.clock()
+	local function waitUntil(time: number): boolean
+		while os.clock() - start < time do
+			task.wait()
+			if interrupted(ctx) or not CombatState.IsAlive(target) then
+				stop()
+				release()
+				return false
+			end
+		end
+		return true
+	end
+
+	-- The vortex tears at them as it spins: three small hits.
+	for tick = 1, 3 do
+		if not waitUntil(MeteorVortex.Length * tick / 3) then
 			return
 		end
-		-- The vortex tears at them as it spins: three small hits.
-		local due = math.floor((os.clock() - spinStart) / (MeteorVortex.Length / 3))
-		if due > ticks and ticks < 3 then
-			ticks += 1
-			c.Hit(character, target, { damage = 1, stun = 1.5, attackType = "Melee", unblockable = true })
-		end
+		c.Hit(character, target, { damage = 1, stun = 1.5, attackType = "Melee", unblockable = true })
 	end
-	stop()
 
-	hold(HOLD_SLAM)
-	fx(ctx, "BlackMeteorite", "Slam", { target = target, airborne = airborne })
-	c.ApplyVelocity(character, UP * -125 + forward * 8, 0.4, { landStop = true, landKeep = 0 })
-	local slamStart = os.clock()
-	waitForTakeoff(ctx, 0.3)
-	waitForGround(ctx, 0.6)
-	-- A short drop lands a frame after the Slam: let the swing reach its
-	-- strike (0.12s into MeteorSlam) before the crater replaces it.
-	local early = 0.13 - (os.clock() - slamStart)
-	if early > 0 then
-		task.wait(early)
+	-- Over the top and down, head-first, spinning.
+	hold(HOLD_DRILL)
+	fx(ctx, "BlackMeteorite", "Slam", {
+		target = target,
+		airborne = airborne,
+		dive = plan.impactAt - plan.flipAt,
+	})
+	if not waitUntil(plan.impactAt) then
+		return
 	end
-	c.ApplyVelocity(character, Vector3.zero, 0.05)
 	release()
 
 	-- The client draws its own (much bigger) crater for this one.
-	local impact = groundBelow(ctx) + forward * 3
-	fx(ctx, "BlackMeteorite", "Impact", { position = impact, target = target })
+	local impact = Vector3.new(plan.diveEnd.X, floorY or (plan.diveEnd.Y - 3), plan.diveEnd.Z)
+	fx(ctx, "BlackMeteorite", "Impact", { position = impact, target = target, grounded = floorY ~= nil })
 	c.ShakeArea(impact, 45, 0.6)
+	local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local away = if targetRoot then c.Flat(targetRoot.Position - ctx.root.Position) else Vector3.zero
+	away = if away.Magnitude > 0.1 then away.Unit else forward
 	c.Hit(character, target, {
 		damage = if airborne then 4 else 6, -- plus the seize and the vortex's three
 		stun = 1,
@@ -786,9 +805,11 @@ local function blackMeteorite(ctx)
 		unblockable = true,
 		heavy = true,
 		ragdoll = 1.6,
-		velocity = forward * 25 + UP * 35,
+		velocity = away * 25 + UP * 35,
 	})
-	CombatState.SetCasting(character, 0.3)
+	-- He rolls back onto his feet (the rest of the path), then he's free.
+	waitUntil(plan.length)
+	CombatState.SetCasting(character, 0.2)
 end
 
 local DIVIDER_CHARGE = 0.62

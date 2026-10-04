@@ -757,10 +757,14 @@ return Kits
           <string name="Name">MeteorVortex</string>
           <string name="Source"><![CDATA[--[[
 	MeteorVortex
-	Black Meteorite's spin: holding them out by the throat, Asta whirls
-	round in an anti-magic vortex, bobbing up and down as it carries him
-	into the sky, and finishes facing the way he started, sword raised for
-	the slam.
+	Black Meteorite after the grab, start to finish:
+	  1. the vortex: holding them out by the throat, Asta whirls round,
+	     bobbing up and down as it carries him into the sky, and finishes
+	     facing the way he started;
+	  2. the flip: he tips forward over the top until he's head-down;
+	  3. the dive: head-first, spinning like a drill (a whole number of
+	     turns, faster as he falls) down into the ground with them;
+	  4. the recovery: the somersault finishes and he lands on his feet.
 
 	Shared so the server (which holds him on the path) and every client
 	(which draws him on it smoothly) agree on where he is. t = 0 is the
@@ -769,27 +773,74 @@ return Kits
 
 local MeteorVortex = {}
 
-MeteorVortex.Length = 1.2 -- seconds of spinning
+MeteorVortex.Length = 1.2 -- seconds of spinning up
 MeteorVortex.Turns = 3 -- whole turns, so he ends facing forward
 MeteorVortex.Top = 20 -- studs he ends up above where he started (on the ground)
 MeteorVortex.AirTop = 8 -- the same, when it starts in the air
 MeteorVortex.Bob = 4 -- how far each bob dips and rises
 MeteorVortex.Radius = 1.5 -- the little circle his body traces
 
+MeteorVortex.Flip = 0.14 -- tipping over head-down at the top
+MeteorVortex.DiveSpeed = 45 -- studs/s, on average, on the way down
+MeteorVortex.SpinRate = 9 -- turns per second while diving
+MeteorVortex.Recover = 0.26 -- rolling back over onto his feet
+MeteorVortex.ImpactHeight = 3.2 -- his root above the ground when he hits (head-first)
+MeteorVortex.NoFloorDrop = 16 -- how far he dives when there's no ground in reach
+
 local UP = Vector3.yAxis
+
+export type Plan = {
+	origin: CFrame,
+	top: number,
+	floorY: number?, -- the ground under him (nil: none in reach)
+	topPosition: Vector3, -- where the spin ends
+	diveEnd: Vector3, -- where he hits
+	drop: number,
+	spins: number, -- whole turns in the dive
+	flipAt: number,
+	diveAt: number,
+	impactAt: number,
+	length: number,
+}
 
 local function smooth(a: number): number
 	return a * a * (3 - 2 * a)
 end
 
--- How far round he has turned (radians) at fraction a: slow to start,
--- fastest in the middle, easing out facing forward again.
+-- Everything about one Meteorite, worked out from where he grabbed them.
+function MeteorVortex.Plan(origin: CFrame, top: number, floorY: number?): Plan
+	local topPosition = origin.Position + UP * top
+	local forward = origin.LookVector
+	local endY = if floorY then floorY + MeteorVortex.ImpactHeight else topPosition.Y - MeteorVortex.NoFloorDrop
+	endY = math.min(endY, topPosition.Y - 2)
+	local drop = topPosition.Y - endY
+	local dive = math.clamp(drop / MeteorVortex.DiveSpeed, 0.35, 0.9)
+	local flipAt = MeteorVortex.Length
+	local diveAt = flipAt + MeteorVortex.Flip
+	local impactAt = diveAt + dive
+	return {
+		origin = origin,
+		top = top,
+		floorY = floorY,
+		topPosition = topPosition,
+		diveEnd = Vector3.new(topPosition.X, endY, topPosition.Z) + forward * 1.8,
+		drop = drop,
+		spins = math.max(2, math.floor(MeteorVortex.SpinRate * dive + 0.5)),
+		flipAt = flipAt,
+		diveAt = diveAt,
+		impactAt = impactAt,
+		length = impactAt + MeteorVortex.Recover,
+	}
+end
+
+-- How far round he has turned (radians) at fraction a of the spin-up: slow
+-- to start, fastest in the middle, easing out facing forward again.
 function MeteorVortex.Angle(a: number): number
 	return MeteorVortex.Turns * 2 * math.pi * smooth(math.clamp(a, 0, 1))
 end
 
--- His root at time t. `top` is how high the spin carries him.
-function MeteorVortex.At(origin: CFrame, t: number, top: number?): CFrame
+-- The spin-up alone: his root at time t (0 to Length).
+function MeteorVortex.Spin(origin: CFrame, t: number, top: number?): CFrame
 	local a = math.clamp(t / MeteorVortex.Length, 0, 1)
 	local angle = MeteorVortex.Angle(a)
 	-- Rising overall, bobbing down and up twice on the way (the bobs ease in
@@ -806,6 +857,38 @@ function MeteorVortex.At(origin: CFrame, t: number, top: number?): CFrame
 		* origin.Rotation
 		* CFrame.Angles(0, -angle, 0)
 		* CFrame.Angles(math.rad(10) * pull, 0, -math.rad(12) * pull)
+end
+
+-- His root at time t, over the whole move. Each stage starts exactly where
+-- the last one left him, so nothing snaps.
+function MeteorVortex.At(plan: Plan, t: number): CFrame
+	if t <= plan.flipAt then
+		return MeteorVortex.Spin(plan.origin, t, plan.top)
+	end
+	local forward = plan.origin.LookVector
+	if t <= plan.diveAt then
+		-- Tipping forward over the top until he's head-down.
+		local a = (t - plan.flipAt) / (plan.diveAt - plan.flipAt)
+		local e = smooth(a)
+		local position = plan.topPosition + UP * math.sin(a * math.pi) * 1.2 + forward * 0.6 * e
+		return CFrame.new(position) * plan.origin.Rotation * CFrame.Angles(-math.pi * e, 0, 0)
+	end
+	if t <= plan.impactAt then
+		-- Head-first, spinning like a drill, faster as he falls.
+		local a = (t - plan.diveAt) / (plan.impactAt - plan.diveAt)
+		local from = plan.topPosition + forward * 0.6
+		local position = from:Lerp(plan.diveEnd, a) - UP * plan.drop * (a ^ 1.7 - a)
+		local spin = plan.spins * 2 * math.pi * a
+		return CFrame.new(position) * CFrame.Angles(0, -spin, 0) * plan.origin.Rotation * CFrame.Angles(-math.pi, 0, 0)
+	end
+	-- The somersault finishes and he lands on his feet.
+	local a = math.clamp((t - plan.impactAt) / (plan.length - plan.impactAt), 0, 1)
+	local e = smooth(a)
+	local landY = if plan.floorY then plan.floorY + 3 else plan.diveEnd.Y
+	local position = Vector3.new(plan.diveEnd.X, plan.diveEnd.Y + (landY - plan.diveEnd.Y) * e, plan.diveEnd.Z)
+		+ UP * math.sin(a * math.pi) * 1.5
+		+ forward * 1.5 * e
+	return CFrame.new(position) * plan.origin.Rotation * CFrame.Angles(-math.pi * (1 + e), 0, 0)
 end
 
 return MeteorVortex
@@ -3168,7 +3251,8 @@ local FACING = CFrame.Angles(0, math.pi, 0)
 local HOLD_SEIZE = CFrame.new(-1.6, 0.35, -1.75) * FACING
 -- Kept level with him server-side so they never end up under the floor on
 -- landing; clients show them driven down in front of him.
-local HOLD_SLAM = CFrame.new(-1.3, 0, -1.8) * FACING
+-- In the head-first dive: out in front of his face, upside down like him.
+local HOLD_DRILL = CFrame.new(-0.6, 0.6, -2.4) * FACING
 -- Held out at arm's length while he spins them round.
 local HOLD_SPIN = CFrame.new(-1.7, 0.5, -2.3) * FACING
 
@@ -3273,7 +3357,8 @@ local SURGE_AT = 0.2
 local function blackMeteorite(ctx)
 	local c, character = ctx.combat, ctx.character
 	local airborne = ctx.airborne
-	local target, release, hold = reachGrab(ctx, (if airborne then 0.3 else SEIZE_TIME) + MeteorVortex.Length + 1)
+	-- (The grab lasts the whole move: spin, flip, the longest dive, landing.)
+	local target, release, hold = reachGrab(ctx, (if airborne then 0.3 else SEIZE_TIME) + MeteorVortex.Length + 1.8)
 	if not target or not release or not hold then
 		return
 	end
@@ -3296,54 +3381,71 @@ local function blackMeteorite(ctx)
 		return
 	end
 
-	-- The vortex: he's held on the shared path (every client draws the same).
-	CombatState.SetCasting(character, MeteorVortex.Length + 1)
+	-- The vortex, the head-first dive and the landing: he's held on the
+	-- shared path (Shared/MeteorVortex) the whole way; every client draws
+	-- the same.
 	hold(HOLD_SPIN)
 	local origin = CFrame.lookAt(ctx.root.Position, ctx.root.Position + forward)
 	local top = if airborne then MeteorVortex.AirTop else MeteorVortex.Top
-	fx(ctx, "BlackMeteorite", "Vortex", { target = target, origin = origin, top = top, airborne = airborne })
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { character, target }
+	local floor = workspace:Raycast(origin.Position + UP * 2, UP * -250, params)
+	local floorY = if floor then floor.Position.Y else nil
+	local plan = MeteorVortex.Plan(origin, top, floorY)
+	CombatState.SetCasting(character, plan.length + 0.3)
+	fx(ctx, "BlackMeteorite", "Vortex", {
+		target = target,
+		origin = origin,
+		top = top,
+		floorY = floorY,
+		airborne = airborne,
+	})
 	local stop = c.Cutscene({
 		[character] = function(t: number): CFrame
-			return MeteorVortex.At(origin, t, top)
+			return MeteorVortex.At(plan, t)
 		end,
-	}, MeteorVortex.Length)
-	local spinStart = os.clock()
-	local ticks = 0
-	while os.clock() - spinStart < MeteorVortex.Length do
-		task.wait()
-		if interrupted(ctx) or not CombatState.IsAlive(target) then
-			stop()
-			release()
+	}, plan.length)
+	local start = os.clock()
+	local function waitUntil(time: number): boolean
+		while os.clock() - start < time do
+			task.wait()
+			if interrupted(ctx) or not CombatState.IsAlive(target) then
+				stop()
+				release()
+				return false
+			end
+		end
+		return true
+	end
+
+	-- The vortex tears at them as it spins: three small hits.
+	for tick = 1, 3 do
+		if not waitUntil(MeteorVortex.Length * tick / 3) then
 			return
 		end
-		-- The vortex tears at them as it spins: three small hits.
-		local due = math.floor((os.clock() - spinStart) / (MeteorVortex.Length / 3))
-		if due > ticks and ticks < 3 then
-			ticks += 1
-			c.Hit(character, target, { damage = 1, stun = 1.5, attackType = "Melee", unblockable = true })
-		end
+		c.Hit(character, target, { damage = 1, stun = 1.5, attackType = "Melee", unblockable = true })
 	end
-	stop()
 
-	hold(HOLD_SLAM)
-	fx(ctx, "BlackMeteorite", "Slam", { target = target, airborne = airborne })
-	c.ApplyVelocity(character, UP * -125 + forward * 8, 0.4, { landStop = true, landKeep = 0 })
-	local slamStart = os.clock()
-	waitForTakeoff(ctx, 0.3)
-	waitForGround(ctx, 0.6)
-	-- A short drop lands a frame after the Slam: let the swing reach its
-	-- strike (0.12s into MeteorSlam) before the crater replaces it.
-	local early = 0.13 - (os.clock() - slamStart)
-	if early > 0 then
-		task.wait(early)
+	-- Over the top and down, head-first, spinning.
+	hold(HOLD_DRILL)
+	fx(ctx, "BlackMeteorite", "Slam", {
+		target = target,
+		airborne = airborne,
+		dive = plan.impactAt - plan.flipAt,
+	})
+	if not waitUntil(plan.impactAt) then
+		return
 	end
-	c.ApplyVelocity(character, Vector3.zero, 0.05)
 	release()
 
 	-- The client draws its own (much bigger) crater for this one.
-	local impact = groundBelow(ctx) + forward * 3
-	fx(ctx, "BlackMeteorite", "Impact", { position = impact, target = target })
+	local impact = Vector3.new(plan.diveEnd.X, floorY or (plan.diveEnd.Y - 3), plan.diveEnd.Z)
+	fx(ctx, "BlackMeteorite", "Impact", { position = impact, target = target, grounded = floorY ~= nil })
 	c.ShakeArea(impact, 45, 0.6)
+	local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local away = if targetRoot then c.Flat(targetRoot.Position - ctx.root.Position) else Vector3.zero
+	away = if away.Magnitude > 0.1 then away.Unit else forward
 	c.Hit(character, target, {
 		damage = if airborne then 4 else 6, -- plus the seize and the vortex's three
 		stun = 1,
@@ -3351,9 +3453,11 @@ local function blackMeteorite(ctx)
 		unblockable = true,
 		heavy = true,
 		ragdoll = 1.6,
-		velocity = forward * 25 + UP * 35,
+		velocity = away * 25 + UP * 35,
 	})
-	CombatState.SetCasting(character, 0.3)
+	-- He rolls back onto his feet (the rest of the path), then he's free.
+	waitUntil(plan.length)
+	CombatState.SetCasting(character, 0.2)
 end
 
 local DIVIDER_CHARGE = 0.62
@@ -7121,18 +7225,20 @@ function handlers.BlackMeteorite(data, character, root)
 		local air = data.airborne == true
 		local length = MeteorVortex.Length
 		if typeof(data.origin) == "CFrame" then
-			local origin: CFrame = data.origin
+			-- The whole move from here: spin, flip, head-first dive, landing.
 			local top = if type(data.top) == "number" then data.top else MeteorVortex.Top
+			local floorY = if type(data.floorY) == "number" then data.floorY else nil
+			local plan = MeteorVortex.Plan(data.origin, top, floorY)
 			local start = os.clock()
 			local bind = "CloverVortex" .. tostring(start)
 			-- After shift lock and the camera, so the path has the last word.
 			RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
 				local t = os.clock() - start
-				if t >= length or not root.Parent then
+				if t >= plan.length or not root.Parent then
 					RunService:UnbindFromRenderStep(bind)
 					return
 				end
-				root.CFrame = MeteorVortex.At(origin, t, top)
+				root.CFrame = MeteorVortex.At(plan, t)
 			end)
 		end
 
@@ -7242,13 +7348,26 @@ function handlers.BlackMeteorite(data, character, root)
 			CameraShake.FovKick(10)
 		end
 	elseif phase == "Slam" then
-		play(character, ANIMS.MeteorSlam)
-		heavyTrail(character, 0.5)
-		U.bodyTrail(character, RED, 0.5)
-		U.bodyTrail(data.target, BLACK, 0.5)
-		local down = (-UP + root.CFrame.LookVector * 0.05).Unit
-		U.speedLines(root, down, 0.45)
-		-- A meteor's tail: black smoke and red streaks pouring off upward.
+		-- Over the top and down head-first, spinning like a drill (the TSB
+		-- "Head First" dive), the meteor's tail streaming up behind them.
+		local dive = if type(data.dive) == "number" then data.dive else 0.55
+		play(character, ANIMS.MeteorDrill)
+		heavyTrail(character, dive)
+		U.bodyTrail(character, RED, dive)
+		U.bodyTrail(data.target, BLACK, dive)
+		U.speedLines(root, -UP, dive)
+		U.spiral(root, BLACK, 3.4, 3, dive, 4, 0.9, 0.12)
+		U.spiral(root, RED, 2.6, 3, dive, 3, 0.3, 0.12)
+		-- Spinning afterimages all the way down.
+		for i = 0, math.floor((dive - MeteorVortex.Flip) / 0.05) do
+			task.delay(MeteorVortex.Flip + i * 0.05, function()
+				if character.Parent then
+					U.afterimage(character, if i % 2 == 0 then BLACK else DARK_RED, 0.22)
+				end
+			end)
+		end
+		-- A meteor's tail: black smoke and red streaks pouring off upward
+		-- (he's head-down, so that's off the bottom of him).
 		trailEmitter(root, {
 			Texture = U.textures.Smoke,
 			Color = ColorSequence.new(BLACK),
@@ -7261,10 +7380,10 @@ function handlers.BlackMeteorite(data, character, root)
 			Lifetime = NumberRange.new(0.3, 0.55),
 			Rate = 140,
 			Speed = NumberRange.new(4, 10),
-			EmissionDirection = Enum.NormalId.Top,
+			EmissionDirection = Enum.NormalId.Bottom,
 			SpreadAngle = Vector2.new(30, 30),
 			Drag = 3,
-		}, 0.45)
+		}, dive)
 		trailEmitter(root, {
 			Texture = U.textures.Spark,
 			Color = ColorSequence.new(RED, DARK_RED),
@@ -7273,13 +7392,13 @@ function handlers.BlackMeteorite(data, character, root)
 			Lifetime = NumberRange.new(0.15, 0.3),
 			Rate = 70,
 			Speed = NumberRange.new(14, 24),
-			EmissionDirection = Enum.NormalId.Top,
+			EmissionDirection = Enum.NormalId.Bottom,
 			SpreadAngle = Vector2.new(25, 25),
 			Orientation = Enum.ParticleOrientation.VelocityParallel,
 			Squash = NumberSequence.new(1.6),
-		}, 0.45)
+		}, dive)
 		-- Air compressing under them on the way down.
-		for i = 0, 6 do
+		for i = 0, math.floor(dive / 0.06) do
 			task.delay(i * 0.06, function()
 				if root.Parent then
 					U.ringBurst(
@@ -7298,7 +7417,8 @@ function handlers.BlackMeteorite(data, character, root)
 		end
 	elseif phase == "Impact" then
 		local position: Vector3 = data.position
-		play(character, ANIMS.MeteorImpact)
+		-- (He rolls back over onto his feet: the end of the shared path.)
+		play(character, ANIMS.MeteorLand)
 		local victim = data.target
 		U.flash(position + UP, WHITE, 6, 0.08)
 		U.flash(position + UP, BLACK, 16, 0.35)
@@ -13023,6 +13143,116 @@ Animations.MeteorSpin = {
 	},
 }
 
+-- Black Meteorite: the head-first dive, streamlined, holding them out front, sword trailing.
+Animations.MeteorDrill = {
+	fadeIn = 0.03,
+	fadeOut = 0.05,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(24),
+				Head = rot(-18),
+				RightArm = limb(178, 10),
+				Sword = aim(0.1, 0.2, 0.97),
+				LeftArm = limb(100, -5),
+				RightLeg = rot(-15),
+				LeftLeg = rot(30),
+			},
+		},
+		{
+			0.14,
+			{
+				Torso = rot(0),
+				Head = rot(-12),
+				RightArm = limb(8, -10, 8),
+				Sword = aim(0.05, -1, 0.1),
+				LeftArm = limb(95, -6),
+				RightLeg = rot(2),
+				LeftLeg = rot(-2),
+			},
+			"Quad",
+			"Out",
+		},
+		{
+			1.2,
+			{
+				Torso = rot(0),
+				Head = rot(-12),
+				RightArm = limb(8, -10, 8),
+				Sword = aim(0.05, -1, 0.1),
+				LeftArm = limb(95, -6),
+				RightLeg = rot(2),
+				LeftLeg = rot(-2),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Black Meteorite: rolling back over after the impact and landing in a crouch.
+Animations.MeteorLand = {
+	fadeIn = 0.02,
+	fadeOut = 0.2,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(0),
+				Head = rot(-12),
+				RightArm = limb(8, -10, 8),
+				Sword = aim(0.05, -1, 0.1),
+				LeftArm = limb(95, -6),
+				RightLeg = rot(2),
+				LeftLeg = rot(-2),
+			},
+		},
+		{
+			0.1,
+			{
+				Torso = rot(22),
+				Head = rot(-10),
+				RightArm = limb(30, -25),
+				Sword = aim(0.45, -0.55, 0.7),
+				LeftArm = limb(55, 10, -10),
+				RightLeg = rot(78),
+				LeftLeg = rot(66),
+			},
+			"Quad",
+			"Out",
+		},
+		{
+			0.24,
+			{
+				Torso = rot(-20),
+				Head = rot(8),
+				RightArm = limb(55, 8),
+				Sword = aim(0, -0.4, -0.92),
+				LeftArm = limb(25, 0, -25),
+				RightLeg = rot(-40),
+				LeftLeg = rot(34),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.55,
+			{
+				Torso = rot(-20),
+				Head = rot(8),
+				RightArm = limb(55, 8),
+				Sword = aim(0, -0.4, -0.92),
+				LeftArm = limb(25, 0, -25),
+				RightLeg = rot(-40),
+				LeftLeg = rot(34),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
 -- Black Meteorite: crashing down, sword driven into the ground.
 Animations.MeteorSlam = {
 	fadeIn = 0.02,
@@ -15872,12 +16102,13 @@ local function pinGrab(data)
 		local target = attackerRoot.CFrame * offset
 		local hand = if handName then attacker:FindFirstChild(handName) else nil
 		if hand and hand:IsA("BasePart") then
+			-- Hanging from the hand the way the grabber is the right way up:
+			-- if he turns upside down (a head-first dive), so do they.
 			local grip = (hand.CFrame * CFrame.new(0, -1, 0)).Position
-			local look = attackerRoot.CFrame.LookVector
-			local forward = Vector3.new(look.X, 0, look.Z)
-			forward = if forward.Magnitude > 1e-3 then forward.Unit else Vector3.new(0, 0, -1)
-			local position = grip + forward * GRAB_REACH - Vector3.new(0, GRAB_NECK, 0)
-			target = CFrame.lookAt(position, position - forward)
+			local up = attackerRoot.CFrame.UpVector
+			local forward = attackerRoot.CFrame.LookVector
+			local position = grip + forward * GRAB_REACH - up * GRAB_NECK
+			target = CFrame.lookAt(position, position - forward, up)
 		end
 		local now = os.clock()
 		if now >= nextFloorCheck then

@@ -342,6 +342,17 @@ def m_spin(lean, kick, twist, lift):
     return {'Torso': t, 'Head': R(-6, -6 - twist * 0.5), 'RightArm': L(86 + lift, -84),
             'Sword': torso_dir(t, (0.97, -0.06 + lift * 0.02, 0.2)),
             'LeftArm': L(100 - lift * 0.3, -6), 'RightLeg': R(24 + kick), 'LeftLeg': R(-10 - kick)}
+# The head-first dive (the body is turned upside down by the path, so this
+# is the pose in his own frame): streamlined, legs together, holding them
+# out in front by the throat, the sword trailing along his legs like a fin.
+DRILL = {'Torso': R(0), 'Head': R(-12), 'RightArm': L(8, -10, 8), 'Sword': A(0.05, -1, 0.1),
+         'LeftArm': L(95, -6), 'RightLeg': R(2), 'LeftLeg': R(-2)}
+# Rolling back over after the impact: tucked up tight, then landing in a
+# crouch with the blade down.
+M_TUCK = {'Torso': R(22), 'Head': R(-10), 'RightArm': L(30, -25), 'Sword': A(0.45, -0.55, 0.7),
+          'LeftArm': L(55, 10, -10), 'RightLeg': R(78), 'LeftLeg': R(66)}
+METEOR_DRILL = [(0.0, M_APEX), (0.14, DRILL), (1.2, DRILL)]
+METEOR_LAND = [(0.0, DRILL), (0.1, M_TUCK), (0.24, plant_pose(M_RECOVER)), (0.55, plant_pose(M_RECOVER))]
 METEOR_SPIN = [(0.0, M_HOLD), (0.14, m_spin(12, 0, 6, 0)), (0.34, m_spin(18, 16, 18, 10)),
                (0.54, m_spin(12, -8, 4, -2)), (0.74, m_spin(18, 14, 16, 12)), (0.94, M_RISE), (1.2, M_APEX)]
 METEOR_SLAM = [(0.0, M_APEX), (0.12, M_SLAM), (0.6, M_SLAM)]
@@ -571,7 +582,7 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grab
        'AirPropel': AIR_PROPEL, 'AirMeteorLunge': AIR_METEOR_LUNGE, 'AirMeteorReach': AIR_METEOR_REACH,
        'AirSeize': AIR_SEIZE,
        'AirDeflectStance': AIR_DEFLECT_STANCE,
-       'MeteorLunge': METEOR_LUNGE, 'MeteorReach': METEOR_REACH, 'MeteorRise': METEOR_RISE, 'MeteorSpin': METEOR_SPIN, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
+       'MeteorLunge': METEOR_LUNGE, 'MeteorReach': METEOR_REACH, 'MeteorRise': METEOR_RISE, 'MeteorSpin': METEOR_SPIN, 'MeteorDrill': METEOR_DRILL, 'MeteorLand': METEOR_LAND, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
        'DividerCharge': DIVIDER_CHARGE, 'DividerRelease': DIVIDER_RELEASE,
        'DeflectStance': DEFLECT_STANCE, 'DeflectCounter': DEFLECT_COUNTER, 'DeflectReflect': DEFLECT_REFLECT,
        'Awaken': AWAKEN,
@@ -583,7 +594,7 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grab
 # Grounded animations get their feet planted (the body drops into lunges and
 # wide stances). These are played in the air instead, or leave the ground
 # (planted only up to the time given).
-AIRBORNE = {'Air', 'Grabbed', 'Launched', 'MoonPerch', 'MoonFlight', 'Plunge', 'AirDividerCharge', 'AirDividerRelease', 'MeteorRise', 'MeteorSpin', 'MeteorSlam', 'Chop',
+AIRBORNE = {'Air', 'Grabbed', 'Launched', 'MoonPerch', 'MoonFlight', 'Plunge', 'AirDividerCharge', 'AirDividerRelease', 'MeteorRise', 'MeteorSpin', 'MeteorDrill', 'MeteorLand', 'MeteorSlam', 'Chop',
             'AirPropel', 'AirMeteorLunge', 'AirMeteorReach', 'AirSeize', 'AirDeflectStance'}
 PLANT_UNTIL = {'Leap': 0.1}
 UNPLANTED = dict(ALL)
@@ -601,7 +612,11 @@ if __name__ == '__main__':
              # Only ever played in the air.
              'GrandRelease': dict(floor=-4.0),  # the cleave bites into the ground
              'Plunge': dict(floor=-10), 'Grabbed': dict(floor=-10), 'Launched': dict(floor=-10),
-             'MoonPerch': dict(floor=-10), 'MoonFlight': dict(floor=-10), 'AirDividerCharge': dict(floor=-10), 'AirDividerRelease': dict(floor=-10), 'MeteorSpin': dict(floor=-10),
+             'MoonPerch': dict(floor=-10), 'MoonFlight': dict(floor=-10), 'AirDividerCharge': dict(floor=-10), 'AirDividerRelease': dict(floor=-10), 'MeteorSpin': dict(floor=-10), 'MeteorDrill': dict(floor=-10),
+             # Starts upside down (the path turns him; the checker can't see
+             # that), so the trailing sword reads as pointing at the floor.
+             # The landing crouch's tip ends at about -3.
+             'MeteorLand': dict(floor=-10),
              'AirPropel': dict(floor=-10), 'AirMeteorLunge': dict(floor=-10), 'AirMeteorReach': dict(floor=-10),
              'AirSeize': dict(floor=-10),
              'AirDeflectStance': dict(floor=-10)}

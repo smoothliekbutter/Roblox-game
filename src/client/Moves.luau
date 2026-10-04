@@ -201,12 +201,13 @@ local function pinGrab(data)
 		local target = attackerRoot.CFrame * offset
 		local hand = if handName then attacker:FindFirstChild(handName) else nil
 		if hand and hand:IsA("BasePart") then
+			-- Hanging from the hand the way the grabber is the right way up:
+			-- if he turns upside down (a head-first dive), so do they.
 			local grip = (hand.CFrame * CFrame.new(0, -1, 0)).Position
-			local look = attackerRoot.CFrame.LookVector
-			local forward = Vector3.new(look.X, 0, look.Z)
-			forward = if forward.Magnitude > 1e-3 then forward.Unit else Vector3.new(0, 0, -1)
-			local position = grip + forward * GRAB_REACH - Vector3.new(0, GRAB_NECK, 0)
-			target = CFrame.lookAt(position, position - forward)
+			local up = attackerRoot.CFrame.UpVector
+			local forward = attackerRoot.CFrame.LookVector
+			local position = grip + forward * GRAB_REACH - up * GRAB_NECK
+			target = CFrame.lookAt(position, position - forward, up)
 		end
 		local now = os.clock()
 		if now >= nextFloorCheck then
