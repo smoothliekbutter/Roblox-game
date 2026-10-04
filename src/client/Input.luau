@@ -43,7 +43,8 @@ local Input = {}
 local m1Held = false
 local blockHeld = false
 local lastBlockSent = 0
-local dashReadyAt = 0
+local dashReadyAt = 0 -- front and back
+local sideDashReadyAt = 0 -- left and right: their own, shorter cooldown
 
 -- Mirror of the server's combo counter so our animation plays instantly.
 -- The server still decides what actually hits.
@@ -214,7 +215,11 @@ local function performDash(direction: string)
 	local speed = Config.Dash.Speed[direction]
 	local localVector = DASH_VECTORS[direction]
 	local basis = cameraBasis()
-	local mover = Impulse.Apply(root, basis:VectorToWorldSpace(localVector) * speed, Config.Dash.Duration, "Dash")
+	-- Side dashes are a quicker, smaller hop.
+	local duration = if direction == "Left" or direction == "Right"
+		then Config.Dash.SideDuration
+		else Config.Dash.Duration
+	local mover = Impulse.Apply(root, basis:VectorToWorldSpace(localVector) * speed, duration, "Dash")
 
 	-- Front dash steers with the camera, side and back dashes keep their line.
 	local start = os.clock()
@@ -227,7 +232,7 @@ local function performDash(direction: string)
 		if direction == "Front" then
 			basis = cameraBasis()
 		end
-		local alpha = (os.clock() - start) / Config.Dash.Duration
+		local alpha = (os.clock() - start) / duration
 		mover.VectorVelocity = basis:VectorToWorldSpace(localVector) * speed * (1 - alpha * 0.4)
 	end)
 
@@ -252,16 +257,21 @@ local function tryDash()
 	if CombatState.IsCasting(character) then
 		return
 	end
+	local direction = dashDirection(humanoid)
+	local side = direction == "Left" or direction == "Right"
 	local t = os.clock()
-	if t < dashReadyAt then
+	if t < (if side then sideDashReadyAt else dashReadyAt) then
 		return
 	end
 	local kit = Kits.Of(character)
 	local awakening = kit and CombatState.IsAwakened(character) and kit.awakening
-	local cooldown = Config.Dash.Cooldown * (if awakening then awakening.cooldownMultiplier else 1)
-	dashReadyAt = t + cooldown
+	local multiplier = if awakening then awakening.cooldownMultiplier else 1
+	if side then
+		sideDashReadyAt = t + Config.Dash.SideCooldown * multiplier
+	else
+		dashReadyAt = t + Config.Dash.Cooldown * multiplier
+	end
 
-	local direction = dashDirection(humanoid)
 	Remotes.Action:FireServer("Dash", direction)
 	performDash(direction)
 end

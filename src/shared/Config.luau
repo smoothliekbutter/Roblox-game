@@ -74,14 +74,18 @@ Config.Block = {
 }
 
 Config.Dash = {
-	Cooldown = 2,
+	Cooldown = 2, -- front and back dashes
 	Duration = 0.28,
+	-- Side dashes are a smaller hop (about 10 studs to the front dash's 19)
+	-- on a cooldown of their own.
+	SideCooldown = 1.5,
+	SideDuration = 0.2,
 	Tolerance = 0.2, -- server allows the client to be this early (latency)
 	Speed = {
 		Front = 85,
 		Back = 70,
-		Left = 70,
-		Right = 70,
+		Left = 60,
+		Right = 60,
 	},
 }
 

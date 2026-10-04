@@ -1,8 +1,8 @@
 --[[
 	HUD
-	Top right (in the top bar): small health + Evasive bars.
+	Top right (in the top bar): small health bar; under it the Evasive bar
+	           and, beside that, a tiny bar for R (the special's cooldown).
 	Bottom:    awakening bar over the move icons (skills 1-4) with cooldowns.
-	           (R, the special, has no icon.)
 	Right:     combo counter.
 	Top:       toast messages from the server.
 	Built in code so it can be restyled without touching Studio.
@@ -29,6 +29,8 @@ local COLORS = {
 	HealthLow = Color3.fromRGB(230, 60, 60),
 	Evasive = Color3.fromRGB(120, 235, 255),
 	Awakening = Color3.fromRGB(220, 40, 50),
+	Special = Color3.fromRGB(255, 205, 110),
+	SpecialCharging = Color3.fromRGB(150, 125, 85),
 	Text = Color3.fromRGB(240, 240, 240),
 	SubText = Color3.fromRGB(170, 170, 180),
 	Locked = Color3.fromRGB(60, 60, 68),
@@ -37,7 +39,8 @@ local COLORS = {
 local COMBO_TIMEOUT = 1.6
 local SLOT_SIZE = 54
 local SLOT_GAP = 6
-local STATUS_WIDTH = 190
+local STATUS_WIDTH = 206
+local SPECIAL_WIDTH = 40 -- the R bar
 
 type Slot = {
 	frame: Frame,
@@ -54,6 +57,9 @@ local ui: {
 	healthText: TextLabel,
 	evasiveFill: Frame,
 	evasiveStroke: UIStroke,
+	special: Frame,
+	specialFill: Frame,
+	specialKey: TextLabel,
 	awakening: Frame,
 	awakeningFill: Frame,
 	awakeningStroke: UIStroke,
@@ -213,7 +219,21 @@ local function buildStatus(playerGui: Instance)
 	})
 
 	local evasiveBack
-	evasiveBack, ui.evasiveFill = bar(panel, UDim2.new(0, 8, 0.5, 6), UDim2.new(1, -16, 0, 4), COLORS.Evasive)
+	evasiveBack, ui.evasiveFill =
+		bar(panel, UDim2.new(0, 8, 0.5, 6), UDim2.new(1, -36 - SPECIAL_WIDTH, 0, 4), COLORS.Evasive)
+
+	-- R (the special) as a tiny bar at the end of the row: fills back up
+	-- while it's on cooldown, bright when it's ready.
+	ui.special, ui.specialFill =
+		bar(panel, UDim2.new(1, -8 - SPECIAL_WIDTH, 0.5, 6), UDim2.fromOffset(SPECIAL_WIDTH, 4), COLORS.Special)
+	ui.specialKey = label(ui.special, {
+		Text = "R",
+		TextSize = 9,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(0, -3, 0.5, 0),
+		Size = UDim2.fromOffset(8, 10),
+		TextXAlignment = Enum.TextXAlignment.Right,
+	})
 	ui.evasiveStroke = Instance.new("UIStroke")
 	ui.evasiveStroke.Color = COLORS.Evasive
 	ui.evasiveStroke.Thickness = 1.5
@@ -349,6 +369,7 @@ local function refreshKit(character: Model?)
 	end
 	local awakening = kit and kit.awakening
 	ui.awakening.Visible = awakening ~= nil
+	ui.special.Visible = kit ~= nil and (kit.special ~= nil or kit.awakenedSpecial ~= nil)
 	ui.awakeningLabel.Text = if awakening then "[G]  " .. string.upper(awakening.name) else ""
 end
 
@@ -394,6 +415,12 @@ local function update(dt: number)
 		for i, s in ui.skills do
 			setSlotCooldown(s, CombatState.Cooldown(character, i))
 		end
+
+		local remaining, length = CombatState.Cooldown(character, CombatState.SpecialSlot)
+		local ready = remaining <= 0
+		ui.specialFill.Size = UDim2.fromScale(if ready then 1 else math.clamp(1 - remaining / length, 0, 1), 1)
+		ui.specialFill.BackgroundColor3 = if ready then COLORS.Special else COLORS.SpecialCharging
+		ui.specialKey.TextColor3 = if ready then COLORS.Text else COLORS.SubText
 	end
 
 	if comboCount > 0 and os.clock() - lastComboHit > COMBO_TIMEOUT then

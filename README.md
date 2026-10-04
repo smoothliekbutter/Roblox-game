@@ -40,9 +40,9 @@ With live sync, every code change shows up in Studio instantly, without re-downl
 | Hold **Space** on the 4th hit | Uppercut finisher: a launcher. They go limp and tumble about 10 studs up on heavier gravity, so it snaps up and straight back down, and can still be hit on the way: let go of Space, jump after them and keep swinging (the 4th air hit is the downslam). Holding Space for the uppercut never makes you jump. Short recovery after it. |
 | 4th hit while in the air | Downslam finisher with a crater: 3 hits, jump, hit. The 3rd hit stuns long enough for it, the jump is free almost right away, and the swing reaches the ground below you |
 | **1 2 3 4** | Character skills. Most have an air version: use them mid-jump. |
-| **R** | Character special (each character has their own) |
+| **R** | Character special (each character has their own). Its cooldown is the small gold bar under your health, beside the cyan Evasive bar: bright when it's ready |
 | **G** | Awaken when the red meter is full. It fills as you fight: about 90 damage dealt. |
-| **Q** + WASD | Dash: front, back, left or right |
+| **Q** + WASD | Dash. Front and back dashes share a 2s cooldown. Side dashes (A / D) are a smaller, quicker hop, about 10 studs to the front dash's 19, on their own 1.5s cooldown, so you can side-dash right after a front dash |
 | Hold **F** | Block. Only works facing the attacker. |
 | Tap **F** right before a hit | Perfect block: stuns the attacker |
 | **Q** while stunned or ragdolled | Evasive breakout (needs a full cyan bar) |

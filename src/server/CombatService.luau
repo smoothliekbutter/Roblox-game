@@ -36,6 +36,7 @@ export type CharData = {
 	nextM1: number,
 	nextBlock: number,
 	nextDash: number,
+	nextSideDash: number,
 	ragdollToken: number,
 	juggleUntil: number, -- launched by an uppercut: can still be hit in the air until then
 	awakenToken: number,
@@ -877,12 +878,19 @@ function CombatService.Dash(character: Model, direction: string): boolean
 	then
 		return false
 	end
+	-- Front/back and side dashes have separate cooldowns.
 	local t = os.clock()
-	if t < data.nextDash - Config.Dash.Tolerance then
+	local side = direction == "Left" or direction == "Right"
+	if t < (if side then data.nextSideDash else data.nextDash) - Config.Dash.Tolerance then
 		return false
 	end
 	local awakening = awakeningOf(character)
-	data.nextDash = t + Config.Dash.Cooldown * (if awakening then awakening.cooldownMultiplier else 1)
+	local multiplier = if awakening then awakening.cooldownMultiplier else 1
+	if side then
+		data.nextSideDash = t + Config.Dash.SideCooldown * multiplier
+	else
+		data.nextDash = t + Config.Dash.Cooldown * multiplier
+	end
 	CombatState.SetBlocking(character, false)
 	return true
 end
@@ -1157,6 +1165,7 @@ function CombatService.Register(character: Model)
 		nextM1 = 0,
 		nextBlock = 0,
 		nextDash = 0,
+		nextSideDash = 0,
 		ragdollToken = 0,
 		juggleUntil = 0,
 		awakenToken = 0,
