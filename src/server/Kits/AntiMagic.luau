@@ -7,7 +7,8 @@
 
 	Base
 	  1 Bull Thrust         charge in sword-first; on contact, a five-hit sword combo
-	                        ending in a thrust (in the air: dives diagonally down)
+	                        ending in a thrust (in the air: dives diagonally down,
+	                        and if it catches no one he slams the ground, guard break)
 	  2 Black Meteorite     anti-magic lunge grab, carry them up, slam into a crater (unblockable)
 	  3 Black Divider       charged cleave. Press 3 again on the red flash for a
 	                        perfect Divider: huge damage, unblockable
@@ -245,29 +246,51 @@ local function interrupted(ctx): boolean
 	return not CombatState.IsAlive(character) or CombatState.IsStunned(character) or CombatState.IsRagdolled(character)
 end
 
+-- How long the server (a ping behind) gets to see a dive leave the ground.
+-- If it never does (a dive from a tiny hop), being on the ground after
+-- this counts as having landed.
+local TAKEOFF_GRACE = 0.25
+
 -- Charges forward for `duration`, returning the first character caught.
 -- With `steer` (degrees per second) the player can curve it as it goes; the
 -- hitbox follows their root, so it catches whatever they curve into.
 -- A downward lunge (an air version) skids along the ground once it lands
 -- instead of pushing into it (the player's client handles that: landStop).
-local function lunge(ctx, velocity: Vector3, duration: number, reach: Vector3, steer: number?): Model?
+-- With `untilLanded` it stops dead where it lands instead, and ends right
+-- there; the second result says it landed.
+local function lunge(
+	ctx,
+	velocity: Vector3,
+	duration: number,
+	reach: Vector3,
+	steer: number?,
+	untilLanded: boolean?
+): (Model?, boolean)
 	local options = if steer or velocity.Y < 0
-		then { steer = steer, landStop = velocity.Y < 0, landKeep = 0.7 }
+		then { steer = steer, landStop = velocity.Y < 0, landKeep = if untilLanded then 0 else 0.7 }
 		else nil
 	ctx.combat.ApplyVelocity(ctx.character, velocity, duration, options)
 	local start = os.clock()
+	local seenAir = false
 	while os.clock() - start < duration + 0.05 do
 		if interrupted(ctx) then
-			return nil
+			return nil, false
 		end
 		local hits = ctx.combat.Box(ctx.character, ctx.root.CFrame * CFrame.new(0, 0, -reach.Z / 2), reach)
 		if #hits > 0 then
 			ctx.combat.ApplyVelocity(ctx.character, Vector3.zero, 0.05)
-			return hits[1]
+			return hits[1], false
+		end
+		if untilLanded then
+			local up = ctx.combat.IsAirborne(ctx.character)
+			seenAir = seenAir or up
+			if not up and (seenAir or os.clock() - start > TAKEOFF_GRACE) then
+				return nil, true
+			end
 		end
 		task.wait()
 	end
-	return nil
+	return nil, false
 end
 
 -- The server sees a player's own movement about a ping late: wait (with a
@@ -375,6 +398,15 @@ local COMBO = {
 local THRUST_PUSH = 17
 local MAX_PULL = 30 -- fastest (studs per second) they're eased back in front of him
 
+-- The air version, when the dive catches no one: he drives the sword into
+-- the ground where he lands and the blast breaks guards all around him.
+local SLAM_RADIUS = 11
+local SLAM_DAMAGE = 6
+local SLAM_RECOVERY = 0.45 -- the PlungeImpact stab he lands in
+-- Still falling when the propel runs out (dove from high up): how long he
+-- has to reach the ground for the slam to happen.
+local LAND_WINDOW = 0.5
+
 -- How fast to move someone so that `time` from now they're `reach` studs in
 -- front of him, while he steps on at `drift`. Flat, so gravity still works.
 local function holdInFront(ctx, target: Model, forward: Vector3, reach: number, drift: number, time: number): Vector3
@@ -391,6 +423,51 @@ local function holdInFront(ctx, target: Model, forward: Vector3, reach: number, 
 	return velocity
 end
 
+-- True once he's on the ground, within `timeout`.
+local function landsWithin(ctx, timeout: number): boolean
+	local start = os.clock()
+	while os.clock() - start < timeout do
+		if interrupted(ctx) then
+			return false
+		end
+		if not ctx.combat.IsAirborne(ctx.character) then
+			return true
+		end
+		task.wait()
+	end
+	return false
+end
+
+-- The air version's landing: the sword goes into the ground and anti-magic
+-- blows a crater out around him, throwing everyone in it up and away.
+local function bullSlam(ctx)
+	local c, character = ctx.combat, ctx.character
+	local forward = look(ctx)
+	c.ApplyVelocity(character, Vector3.zero, 0.05)
+	-- Where the blade bites, just in front of his feet.
+	local impact = groundBelow(ctx) + forward * 1.5
+	local victims = c.Sphere(character, impact + UP * 2, SLAM_RADIUS)
+	fx(ctx, "BullThrust", "Land", { position = impact, targets = victims })
+	c.ShakeArea(impact, 45, 0.55)
+	for _, victim in victims do
+		local victimRoot = victim:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if victimRoot then
+			local away = victimRoot.Position - impact
+			local out = if Vector3.new(away.X, 0, away.Z).Magnitude > 0.5 then c.Flat(away) else forward
+			c.Hit(character, victim, {
+				damage = SLAM_DAMAGE,
+				stun = 1,
+				attackType = "Melee",
+				guardBreak = true,
+				heavy = true,
+				ragdoll = 1,
+				velocity = out * 40 + UP * 38,
+			})
+		end
+	end
+	CombatState.SetCasting(character, SLAM_RECOVERY)
+end
+
 local function bullThrust(ctx)
 	local c, character = ctx.combat, ctx.character
 	local forward = look(ctx)
@@ -399,9 +476,19 @@ local function bullThrust(ctx)
 
 	CombatState.SetCasting(character, PROPEL_TIME + 0.25)
 	fx(ctx, "BullThrust", "Propel", { airborne = airborne, direction = direction, duration = PROPEL_TIME })
-	local target = lunge(ctx, direction * PROPEL_SPEED, PROPEL_TIME, Vector3.new(6, 6, 7), PROPEL_STEER)
+	-- The air version ends the moment it lands (the slam replaces the skid).
+	local target, landed =
+		lunge(ctx, direction * PROPEL_SPEED, PROPEL_TIME, Vector3.new(6, 6, 7), PROPEL_STEER, airborne)
 	if not target then
-		-- (The air version's touchdown is drawn by the clients as it happens.)
+		-- Dove from high up: still falling when the propel runs out.
+		if airborne and not landed and not interrupted(ctx) then
+			CombatState.SetCasting(character, LAND_WINDOW + 0.1)
+			landed = landsWithin(ctx, LAND_WINDOW)
+		end
+		if landed and not interrupted(ctx) then
+			bullSlam(ctx)
+			return
+		end
 		fx(ctx, "BullThrust", "Whiff")
 		-- Whiffing it leaves him open.
 		CombatState.SetCasting(character, 0.45)

@@ -744,11 +744,12 @@ local function lingerSmoke(position: Vector3, duration: number, size: number)
 end
 
 ---------------------------------------------------------------------------
--- Bull Thrust: propel, catch, then a five-hit sword combo
+-- Bull Thrust: propel, catch, then a five-hit sword combo (in the air, a
+-- dive that slams the ground if it catches no one)
 ---------------------------------------------------------------------------
 
 -- Attaches a short-lived particle emitter to a part (a continuous trail).
-local function trailEmitter(part: BasePart, props: { [string]: any }, duration: number)
+local function trailEmitter(part: BasePart, props: { [string]: any }, duration: number): ParticleEmitter
 	local attachment = Instance.new("Attachment")
 	attachment.Parent = part
 	local emitter = Instance.new("ParticleEmitter")
@@ -761,6 +762,7 @@ local function trailEmitter(part: BasePart, props: { [string]: any }, duration: 
 		task.wait(1)
 		attachment:Destroy()
 	end)
+	return emitter
 end
 
 -- A slash mark drawn on the target: black blade core with a red glow,
@@ -800,9 +802,10 @@ local function feetOf(character: Model, root: BasePart): Vector3
 	return if ground then ground.Position else root.Position - UP * 3
 end
 
--- The black meteor tail and air rings while diving (Meteorite slam, Plunge).
-local function meteorTail(root: BasePart, duration: number)
-	trailEmitter(root, {
+-- The black meteor tail and air rings while diving (Meteorite slam, Plunge,
+-- air Bull Thrust). `alive` cuts it short when it turns false (he's landed).
+local function meteorTail(root: BasePart, duration: number, alive: (() -> boolean)?)
+	local smoke = trailEmitter(root, {
 		Texture = U.textures.Smoke,
 		Color = ColorSequence.new(BLACK),
 		LightEmission = 0,
@@ -818,7 +821,7 @@ local function meteorTail(root: BasePart, duration: number)
 		SpreadAngle = Vector2.new(30, 30),
 		Drag = 3,
 	}, duration)
-	trailEmitter(root, {
+	local sparks = trailEmitter(root, {
 		Texture = U.textures.Spark,
 		Color = ColorSequence.new(RED, DARK_RED),
 		LightEmission = 1,
@@ -831,9 +834,19 @@ local function meteorTail(root: BasePart, duration: number)
 		Orientation = Enum.ParticleOrientation.VelocityParallel,
 		Squash = NumberSequence.new(1.6),
 	}, duration)
+	if alive then
+		local start = os.clock()
+		task.spawn(function()
+			while os.clock() - start < duration and alive() do
+				task.wait()
+			end
+			smoke.Enabled = false
+			sparks.Enabled = false
+		end)
+	end
 	for i = 0, math.floor(duration / 0.06) do
 		task.delay(i * 0.06, function()
-			if root.Parent then
+			if root.Parent and (not alive or alive()) then
 				U.ringBurst(
 					CFrame.new(root.Position - UP * 3.4),
 					if i % 2 == 0 then BLACK else RED,
@@ -1088,6 +1101,87 @@ local function comboFinisher(data, character: Model, root: BasePart)
 	end
 end
 
+--[[
+	Air Bull Thrust landing on nobody: the sword is driven into the ground
+	and anti-magic blows a crater out as far as the hit reaches (11 studs).
+	A black dome and a red shockwave, rings racing out along the ground,
+	the ground split open and thrown up, a black pillar out of the middle
+	and black lightning crawling out over it all, then smoke rolling out.
+]]
+local function bullSlam(data, character: Model)
+	local position: Vector3 = data.position
+	local center = position + UP
+	U.flash(center, WHITE, 6, 0.08)
+	U.flash(center, BLACK, 15, 0.32)
+	U.flash(center, RED, 10, 0.24)
+	U.shockwave(position, BLACK, 4, 26, 0.45, Enum.Material.Glass, 0.4)
+	U.shockwave(position, RED, 3, 22, 0.4)
+	task.delay(0.1, U.shockwave, position, BLACK, 2, 32, 0.55, Enum.Material.Glass, 0.55)
+	U.ringBurst(CFrame.new(position + UP * 0.2), BLACK, 1.5, 18, 0.45, 0.6)
+	task.delay(0.05, U.ringBurst, CFrame.new(position + UP * 0.3), RED, 1, 13, 0.38, 0.3)
+	task.delay(0.1, U.ringBurst, CFrame.new(position + UP * 0.4), WHITE, 0.5, 9, 0.25, 0.12)
+
+	-- The ground splits open and is thrown up around the blade.
+	U.groundCracks(position, 11, 12, RED, 2.8)
+	U.groundRocks(position, 14, 5.5, 2.6)
+	task.delay(0.05, U.groundRocks, position, 8, 2.6, 1.8)
+	U.debris(position, 18, 50, 1.3)
+	U.pillar(position, BLACK, 2.6, 22, 0.5, Enum.Material.SmoothPlastic, 0.15)
+	U.pillar(position, RED, 1.3, 26, 0.4)
+
+	-- Black lightning: crackling over the crater and crawling out across
+	-- the ground to the edge of the blast.
+	blackLightning(center, 7, 7, 0.28)
+	for i = 1, 8 do
+		local angle = (i / 8) * math.pi * 2 + math.random() * 0.45
+		local out = Vector3.new(math.cos(angle), 0, math.sin(angle))
+		U.lightning(position + UP * 0.4, position + out * (8 + math.random() * 5) + UP * 0.3, BLACK, RED, 0.18, 0.28)
+	end
+
+	blackSmoke(center, 22, 5.5, 28)
+	U.burst(position, {
+		texture = U.textures.Smoke,
+		color = Color3.fromRGB(150, 140, 130),
+		count = 14,
+		size = 6,
+		speed = NumberRange.new(18, 34),
+		lifetime = NumberRange.new(0.7, 1.2),
+		lightEmission = 0,
+		transparency = 0.4,
+		drag = 2,
+		spread = 70,
+	})
+	redSparks(center, 24, 1.2)
+	U.light(position + UP * 2, RED, 12, 34, 0.5)
+	lingerSmoke(position, 1.2, 6)
+
+	-- The blade, buried in the ground, flares red.
+	swordGlow(character, RED, 0.3, 0.3)
+	task.delay(0.05, function()
+		local point = bladePoint(character, 0)
+		if point and character.Parent then
+			U.glint(point, 1.6, RED)
+		end
+	end)
+
+	-- Whoever was caught in it lights up red; for them and for him, an
+	-- impact frame (the server shakes everyone's camera nearby).
+	local mine = U.isLocal(character)
+	if type(data.targets) == "table" then
+		for _, victim in data.targets do
+			if typeof(victim) == "Instance" and victim:IsA("Model") then
+				U.highlight(victim, RED, 0.3)
+				mine = mine or U.isLocal(victim)
+			end
+		end
+	end
+	if mine then
+		impactFrame()
+		CameraShake.Add(0.2)
+		CameraShake.FovKick(12)
+	end
+end
+
 function handlers.BullThrust(data, character, root)
 	local phase = data.phase
 	if phase == "Propel" then
@@ -1121,30 +1215,11 @@ function handlers.BullThrust(data, character, root)
 		blackLightning(back, 3, 3, 0.2)
 		task.delay(0.08, U.impactRing, back, direction, BLACK, 0.5, 6.5, 0.28)
 		if air then
-			-- Diving out of the sky like a meteor; the ground takes the hit
-			-- when he comes down (seen from each screen, no server delay).
-			meteorTail(root, duration)
-			task.spawn(function()
-				local started = os.clock()
-				while character.Parent and os.clock() - started < duration + 0.3 do
-					local ground = U.groundBelow(root.Position, { character })
-					if ground and root.Position.Y - ground.Position.Y < 3.6 then
-						local spot = ground.Position
-						U.flash(spot + UP, BLACK, 7, 0.2)
-						U.ringBurst(CFrame.new(spot + UP * 0.15), BLACK, 1, 10, 0.35, 0.45)
-						task.delay(0.04, U.ringBurst, CFrame.new(spot + UP * 0.2), RED, 0.8, 7, 0.3, 0.2)
-						U.shockwave(spot, RED, 2, 12, 0.3)
-						U.groundCracks(spot, 6, 5, RED, 1.6)
-						U.groundRocks(spot, 8, 3, 1.6)
-						U.debris(spot, 6, 30, 0.8)
-						blackSmoke(spot + UP * 0.4, 12, 3, 14)
-						if U.isLocal(character) then
-							CameraShake.Add(0.25)
-						end
-						break
-					end
-					task.wait()
-				end
+			-- Diving out of the sky like a meteor, until he lands (the
+			-- server's Land, where the slam goes off) or catches someone.
+			local token = bump(character)
+			meteorTail(root, duration, function()
+				return live(character, token)
 			end)
 		else
 			U.ringBurst(CFrame.new(feetOf(character, root) + UP * 0.1), BLACK, 0.8, 5, 0.3, 0.2)
@@ -1230,6 +1305,12 @@ function handlers.BullThrust(data, character, root)
 		else
 			comboImpact(data, character, root)
 		end
+	elseif phase == "Land" then
+		-- Air version, nobody caught: he lands driving the sword into the
+		-- ground and the slam goes off.
+		bump(character)
+		play(character, ANIMS.PlungeImpact)
+		bullSlam(data, character)
 	elseif phase == "Interrupted" then
 		-- Cut short (he got hit, or they broke out): no more swings.
 		bump(character)
