@@ -37,7 +37,7 @@ With live sync, every code change shows up in Studio instantly, without re-downl
 | Input | Action |
 |---|---|
 | Left click (hold to chain) | M1 combo, 4 hits. The 4th hit ragdolls and guard-breaks. |
-| Hold **Space** on the 4th hit | Uppercut finisher: ragdolls the target and sends them tumbling up into the air, low enough to jump after |
+| Hold **Space** on the 4th hit | Uppercut finisher: a launcher. They go limp and tumble about 7 studs up, hang there for a beat, and can still be hit in the air: jump after them and keep swinging (the 4th air hit is the downslam). Short recovery after it. |
 | 4th hit while in the air | Downslam finisher with a crater |
 | **1 2 3 4** | Character skills. Most have an air version: use them mid-jump. |
 | **R** | Character special (each character has their own) |

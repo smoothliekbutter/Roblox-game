@@ -68,14 +68,16 @@ READY = IDLE[0][1]
 
 LEGS = lambda y: {'RightLeg': R(0,y,0), 'LeftLeg': R(0,y,0)}  # additive counter-twist
 
+SWING_TIMES = (0.08, 0.12, 0.17, 0.32)
+HEAVY_SWING_TIMES = (0.12, 0.18, 0.24, 0.44)
+
 def swing(windup, through, strike, settle, heavy=False):
-    t = (0.12, 0.18, 0.24, 0.44) if heavy else (0.08, 0.12, 0.17, 0.32)
-    # Start from the idle's upper body. Legs are left to the idle stance
-    # (or layered on top of it), so the stance isn't applied twice.
-    start = {k: v for k, v in READY.items() if k not in ('RightLeg', 'LeftLeg')}
-    if 'RightLeg' in windup:
-        start.update(LEGS(0))
-    return [(0.0, start), (t[0], windup), (t[1], through), (t[2], strike), (t[3], settle)]
+    t = HEAVY_SWING_TIMES if heavy else SWING_TIMES
+    # Held in the wind-up while the clip fades in (its fadeIn is t[0], see
+    # emit.py): the body flows straight from wherever the last swing left
+    # it into this wind-up, with no detour back through the idle pose, and
+    # the swing then starts from rest. Legs are layered on the stance.
+    return [(0.0, windup), (t[0], windup), (t[1], through), (t[2], strike), (t[3], settle)]
 
 SLASH1 = swing(
     {'Torso': R(3,-42), 'Head': R(0,32), 'RightArm': L(80,-100), 'Sword': A(0.75,0.25,0.6), 'LeftArm': L(40,-25), **LEGS(40)},

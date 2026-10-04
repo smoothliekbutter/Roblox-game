@@ -80,7 +80,7 @@ Reactions.FlinchA = clip({
 		OUT,
 	},
 	{ 0.3, settle(4), SINE, OUT },
-}, { fadeIn = 0.02, fadeOut = 0.2, additive = LEGS })
+}, { fadeIn = 0.045, fadeOut = 0.22, additive = LEGS })
 
 Reactions.FlinchB = clip({
 	{ 0, NEUTRAL },
@@ -98,7 +98,7 @@ Reactions.FlinchB = clip({
 		OUT,
 	},
 	{ 0.3, settle(-4), SINE, OUT },
-}, { fadeIn = 0.02, fadeOut = 0.2, additive = LEGS })
+}, { fadeIn = 0.045, fadeOut = 0.22, additive = LEGS })
 
 Reactions.FlinchBack = clip({
 	{ 0, NEUTRAL },
@@ -116,7 +116,7 @@ Reactions.FlinchBack = clip({
 		OUT,
 	},
 	{ 0.3, settle(0), SINE, OUT },
-}, { fadeIn = 0.02, fadeOut = 0.2, additive = LEGS })
+}, { fadeIn = 0.045, fadeOut = 0.22, additive = LEGS })
 
 Reactions.HitHeavy = clip({
 	{ 0, NEUTRAL },
@@ -134,7 +134,7 @@ Reactions.HitHeavy = clip({
 		OUT,
 	},
 	{ 0.5, settle(0), SINE, IN_OUT },
-}, { fadeIn = 0.02, fadeOut = 0.25, additive = LEGS })
+}, { fadeIn = 0.05, fadeOut = 0.25, additive = LEGS })
 
 local GUARD = {
 	Torso = rot(-8, 6),

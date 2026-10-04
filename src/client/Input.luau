@@ -165,7 +165,10 @@ local function tryM1()
 		if inAir then
 			variant = "Downslam"
 		elseif jump then
+			-- A launcher: back in action quickly, and free to jump after them.
 			variant = "Uppercut"
+			nextM1 = t + Config.M1.UppercutEndLag
+			noJumpUntil = t + Config.M1.UppercutJumpAfter
 		else
 			variant = "Knockback"
 		end
@@ -177,7 +180,8 @@ local function tryM1()
 		noJumpUntil = t + if index == Config.M1.ComboLength - 1 then Config.M1.ResetTime else Config.M1.Busy
 	end
 
-	Remotes.Action:FireServer("M1", { jump = jump, airborne = inAir })
+	-- Our count of the string goes along, so the server's swing is the one we see.
+	Remotes.Action:FireServer("M1", { jump = jump, airborne = inAir, index = index })
 	Moves.PlayM1(character, index, variant)
 
 	-- Step into the swing a little so strings stay connected.

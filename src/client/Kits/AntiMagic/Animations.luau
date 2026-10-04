@@ -257,7 +257,7 @@ Animations.Air = {
 
 -- M1 1: right to left horizontal slash.
 Animations.Slash1 = {
-	fadeIn = 0.07,
+	fadeIn = 0.08,
 	fadeOut = 0.22,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -265,13 +265,13 @@ Animations.Slash1 = {
 		{
 			0,
 			{
-				Torso = body(0.049, -6, -18),
-				Head = rot(5, 16),
-				RightArm = limb(85, 25, 10),
-				Sword = aim(-0.006, 0.483, 0.875),
-				LeftArm = limb(10, 0, -14),
-				RightLeg = rot(0),
-				LeftLeg = rot(0),
+				Torso = body(0.056, 3, -42),
+				Head = rot(0, 32),
+				RightArm = limb(80, -100),
+				Sword = aim(0.75, 0.25, 0.6),
+				LeftArm = limb(40, -25),
+				RightLeg = rot(0, 40),
+				LeftLeg = rot(0, 40),
 			},
 		},
 		{
@@ -335,7 +335,7 @@ Animations.Slash1 = {
 
 -- M1 2: backhand, left to right.
 Animations.Slash2 = {
-	fadeIn = 0.07,
+	fadeIn = 0.08,
 	fadeOut = 0.22,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -343,13 +343,13 @@ Animations.Slash2 = {
 		{
 			0,
 			{
-				Torso = body(0.049, -6, -18),
-				Head = rot(5, 16),
-				RightArm = limb(85, 25, 10),
-				Sword = aim(-0.006, 0.483, 0.875),
-				LeftArm = limb(10, 0, -14),
-				RightLeg = rot(0),
-				LeftLeg = rot(0),
+				Torso = body(0.052, 3, 35),
+				Head = rot(0, -28),
+				RightArm = limb(82, 80),
+				Sword = aim(-0.8, 0.2, 0.5),
+				LeftArm = limb(35, -10),
+				RightLeg = rot(0, -34),
+				LeftLeg = rot(0, -34),
 			},
 		},
 		{
@@ -413,7 +413,7 @@ Animations.Slash2 = {
 
 -- M1 3: rising diagonal.
 Animations.Slash3 = {
-	fadeIn = 0.07,
+	fadeIn = 0.08,
 	fadeOut = 0.22,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -421,13 +421,13 @@ Animations.Slash3 = {
 		{
 			0,
 			{
-				Torso = body(0.049, -6, -18),
-				Head = rot(5, 16),
-				RightArm = limb(85, 25, 10),
-				Sword = aim(-0.006, 0.483, 0.875),
-				LeftArm = limb(10, 0, -14),
-				RightLeg = rot(0),
-				LeftLeg = rot(0),
+				Torso = body(0.128, -14, -25),
+				Head = rot(10, 18),
+				RightArm = limb(25, -40),
+				Sword = aim(0.45, -0.35, -0.8),
+				LeftArm = limb(45, -20),
+				RightLeg = rot(0, 22),
+				LeftLeg = rot(0, 22),
 			},
 		},
 		{
@@ -491,7 +491,7 @@ Animations.Slash3 = {
 
 -- Finisher: huge horizontal cleave that wraps around the body.
 Animations.Cleave = {
-	fadeIn = 0.1,
+	fadeIn = 0.12,
 	fadeOut = 0.28,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -499,13 +499,13 @@ Animations.Cleave = {
 		{
 			0,
 			{
-				Torso = body(0.049, -6, -18),
-				Head = rot(5, 16),
-				RightArm = limb(85, 25, 10),
-				Sword = aim(-0.006, 0.483, 0.875),
-				LeftArm = limb(10, 0, -14),
-				RightLeg = rot(0),
-				LeftLeg = rot(0),
+				Torso = body(0.085, 4, -60),
+				Head = rot(0, 40),
+				RightArm = limb(80, -120),
+				Sword = aim(0.45, 0.2, 0.85),
+				LeftArm = limb(65, -30),
+				RightLeg = rot(0, 55),
+				LeftLeg = rot(0, 55),
 			},
 		},
 		{
@@ -569,7 +569,7 @@ Animations.Cleave = {
 
 -- Finisher (jump held): rising vertical slash.
 Animations.Rising = {
-	fadeIn = 0.1,
+	fadeIn = 0.12,
 	fadeOut = 0.28,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -577,13 +577,13 @@ Animations.Rising = {
 		{
 			0,
 			{
-				Torso = body(0.049, -6, -18),
-				Head = rot(5, 16),
-				RightArm = limb(85, 25, 10),
-				Sword = aim(-0.006, 0.483, 0.875),
-				LeftArm = limb(10, 0, -14),
-				RightLeg = rot(0),
-				LeftLeg = rot(0),
+				Torso = body(0.035, -22, -15),
+				Head = rot(14, 10),
+				RightArm = limb(15, -25),
+				Sword = aim(0.45, -0.3, -0.84),
+				LeftArm = limb(70, -25),
+				RightLeg = rot(-10, 15),
+				LeftLeg = rot(15, 15),
 			},
 		},
 		{
@@ -647,18 +647,18 @@ Animations.Rising = {
 
 -- Finisher (airborne): two-handed overhead chop.
 Animations.Chop = {
-	fadeIn = 0.07,
+	fadeIn = 0.12,
 	fadeOut = 0.28,
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
 	keys = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
-				Head = rot(5, 16),
-				RightArm = limb(85, 25, 10),
-				Sword = aim(-0.006, 0.483, 0.875),
-				LeftArm = limb(10, 0, -14),
+				Torso = rot(20),
+				Head = rot(-12),
+				RightArm = limb(175, 8),
+				Sword = aim(0, 0.55, 0.83),
+				LeftArm = limb(170, -8),
 			},
 		},
 		{

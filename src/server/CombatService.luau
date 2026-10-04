@@ -37,6 +37,7 @@ export type CharData = {
 	nextBlock: number,
 	nextDash: number,
 	ragdollToken: number,
+	juggleUntil: number, -- launched by an uppercut: can still be hit in the air until then
 	awakenToken: number,
 	lastDamaged: number, -- last time this character took damage
 	lastCombat: number, -- last time it dealt or took a hit (blocks character switching)
@@ -188,8 +189,15 @@ function CombatService.ApplyVelocity(
 	end
 	local player = Players:GetPlayerFromCharacter(character)
 	if Ragdoll.IsActive(character) then
-		-- Server owns ragdolls, and a ragdoll has no Humanoid fighting the velocity.
-		CombatService.Tumble(root, velocity)
+		-- Server owns ragdolls, and a ragdoll has no Humanoid fighting the
+		-- velocity. A gentle push (an air hit holding them up, the hang after
+		-- an uppercut) holds the body there, still turning and limp; anything
+		-- faster throws it.
+		if duration > 0.05 and velocity.Magnitude <= Config.Physics.RagdollHoldSpeed then
+			Impulse.Apply(root, velocity, duration, "Knockback", 0.45)
+		else
+			CombatService.Tumble(root, velocity)
+		end
 	elseif player then
 		Remotes.Impulse:FireClient(player, velocity, duration, options)
 	else
@@ -200,12 +208,28 @@ end
 -- Throws a ragdolled body: velocity plus a head-over-heels spin around the
 -- axis across the direction of travel.
 function CombatService.Tumble(root: BasePart, velocity: Vector3)
-	root.AssemblyLinearVelocity = velocity
+	local carry = Config.Physics.RagdollCarry
+	local thrown = Vector3.new(velocity.X * carry, velocity.Y, velocity.Z * carry)
+	local spin = Vector3.zero
 	local across = Vector3.new(velocity.X, 0, velocity.Z):Cross(Vector3.yAxis)
 	if across.Magnitude > 0.1 then
-		local spin = math.min(velocity.Magnitude * Config.Physics.TumbleSpin, Config.Physics.MaxTumble)
-		root.AssemblyAngularVelocity = -across.Unit * spin
+		spin = -across.Unit * math.min(velocity.Magnitude * Config.Physics.TumbleSpin, Config.Physics.MaxTumble)
 	end
+	-- The whole body flies, not just the torso: a ragdoll's limbs are their
+	-- own assemblies, and launching the torso alone gets averaged out over
+	-- the joints into a weak flop. Each part gets the velocity it would have
+	-- if the body were turning as one piece.
+	local character = root.Parent
+	if character then
+		for _, part in character:GetChildren() do
+			if part:IsA("BasePart") and not part.Anchored and part ~= root then
+				part.AssemblyLinearVelocity = thrown + spin:Cross(part.Position - root.Position)
+				part.AssemblyAngularVelocity = spin
+			end
+		end
+	end
+	root.AssemblyLinearVelocity = thrown
+	root.AssemblyAngularVelocity = spin
 end
 
 -- Knockback for a hit. Ragdolled victims of heavy hits freeze for a split
@@ -493,14 +517,16 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	if not humanoid or not victimRoot or not attackerRoot or humanoid.Health <= 0 then
 		return "None"
 	end
-	-- No hitting people on the floor: stops infinites.
-	if CombatState.HasIFrames(victim) or CombatState.IsRagdolled(victim) then
-		return "Immune"
-	end
-
 	local attackerData = registry[attacker]
 	local victimData = registry[victim]
 	local now = os.clock()
+	-- No hitting people on the floor: stops infinites. A body still in the
+	-- air from an uppercut can be hit for a moment, so the combo carries on.
+	local juggled = victimData ~= nil and now < victimData.juggleUntil and CombatService.IsAirborne(victim)
+	if CombatState.HasIFrames(victim) or (CombatState.IsRagdolled(victim) and not juggled) then
+		return "Immune"
+	end
+
 	if attackerData then
 		attackerData.lastCombat = now
 	end
@@ -575,6 +601,10 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 
 	local variant = hit.variant
 	local heavy = hit.heavy == true or (variant ~= nil and variant ~= "Normal")
+	-- The finishers that knock them down end a juggle.
+	if victimData and (variant == "Knockback" or variant == "Downslam") then
+		victimData.juggleUntil = 0
+	end
 	if variant == "Knockback" then
 		CombatService.Ragdoll(victim, Config.Ragdoll.Duration)
 		CombatService.Launch(
@@ -584,10 +614,20 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 			Config.Physics.HitStop
 		)
 	elseif variant == "Uppercut" then
-		-- Knocked off their feet and sent up tumbling (about 8 studs, in
-		-- reach of a jump); the attacker stays grounded.
+		-- Knocked off their feet and sent up tumbling (about 7 studs), where
+		-- they hang for a beat: jump after them to carry on in the air.
 		CombatService.Ragdoll(victim, Config.M1.UppercutRagdoll)
-		CombatService.Launch(victim, Vector3.new(0, Config.M1.UppercutForce, 0) + look * 6, 0.2, Config.Physics.HitStop)
+		if victimData then
+			victimData.juggleUntil = now + Config.M1.JuggleTime
+		end
+		CombatService.Launch(victim, Vector3.new(0, Config.M1.UppercutForce, 0) + look * 5, 0.2, Config.Physics.HitStop)
+		local token = victimData and victimData.ragdollToken
+		task.delay(Config.Physics.HitStop + Config.M1.UppercutForce / workspace.Gravity, function()
+			-- Still flying from this uppercut (no new hit took over): the hang.
+			if victimData and victimData.ragdollToken == token and Ragdoll.IsActive(victim) then
+				CombatService.ApplyVelocity(victim, Vector3.new(0, 0.5, 0) + look, Config.M1.UppercutHang)
+			end
+		end)
 	elseif variant == "Downslam" then
 		CombatService.Ragdoll(victim, Config.Ragdoll.Duration)
 		CombatService.Launch(
@@ -598,12 +638,17 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 		)
 		scheduleCrater(victim, attacker)
 	elseif variant == "Normal" then
+		if juggled and victimData then
+			-- Kept up in the air (and limp) while the hits keep coming.
+			CombatService.Ragdoll(victim, Config.M1.AirFloat + 0.9)
+			victimData.juggleUntil = now + Config.M1.AirFloat + 0.6
+		end
 		if hit.airborne then
 			local float = Vector3.new(0, 3, 0) + look * 3
 			CombatService.ApplyVelocity(victim, float, Config.M1.AirFloat)
 			CombatService.ApplyVelocity(attacker, float, Config.M1.AirFloat)
 		else
-			CombatService.ApplyVelocity(victim, look * Config.M1.Push, 0.15)
+			CombatService.ApplyVelocity(victim, look * Config.M1.Push, Config.M1.PushTime)
 		end
 	else
 		-- Skill hits.
@@ -640,7 +685,7 @@ end
 ---------------------------------------------------------------------------
 
 -- One swing of the M1 string. `jump` = jump held, turns the finisher into an uppercut.
-function CombatService.M1(character: Model, jump: boolean?, clientAirborne: boolean?)
+function CombatService.M1(character: Model, jump: boolean?, clientAirborne: boolean?, clientIndex: number?)
 	local data = registry[character]
 	if
 		not data
@@ -659,6 +704,13 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 	end
 
 	data.combo += 1
+	-- Follow the player's own count of the string (the swing they see),
+	-- so a click dropped on the way or a reset that landed differently
+	-- here can't turn their uppercut into a normal hit and the next swing
+	-- into a downslam. Swing timing is still enforced above.
+	if clientIndex and clientIndex >= 1 and clientIndex <= Config.M1.ComboLength then
+		data.combo = clientIndex
+	end
 	data.lastM1 = t
 	local index = data.combo
 	local finisher = index >= Config.M1.ComboLength
@@ -674,13 +726,17 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 			variant = "Downslam"
 		elseif jump then
 			variant = "Uppercut"
+			data.nextM1 = t + Config.M1.UppercutEndLag
 		else
 			variant = "Knockback"
 		end
 	else
 		data.nextM1 = t + Config.M1.SwingCooldown
 	end
-	CombatState.SetBusy(character, if finisher then Config.M1.FinisherBusy else Config.M1.Busy)
+	CombatState.SetBusy(
+		character,
+		if finisher and variant ~= "Uppercut" then Config.M1.FinisherBusy else Config.M1.Busy
+	)
 
 	CombatService.FireVFX("Swing", {
 		character = character,
@@ -1021,6 +1077,7 @@ function CombatService.Register(character: Model)
 		nextBlock = 0,
 		nextDash = 0,
 		ragdollToken = 0,
+		juggleUntil = 0,
 		awakenToken = 0,
 		lastDamaged = 0,
 		lastCombat = 0,
@@ -1093,7 +1150,10 @@ local function onAction(player: Player, action: unknown, payload: unknown, extra
 
 	if action == "M1" then
 		local jump = type(payload) == "table" and (payload :: any).jump == true
-		CombatService.M1(character, jump, saysAirborne(payload))
+		local index = if type(payload) == "table" and type((payload :: any).index) == "number"
+			then math.floor((payload :: any).index)
+			else nil
+		CombatService.M1(character, jump, saysAirborne(payload), index)
 	elseif action == "Block" then
 		CombatService.SetBlock(character, payload == true)
 	elseif action == "Dash" then
@@ -1157,7 +1217,10 @@ function CombatService.Start()
 		local now = os.clock()
 		for character in registry do
 			local root = getRoot(character)
-			if root and Ragdoll.IsActive(character) and not root.Anchored then
+			local data = registry[character]
+			-- (Coming down from an uppercut is a soft landing, not a slam.)
+			local juggling = data ~= nil and now < data.juggleUntil + 0.6
+			if root and Ragdoll.IsActive(character) and not root.Anchored and not juggling then
 				local velocity = root.AssemblyLinearVelocity
 				local previous = lastVelocity[character]
 				if

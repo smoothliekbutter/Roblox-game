@@ -426,23 +426,30 @@ Config.M1 = {
 	FinisherBusy = 0.45,
 	WindUp = 0.08, -- delay between the swing starting and the hitbox
 	FinisherWindUp = 0.15, -- the 4th hit winds up longer (matches its animation)
-	InputTolerance = 0.06, -- accept swings this early to absorb network jitter
+	InputTolerance = 0.1, -- accept swings this early to absorb network jitter
 
 	HitStun = 0.6, -- longer than SwingCooldown + WindUp, so strings are true combos
 	UppercutStun = 1.1,
+	-- The uppercut is a launcher: short end lag and an early jump, so you
+	-- can go up after them and carry on in the air.
+	UppercutEndLag = 0.35,
+	UppercutJumpAfter = 0.2,
+	UppercutHang = 0.35, -- they hang at the top of the launch this long
+	JuggleTime = 1, -- how long a launched body can still be hit in the air
 
 	HitboxSize = Vector3.new(5.5, 6, 6),
 	HitboxOffset = 3.25, -- studs in front of the root
 
-	Push = 6, -- small push on normal hits keeps the victim in range
+	Push = 10, -- pushes the victim about as far as the swing steps you in, so the spacing holds
+	PushTime = 0.18,
 	LungeSpeed = 13, -- attacker steps forward a little on every swing (eased out)
 	LungeTime = 0.16,
 	AirFloat = 0.35, -- air hits hold both players up this long
 
 	KnockbackForce = 65,
 	KnockbackLift = 18,
-	UppercutForce = 60, -- a ragdoll launch: about 8 studs up, in reach of a jump
-	UppercutRagdoll = 1.2,
+	UppercutForce = 56, -- a ragdoll launch: about 7 studs up, in reach of a jump
+	UppercutRagdoll = 1.3,
 	DownslamForce = 75,
 }
 
@@ -489,6 +496,12 @@ Config.Physics = {
 	-- Launched ragdolls tumble: spin (rad/s) per stud/s of launch speed.
 	TumbleSpin = 0.12,
 	MaxTumble = 10,
+	-- How much of a launch's sideways speed a ragdoll carries (the height
+	-- is kept exactly), so knockback reads as a throw, not a teleport.
+	RagdollCarry = 0.7,
+	-- Gentler pushes than this on a ragdoll hold it (air hits, hangs);
+	-- faster ones throw it.
+	RagdollHoldSpeed = 20,
 	-- A ragdoll moving at least this fast that suddenly stops (floor, wall)
 	-- kicks up a body impact effect.
 	ImpactSpeed = 35,
@@ -1025,6 +1038,7 @@ export type CharData = {
 	nextBlock: number,
 	nextDash: number,
 	ragdollToken: number,
+	juggleUntil: number, -- launched by an uppercut: can still be hit in the air until then
 	awakenToken: number,
 	lastDamaged: number, -- last time this character took damage
 	lastCombat: number, -- last time it dealt or took a hit (blocks character switching)
@@ -1176,8 +1190,15 @@ function CombatService.ApplyVelocity(
 	end
 	local player = Players:GetPlayerFromCharacter(character)
 	if Ragdoll.IsActive(character) then
-		-- Server owns ragdolls, and a ragdoll has no Humanoid fighting the velocity.
-		CombatService.Tumble(root, velocity)
+		-- Server owns ragdolls, and a ragdoll has no Humanoid fighting the
+		-- velocity. A gentle push (an air hit holding them up, the hang after
+		-- an uppercut) holds the body there, still turning and limp; anything
+		-- faster throws it.
+		if duration > 0.05 and velocity.Magnitude <= Config.Physics.RagdollHoldSpeed then
+			Impulse.Apply(root, velocity, duration, "Knockback", 0.45)
+		else
+			CombatService.Tumble(root, velocity)
+		end
 	elseif player then
 		Remotes.Impulse:FireClient(player, velocity, duration, options)
 	else
@@ -1188,12 +1209,28 @@ end
 -- Throws a ragdolled body: velocity plus a head-over-heels spin around the
 -- axis across the direction of travel.
 function CombatService.Tumble(root: BasePart, velocity: Vector3)
-	root.AssemblyLinearVelocity = velocity
+	local carry = Config.Physics.RagdollCarry
+	local thrown = Vector3.new(velocity.X * carry, velocity.Y, velocity.Z * carry)
+	local spin = Vector3.zero
 	local across = Vector3.new(velocity.X, 0, velocity.Z):Cross(Vector3.yAxis)
 	if across.Magnitude > 0.1 then
-		local spin = math.min(velocity.Magnitude * Config.Physics.TumbleSpin, Config.Physics.MaxTumble)
-		root.AssemblyAngularVelocity = -across.Unit * spin
+		spin = -across.Unit * math.min(velocity.Magnitude * Config.Physics.TumbleSpin, Config.Physics.MaxTumble)
 	end
+	-- The whole body flies, not just the torso: a ragdoll's limbs are their
+	-- own assemblies, and launching the torso alone gets averaged out over
+	-- the joints into a weak flop. Each part gets the velocity it would have
+	-- if the body were turning as one piece.
+	local character = root.Parent
+	if character then
+		for _, part in character:GetChildren() do
+			if part:IsA("BasePart") and not part.Anchored and part ~= root then
+				part.AssemblyLinearVelocity = thrown + spin:Cross(part.Position - root.Position)
+				part.AssemblyAngularVelocity = spin
+			end
+		end
+	end
+	root.AssemblyLinearVelocity = thrown
+	root.AssemblyAngularVelocity = spin
 end
 
 -- Knockback for a hit. Ragdolled victims of heavy hits freeze for a split
@@ -1481,14 +1518,16 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	if not humanoid or not victimRoot or not attackerRoot or humanoid.Health <= 0 then
 		return "None"
 	end
-	-- No hitting people on the floor: stops infinites.
-	if CombatState.HasIFrames(victim) or CombatState.IsRagdolled(victim) then
-		return "Immune"
-	end
-
 	local attackerData = registry[attacker]
 	local victimData = registry[victim]
 	local now = os.clock()
+	-- No hitting people on the floor: stops infinites. A body still in the
+	-- air from an uppercut can be hit for a moment, so the combo carries on.
+	local juggled = victimData ~= nil and now < victimData.juggleUntil and CombatService.IsAirborne(victim)
+	if CombatState.HasIFrames(victim) or (CombatState.IsRagdolled(victim) and not juggled) then
+		return "Immune"
+	end
+
 	if attackerData then
 		attackerData.lastCombat = now
 	end
@@ -1563,6 +1602,10 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 
 	local variant = hit.variant
 	local heavy = hit.heavy == true or (variant ~= nil and variant ~= "Normal")
+	-- The finishers that knock them down end a juggle.
+	if victimData and (variant == "Knockback" or variant == "Downslam") then
+		victimData.juggleUntil = 0
+	end
 	if variant == "Knockback" then
 		CombatService.Ragdoll(victim, Config.Ragdoll.Duration)
 		CombatService.Launch(
@@ -1572,10 +1615,20 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 			Config.Physics.HitStop
 		)
 	elseif variant == "Uppercut" then
-		-- Knocked off their feet and sent up tumbling (about 8 studs, in
-		-- reach of a jump); the attacker stays grounded.
+		-- Knocked off their feet and sent up tumbling (about 7 studs), where
+		-- they hang for a beat: jump after them to carry on in the air.
 		CombatService.Ragdoll(victim, Config.M1.UppercutRagdoll)
-		CombatService.Launch(victim, Vector3.new(0, Config.M1.UppercutForce, 0) + look * 6, 0.2, Config.Physics.HitStop)
+		if victimData then
+			victimData.juggleUntil = now + Config.M1.JuggleTime
+		end
+		CombatService.Launch(victim, Vector3.new(0, Config.M1.UppercutForce, 0) + look * 5, 0.2, Config.Physics.HitStop)
+		local token = victimData and victimData.ragdollToken
+		task.delay(Config.Physics.HitStop + Config.M1.UppercutForce / workspace.Gravity, function()
+			-- Still flying from this uppercut (no new hit took over): the hang.
+			if victimData and victimData.ragdollToken == token and Ragdoll.IsActive(victim) then
+				CombatService.ApplyVelocity(victim, Vector3.new(0, 0.5, 0) + look, Config.M1.UppercutHang)
+			end
+		end)
 	elseif variant == "Downslam" then
 		CombatService.Ragdoll(victim, Config.Ragdoll.Duration)
 		CombatService.Launch(
@@ -1586,12 +1639,17 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 		)
 		scheduleCrater(victim, attacker)
 	elseif variant == "Normal" then
+		if juggled and victimData then
+			-- Kept up in the air (and limp) while the hits keep coming.
+			CombatService.Ragdoll(victim, Config.M1.AirFloat + 0.9)
+			victimData.juggleUntil = now + Config.M1.AirFloat + 0.6
+		end
 		if hit.airborne then
 			local float = Vector3.new(0, 3, 0) + look * 3
 			CombatService.ApplyVelocity(victim, float, Config.M1.AirFloat)
 			CombatService.ApplyVelocity(attacker, float, Config.M1.AirFloat)
 		else
-			CombatService.ApplyVelocity(victim, look * Config.M1.Push, 0.15)
+			CombatService.ApplyVelocity(victim, look * Config.M1.Push, Config.M1.PushTime)
 		end
 	else
 		-- Skill hits.
@@ -1628,7 +1686,7 @@ end
 ---------------------------------------------------------------------------
 
 -- One swing of the M1 string. `jump` = jump held, turns the finisher into an uppercut.
-function CombatService.M1(character: Model, jump: boolean?, clientAirborne: boolean?)
+function CombatService.M1(character: Model, jump: boolean?, clientAirborne: boolean?, clientIndex: number?)
 	local data = registry[character]
 	if
 		not data
@@ -1647,6 +1705,13 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 	end
 
 	data.combo += 1
+	-- Follow the player's own count of the string (the swing they see),
+	-- so a click dropped on the way or a reset that landed differently
+	-- here can't turn their uppercut into a normal hit and the next swing
+	-- into a downslam. Swing timing is still enforced above.
+	if clientIndex and clientIndex >= 1 and clientIndex <= Config.M1.ComboLength then
+		data.combo = clientIndex
+	end
 	data.lastM1 = t
 	local index = data.combo
 	local finisher = index >= Config.M1.ComboLength
@@ -1662,13 +1727,17 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 			variant = "Downslam"
 		elseif jump then
 			variant = "Uppercut"
+			data.nextM1 = t + Config.M1.UppercutEndLag
 		else
 			variant = "Knockback"
 		end
 	else
 		data.nextM1 = t + Config.M1.SwingCooldown
 	end
-	CombatState.SetBusy(character, if finisher then Config.M1.FinisherBusy else Config.M1.Busy)
+	CombatState.SetBusy(
+		character,
+		if finisher and variant ~= "Uppercut" then Config.M1.FinisherBusy else Config.M1.Busy
+	)
 
 	CombatService.FireVFX("Swing", {
 		character = character,
@@ -2009,6 +2078,7 @@ function CombatService.Register(character: Model)
 		nextBlock = 0,
 		nextDash = 0,
 		ragdollToken = 0,
+		juggleUntil = 0,
 		awakenToken = 0,
 		lastDamaged = 0,
 		lastCombat = 0,
@@ -2081,7 +2151,10 @@ local function onAction(player: Player, action: unknown, payload: unknown, extra
 
 	if action == "M1" then
 		local jump = type(payload) == "table" and (payload :: any).jump == true
-		CombatService.M1(character, jump, saysAirborne(payload))
+		local index = if type(payload) == "table" and type((payload :: any).index) == "number"
+			then math.floor((payload :: any).index)
+			else nil
+		CombatService.M1(character, jump, saysAirborne(payload), index)
 	elseif action == "Block" then
 		CombatService.SetBlock(character, payload == true)
 	elseif action == "Dash" then
@@ -2145,7 +2218,10 @@ function CombatService.Start()
 		local now = os.clock()
 		for character in registry do
 			local root = getRoot(character)
-			if root and Ragdoll.IsActive(character) and not root.Anchored then
+			local data = registry[character]
+			-- (Coming down from an uppercut is a soft landing, not a slam.)
+			local juggling = data ~= nil and now < data.juggleUntil + 0.6
+			if root and Ragdoll.IsActive(character) and not root.Anchored and not juggling then
 				local velocity = root.AssemblyLinearVelocity
 				local previous = lastVelocity[character]
 				if
@@ -5043,7 +5119,10 @@ local function tryM1()
 		if inAir then
 			variant = "Downslam"
 		elseif jump then
+			-- A launcher: back in action quickly, and free to jump after them.
 			variant = "Uppercut"
+			nextM1 = t + Config.M1.UppercutEndLag
+			noJumpUntil = t + Config.M1.UppercutJumpAfter
 		else
 			variant = "Knockback"
 		end
@@ -5055,7 +5134,8 @@ local function tryM1()
 		noJumpUntil = t + if index == Config.M1.ComboLength - 1 then Config.M1.ResetTime else Config.M1.Busy
 	end
 
-	Remotes.Action:FireServer("M1", { jump = jump, airborne = inAir })
+	-- Our count of the string goes along, so the server's swing is the one we see.
+	Remotes.Action:FireServer("M1", { jump = jump, airborne = inAir, index = index })
 	Moves.PlayM1(character, index, variant)
 
 	-- Step into the swing a little so strings stay connected.
@@ -10648,7 +10728,7 @@ Animations.Air = {
 
 -- M1 1: right to left horizontal slash.
 Animations.Slash1 = {
-	fadeIn = 0.07,
+	fadeIn = 0.08,
 	fadeOut = 0.22,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -10656,13 +10736,13 @@ Animations.Slash1 = {
 		{
 			0,
 			{
-				Torso = body(0.049, -6, -18),
-				Head = rot(5, 16),
-				RightArm = limb(85, 25, 10),
-				Sword = aim(-0.006, 0.483, 0.875),
-				LeftArm = limb(10, 0, -14),
-				RightLeg = rot(0),
-				LeftLeg = rot(0),
+				Torso = body(0.056, 3, -42),
+				Head = rot(0, 32),
+				RightArm = limb(80, -100),
+				Sword = aim(0.75, 0.25, 0.6),
+				LeftArm = limb(40, -25),
+				RightLeg = rot(0, 40),
+				LeftLeg = rot(0, 40),
 			},
 		},
 		{
@@ -10726,7 +10806,7 @@ Animations.Slash1 = {
 
 -- M1 2: backhand, left to right.
 Animations.Slash2 = {
-	fadeIn = 0.07,
+	fadeIn = 0.08,
 	fadeOut = 0.22,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -10734,13 +10814,13 @@ Animations.Slash2 = {
 		{
 			0,
 			{
-				Torso = body(0.049, -6, -18),
-				Head = rot(5, 16),
-				RightArm = limb(85, 25, 10),
-				Sword = aim(-0.006, 0.483, 0.875),
-				LeftArm = limb(10, 0, -14),
-				RightLeg = rot(0),
-				LeftLeg = rot(0),
+				Torso = body(0.052, 3, 35),
+				Head = rot(0, -28),
+				RightArm = limb(82, 80),
+				Sword = aim(-0.8, 0.2, 0.5),
+				LeftArm = limb(35, -10),
+				RightLeg = rot(0, -34),
+				LeftLeg = rot(0, -34),
 			},
 		},
 		{
@@ -10804,7 +10884,7 @@ Animations.Slash2 = {
 
 -- M1 3: rising diagonal.
 Animations.Slash3 = {
-	fadeIn = 0.07,
+	fadeIn = 0.08,
 	fadeOut = 0.22,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -10812,13 +10892,13 @@ Animations.Slash3 = {
 		{
 			0,
 			{
-				Torso = body(0.049, -6, -18),
-				Head = rot(5, 16),
-				RightArm = limb(85, 25, 10),
-				Sword = aim(-0.006, 0.483, 0.875),
-				LeftArm = limb(10, 0, -14),
-				RightLeg = rot(0),
-				LeftLeg = rot(0),
+				Torso = body(0.128, -14, -25),
+				Head = rot(10, 18),
+				RightArm = limb(25, -40),
+				Sword = aim(0.45, -0.35, -0.8),
+				LeftArm = limb(45, -20),
+				RightLeg = rot(0, 22),
+				LeftLeg = rot(0, 22),
 			},
 		},
 		{
@@ -10882,7 +10962,7 @@ Animations.Slash3 = {
 
 -- Finisher: huge horizontal cleave that wraps around the body.
 Animations.Cleave = {
-	fadeIn = 0.1,
+	fadeIn = 0.12,
 	fadeOut = 0.28,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -10890,13 +10970,13 @@ Animations.Cleave = {
 		{
 			0,
 			{
-				Torso = body(0.049, -6, -18),
-				Head = rot(5, 16),
-				RightArm = limb(85, 25, 10),
-				Sword = aim(-0.006, 0.483, 0.875),
-				LeftArm = limb(10, 0, -14),
-				RightLeg = rot(0),
-				LeftLeg = rot(0),
+				Torso = body(0.085, 4, -60),
+				Head = rot(0, 40),
+				RightArm = limb(80, -120),
+				Sword = aim(0.45, 0.2, 0.85),
+				LeftArm = limb(65, -30),
+				RightLeg = rot(0, 55),
+				LeftLeg = rot(0, 55),
 			},
 		},
 		{
@@ -10960,7 +11040,7 @@ Animations.Cleave = {
 
 -- Finisher (jump held): rising vertical slash.
 Animations.Rising = {
-	fadeIn = 0.1,
+	fadeIn = 0.12,
 	fadeOut = 0.28,
 	additive = { RightLeg = true, LeftLeg = true },
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
@@ -10968,13 +11048,13 @@ Animations.Rising = {
 		{
 			0,
 			{
-				Torso = body(0.049, -6, -18),
-				Head = rot(5, 16),
-				RightArm = limb(85, 25, 10),
-				Sword = aim(-0.006, 0.483, 0.875),
-				LeftArm = limb(10, 0, -14),
-				RightLeg = rot(0),
-				LeftLeg = rot(0),
+				Torso = body(0.035, -22, -15),
+				Head = rot(14, 10),
+				RightArm = limb(15, -25),
+				Sword = aim(0.45, -0.3, -0.84),
+				LeftArm = limb(70, -25),
+				RightLeg = rot(-10, 15),
+				LeftLeg = rot(15, 15),
 			},
 		},
 		{
@@ -11038,18 +11118,18 @@ Animations.Rising = {
 
 -- Finisher (airborne): two-handed overhead chop.
 Animations.Chop = {
-	fadeIn = 0.07,
+	fadeIn = 0.12,
 	fadeOut = 0.28,
 	delays = { Head = -0.01, RightArm = 0.012, LeftArm = 0.02, Sword = 0.03 },
 	keys = {
 		{
 			0,
 			{
-				Torso = rot(-6, -18),
-				Head = rot(5, 16),
-				RightArm = limb(85, 25, 10),
-				Sword = aim(-0.006, 0.483, 0.875),
-				LeftArm = limb(10, 0, -14),
+				Torso = rot(20),
+				Head = rot(-12),
+				RightArm = limb(175, 8),
+				Sword = aim(0, 0.55, 0.83),
+				LeftArm = limb(170, -8),
 			},
 		},
 		{
@@ -16509,7 +16589,7 @@ Reactions.FlinchA = clip({
 		OUT,
 	},
 	{ 0.3, settle(4), SINE, OUT },
-}, { fadeIn = 0.02, fadeOut = 0.2, additive = LEGS })
+}, { fadeIn = 0.045, fadeOut = 0.22, additive = LEGS })
 
 Reactions.FlinchB = clip({
 	{ 0, NEUTRAL },
@@ -16527,7 +16607,7 @@ Reactions.FlinchB = clip({
 		OUT,
 	},
 	{ 0.3, settle(-4), SINE, OUT },
-}, { fadeIn = 0.02, fadeOut = 0.2, additive = LEGS })
+}, { fadeIn = 0.045, fadeOut = 0.22, additive = LEGS })
 
 Reactions.FlinchBack = clip({
 	{ 0, NEUTRAL },
@@ -16545,7 +16625,7 @@ Reactions.FlinchBack = clip({
 		OUT,
 	},
 	{ 0.3, settle(0), SINE, OUT },
-}, { fadeIn = 0.02, fadeOut = 0.2, additive = LEGS })
+}, { fadeIn = 0.045, fadeOut = 0.22, additive = LEGS })
 
 Reactions.HitHeavy = clip({
 	{ 0, NEUTRAL },
@@ -16563,7 +16643,7 @@ Reactions.HitHeavy = clip({
 		OUT,
 	},
 	{ 0.5, settle(0), SINE, IN_OUT },
-}, { fadeIn = 0.02, fadeOut = 0.25, additive = LEGS })
+}, { fadeIn = 0.05, fadeOut = 0.25, additive = LEGS })
 
 local GUARD = {
 	Torso = rot(-8, 6),

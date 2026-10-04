@@ -32,23 +32,30 @@ Config.M1 = {
 	FinisherBusy = 0.45,
 	WindUp = 0.08, -- delay between the swing starting and the hitbox
 	FinisherWindUp = 0.15, -- the 4th hit winds up longer (matches its animation)
-	InputTolerance = 0.06, -- accept swings this early to absorb network jitter
+	InputTolerance = 0.1, -- accept swings this early to absorb network jitter
 
 	HitStun = 0.6, -- longer than SwingCooldown + WindUp, so strings are true combos
 	UppercutStun = 1.1,
+	-- The uppercut is a launcher: short end lag and an early jump, so you
+	-- can go up after them and carry on in the air.
+	UppercutEndLag = 0.35,
+	UppercutJumpAfter = 0.2,
+	UppercutHang = 0.35, -- they hang at the top of the launch this long
+	JuggleTime = 1, -- how long a launched body can still be hit in the air
 
 	HitboxSize = Vector3.new(5.5, 6, 6),
 	HitboxOffset = 3.25, -- studs in front of the root
 
-	Push = 6, -- small push on normal hits keeps the victim in range
+	Push = 10, -- pushes the victim about as far as the swing steps you in, so the spacing holds
+	PushTime = 0.18,
 	LungeSpeed = 13, -- attacker steps forward a little on every swing (eased out)
 	LungeTime = 0.16,
 	AirFloat = 0.35, -- air hits hold both players up this long
 
 	KnockbackForce = 65,
 	KnockbackLift = 18,
-	UppercutForce = 60, -- a ragdoll launch: about 8 studs up, in reach of a jump
-	UppercutRagdoll = 1.2,
+	UppercutForce = 56, -- a ragdoll launch: about 7 studs up, in reach of a jump
+	UppercutRagdoll = 1.3,
 	DownslamForce = 75,
 }
 
@@ -95,6 +102,12 @@ Config.Physics = {
 	-- Launched ragdolls tumble: spin (rad/s) per stud/s of launch speed.
 	TumbleSpin = 0.12,
 	MaxTumble = 10,
+	-- How much of a launch's sideways speed a ragdoll carries (the height
+	-- is kept exactly), so knockback reads as a throw, not a teleport.
+	RagdollCarry = 0.7,
+	-- Gentler pushes than this on a ragdoll hold it (air hits, hangs);
+	-- faster ones throw it.
+	RagdollHoldSpeed = 20,
 	-- A ragdoll moving at least this fast that suddenly stops (floor, wall)
 	-- kicks up a body impact effect.
 	ImpactSpeed = 35,
