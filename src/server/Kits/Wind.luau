@@ -22,16 +22,17 @@
 	                         still); R again within 4s and he's there
 	Half-Crown Spirit of Zephyr (G): Sylph on his left side
 	  1 Spirit Storm         a dense beam of swirling wind out of his palm
-	  2 Spirit's Hushed Dance  reads the mana around him: the next attack misses
-	                         and he dances along the wind to behind them and strikes
+	  2 Tempest Dive         grab: a tornado tears them up into the sky with him,
+	                         and he drives them head-first down into the ground.
+	                         Landing it twice is what unlocks the Full-Crown
 	  3 Quartile Scutum      four stars and the light between them: a wall in
 	                         front that stops everything, melee thrown back off it
 	  4 Quartile Hasta       four star beams converge into one: guard-breaking
-	Full-Crown Spirit of Zephyr (G again, once 45 damage is dealt in Half-Crown)
+	Full-Crown Spirit of Zephyr (G again, once Tempest Dive has landed twice)
 	  1 Spirit of Notos      the south wind bursts out of him, and blows spells
 	                         thrown at him back where they came from
-	  2 Spirit of Boreas     the wind sword becomes a halberd: he closes in and
-	                         brings the axe down, guard break
+	  2 Spirit of Zephyrus   he leaps into the sky and rains a barrage of wind
+	                         arrows down on them
 	  3 Spirit of Euros      a recurve bow of wind; one arrow, too fast to see,
 	                         through everything in a line (unblockable)
 	  4 Neverland            cutscene grab: in the stopped time of the star dome he
@@ -39,7 +40,7 @@
 	                         hammers them down, and the dome lingers over them
 	Air combos: he can jump again in the air (Kits airJumps), and from the air
 	the hawk holds them up and pulls him in, the blades and arrows keep them
-	up there (the last spikes them down), the dance's strike takes him up too.
+	up there (the last spikes them down), Tempest Dive takes them both up.
 
 	All visuals are in StarterPlayerScripts.Client.Kits.Wind, which gets
 	("Skill", {skill, phase, ...}) events from here.
@@ -49,6 +50,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
 local NeverlandPlan = require(ReplicatedStorage:WaitForChild("Shared").Neverland)
+local DivePlan = require(ReplicatedStorage:WaitForChild("Shared").TempestDive)
 local Projectile = require(script.Parent.Parent.Projectile)
 
 local KIT_ID = "Wind"
@@ -519,67 +521,97 @@ local function spiritStorm(ctx)
 	CombatState.SetCasting(character, 0.25)
 end
 
--- Spirit's Hushed Dance: he reads the mana around him. The next attack
--- (anything, from anywhere) misses; he dances along a stream of wind to
--- just behind whoever threw it and strikes, a launcher. From too far away
--- he just slips aside.
-local DANCE_WINDOW = 0.9
-local DANCE_REACH = 45
+--[[
+	Tempest Dive (Half-Crown 2): a grab. His hand shoots out; whoever it
+	catches is torn up into the sky on a tornado with him (cut twice on the
+	way), and at the top he swings over them and drives them head-first
+	down through three rings of wind into the ground, hard enough to bounce
+	them. The timeline is Shared/TempestDive. Landing it charges the
+	Full-Crown: twice, and G can be pressed again.
+]]
+local DIVE_REACH = 0.16
 
-local function hushedDance(ctx)
+local function tempestDive(ctx)
 	local c, character = ctx.combat, ctx.character
-	local countered = false
-	CombatState.SetCasting(character, DANCE_WINDOW + 0.1)
+	CombatState.SetCasting(character, DIVE_REACH + 0.5)
 	if ctx.airborne then
-		c.ApplyVelocity(character, HOVER, DANCE_WINDOW)
+		c.ApplyVelocity(character, HOVER, DIVE_REACH + 0.3)
 	end
-	fx(ctx, "HushedDance", "Stance", { window = DANCE_WINDOW })
-	c.SetCounter(character, DANCE_WINDOW, ALL_TYPES, function(attacker: Model)
-		countered = true
-		CombatState.GiveIFrames(character, 0.7)
-		CombatState.SetCasting(character, 0.5)
-		local attackerRoot = rootOf(attacker)
-		if not attackerRoot then
-			return
-		end
-		local from = ctx.root.Position
-		if (attackerRoot.Position - from).Magnitude <= DANCE_REACH then
-			local behind = attackerRoot.Position - c.Flat(attackerRoot.CFrame.LookVector) * 3.5
-			ctx.root.CFrame =
-				CFrame.lookAt(behind, Vector3.new(attackerRoot.Position.X, behind.Y, attackerRoot.Position.Z))
-			c.ApplyVelocity(character, if ctx.airborne then HOVER else Vector3.zero, 0.2)
-			fx(ctx, "HushedDance", "Evade", { from = from, to = behind, target = attacker })
-			task.wait(0.12)
-			if CombatState.IsAlive(attacker) then
-				c.Hit(character, attacker, {
-					damage = 8,
-					stun = 1.2,
-					attackType = "Melee",
-					unblockable = true,
-					heavy = true,
-					velocity = c.Flat(attackerRoot.Position - ctx.root.Position) * 25 + UP * 30,
-					velocityTime = 0.2,
-				})
-				-- And up after them, for an air string.
-				c.ApplyVelocity(character, UP * 32, 0.3)
-				task.delay(0.3, function()
-					if CombatState.IsAlive(character) then
-						c.ApplyVelocity(character, HOVER, 0.6)
-					end
-				end)
-			end
-		else
-			local side = ctx.root.CFrame.RightVector * (if math.random() < 0.5 then -9 else 9)
-			ctx.root.CFrame += side
-			fx(ctx, "HushedDance", "Evade", { from = from, to = ctx.root.Position })
-		end
-	end)
-	task.wait(DANCE_WINDOW + 0.02)
-	if not countered then
-		c.ClearCounter(character)
-		fx(ctx, "HushedDance", "End")
-		CombatState.SetCasting(character, 0.4)
+	fx(ctx, "TempestDive", "Reach")
+	task.wait(DIVE_REACH)
+	if interrupted(ctx) then
+		return
 	end
+	local target: Model? = nil
+	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -3.5), Vector3.new(6, 7, 7)) do
+		if not CombatState.HasIFrames(victim) and not CombatState.IsRagdolled(victim) then
+			target = victim
+			break
+		end
+	end
+	local targetRoot = target and rootOf(target)
+	if
+		not target
+		or not targetRoot
+		or c.Hit(
+				character,
+				target,
+				{ damage = 2, stun = 3, attackType = "Melee", unblockable = true, noShake = true }
+			)
+			~= "Hit"
+	then
+		fx(ctx, "TempestDive", "Whiff")
+		CombatState.SetCasting(character, 0.55)
+		return
+	end
+
+	local plan = DivePlan.Plan(ctx.root.CFrame, targetRoot.Position, floorUnder(ctx, targetRoot.Position).Y)
+	local times = DivePlan.Times
+	CombatState.SetCasting(character, times.Length + 0.25)
+	CombatState.GiveIFrames(character, times.Length + 0.15)
+	CombatState.Stun(target, times.Land + 0.6)
+	fx(ctx, "TempestDive", "Begin", { target = target, origin = plan.origin, start = plan.start, floorY = plan.floorY })
+	local stopHim = c.Cutscene({
+		[character] = function(t)
+			return DivePlan.Attacker(plan, t)
+		end,
+	}, times.Length)
+	local stopThem = c.Cutscene({
+		[target] = function(t)
+			return DivePlan.Victim(plan, t)
+		end,
+	}, times.Land)
+	local started = os.clock()
+	local function waitUntil(at: number)
+		task.wait(math.max(at - (os.clock() - started), 0))
+	end
+	for _, at in times.Ticks do
+		waitUntil(at)
+		if CombatState.IsAlive(target) then
+			c.Hit(character, target, { damage = 2, stun = 3, attackType = "Melee", unblockable = true, noShake = true })
+		end
+	end
+
+	-- Into the ground, hard enough to bounce them.
+	waitUntil(times.Land)
+	stopThem()
+	local impact = Vector3.new(plan.start.X, plan.floorY, plan.start.Z)
+	if CombatState.IsAlive(target) then
+		c.Hit(character, target, {
+			damage = 12,
+			stun = 1.4,
+			attackType = "Melee",
+			unblockable = true,
+			heavy = true,
+			ragdoll = 2,
+			velocity = UP * 26 + plan.forward * 8,
+		})
+		c.ChargeAscension(character, 1)
+	end
+	fx(ctx, "TempestDive", "Impact", { position = impact })
+	c.ShakeArea(impact, 70, 0.7)
+	waitUntil(times.Length)
+	stopHim()
 end
 
 -- Quartile Scutum: four stars in a rectangle in front of him and beams of
@@ -728,71 +760,81 @@ local function spiritOfNotos(ctx)
 	c.ShakeArea(ctx.root.Position, 40, 0.35)
 end
 
--- Spirit of Boreas: the wind sword condenses into a halberd with an axe
--- head. He closes in, then the axe comes down: a guard-breaking cleave, and
--- the wind off the impact hits everyone around it.
-local BOREAS_LUNGE = 0.3
+-- Spirit of Zephyrus (the west wind): he leaps into the sky on a burst of
+-- wind and, hanging there, looses a barrage of wind arrows down on whoever
+-- is nearest below: they keep them pinned, the last one knocks them down.
+-- Then he glides back down. From the air he leaps less high.
+local ZEPHYRUS_RISE = 0.35
+local ZEPHYRUS_ARROWS = 14
+local ZEPHYRUS_GAP = 0.08
 
-local function spiritOfBoreas(ctx)
+local function nearestEnemy(ctx, radius: number): Model?
+	local best, bestDistance = nil, math.huge
+	for _, victim in ctx.combat.Sphere(ctx.character, ctx.root.Position, radius) do
+		local victimRoot = rootOf(victim)
+		local distance = if victimRoot then (victimRoot.Position - ctx.root.Position).Magnitude else math.huge
+		if distance < bestDistance then
+			best, bestDistance = victim, distance
+		end
+	end
+	return best
+end
+
+local function spiritOfZephyrus(ctx)
 	local c, character = ctx.combat, ctx.character
-	local airborne = ctx.airborne
-	CombatState.SetCasting(character, 0.95)
-	fx(ctx, "SpiritOfBoreas", "Form", { airborne = airborne })
-	task.wait(0.12)
+	local barrage = ZEPHYRUS_ARROWS * ZEPHYRUS_GAP
+	CombatState.SetCasting(character, ZEPHYRUS_RISE + barrage + 0.4)
+	fx(ctx, "SpiritOfZephyrus", "Leap", { rise = ZEPHYRUS_RISE })
+	c.ApplyVelocity(character, UP * (if ctx.airborne then 30 else 62), ZEPHYRUS_RISE)
+	task.wait(ZEPHYRUS_RISE)
 	if interrupted(ctx) then
 		return
 	end
-	local forward = look(ctx)
-	c.ApplyVelocity(
-		character,
-		forward * 70 + (if airborne then UP * -30 else Vector3.zero),
-		BOREAS_LUNGE,
-		if airborne then { landStop = true, landKeep = 0 } else nil
-	)
-	local start = os.clock()
-	while os.clock() - start < BOREAS_LUNGE do
+	c.ApplyVelocity(character, HOVER, barrage + 0.2)
+	fx(ctx, "SpiritOfZephyrus", "Barrage", { duration = barrage })
+	for i = 1, ZEPHYRUS_ARROWS do
 		if interrupted(ctx) then
+			fx(ctx, "SpiritOfZephyrus", "Cancel")
 			return
 		end
-		if #c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -3), Vector3.new(6, 7, 6)) > 0 then
-			c.ApplyVelocity(character, Vector3.zero, 0.05)
-			break
-		end
-		task.wait()
-	end
-	fx(ctx, "SpiritOfBoreas", "Chop", { airborne = airborne })
-	task.wait(0.14)
-	if interrupted(ctx) then
-		return
-	end
-	local impact = floorUnder(ctx, (ctx.root.CFrame * CFrame.new(0, 0, -5)).Position)
-	local struck: { [Model]: boolean } = {}
-	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, -0.5, -5), Vector3.new(9, 9, 10)) do
-		struck[victim] = true
-		c.Hit(character, victim, {
-			damage = 14,
-			stun = 1.3,
-			attackType = "Melee",
-			guardBreak = true,
-			heavy = true,
-			ragdoll = 1.5,
-			velocity = forward * 30 + UP * -40,
+		local last = i == ZEPHYRUS_ARROWS
+		local target = nearestEnemy(ctx, 55)
+		local targetRoot = target and rootOf(target)
+		-- The first arrows land round them, closing in.
+		local scatter = if last then 0 else 3 * (1 - i / ZEPHYRUS_ARROWS) + 0.5
+		local aim = if targetRoot then targetRoot.Position else ctx.root.Position + look(ctx) * 16 - UP * 20
+		aim += Vector3.new(math.random(-10, 10) / 10, 0, math.random(-10, 10) / 10) * scatter
+		local origin = ctx.root.Position
+			+ Vector3.new(math.random(-15, 15) / 10, 1 + math.random() * 1.5, math.random(-15, 15) / 10)
+		local direction = (aim - origin).Unit
+		fx(
+			ctx,
+			"SpiritOfZephyrus",
+			"Arrow",
+			{ origin = origin, direction = direction, speed = 150, range = 90, last = last }
+		)
+		Projectile.Fire({
+			owner = character,
+			origin = origin,
+			direction = direction,
+			speed = 150,
+			range = 90,
+			size = Vector3.new(2, 2, 4),
+			onHit = function(victim)
+				c.Hit(character, victim, {
+					damage = if last then 4 else 1.4,
+					stun = if last then 1 else 0.5,
+					attackType = "Bolt",
+					heavy = last,
+					ragdoll = if last then 1.2 else nil,
+					velocity = if last then UP * -40 + c.Flat(direction) * 10 else c.Flat(direction) * 3,
+					velocityTime = 0.15,
+				})
+			end,
 		})
+		task.wait(ZEPHYRUS_GAP)
 	end
-	for _, victim in c.Sphere(character, impact, 11) do
-		local victimRoot = rootOf(victim)
-		if not struck[victim] and victimRoot then
-			c.Hit(character, victim, {
-				damage = 5,
-				stun = 0.7,
-				attackType = "Zone",
-				velocity = c.Flat(victimRoot.Position - impact) * 35 + UP * 15,
-				velocityTime = 0.18,
-			})
-		end
-	end
-	fx(ctx, "SpiritOfBoreas", "Impact", { position = impact })
-	c.ShakeArea(impact, 50, 0.5)
+	c.ApplyVelocity(character, UP * -20 + look(ctx) * 4, 0.5)
 	CombatState.SetCasting(character, 0.3)
 end
 
@@ -954,8 +996,8 @@ Kit.Skills = { windBladesShower, swiftWhiteHawk, heavenlyWindArk, galeWhiteBow }
 
 -- Awakened, the moves follow the stage: Half-Crown, or Full-Crown once he's
 -- ascended (the "Ascended" attribute; names and cooldowns in Shared/Kits).
-local HALF_CROWN = { spiritStorm, hushedDance, quartileScutum, quartileHasta }
-local FULL_CROWN = { spiritOfNotos, spiritOfBoreas, spiritOfEuros, neverland }
+local HALF_CROWN = { spiritStorm, tempestDive, quartileScutum, quartileHasta }
+local FULL_CROWN = { spiritOfNotos, spiritOfZephyrus, spiritOfEuros, neverland }
 local function stageMove(slot: number): (any) -> ()
 	return function(ctx)
 		local moves = if ctx.character:GetAttribute("Ascended") == true then FULL_CROWN else HALF_CROWN

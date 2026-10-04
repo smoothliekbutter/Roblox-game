@@ -941,95 +941,6 @@ Animations.StormFire = {
 	},
 }
 
--- Spirit's Hushed Dance: poised and open.
-Animations.Dance = {
-	fadeOut = 0.15,
-	keys = {
-		{
-			0,
-			{
-				Torso = body(0.093, -3, 12),
-				Head = rot(2, -10),
-				RightArm = limb(12, 4, 10),
-				LeftArm = limb(30, -8, -16),
-				RightLeg = rot(-4, 0, 6),
-				LeftLeg = rot(6, 0, -7),
-			},
-		},
-		{
-			0.15,
-			{
-				Torso = body(0.105, -2, 20),
-				Head = rot(6, -16),
-				RightArm = limb(40, 0, 52),
-				LeftArm = limb(40, 0, -52),
-				RightLeg = rot(-8, 0, 6),
-				LeftLeg = rot(10, 0, -6),
-			},
-			"Sine",
-			"Out",
-		},
-		{
-			0.9,
-			{
-				Torso = body(0.105, -2, 20),
-				Head = rot(6, -16),
-				RightArm = limb(40, 0, 52),
-				LeftArm = limb(40, 0, -52),
-				RightLeg = rot(-8, 0, 6),
-				LeftLeg = rot(10, 0, -6),
-			},
-			"Linear",
-			"Out",
-		},
-	},
-}
-
--- Spirit's Hushed Dance: the spinning palm strike.
-Animations.DanceStrike = {
-	fadeIn = 0.01,
-	fadeOut = 0.25,
-	keys = {
-		{
-			0,
-			{
-				Torso = body(0.155, -6, 50),
-				Head = rot(4, -40),
-				RightArm = limb(-10, 0, 40),
-				LeftArm = limb(50, -10, -20),
-				RightLeg = rot(-14, 0, 8),
-				LeftLeg = rot(16, 0, -8),
-			},
-		},
-		{
-			0.08,
-			{
-				Torso = body(0.155, -14, -30),
-				Head = rot(10, 24),
-				RightArm = limb(96, -6),
-				LeftArm = limb(24, 0, -30),
-				RightLeg = rot(-22, 0, 8),
-				LeftLeg = rot(22, 0, -8),
-			},
-			"Quart",
-			"Out",
-		},
-		{
-			0.4,
-			{
-				Torso = body(0.155, -14, -30),
-				Head = rot(10, 24),
-				RightArm = limb(96, -6),
-				LeftArm = limb(24, 0, -30),
-				RightLeg = rot(-22, 0, 8),
-				LeftLeg = rot(22, 0, -8),
-			},
-			"Linear",
-			"Out",
-		},
-	},
-}
-
 -- Quartile Scutum: hands out, holding the barrier.
 Animations.Scutum = {
 	fadeOut = 0.2,
@@ -1220,7 +1131,7 @@ Animations.Notos = {
 	},
 }
 
--- Spirit of Boreas: halberd raised as he closes in.
+-- Tempest Dive: both hands raised over them at the top.
 Animations.BoreasForm = {
 	fadeOut = 0.05,
 	keys = {
@@ -1264,7 +1175,7 @@ Animations.BoreasForm = {
 	},
 }
 
--- Spirit of Boreas: the axe comes down.
+-- Tempest Dive: driving them down into the ground.
 Animations.BoreasChop = {
 	fadeIn = 0.01,
 	fadeOut = 0.3,

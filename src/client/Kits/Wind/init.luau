@@ -13,6 +13,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local NeverlandPlan = require(ReplicatedStorage:WaitForChild("Shared").Neverland)
+local DivePlan = require(ReplicatedStorage:WaitForChild("Shared").TempestDive)
 local CameraShake = require(script.Parent.Parent.CameraShake)
 local Cinematic = require(script.Parent.Parent.Cinematic)
 local M1Animations = require(script.Parent.Parent.M1Animations)
@@ -763,9 +764,18 @@ end
 -- Half-Crown Spirit of Zephyr
 ---------------------------------------------------------------------------
 
--- Spirit Storm: an orb of mana gathers in his palm, then a dense beam of
--- swirling wind (a white core inside a green column, rings of wind
--- spinning out along it) roars out.
+-- Spirit Storm. The charge: Sylph's mana gathers in his palm as an orb of
+-- storm, a white core in a green halo inside a shimmering shell, three
+-- rings of wind whirling round it on tilted axes, wind streaming in from
+-- all round and a ring drawn in along the ground. The beam: a white-hot
+-- core in a green column inside a shimmering sheath, three helices of wind
+-- twisting round it and spinning, rings tearing off along it, streaks
+-- racing down it, the muzzle pulsing; it scars the ground it passes over
+-- and bursts where it ends; when it stops the helices unwind and it
+-- collapses.
+local STORM_STRANDS = 3
+local STORM_SEGMENTS = 18
+
 function handlers.SpiritStorm(data, character, root)
 	if data.phase == "Charge" then
 		play(character, ANIMS.StormCharge)
@@ -773,101 +783,348 @@ function handlers.SpiritStorm(data, character, root)
 		local orb = U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.2, Color = WIND_WHITE })
 		local halo =
 			U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.4, Color = WIND, Transparency = 0.5 })
+		local shell = U.newPart({
+			Shape = Enum.PartType.Ball,
+			Size = Vector3.one * 0.6,
+			Color = WIND,
+			Material = Enum.Material.ForceField,
+		})
+		local rings = {}
+		for _ = 1, 3 do
+			table.insert(
+				rings,
+				arcParts(arcPoints(Vector3.zero, Vector3.xAxis, UP, 1, 0, math.pi * 2, 10), 0.08, WIND_WHITE, 0.15)
+			)
+		end
+		local light = Instance.new("PointLight")
+		light.Color = WIND
+		light.Range = 12
+		light.Brightness = 1
+		light.Parent = orb
 		every(data.duration + 0.05, function(elapsed)
 			local hand = handOf(character, "Right")
 			if not live(character, token) or not hand then
 				return false
 			end
-			local grow = elapsed / data.duration
+			local grow = math.min(elapsed / data.duration, 1)
+			local center = hand + root.CFrame.LookVector * 0.7
 			orb.Size = Vector3.one * (0.3 + 1.1 * grow)
 			halo.Size = Vector3.one * (0.8 + 2.4 * grow)
-			orb.CFrame = CFrame.new(hand + root.CFrame.LookVector * 0.6)
+			shell.Size = Vector3.one * (1 + 3.2 * grow)
+			orb.CFrame = CFrame.new(center)
 			halo.CFrame = orb.CFrame
-			inflow(orb.Position, 5)
+			shell.CFrame = orb.CFrame * CFrame.Angles(elapsed * 3, elapsed * 2, 0)
+			for r, ring in rings do
+				local tilt = CFrame.Angles(r * 1.1 + elapsed * (3 + r), elapsed * (4 - r), r * 0.7)
+				poseArc(
+					ring,
+					arcPoints(center, tilt.RightVector, tilt.UpVector, 0.7 + 1.7 * grow + r * 0.25, 0, math.pi * 2, 10)
+				)
+			end
+			inflow(center, 6)
+			inflow(center, 4)
+			light.Brightness = 1 + 5 * grow
 			return true
 		end, function()
-			fadeOut({ orb, halo }, 0.08)
+			fadeOut({ orb, halo, shell }, 0.08)
+			for _, ring in rings do
+				fadeOut(ring, 0.08)
+			end
 		end)
+		U.ringBurst(CFrame.new(root.Position - UP * 2.9), WIND, 7, 1, data.duration, 0.15)
+		U.spiral(root, WIND, 2.2, 4, data.duration, 2, 0.08, 0.6)
+		if U.isLocal(character) then
+			CameraShake.Add(0.06)
+		end
 	elseif data.phase == "Fire" then
 		play(character, ANIMS.StormFire)
 		local token = bump(character)
 		local origin: Vector3 = data.origin
 		local direction: Vector3 = data.direction
-		local finish = origin + direction * data.length
-		local core = tube(origin, finish, 1.4, WIND_WHITE, 0.05)
-		local column = tube(origin, finish, 4.4, WIND, 0.55)
-		local sheath = tube(origin, finish, 6, WIND_DEEP, 0.85)
+		local length: number = data.length
+		local finish = origin + direction * length
+		local right = direction:Cross(UP)
+		right = if right.Magnitude > 1e-3 then right.Unit else Vector3.xAxis
+		local up = right:Cross(direction).Unit
+
+		local core = tube(origin, finish, 1.2, WIND_WHITE, 0)
+		local column = tube(origin, finish, 4.2, WIND, 0.5)
+		local sheath = tube(origin, finish, 6.4, WIND, 0)
+		sheath.Material = Enum.Material.ForceField
+		local haze = tube(origin, finish, 9, WIND_DEEP, 0.9)
+		local strands: { { BasePart } } = {}
+		for k = 1, STORM_STRANDS do
+			local strand = {}
+			for _ = 1, STORM_SEGMENTS do
+				table.insert(
+					strand,
+					bar(
+						origin,
+						origin + direction,
+						if k == 1 then 0.3 else 0.22,
+						if k == 1 then WIND_WHITE else WIND,
+						0.1
+					)
+				)
+			end
+			table.insert(strands, strand)
+		end
+		-- Streaks racing down the beam.
+		local muzzle = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.lookAt(origin, finish) })
+		local streaks = Instance.new("ParticleEmitter")
+		streaks.Texture = U.textures.Spark
+		streaks.Color = ColorSequence.new(WIND_WHITE, WIND)
+		streaks.LightEmission = 1
+		streaks.LightInfluence = 0
+		streaks.EmissionDirection = Enum.NormalId.Front
+		streaks.Orientation = Enum.ParticleOrientation.VelocityParallel
+		streaks.Speed = NumberRange.new(150, 210)
+		streaks.Lifetime = NumberRange.new(length / 210, length / 150)
+		streaks.SpreadAngle = Vector2.new(5, 5)
+		streaks.Size = NumberSequence.new(0.7, 0.1)
+		streaks.Transparency = NumberSequence.new(0.1, 1)
+		streaks.Rate = 140
+		streaks.Parent = muzzle
 		local light = Instance.new("PointLight")
 		light.Color = WIND
-		light.Range = 24
-		light.Brightness = 4
+		light.Range = 28
+		light.Brightness = 5
 		light.Parent = core
-		local nextRing = 0
+
+		local nextRing, nextPulse = 0, 0
 		every(data.duration, function(elapsed)
 			if not live(character, token) then
 				return false
 			end
-			if elapsed >= nextRing then
-				nextRing = elapsed + 0.05
-				local along = math.random() * data.length
-				U.impactRing(origin + direction * along, direction, WIND_WHITE, 1.5, 4.5, 0.18)
+			-- Three helices of wind, twisting round the beam and spinning.
+			local spin = elapsed * 14
+			for k, strand in strands do
+				local phase = k * (math.pi * 2 / STORM_STRANDS) + spin
+				local radius = 2.5 + 0.35 * math.sin(elapsed * 30 + k)
+				local previous = origin
+				for i, segment in strand do
+					local s = i / #strand * length
+					local angle = phase + s * 0.35
+					local point = origin
+						+ direction * s
+						+ (right * math.cos(angle) + up * math.sin(angle)) * radius * math.min(s / 3, 1)
+					segment.Size = Vector3.new(segment.Size.X, segment.Size.Y, (point - previous).Magnitude + 0.05)
+					segment.CFrame = CFrame.lookAt(previous:Lerp(point, 0.5), point)
+					previous = point
+				end
 			end
-			local wobble = 1 + math.sin(elapsed * 40) * 0.08
-			column.Size = Vector3.new(column.Size.X, 4.4 * wobble, 4.4 * wobble)
+			local breathe = 1 + math.sin(elapsed * 40) * 0.07
+			column.Size = Vector3.new(column.Size.X, 4.2 * breathe, 4.2 * breathe)
+			core.Size =
+				Vector3.new(core.Size.X, 1.2 + math.sin(elapsed * 55) * 0.18, 1.2 + math.sin(elapsed * 55) * 0.18)
+			if elapsed >= nextRing then
+				nextRing = elapsed + 0.035
+				U.impactRing(origin + direction * (math.random() * length), direction, WIND_WHITE, 2, 5.5, 0.2)
+			end
+			if elapsed >= nextPulse then
+				nextPulse = elapsed + 0.1
+				U.impactRing(origin, direction, WIND, 1.5, 7, 0.25)
+			end
 			return true
 		end, function()
-			fadeOut({ core, column, sheath }, 0.2)
-			gust(finish, 6, direction)
+			-- The helices unwind outward and it all collapses.
+			for _, strand in strands do
+				for _, segment in strand do
+					local out = segment.Position - (origin + direction * direction:Dot(segment.Position - origin))
+					U.tween(segment, 0.3, {
+						CFrame = segment.CFrame + (if out.Magnitude > 1e-3 then out.Unit * 2.5 else Vector3.zero),
+						Transparency = 1,
+					})
+				end
+				task.delay(0.32, function()
+					for _, segment in strand do
+						segment:Destroy()
+					end
+				end)
+			end
+			U.tween(core, 0.25, { Size = Vector3.new(core.Size.X, 0.05, 0.05) })
+			fadeOut({ core, column, sheath, haze }, 0.3)
+			streaks.Enabled = false
+			task.delay(0.6, muzzle.Destroy, muzzle)
+			gust(finish, 8, direction)
+			U.shockwave(finish, WIND, 2, 14, 0.35)
 		end)
-		gust(origin, 5, direction)
-		U.light(origin, WIND, 5, 20, 0.6)
+
+		-- The ground it passes over is scarred.
+		for along = 6, length, 6 do
+			local ground = U.groundBelow(origin + direction * along, { character }, 7)
+			if ground then
+				task.delay(along / 300, function()
+					U.groundCracks(ground.Position, 2, 4, WIND, 1.2)
+					U.debris(ground.Position, 3, 25, 0.5)
+				end)
+			end
+		end
+		gust(origin, 6, direction)
+		U.flash(origin, WIND_WHITE, 6, 0.2)
+		U.impactRing(origin, direction, WIND_WHITE, 1, 9, 0.3)
+		U.light(origin, WIND, 6, 24, 0.7)
 		if U.isLocal(character) then
-			CameraShake.Add(0.2)
-			CameraShake.FovKick(8)
+			CameraShake.Add(0.25)
+			CameraShake.FovKick(10)
+		elseif (workspace.CurrentCamera.CFrame.Position - origin).Magnitude < 40 then
+			CameraShake.Add(0.1)
 		end
 	elseif data.phase == "Cancel" then
 		bump(character)
 	end
 end
 
--- Spirit's Hushed Dance: wind streams circle him while he reads the mana;
--- on an attack he flows along a ribbon of wind to behind them and strikes.
-function handlers.HushedDance(data, character, root)
-	if data.phase == "Stance" then
-		play(character, ANIMS.Dance)
-		U.spiral(root, WIND, 3, 5, data.window, 3, 0.08, 0.2)
-		U.highlight(character, WIND, data.window, 0.85)
-	elseif data.phase == "Evade" then
-		local from: Vector3 = data.from
-		local to: Vector3 = data.to
-		local side = (to - from):Cross(UP)
-		side = if side.Magnitude > 0.01 then side.Unit * 3 else Vector3.zero
-		-- A curving ribbon of wind along the way he went.
-		local previous = from
-		for i = 1, 10 do
-			local t = i / 10
-			local point = from:Lerp(to, t) + side * math.sin(t * math.pi)
-			local piece = bar(previous, point, 0.35, WIND, 0.3)
-			task.delay(0.02 * i, function()
-				U.tween(piece, 0.3, { Transparency = 1, Size = Vector3.new(0.05, 0.05, piece.Size.Z) })
-				task.delay(0.32, piece.Destroy, piece)
-			end)
-			previous = point
+-- Tempest Dive: a tornado erupts round them both and carries them up on its
+-- spiral (debris torn up with them); at the top three rings of wind stand
+-- one under another down to the ground, and he drives them down through
+-- each one (each bursts as they pass) into a crater.
+local function playTempestDive(data, character: Model, root: BasePart)
+	local target: Model? = data.target
+	local targetRoot = target and U.getRoot(target)
+	local plan = DivePlan.Plan(data.origin, data.start, data.floorY)
+	local times = DivePlan.Times
+	local started = os.clock()
+	local mine = involves(data, character)
+
+	-- The tornado: an anchor at its foot for the spirals, and the funnel.
+	local foot = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.new(plan.start - UP * 2.5) })
+	U.spiral(foot, WIND, 3.5, DivePlan.Height + 4, times.Flip, 4, 0.25, 0.3)
+	U.spiral(foot, WIND_WHITE, 5, DivePlan.Height + 4, times.Flip, 3, 0.12, 0.5)
+	local funnel = U.newPart({
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(DivePlan.Height + 6, 7, 7),
+		CFrame = CFrame.new(plan.start + UP * (DivePlan.Height / 2)) * CFrame.Angles(0, 0, rad(90)),
+		Color = WIND,
+		Material = Enum.Material.ForceField,
+		Transparency = 0.2,
+	})
+	U.ringBurst(CFrame.new(plan.start - UP * 2.4), WIND, 2, 10, 0.4, 0.3)
+	U.debris(plan.start - UP * 2.4, 10, 45, 0.7)
+
+	-- The rings they'll be driven through.
+	local rings: { { parts: { BasePart }, at: number, done: boolean } } = {}
+
+	local bind = "CloverTempestDive" .. tostring(started)
+	local function finish()
+		pcall(function()
+			RunService:UnbindFromRenderStep(bind)
+		end)
+	end
+	local flipped, dove = false, false
+	RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
+		local t = os.clock() - started
+		if t > times.Length + 0.1 then
+			finish()
+			return
 		end
-		U.flash(from, WIND_WHITE, 4, 0.2)
-		gust(to, 4)
-		if data.target then
-			play(character, ANIMS.DanceStrike)
-			task.delay(0.12, function()
-				local targetRoot = U.getRoot(data.target)
-				if targetRoot then
-					gust(targetRoot.Position, 6, UP)
-					U.shockwave(targetRoot.Position, WIND, 1.5, 8, 0.25)
+		if root.Parent then
+			root.CFrame = DivePlan.Attacker(plan, t)
+		end
+		if targetRoot and targetRoot.Parent and t <= times.Land then
+			targetRoot.CFrame = DivePlan.Victim(plan, t)
+		end
+		funnel.CFrame = CFrame.new(plan.start + UP * (DivePlan.Height / 2))
+			* CFrame.Angles(0, t * 9, 0)
+			* CFrame.Angles(0, 0, rad(90))
+
+		if not flipped and t >= times.Lift then
+			flipped = true
+			play(character, ANIMS.BoreasForm)
+			U.tween(funnel, 0.3, { Transparency = 1 })
+			task.delay(0.32, funnel.Destroy, funnel)
+			for _, fraction in DivePlan.Rings do
+				local center = DivePlan.DiveAt(plan, fraction)
+				local points = arcPoints(center, plan.forward, plan.forward:Cross(UP), 4.5, 0, math.pi * 2, 16)
+				local parts = arcParts(points, 0.35, WIND_WHITE, 0.05)
+				for _, p in arcParts(points, 1, WIND, 0.5) do
+					table.insert(parts, p)
 				end
-			end)
+				table.insert(
+					rings,
+					{ parts = parts, at = times.Flip + math.sqrt(fraction) * (times.Land - times.Flip), done = false }
+				)
+			end
 		end
-		if involves(data, character) then
-			CameraShake.FovKick(-8)
+		if not dove and t >= times.Flip then
+			dove = true
+			play(character, ANIMS.BoreasChop)
+		end
+		-- Each ring bursts as they go through it.
+		for _, ring in rings do
+			if not ring.done and t >= ring.at then
+				ring.done = true
+				local center = ring.parts[1].Position
+				for _, p in ring.parts do
+					U.tween(p, 0.25, { CFrame = p.CFrame + (p.Position - center) * 0.6, Transparency = 1 })
+				end
+				task.delay(0.27, function()
+					for _, p in ring.parts do
+						p:Destroy()
+					end
+				end)
+				U.flash(DivePlan.DiveAt(plan, (ring.at - times.Flip) / (times.Land - times.Flip)), WIND_WHITE, 6, 0.15)
+				if mine then
+					CameraShake.Add(0.12)
+				end
+			end
+		end
+	end)
+	task.delay(times.Length + 0.4, function()
+		finish()
+		foot:Destroy()
+		if funnel.Parent then
+			funnel:Destroy()
+		end
+		for _, ring in rings do
+			for _, p in ring.parts do
+				if p.Parent then
+					p:Destroy()
+				end
+			end
+		end
+	end)
+
+	if mine then
+		Cinematic.Camera(function(t)
+			local focus = DivePlan.Victim(plan, math.min(t, times.Land)).Position
+			local right = plan.forward:Cross(UP)
+			local offset = right * 16 - plan.forward * 6 + UP * (if t < times.Lift then -2 else 4)
+			return CFrame.lookAt(focus + offset, focus), if t > times.Flip and t < times.Land then 82 else 72
+		end, times.Length + 0.2)
+	end
+end
+
+function handlers.TempestDive(data, character, root)
+	local phase = data.phase
+	if phase == "Reach" then
+		play(character, ANIMS.Hawk)
+		local hand = handOf(character, "Right")
+		if hand then
+			gust(hand, 3, root.CFrame.LookVector)
+		end
+	elseif phase == "Whiff" then
+		gust(root.Position + root.CFrame.LookVector * 4, 2)
+	elseif phase == "Begin" then
+		playTempestDive(data, character, root)
+	elseif phase == "Impact" then
+		-- Driven in hard: a dome of wind, a crater ring, the ground split
+		-- and thrown up, a column of wind and dust.
+		local position: Vector3 = data.position
+		U.shockwave(position, WIND, 3, 26, 0.45, Enum.Material.ForceField)
+		U.shockwave(position, WIND_WHITE, 2, 12, 0.25)
+		U.ringBurst(CFrame.new(position + UP * 0.2), WIND_WHITE, 2, 16, 0.4, 0.45)
+		U.ringBurst(CFrame.new(position + UP * 0.3), WIND, 1, 11, 0.5, 0.25)
+		U.groundCracks(position, 12, 11, WIND, 1.6)
+		U.groundRocks(position, 12, 7, 1.8)
+		U.debris(position, 18, 45, 1)
+		U.pillar(position, WIND, 3, 22, 0.45, Enum.Material.ForceField, 0.25)
+		gust(position + UP, 9, UP)
+		U.light(position, WIND, 6, 40, 0.6)
+		local near = (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 60
+		if near then
+			U.colorGrade({ Brightness = 0.2, Contrast = 0.5, Saturation = -0.6 }, 0, 0.06, 0.25)
+			CameraShake.Add(0.45)
 		end
 	end
 end
@@ -1105,47 +1362,99 @@ function handlers.SpiritOfNotos(data, character, root)
 	end
 end
 
--- Spirit of Boreas: the wind sword condenses into a halberd (a long shaft,
--- an axe head and a spike), raised as he closes in and brought down; the
--- impact throws up a ring of wind and splits the ground.
-function handlers.SpiritOfBoreas(data, character, root)
-	if data.phase == "Form" then
-		play(character, ANIMS.BoreasForm)
-		hideSword(character, 0.95)
-		local shaft = U.newPart({ Size = Vector3.new(0.22, 7.5, 0.22), Color = WIND_DEEP })
-		local axe = U.newPart({ Size = Vector3.new(0.14, 1.9, 1.6), Color = WIND, Transparency = 0.15 })
-		local edge = U.newPart({ Size = Vector3.new(0.08, 2.1, 0.2), Color = WIND_WHITE })
-		local spike = U.newPart({ Size = Vector3.new(0.12, 1.4, 0.12), Color = WIND_WHITE })
-		local parts = { shaft, axe, edge, spike }
-		every(0.95, function()
-			local arm = character:FindFirstChild("Right Arm")
-			if not arm or not arm:IsA("BasePart") then
+-- Spirit of Zephyrus: he leaps into the sky on a burst of wind; hanging
+-- there in an archer's stance over a turning ring of wind, a great bow of
+-- wind in his hand, he looses a barrage of arrows down on them.
+local skyBows: { [Model]: () -> () } = {}
+
+function handlers.SpiritOfZephyrus(data, character, root)
+	local phase = data.phase
+	if phase == "Leap" then
+		play(character, ANIMS.Ark)
+		local feet = root.Position - UP * 2.9
+		U.ringBurst(CFrame.new(feet), WIND, 1, 9, 0.35, 0.3)
+		U.burst(feet, {
+			color = WIND_WHITE,
+			count = 24,
+			size = 0.5,
+			speed = NumberRange.new(30, 60),
+			lifetime = NumberRange.new(0.2, 0.4),
+			streaks = true,
+			spread = 40,
+			direction = -UP,
+		})
+		U.debris(feet, 6, 30, 0.5)
+		U.bodyTrail(character, WIND, data.rise + 0.1)
+		if U.isLocal(character) then
+			CameraShake.Add(0.15)
+			CameraShake.FovKick(6)
+		end
+	elseif phase == "Barrage" then
+		play(character, ANIMS.Bow)
+		local token = bump(character)
+		local segments = 12
+		local limbs = arcParts(arcPoints(Vector3.zero, Vector3.xAxis, UP, 1, -1, 1, segments), 0.3, WIND, 0.15)
+		local edge = arcParts(arcPoints(Vector3.zero, Vector3.xAxis, UP, 1, -1, 1, segments), 0.1, STAR, 0)
+		local halo = arcParts(
+			arcPoints(Vector3.zero, Vector3.xAxis, Vector3.zAxis, 1, 0, math.pi * 2, 16),
+			0.25,
+			WIND_WHITE,
+			0.2
+		)
+		local all = table.clone(limbs)
+		table.move(edge, 1, #edge, #all + 1, all)
+		table.move(halo, 1, #halo, #all + 1, all)
+		local function stop()
+			skyBows[character] = nil
+			fadeOut(all, 0.25)
+		end
+		skyBows[character] = stop
+		every(data.duration + 0.3, function(elapsed)
+			local hand = handOf(character, "Left")
+			if not live(character, token) or not hand then
 				return false
 			end
-			local grip = arm.CFrame * CFrame.new(0, -1.1, 0) * CFrame.Angles(rad(-90), 0, 0)
-			shaft.CFrame = grip * CFrame.new(0, 2.4, 0)
-			axe.CFrame = grip * CFrame.new(0, 5.2, -0.8)
-			edge.CFrame = grip * CFrame.new(0, 5.2, -1.6)
-			spike.CFrame = grip * CFrame.new(0, 6.6, 0)
+			local forward = root.CFrame.LookVector
+			local points = arcPoints(hand - forward * 1.4, forward, UP, 4.2, -1.15, 1.15, segments)
+			points[1] += forward * 0.8
+			points[#points] += forward * 0.8
+			poseArc(limbs, points)
+			poseArc(edge, points)
+			-- A ring of wind turning under his feet.
+			local below = root.Position - UP * 3.2
+			local spin = elapsed * 3
+			poseArc(
+				halo,
+				arcPoints(
+					below,
+					Vector3.new(math.cos(spin), 0, math.sin(spin)),
+					Vector3.new(-math.sin(spin), 0, math.cos(spin)),
+					5,
+					0,
+					math.pi * 2,
+					16
+				)
+			)
 			return true
 		end, function()
-			fadeOut(parts, 0.15)
+			if skyBows[character] == stop then
+				stop()
+			end
 		end)
-		U.flash(root.Position, WIND, 5, 0.2)
-		U.speedLines(root, root.CFrame.LookVector, 0.3, WIND)
-	elseif data.phase == "Chop" then
-		play(character, ANIMS.BoreasChop)
-		U.bodyTrail(character, WIND, 0.25)
-	elseif data.phase == "Impact" then
-		local position: Vector3 = data.position
-		U.shockwave(position, WIND, 2, 24, 0.4)
-		U.ringBurst(CFrame.new(position + UP * 0.2), WIND_WHITE, 1, 13, 0.4, 0.35)
-		U.groundCracks(position, 9, 9, WIND, 1.2)
-		U.groundRocks(position, 8, 6, 1.3)
-		U.debris(position, 12, 35, 0.8)
-		gust(position + UP, 8, UP)
-		if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 40 then
-			CameraShake.Add(0.3)
+		U.light(root.Position, WIND, 4, 24, data.duration + 0.3)
+	elseif phase == "Arrow" then
+		local origin: Vector3 = data.origin
+		local direction: Vector3 = data.direction
+		flyingArrow(origin, direction, data.speed, data.range, if data.last then 1.5 else 0.9)
+		U.flash(origin, WIND_WHITE, if data.last then 4 else 2, 0.12)
+		if U.isLocal(character) then
+			CameraShake.FovKick(if data.last then 5 else 1)
+		end
+	elseif phase == "Cancel" then
+		bump(character)
+		local stop = skyBows[character]
+		if stop then
+			stop()
 		end
 	end
 end

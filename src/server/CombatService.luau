@@ -153,6 +153,15 @@ local function pendingAscension(character: Model)
 	return nil
 end
 
+-- Charges the second stage for kits that do it themselves (Kits ascension
+-- chargeByKit): Yuno's landed Tempest Dives.
+function CombatService.ChargeAscension(character: Model, amount: number)
+	local ascension = pendingAscension(character)
+	if ascension then
+		addMeter(character, "Ascension", amount, ascension.charge)
+	end
+end
+
 -- Timed states a move can put on someone (Yuno's Neverland): stronger or
 -- weaker hits, slowed down. Server-only, so os.clock() times.
 local function stateActive(character: Model, attribute: string): boolean
@@ -697,7 +706,7 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	else
 		-- Fighting in the first stage charges the second (Yuno's Full-Crown).
 		local ascension = pendingAscension(attacker)
-		if ascension then
+		if ascension and not ascension.chargeByKit then
 			addMeter(attacker, "Ascension", damage, ascension.charge)
 		end
 	end

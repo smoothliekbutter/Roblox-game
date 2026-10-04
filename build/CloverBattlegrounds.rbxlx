@@ -688,13 +688,16 @@ export type KitInfo = {
 	}?,
 	-- Extra jumps in the air (Yuno rides the wind: one more).
 	airJumps: number?,
-	-- A second, stronger stage of the awakening (Yuno: Full-Crown): dealing
-	-- `charge` damage while awakened lets G be pressed again. Its own moves
-	-- and stats, and the awakening's timer restarts at `duration`.
+	-- A second, stronger stage of the awakening (Yuno: Full-Crown): once
+	-- `charge` is reached in the first stage, G can be pressed again. It
+	-- charges with damage dealt, or, with `chargeByKit`, only when the kit
+	-- says so (Yuno: each landed Tempest Dive is 1). Its own moves and stats,
+	-- and the awakening's timer restarts at `duration`.
 	ascension: {
 		name: string,
 		duration: number,
 		charge: number,
+		chargeByKit: boolean?,
 		damageMultiplier: number,
 		cooldownMultiplier: number,
 		speedBonus: number,
@@ -822,7 +825,7 @@ Kits.List = {
 		-- Half-Crown Spirit of Zephyr (G): Sylph on his left side.
 		awakenedSkills = {
 			{ name = "Spirit Storm", cooldown = 12, type = "Bolt", airHold = true },
-			{ name = "Spirit's Hushed Dance", cooldown = 14, type = "Counter", airHold = true },
+			{ name = "Tempest Dive", cooldown = 16, type = "Melee", airHold = true },
 			{ name = "Quartile Scutum", cooldown = 16, type = "Counter" },
 			{ name = "Quartile Hasta", cooldown = 14, type = "Bolt", airHold = true },
 		},
@@ -833,18 +836,19 @@ Kits.List = {
 			cooldownMultiplier = 0.85,
 			speedBonus = 4,
 		},
-		-- Full-Crown Spirit of Zephyr: G again after dealing 45 damage in
-		-- the Half-Crown. Stronger than Black Form, but only 30 seconds.
+		-- Full-Crown Spirit of Zephyr: G again once Tempest Dive (Half-Crown
+		-- 2) has landed twice. Stronger than Black Form, but only 30 seconds.
 		ascension = {
 			name = "Full-Crown",
 			duration = 30,
-			charge = 45,
+			charge = 2,
+			chargeByKit = true,
 			damageMultiplier = 1.3,
 			cooldownMultiplier = 0.75,
 			speedBonus = 8,
 			skills = {
 				{ name = "Spirit of Notos", cooldown = 12, type = "Counter" },
-				{ name = "Spirit of Boreas", cooldown = 13, type = "Melee", airHold = true },
+				{ name = "Spirit of Zephyrus", cooldown = 13, type = "Bolt", airHold = true },
 				{ name = "Spirit of Euros", cooldown = 18, type = "Bolt", airHold = true },
 				{ name = "Neverland", cooldown = 30, type = "Melee" },
 			},
@@ -1240,13 +1244,170 @@ return Remotes
 ]]></string>
         </Properties>
       </Item>
+      <Item class="ModuleScript" referent="15">
+        <Properties>
+          <string name="Name">TempestDive</string>
+          <string name="Source"><![CDATA[--[[
+	TempestDive
+	Yuno's Half-Crown grab, start to finish:
+	  1. the tornado: whoever he caught is torn up into the sky on a spiral
+	     of wind, tumbling over until they're head-down, and he rides it up
+	     across the spiral from them;
+	  2. the turn: at the top he swings over them, head-down too;
+	  3. the dive: he drives them straight down head-first, spinning like a
+	     drill, faster and faster, through three rings of wind and into the
+	     ground;
+	  4. he flips back off the crater onto his feet.
+
+	Shared so the server (which holds them both on the paths) and every
+	client (which draws them on it smoothly) agree on where they are.
+	t = 0 is the grab.
+]]
+
+local TempestDive = {}
+
+local UP = Vector3.yAxis
+
+TempestDive.Times = {
+	Ticks = { 0.35, 0.7 }, -- the tornado cuts them on the way up
+	Lift = 0.95, -- at the top
+	Flip = 1.15, -- he's over them, both head-down
+	Land = 1.5, -- into the ground
+	Length = 1.95, -- he's back on his feet
+}
+TempestDive.Height = 26 -- how high the tornado takes them
+TempestDive.Turns = 2 -- times round the spiral on the way up
+TempestDive.Radius = 2.4 -- the spiral
+TempestDive.Spins = 3 -- drill turns on the way down
+TempestDive.Rings = { 0.3, 0.55, 0.78 } -- fractions of the dive where they go through the rings
+
+export type Plan = {
+	origin: CFrame,
+	start: Vector3,
+	forward: Vector3,
+	floorY: number,
+}
+
+local function smooth(a: number): number
+	a = math.clamp(a, 0, 1)
+	return a * a * (3 - 2 * a)
+end
+
+function TempestDive.Plan(origin: CFrame, victimPosition: Vector3, floorY: number): Plan
+	local toward = victimPosition - origin.Position
+	local forward = Vector3.new(toward.X, 0, toward.Z)
+	if forward.Magnitude < 1e-3 then
+		forward = Vector3.new(origin.LookVector.X, 0, origin.LookVector.Z)
+	end
+	return {
+		origin = origin,
+		start = victimPosition,
+		forward = if forward.Magnitude > 1e-3 then forward.Unit else Vector3.new(0, 0, -1),
+		floorY = floorY,
+	}
+end
+
+local function liftAngle(a: number): number
+	return TempestDive.Turns * 2 * math.pi * smooth(a)
+end
+
+local function liftHeight(a: number): number
+	return TempestDive.Height * (1 - (1 - math.clamp(a, 0, 1)) ^ 2)
+end
+
+local function around(plan: Plan, angle: number): Vector3
+	return plan.forward * math.cos(angle) + plan.forward:Cross(UP) * math.sin(angle)
+end
+
+local function facing(plan: Plan): CFrame
+	return CFrame.lookAt(Vector3.zero, plan.forward)
+end
+
+-- Where they are, head-down, when their head meets the ground.
+function TempestDive.Impact(plan: Plan): Vector3
+	return Vector3.new(plan.start.X, plan.floorY + 2.5, plan.start.Z)
+end
+
+local function top(plan: Plan): Vector3
+	return plan.start + UP * TempestDive.Height
+end
+
+-- Their height on the way down at fraction a of the dive.
+function TempestDive.DiveAt(plan: Plan, a: number): Vector3
+	return top(plan):Lerp(TempestDive.Impact(plan), a * a)
+end
+
+function TempestDive.Victim(plan: Plan, t: number): CFrame
+	local times = TempestDive.Times
+	local base = facing(plan)
+	if t <= times.Lift then
+		local a = t / times.Lift
+		local angle = liftAngle(a)
+		local position = plan.start + around(plan, angle) * TempestDive.Radius * (1 - 0.4 * a) + UP * liftHeight(a)
+		-- Tumbling over as the wind takes them, head-down by the top.
+		return CFrame.new(position) * base * CFrame.Angles(0, -angle, 0) * CFrame.Angles(math.pi * smooth(a), 0, 0)
+	end
+	if t <= times.Flip then
+		local a = smooth((t - times.Lift) / (times.Flip - times.Lift))
+		local liftEnd = plan.start + around(plan, liftAngle(1)) * TempestDive.Radius * 0.6 + UP * TempestDive.Height
+		return CFrame.new(liftEnd:Lerp(top(plan), a)) * base * CFrame.Angles(math.pi, 0, 0)
+	end
+	local a = math.clamp((t - times.Flip) / (times.Land - times.Flip), 0, 1)
+	local spin = a * TempestDive.Spins * 2 * math.pi
+	return CFrame.new(TempestDive.DiveAt(plan, a)) * CFrame.Angles(0, -spin, 0) * base * CFrame.Angles(math.pi, 0, 0)
+end
+
+function TempestDive.Attacker(plan: Plan, t: number): CFrame
+	local times = TempestDive.Times
+	local base = facing(plan)
+	if t <= times.Lift then
+		-- Riding the tornado up across the spiral from them, facing them.
+		local a = t / times.Lift
+		local angle = liftAngle(a)
+		local side = around(plan, angle)
+		local victim = plan.start + side * TempestDive.Radius * (1 - 0.4 * a) + UP * liftHeight(a)
+		local position = plan.start - side * TempestDive.Radius * 1.4 + UP * (liftHeight(a) + 0.6)
+		position = plan.origin.Position:Lerp(position, smooth(t / 0.25))
+		return CFrame.lookAt(position, Vector3.new(victim.X, position.Y, victim.Z))
+	end
+	local above = top(plan) + UP * 3.2
+	if t <= times.Flip then
+		-- Swinging over the top of them, turning head-down.
+		local a = smooth((t - times.Lift) / (times.Flip - times.Lift))
+		local from = plan.start
+			- around(plan, liftAngle(1)) * TempestDive.Radius * 1.4
+			+ UP * (TempestDive.Height + 0.6)
+		local position = from:Lerp(above, a) + UP * math.sin(a * math.pi) * 2
+		return CFrame.new(position) * base * CFrame.Angles(math.pi * a, 0, 0)
+	end
+	if t <= times.Land then
+		-- Driving them down, right on top of them.
+		local a = (t - times.Flip) / (times.Land - times.Flip)
+		local spin = a * TempestDive.Spins * 2 * math.pi
+		return CFrame.new(TempestDive.DiveAt(plan, a) + UP * 3.2)
+			* CFrame.Angles(0, -spin, 0)
+			* base
+			* CFrame.Angles(math.pi, 0, 0)
+	end
+	-- Off the crater in a backflip, landing on his feet just short of it.
+	local a = math.clamp((t - times.Land) / (times.Length - times.Land), 0, 1)
+	local from = TempestDive.Impact(plan) + UP * 3.2
+	local to = Vector3.new(plan.start.X, plan.floorY + 3, plan.start.Z) - plan.forward * 5
+	local position = from:Lerp(to, smooth(a)) + UP * math.sin(a * math.pi) * 5
+	return CFrame.new(position) * base * CFrame.Angles(math.pi * (1 + smooth(a)), 0, 0)
+end
+
+return TempestDive
+]]></string>
+        </Properties>
+      </Item>
     </Item>
   </Item>
-  <Item class="ServerScriptService" referent="15">
+  <Item class="ServerScriptService" referent="16">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Script" referent="16">
+    <Item class="Script" referent="17">
       <Properties>
         <string name="Name">Server</string>
         <token name="RunContext">0</token>
@@ -1280,7 +1441,7 @@ CharacterLoader.Start()
 Dummies.Start()
 ]]></string>
       </Properties>
-      <Item class="ModuleScript" referent="17">
+      <Item class="ModuleScript" referent="18">
         <Properties>
           <string name="Name">CharacterLoader</string>
           <string name="Source"><![CDATA[--[[
@@ -1375,7 +1536,7 @@ return CharacterLoader
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="18">
+      <Item class="ModuleScript" referent="19">
         <Properties>
           <string name="Name">CombatService</string>
           <string name="Source"><![CDATA[--[[
@@ -1531,6 +1692,15 @@ local function pendingAscension(character: Model)
 		return kit.ascension
 	end
 	return nil
+end
+
+-- Charges the second stage for kits that do it themselves (Kits ascension
+-- chargeByKit): Yuno's landed Tempest Dives.
+function CombatService.ChargeAscension(character: Model, amount: number)
+	local ascension = pendingAscension(character)
+	if ascension then
+		addMeter(character, "Ascension", amount, ascension.charge)
+	end
 end
 
 -- Timed states a move can put on someone (Yuno's Neverland): stronger or
@@ -2077,7 +2247,7 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	else
 		-- Fighting in the first stage charges the second (Yuno's Full-Crown).
 		local ascension = pendingAscension(attacker)
-		if ascension then
+		if ascension and not ascension.chargeByKit then
 			addMeter(attacker, "Ascension", damage, ascension.charge)
 		end
 	end
@@ -2831,7 +3001,7 @@ return CombatService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="19">
+      <Item class="ModuleScript" referent="20">
         <Properties>
           <string name="Name">Dummies</string>
           <string name="Source"><![CDATA[--[[
@@ -2989,7 +3159,7 @@ return Dummies
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="20">
+      <Item class="ModuleScript" referent="21">
         <Properties>
           <string name="Name">Hitbox</string>
           <string name="Source"><![CDATA[--[[
@@ -3090,11 +3260,11 @@ return Hitbox
 ]]></string>
         </Properties>
       </Item>
-      <Item class="Folder" referent="21">
+      <Item class="Folder" referent="22">
         <Properties>
           <string name="Name">Kits</string>
         </Properties>
-        <Item class="ModuleScript" referent="22">
+        <Item class="ModuleScript" referent="23">
           <Properties>
             <string name="Name">AntiMagic</string>
             <string name="Source"><![CDATA[--[[
@@ -5238,7 +5408,7 @@ return Kit
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="23">
+        <Item class="ModuleScript" referent="24">
           <Properties>
             <string name="Name">Wind</string>
             <string name="Source"><![CDATA[--[[
@@ -5265,16 +5435,17 @@ return Kit
 	                         still); R again within 4s and he's there
 	Half-Crown Spirit of Zephyr (G): Sylph on his left side
 	  1 Spirit Storm         a dense beam of swirling wind out of his palm
-	  2 Spirit's Hushed Dance  reads the mana around him: the next attack misses
-	                         and he dances along the wind to behind them and strikes
+	  2 Tempest Dive         grab: a tornado tears them up into the sky with him,
+	                         and he drives them head-first down into the ground.
+	                         Landing it twice is what unlocks the Full-Crown
 	  3 Quartile Scutum      four stars and the light between them: a wall in
 	                         front that stops everything, melee thrown back off it
 	  4 Quartile Hasta       four star beams converge into one: guard-breaking
-	Full-Crown Spirit of Zephyr (G again, once 45 damage is dealt in Half-Crown)
+	Full-Crown Spirit of Zephyr (G again, once Tempest Dive has landed twice)
 	  1 Spirit of Notos      the south wind bursts out of him, and blows spells
 	                         thrown at him back where they came from
-	  2 Spirit of Boreas     the wind sword becomes a halberd: he closes in and
-	                         brings the axe down, guard break
+	  2 Spirit of Zephyrus   he leaps into the sky and rains a barrage of wind
+	                         arrows down on them
 	  3 Spirit of Euros      a recurve bow of wind; one arrow, too fast to see,
 	                         through everything in a line (unblockable)
 	  4 Neverland            cutscene grab: in the stopped time of the star dome he
@@ -5282,7 +5453,7 @@ return Kit
 	                         hammers them down, and the dome lingers over them
 	Air combos: he can jump again in the air (Kits airJumps), and from the air
 	the hawk holds them up and pulls him in, the blades and arrows keep them
-	up there (the last spikes them down), the dance's strike takes him up too.
+	up there (the last spikes them down), Tempest Dive takes them both up.
 
 	All visuals are in StarterPlayerScripts.Client.Kits.Wind, which gets
 	("Skill", {skill, phase, ...}) events from here.
@@ -5292,6 +5463,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
 local NeverlandPlan = require(ReplicatedStorage:WaitForChild("Shared").Neverland)
+local DivePlan = require(ReplicatedStorage:WaitForChild("Shared").TempestDive)
 local Projectile = require(script.Parent.Parent.Projectile)
 
 local KIT_ID = "Wind"
@@ -5762,67 +5934,97 @@ local function spiritStorm(ctx)
 	CombatState.SetCasting(character, 0.25)
 end
 
--- Spirit's Hushed Dance: he reads the mana around him. The next attack
--- (anything, from anywhere) misses; he dances along a stream of wind to
--- just behind whoever threw it and strikes, a launcher. From too far away
--- he just slips aside.
-local DANCE_WINDOW = 0.9
-local DANCE_REACH = 45
+--[[
+	Tempest Dive (Half-Crown 2): a grab. His hand shoots out; whoever it
+	catches is torn up into the sky on a tornado with him (cut twice on the
+	way), and at the top he swings over them and drives them head-first
+	down through three rings of wind into the ground, hard enough to bounce
+	them. The timeline is Shared/TempestDive. Landing it charges the
+	Full-Crown: twice, and G can be pressed again.
+]]
+local DIVE_REACH = 0.16
 
-local function hushedDance(ctx)
+local function tempestDive(ctx)
 	local c, character = ctx.combat, ctx.character
-	local countered = false
-	CombatState.SetCasting(character, DANCE_WINDOW + 0.1)
+	CombatState.SetCasting(character, DIVE_REACH + 0.5)
 	if ctx.airborne then
-		c.ApplyVelocity(character, HOVER, DANCE_WINDOW)
+		c.ApplyVelocity(character, HOVER, DIVE_REACH + 0.3)
 	end
-	fx(ctx, "HushedDance", "Stance", { window = DANCE_WINDOW })
-	c.SetCounter(character, DANCE_WINDOW, ALL_TYPES, function(attacker: Model)
-		countered = true
-		CombatState.GiveIFrames(character, 0.7)
-		CombatState.SetCasting(character, 0.5)
-		local attackerRoot = rootOf(attacker)
-		if not attackerRoot then
-			return
-		end
-		local from = ctx.root.Position
-		if (attackerRoot.Position - from).Magnitude <= DANCE_REACH then
-			local behind = attackerRoot.Position - c.Flat(attackerRoot.CFrame.LookVector) * 3.5
-			ctx.root.CFrame =
-				CFrame.lookAt(behind, Vector3.new(attackerRoot.Position.X, behind.Y, attackerRoot.Position.Z))
-			c.ApplyVelocity(character, if ctx.airborne then HOVER else Vector3.zero, 0.2)
-			fx(ctx, "HushedDance", "Evade", { from = from, to = behind, target = attacker })
-			task.wait(0.12)
-			if CombatState.IsAlive(attacker) then
-				c.Hit(character, attacker, {
-					damage = 8,
-					stun = 1.2,
-					attackType = "Melee",
-					unblockable = true,
-					heavy = true,
-					velocity = c.Flat(attackerRoot.Position - ctx.root.Position) * 25 + UP * 30,
-					velocityTime = 0.2,
-				})
-				-- And up after them, for an air string.
-				c.ApplyVelocity(character, UP * 32, 0.3)
-				task.delay(0.3, function()
-					if CombatState.IsAlive(character) then
-						c.ApplyVelocity(character, HOVER, 0.6)
-					end
-				end)
-			end
-		else
-			local side = ctx.root.CFrame.RightVector * (if math.random() < 0.5 then -9 else 9)
-			ctx.root.CFrame += side
-			fx(ctx, "HushedDance", "Evade", { from = from, to = ctx.root.Position })
-		end
-	end)
-	task.wait(DANCE_WINDOW + 0.02)
-	if not countered then
-		c.ClearCounter(character)
-		fx(ctx, "HushedDance", "End")
-		CombatState.SetCasting(character, 0.4)
+	fx(ctx, "TempestDive", "Reach")
+	task.wait(DIVE_REACH)
+	if interrupted(ctx) then
+		return
 	end
+	local target: Model? = nil
+	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -3.5), Vector3.new(6, 7, 7)) do
+		if not CombatState.HasIFrames(victim) and not CombatState.IsRagdolled(victim) then
+			target = victim
+			break
+		end
+	end
+	local targetRoot = target and rootOf(target)
+	if
+		not target
+		or not targetRoot
+		or c.Hit(
+				character,
+				target,
+				{ damage = 2, stun = 3, attackType = "Melee", unblockable = true, noShake = true }
+			)
+			~= "Hit"
+	then
+		fx(ctx, "TempestDive", "Whiff")
+		CombatState.SetCasting(character, 0.55)
+		return
+	end
+
+	local plan = DivePlan.Plan(ctx.root.CFrame, targetRoot.Position, floorUnder(ctx, targetRoot.Position).Y)
+	local times = DivePlan.Times
+	CombatState.SetCasting(character, times.Length + 0.25)
+	CombatState.GiveIFrames(character, times.Length + 0.15)
+	CombatState.Stun(target, times.Land + 0.6)
+	fx(ctx, "TempestDive", "Begin", { target = target, origin = plan.origin, start = plan.start, floorY = plan.floorY })
+	local stopHim = c.Cutscene({
+		[character] = function(t)
+			return DivePlan.Attacker(plan, t)
+		end,
+	}, times.Length)
+	local stopThem = c.Cutscene({
+		[target] = function(t)
+			return DivePlan.Victim(plan, t)
+		end,
+	}, times.Land)
+	local started = os.clock()
+	local function waitUntil(at: number)
+		task.wait(math.max(at - (os.clock() - started), 0))
+	end
+	for _, at in times.Ticks do
+		waitUntil(at)
+		if CombatState.IsAlive(target) then
+			c.Hit(character, target, { damage = 2, stun = 3, attackType = "Melee", unblockable = true, noShake = true })
+		end
+	end
+
+	-- Into the ground, hard enough to bounce them.
+	waitUntil(times.Land)
+	stopThem()
+	local impact = Vector3.new(plan.start.X, plan.floorY, plan.start.Z)
+	if CombatState.IsAlive(target) then
+		c.Hit(character, target, {
+			damage = 12,
+			stun = 1.4,
+			attackType = "Melee",
+			unblockable = true,
+			heavy = true,
+			ragdoll = 2,
+			velocity = UP * 26 + plan.forward * 8,
+		})
+		c.ChargeAscension(character, 1)
+	end
+	fx(ctx, "TempestDive", "Impact", { position = impact })
+	c.ShakeArea(impact, 70, 0.7)
+	waitUntil(times.Length)
+	stopHim()
 end
 
 -- Quartile Scutum: four stars in a rectangle in front of him and beams of
@@ -5971,71 +6173,81 @@ local function spiritOfNotos(ctx)
 	c.ShakeArea(ctx.root.Position, 40, 0.35)
 end
 
--- Spirit of Boreas: the wind sword condenses into a halberd with an axe
--- head. He closes in, then the axe comes down: a guard-breaking cleave, and
--- the wind off the impact hits everyone around it.
-local BOREAS_LUNGE = 0.3
+-- Spirit of Zephyrus (the west wind): he leaps into the sky on a burst of
+-- wind and, hanging there, looses a barrage of wind arrows down on whoever
+-- is nearest below: they keep them pinned, the last one knocks them down.
+-- Then he glides back down. From the air he leaps less high.
+local ZEPHYRUS_RISE = 0.35
+local ZEPHYRUS_ARROWS = 14
+local ZEPHYRUS_GAP = 0.08
 
-local function spiritOfBoreas(ctx)
+local function nearestEnemy(ctx, radius: number): Model?
+	local best, bestDistance = nil, math.huge
+	for _, victim in ctx.combat.Sphere(ctx.character, ctx.root.Position, radius) do
+		local victimRoot = rootOf(victim)
+		local distance = if victimRoot then (victimRoot.Position - ctx.root.Position).Magnitude else math.huge
+		if distance < bestDistance then
+			best, bestDistance = victim, distance
+		end
+	end
+	return best
+end
+
+local function spiritOfZephyrus(ctx)
 	local c, character = ctx.combat, ctx.character
-	local airborne = ctx.airborne
-	CombatState.SetCasting(character, 0.95)
-	fx(ctx, "SpiritOfBoreas", "Form", { airborne = airborne })
-	task.wait(0.12)
+	local barrage = ZEPHYRUS_ARROWS * ZEPHYRUS_GAP
+	CombatState.SetCasting(character, ZEPHYRUS_RISE + barrage + 0.4)
+	fx(ctx, "SpiritOfZephyrus", "Leap", { rise = ZEPHYRUS_RISE })
+	c.ApplyVelocity(character, UP * (if ctx.airborne then 30 else 62), ZEPHYRUS_RISE)
+	task.wait(ZEPHYRUS_RISE)
 	if interrupted(ctx) then
 		return
 	end
-	local forward = look(ctx)
-	c.ApplyVelocity(
-		character,
-		forward * 70 + (if airborne then UP * -30 else Vector3.zero),
-		BOREAS_LUNGE,
-		if airborne then { landStop = true, landKeep = 0 } else nil
-	)
-	local start = os.clock()
-	while os.clock() - start < BOREAS_LUNGE do
+	c.ApplyVelocity(character, HOVER, barrage + 0.2)
+	fx(ctx, "SpiritOfZephyrus", "Barrage", { duration = barrage })
+	for i = 1, ZEPHYRUS_ARROWS do
 		if interrupted(ctx) then
+			fx(ctx, "SpiritOfZephyrus", "Cancel")
 			return
 		end
-		if #c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -3), Vector3.new(6, 7, 6)) > 0 then
-			c.ApplyVelocity(character, Vector3.zero, 0.05)
-			break
-		end
-		task.wait()
-	end
-	fx(ctx, "SpiritOfBoreas", "Chop", { airborne = airborne })
-	task.wait(0.14)
-	if interrupted(ctx) then
-		return
-	end
-	local impact = floorUnder(ctx, (ctx.root.CFrame * CFrame.new(0, 0, -5)).Position)
-	local struck: { [Model]: boolean } = {}
-	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, -0.5, -5), Vector3.new(9, 9, 10)) do
-		struck[victim] = true
-		c.Hit(character, victim, {
-			damage = 14,
-			stun = 1.3,
-			attackType = "Melee",
-			guardBreak = true,
-			heavy = true,
-			ragdoll = 1.5,
-			velocity = forward * 30 + UP * -40,
+		local last = i == ZEPHYRUS_ARROWS
+		local target = nearestEnemy(ctx, 55)
+		local targetRoot = target and rootOf(target)
+		-- The first arrows land round them, closing in.
+		local scatter = if last then 0 else 3 * (1 - i / ZEPHYRUS_ARROWS) + 0.5
+		local aim = if targetRoot then targetRoot.Position else ctx.root.Position + look(ctx) * 16 - UP * 20
+		aim += Vector3.new(math.random(-10, 10) / 10, 0, math.random(-10, 10) / 10) * scatter
+		local origin = ctx.root.Position
+			+ Vector3.new(math.random(-15, 15) / 10, 1 + math.random() * 1.5, math.random(-15, 15) / 10)
+		local direction = (aim - origin).Unit
+		fx(
+			ctx,
+			"SpiritOfZephyrus",
+			"Arrow",
+			{ origin = origin, direction = direction, speed = 150, range = 90, last = last }
+		)
+		Projectile.Fire({
+			owner = character,
+			origin = origin,
+			direction = direction,
+			speed = 150,
+			range = 90,
+			size = Vector3.new(2, 2, 4),
+			onHit = function(victim)
+				c.Hit(character, victim, {
+					damage = if last then 4 else 1.4,
+					stun = if last then 1 else 0.5,
+					attackType = "Bolt",
+					heavy = last,
+					ragdoll = if last then 1.2 else nil,
+					velocity = if last then UP * -40 + c.Flat(direction) * 10 else c.Flat(direction) * 3,
+					velocityTime = 0.15,
+				})
+			end,
 		})
+		task.wait(ZEPHYRUS_GAP)
 	end
-	for _, victim in c.Sphere(character, impact, 11) do
-		local victimRoot = rootOf(victim)
-		if not struck[victim] and victimRoot then
-			c.Hit(character, victim, {
-				damage = 5,
-				stun = 0.7,
-				attackType = "Zone",
-				velocity = c.Flat(victimRoot.Position - impact) * 35 + UP * 15,
-				velocityTime = 0.18,
-			})
-		end
-	end
-	fx(ctx, "SpiritOfBoreas", "Impact", { position = impact })
-	c.ShakeArea(impact, 50, 0.5)
+	c.ApplyVelocity(character, UP * -20 + look(ctx) * 4, 0.5)
 	CombatState.SetCasting(character, 0.3)
 end
 
@@ -6197,8 +6409,8 @@ Kit.Skills = { windBladesShower, swiftWhiteHawk, heavenlyWindArk, galeWhiteBow }
 
 -- Awakened, the moves follow the stage: Half-Crown, or Full-Crown once he's
 -- ascended (the "Ascended" attribute; names and cooldowns in Shared/Kits).
-local HALF_CROWN = { spiritStorm, hushedDance, quartileScutum, quartileHasta }
-local FULL_CROWN = { spiritOfNotos, spiritOfBoreas, spiritOfEuros, neverland }
+local HALF_CROWN = { spiritStorm, tempestDive, quartileScutum, quartileHasta }
+local FULL_CROWN = { spiritOfNotos, spiritOfZephyrus, spiritOfEuros, neverland }
 local function stageMove(slot: number): (any) -> ()
 	return function(ctx)
 		local moves = if ctx.character:GetAttribute("Ascended") == true then FULL_CROWN else HALF_CROWN
@@ -6264,7 +6476,7 @@ return Kit
           </Properties>
         </Item>
       </Item>
-      <Item class="ModuleScript" referent="24">
+      <Item class="ModuleScript" referent="25">
         <Properties>
           <string name="Name">Projectile</string>
           <string name="Source"><![CDATA[--[[
@@ -6360,7 +6572,7 @@ return Projectile
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="25">
+      <Item class="ModuleScript" referent="26">
         <Properties>
           <string name="Name">Ragdoll</string>
           <string name="Source"><![CDATA[--[[
@@ -6656,16 +6868,16 @@ return Ragdoll
       </Item>
     </Item>
   </Item>
-  <Item class="StarterPlayer" referent="26">
+  <Item class="StarterPlayer" referent="27">
     <Properties>
       <string name="Name">StarterPlayer</string>
       <bool name="EnableMouseLockOption">false</bool>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="27">
+    <Item class="StarterPlayerScripts" referent="28">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="LocalScript" referent="28">
+      <Item class="LocalScript" referent="29">
         <Properties>
           <string name="Name">Client</string>
           <string name="Source"><![CDATA[--[[
@@ -6696,7 +6908,7 @@ ShiftLock.Start()
 TopBar.Start()
 ]]></string>
         </Properties>
-        <Item class="ModuleScript" referent="29">
+        <Item class="ModuleScript" referent="30">
           <Properties>
             <string name="Name">CameraShake</string>
             <string name="Source"><![CDATA[--[[
@@ -6762,7 +6974,7 @@ return CameraShake
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="30">
+        <Item class="ModuleScript" referent="31">
           <Properties>
             <string name="Name">Cinematic</string>
             <string name="Source"><![CDATA[--[[
@@ -6991,7 +7203,7 @@ return Cinematic
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="31">
+        <Item class="ModuleScript" referent="32">
           <Properties>
             <string name="Name">HUD</string>
             <string name="Source"><![CDATA[--[[
@@ -7424,10 +7636,13 @@ local function update(dt: number)
 			if awakened and character:GetAttribute("Ascended") == true then
 				text = second
 			elseif awakened then
-				local charge = math.clamp((tonumber(character:GetAttribute("Ascension")) or 0) / ascension.charge, 0, 1)
-				text = if charge >= 1
+				local value = tonumber(character:GetAttribute("Ascension")) or 0
+				local progress = if ascension.chargeByKit
+					then math.floor(value) .. "/" .. ascension.charge
+					else math.floor(math.clamp(value / ascension.charge, 0, 1) * 100) .. "%"
+				text = if value >= ascension.charge
 					then "[G]  " .. second
-					else first .. "   ·   " .. second .. " " .. math.floor(charge * 100) .. "%"
+					else first .. "   ·   " .. second .. " " .. progress
 			end
 			ui.awakeningLabel.Text = text
 		end
@@ -7483,7 +7698,7 @@ return HUD
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="32">
+        <Item class="ModuleScript" referent="33">
           <Properties>
             <string name="Name">Input</string>
             <string name="Source"><![CDATA[--[[
@@ -8073,11 +8288,11 @@ return Input
 ]]></string>
           </Properties>
         </Item>
-        <Item class="Folder" referent="33">
+        <Item class="Folder" referent="34">
           <Properties>
             <string name="Name">Kits</string>
           </Properties>
-          <Item class="ModuleScript" referent="34">
+          <Item class="ModuleScript" referent="35">
             <Properties>
               <string name="Name">AntiMagic</string>
               <string name="Source"><![CDATA[--[[
@@ -14201,7 +14416,7 @@ end)
 return Kit
 ]]></string>
             </Properties>
-            <Item class="ModuleScript" referent="35">
+            <Item class="ModuleScript" referent="36">
               <Properties>
                 <string name="Name">Animations</string>
                 <string name="Source"><![CDATA[--[[
@@ -20069,7 +20284,7 @@ return Animations
               </Properties>
             </Item>
           </Item>
-          <Item class="ModuleScript" referent="36">
+          <Item class="ModuleScript" referent="37">
             <Properties>
               <string name="Name">Wind</string>
               <string name="Source"><![CDATA[--[[
@@ -20087,6 +20302,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local NeverlandPlan = require(ReplicatedStorage:WaitForChild("Shared").Neverland)
+local DivePlan = require(ReplicatedStorage:WaitForChild("Shared").TempestDive)
 local CameraShake = require(script.Parent.Parent.CameraShake)
 local Cinematic = require(script.Parent.Parent.Cinematic)
 local M1Animations = require(script.Parent.Parent.M1Animations)
@@ -20837,9 +21053,18 @@ end
 -- Half-Crown Spirit of Zephyr
 ---------------------------------------------------------------------------
 
--- Spirit Storm: an orb of mana gathers in his palm, then a dense beam of
--- swirling wind (a white core inside a green column, rings of wind
--- spinning out along it) roars out.
+-- Spirit Storm. The charge: Sylph's mana gathers in his palm as an orb of
+-- storm, a white core in a green halo inside a shimmering shell, three
+-- rings of wind whirling round it on tilted axes, wind streaming in from
+-- all round and a ring drawn in along the ground. The beam: a white-hot
+-- core in a green column inside a shimmering sheath, three helices of wind
+-- twisting round it and spinning, rings tearing off along it, streaks
+-- racing down it, the muzzle pulsing; it scars the ground it passes over
+-- and bursts where it ends; when it stops the helices unwind and it
+-- collapses.
+local STORM_STRANDS = 3
+local STORM_SEGMENTS = 18
+
 function handlers.SpiritStorm(data, character, root)
 	if data.phase == "Charge" then
 		play(character, ANIMS.StormCharge)
@@ -20847,101 +21072,348 @@ function handlers.SpiritStorm(data, character, root)
 		local orb = U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.2, Color = WIND_WHITE })
 		local halo =
 			U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.4, Color = WIND, Transparency = 0.5 })
+		local shell = U.newPart({
+			Shape = Enum.PartType.Ball,
+			Size = Vector3.one * 0.6,
+			Color = WIND,
+			Material = Enum.Material.ForceField,
+		})
+		local rings = {}
+		for _ = 1, 3 do
+			table.insert(
+				rings,
+				arcParts(arcPoints(Vector3.zero, Vector3.xAxis, UP, 1, 0, math.pi * 2, 10), 0.08, WIND_WHITE, 0.15)
+			)
+		end
+		local light = Instance.new("PointLight")
+		light.Color = WIND
+		light.Range = 12
+		light.Brightness = 1
+		light.Parent = orb
 		every(data.duration + 0.05, function(elapsed)
 			local hand = handOf(character, "Right")
 			if not live(character, token) or not hand then
 				return false
 			end
-			local grow = elapsed / data.duration
+			local grow = math.min(elapsed / data.duration, 1)
+			local center = hand + root.CFrame.LookVector * 0.7
 			orb.Size = Vector3.one * (0.3 + 1.1 * grow)
 			halo.Size = Vector3.one * (0.8 + 2.4 * grow)
-			orb.CFrame = CFrame.new(hand + root.CFrame.LookVector * 0.6)
+			shell.Size = Vector3.one * (1 + 3.2 * grow)
+			orb.CFrame = CFrame.new(center)
 			halo.CFrame = orb.CFrame
-			inflow(orb.Position, 5)
+			shell.CFrame = orb.CFrame * CFrame.Angles(elapsed * 3, elapsed * 2, 0)
+			for r, ring in rings do
+				local tilt = CFrame.Angles(r * 1.1 + elapsed * (3 + r), elapsed * (4 - r), r * 0.7)
+				poseArc(
+					ring,
+					arcPoints(center, tilt.RightVector, tilt.UpVector, 0.7 + 1.7 * grow + r * 0.25, 0, math.pi * 2, 10)
+				)
+			end
+			inflow(center, 6)
+			inflow(center, 4)
+			light.Brightness = 1 + 5 * grow
 			return true
 		end, function()
-			fadeOut({ orb, halo }, 0.08)
+			fadeOut({ orb, halo, shell }, 0.08)
+			for _, ring in rings do
+				fadeOut(ring, 0.08)
+			end
 		end)
+		U.ringBurst(CFrame.new(root.Position - UP * 2.9), WIND, 7, 1, data.duration, 0.15)
+		U.spiral(root, WIND, 2.2, 4, data.duration, 2, 0.08, 0.6)
+		if U.isLocal(character) then
+			CameraShake.Add(0.06)
+		end
 	elseif data.phase == "Fire" then
 		play(character, ANIMS.StormFire)
 		local token = bump(character)
 		local origin: Vector3 = data.origin
 		local direction: Vector3 = data.direction
-		local finish = origin + direction * data.length
-		local core = tube(origin, finish, 1.4, WIND_WHITE, 0.05)
-		local column = tube(origin, finish, 4.4, WIND, 0.55)
-		local sheath = tube(origin, finish, 6, WIND_DEEP, 0.85)
+		local length: number = data.length
+		local finish = origin + direction * length
+		local right = direction:Cross(UP)
+		right = if right.Magnitude > 1e-3 then right.Unit else Vector3.xAxis
+		local up = right:Cross(direction).Unit
+
+		local core = tube(origin, finish, 1.2, WIND_WHITE, 0)
+		local column = tube(origin, finish, 4.2, WIND, 0.5)
+		local sheath = tube(origin, finish, 6.4, WIND, 0)
+		sheath.Material = Enum.Material.ForceField
+		local haze = tube(origin, finish, 9, WIND_DEEP, 0.9)
+		local strands: { { BasePart } } = {}
+		for k = 1, STORM_STRANDS do
+			local strand = {}
+			for _ = 1, STORM_SEGMENTS do
+				table.insert(
+					strand,
+					bar(
+						origin,
+						origin + direction,
+						if k == 1 then 0.3 else 0.22,
+						if k == 1 then WIND_WHITE else WIND,
+						0.1
+					)
+				)
+			end
+			table.insert(strands, strand)
+		end
+		-- Streaks racing down the beam.
+		local muzzle = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.lookAt(origin, finish) })
+		local streaks = Instance.new("ParticleEmitter")
+		streaks.Texture = U.textures.Spark
+		streaks.Color = ColorSequence.new(WIND_WHITE, WIND)
+		streaks.LightEmission = 1
+		streaks.LightInfluence = 0
+		streaks.EmissionDirection = Enum.NormalId.Front
+		streaks.Orientation = Enum.ParticleOrientation.VelocityParallel
+		streaks.Speed = NumberRange.new(150, 210)
+		streaks.Lifetime = NumberRange.new(length / 210, length / 150)
+		streaks.SpreadAngle = Vector2.new(5, 5)
+		streaks.Size = NumberSequence.new(0.7, 0.1)
+		streaks.Transparency = NumberSequence.new(0.1, 1)
+		streaks.Rate = 140
+		streaks.Parent = muzzle
 		local light = Instance.new("PointLight")
 		light.Color = WIND
-		light.Range = 24
-		light.Brightness = 4
+		light.Range = 28
+		light.Brightness = 5
 		light.Parent = core
-		local nextRing = 0
+
+		local nextRing, nextPulse = 0, 0
 		every(data.duration, function(elapsed)
 			if not live(character, token) then
 				return false
 			end
-			if elapsed >= nextRing then
-				nextRing = elapsed + 0.05
-				local along = math.random() * data.length
-				U.impactRing(origin + direction * along, direction, WIND_WHITE, 1.5, 4.5, 0.18)
+			-- Three helices of wind, twisting round the beam and spinning.
+			local spin = elapsed * 14
+			for k, strand in strands do
+				local phase = k * (math.pi * 2 / STORM_STRANDS) + spin
+				local radius = 2.5 + 0.35 * math.sin(elapsed * 30 + k)
+				local previous = origin
+				for i, segment in strand do
+					local s = i / #strand * length
+					local angle = phase + s * 0.35
+					local point = origin
+						+ direction * s
+						+ (right * math.cos(angle) + up * math.sin(angle)) * radius * math.min(s / 3, 1)
+					segment.Size = Vector3.new(segment.Size.X, segment.Size.Y, (point - previous).Magnitude + 0.05)
+					segment.CFrame = CFrame.lookAt(previous:Lerp(point, 0.5), point)
+					previous = point
+				end
 			end
-			local wobble = 1 + math.sin(elapsed * 40) * 0.08
-			column.Size = Vector3.new(column.Size.X, 4.4 * wobble, 4.4 * wobble)
+			local breathe = 1 + math.sin(elapsed * 40) * 0.07
+			column.Size = Vector3.new(column.Size.X, 4.2 * breathe, 4.2 * breathe)
+			core.Size =
+				Vector3.new(core.Size.X, 1.2 + math.sin(elapsed * 55) * 0.18, 1.2 + math.sin(elapsed * 55) * 0.18)
+			if elapsed >= nextRing then
+				nextRing = elapsed + 0.035
+				U.impactRing(origin + direction * (math.random() * length), direction, WIND_WHITE, 2, 5.5, 0.2)
+			end
+			if elapsed >= nextPulse then
+				nextPulse = elapsed + 0.1
+				U.impactRing(origin, direction, WIND, 1.5, 7, 0.25)
+			end
 			return true
 		end, function()
-			fadeOut({ core, column, sheath }, 0.2)
-			gust(finish, 6, direction)
+			-- The helices unwind outward and it all collapses.
+			for _, strand in strands do
+				for _, segment in strand do
+					local out = segment.Position - (origin + direction * direction:Dot(segment.Position - origin))
+					U.tween(segment, 0.3, {
+						CFrame = segment.CFrame + (if out.Magnitude > 1e-3 then out.Unit * 2.5 else Vector3.zero),
+						Transparency = 1,
+					})
+				end
+				task.delay(0.32, function()
+					for _, segment in strand do
+						segment:Destroy()
+					end
+				end)
+			end
+			U.tween(core, 0.25, { Size = Vector3.new(core.Size.X, 0.05, 0.05) })
+			fadeOut({ core, column, sheath, haze }, 0.3)
+			streaks.Enabled = false
+			task.delay(0.6, muzzle.Destroy, muzzle)
+			gust(finish, 8, direction)
+			U.shockwave(finish, WIND, 2, 14, 0.35)
 		end)
-		gust(origin, 5, direction)
-		U.light(origin, WIND, 5, 20, 0.6)
+
+		-- The ground it passes over is scarred.
+		for along = 6, length, 6 do
+			local ground = U.groundBelow(origin + direction * along, { character }, 7)
+			if ground then
+				task.delay(along / 300, function()
+					U.groundCracks(ground.Position, 2, 4, WIND, 1.2)
+					U.debris(ground.Position, 3, 25, 0.5)
+				end)
+			end
+		end
+		gust(origin, 6, direction)
+		U.flash(origin, WIND_WHITE, 6, 0.2)
+		U.impactRing(origin, direction, WIND_WHITE, 1, 9, 0.3)
+		U.light(origin, WIND, 6, 24, 0.7)
 		if U.isLocal(character) then
-			CameraShake.Add(0.2)
-			CameraShake.FovKick(8)
+			CameraShake.Add(0.25)
+			CameraShake.FovKick(10)
+		elseif (workspace.CurrentCamera.CFrame.Position - origin).Magnitude < 40 then
+			CameraShake.Add(0.1)
 		end
 	elseif data.phase == "Cancel" then
 		bump(character)
 	end
 end
 
--- Spirit's Hushed Dance: wind streams circle him while he reads the mana;
--- on an attack he flows along a ribbon of wind to behind them and strikes.
-function handlers.HushedDance(data, character, root)
-	if data.phase == "Stance" then
-		play(character, ANIMS.Dance)
-		U.spiral(root, WIND, 3, 5, data.window, 3, 0.08, 0.2)
-		U.highlight(character, WIND, data.window, 0.85)
-	elseif data.phase == "Evade" then
-		local from: Vector3 = data.from
-		local to: Vector3 = data.to
-		local side = (to - from):Cross(UP)
-		side = if side.Magnitude > 0.01 then side.Unit * 3 else Vector3.zero
-		-- A curving ribbon of wind along the way he went.
-		local previous = from
-		for i = 1, 10 do
-			local t = i / 10
-			local point = from:Lerp(to, t) + side * math.sin(t * math.pi)
-			local piece = bar(previous, point, 0.35, WIND, 0.3)
-			task.delay(0.02 * i, function()
-				U.tween(piece, 0.3, { Transparency = 1, Size = Vector3.new(0.05, 0.05, piece.Size.Z) })
-				task.delay(0.32, piece.Destroy, piece)
-			end)
-			previous = point
+-- Tempest Dive: a tornado erupts round them both and carries them up on its
+-- spiral (debris torn up with them); at the top three rings of wind stand
+-- one under another down to the ground, and he drives them down through
+-- each one (each bursts as they pass) into a crater.
+local function playTempestDive(data, character: Model, root: BasePart)
+	local target: Model? = data.target
+	local targetRoot = target and U.getRoot(target)
+	local plan = DivePlan.Plan(data.origin, data.start, data.floorY)
+	local times = DivePlan.Times
+	local started = os.clock()
+	local mine = involves(data, character)
+
+	-- The tornado: an anchor at its foot for the spirals, and the funnel.
+	local foot = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.new(plan.start - UP * 2.5) })
+	U.spiral(foot, WIND, 3.5, DivePlan.Height + 4, times.Flip, 4, 0.25, 0.3)
+	U.spiral(foot, WIND_WHITE, 5, DivePlan.Height + 4, times.Flip, 3, 0.12, 0.5)
+	local funnel = U.newPart({
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(DivePlan.Height + 6, 7, 7),
+		CFrame = CFrame.new(plan.start + UP * (DivePlan.Height / 2)) * CFrame.Angles(0, 0, rad(90)),
+		Color = WIND,
+		Material = Enum.Material.ForceField,
+		Transparency = 0.2,
+	})
+	U.ringBurst(CFrame.new(plan.start - UP * 2.4), WIND, 2, 10, 0.4, 0.3)
+	U.debris(plan.start - UP * 2.4, 10, 45, 0.7)
+
+	-- The rings they'll be driven through.
+	local rings: { { parts: { BasePart }, at: number, done: boolean } } = {}
+
+	local bind = "CloverTempestDive" .. tostring(started)
+	local function finish()
+		pcall(function()
+			RunService:UnbindFromRenderStep(bind)
+		end)
+	end
+	local flipped, dove = false, false
+	RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
+		local t = os.clock() - started
+		if t > times.Length + 0.1 then
+			finish()
+			return
 		end
-		U.flash(from, WIND_WHITE, 4, 0.2)
-		gust(to, 4)
-		if data.target then
-			play(character, ANIMS.DanceStrike)
-			task.delay(0.12, function()
-				local targetRoot = U.getRoot(data.target)
-				if targetRoot then
-					gust(targetRoot.Position, 6, UP)
-					U.shockwave(targetRoot.Position, WIND, 1.5, 8, 0.25)
+		if root.Parent then
+			root.CFrame = DivePlan.Attacker(plan, t)
+		end
+		if targetRoot and targetRoot.Parent and t <= times.Land then
+			targetRoot.CFrame = DivePlan.Victim(plan, t)
+		end
+		funnel.CFrame = CFrame.new(plan.start + UP * (DivePlan.Height / 2))
+			* CFrame.Angles(0, t * 9, 0)
+			* CFrame.Angles(0, 0, rad(90))
+
+		if not flipped and t >= times.Lift then
+			flipped = true
+			play(character, ANIMS.BoreasForm)
+			U.tween(funnel, 0.3, { Transparency = 1 })
+			task.delay(0.32, funnel.Destroy, funnel)
+			for _, fraction in DivePlan.Rings do
+				local center = DivePlan.DiveAt(plan, fraction)
+				local points = arcPoints(center, plan.forward, plan.forward:Cross(UP), 4.5, 0, math.pi * 2, 16)
+				local parts = arcParts(points, 0.35, WIND_WHITE, 0.05)
+				for _, p in arcParts(points, 1, WIND, 0.5) do
+					table.insert(parts, p)
 				end
-			end)
+				table.insert(
+					rings,
+					{ parts = parts, at = times.Flip + math.sqrt(fraction) * (times.Land - times.Flip), done = false }
+				)
+			end
 		end
-		if involves(data, character) then
-			CameraShake.FovKick(-8)
+		if not dove and t >= times.Flip then
+			dove = true
+			play(character, ANIMS.BoreasChop)
+		end
+		-- Each ring bursts as they go through it.
+		for _, ring in rings do
+			if not ring.done and t >= ring.at then
+				ring.done = true
+				local center = ring.parts[1].Position
+				for _, p in ring.parts do
+					U.tween(p, 0.25, { CFrame = p.CFrame + (p.Position - center) * 0.6, Transparency = 1 })
+				end
+				task.delay(0.27, function()
+					for _, p in ring.parts do
+						p:Destroy()
+					end
+				end)
+				U.flash(DivePlan.DiveAt(plan, (ring.at - times.Flip) / (times.Land - times.Flip)), WIND_WHITE, 6, 0.15)
+				if mine then
+					CameraShake.Add(0.12)
+				end
+			end
+		end
+	end)
+	task.delay(times.Length + 0.4, function()
+		finish()
+		foot:Destroy()
+		if funnel.Parent then
+			funnel:Destroy()
+		end
+		for _, ring in rings do
+			for _, p in ring.parts do
+				if p.Parent then
+					p:Destroy()
+				end
+			end
+		end
+	end)
+
+	if mine then
+		Cinematic.Camera(function(t)
+			local focus = DivePlan.Victim(plan, math.min(t, times.Land)).Position
+			local right = plan.forward:Cross(UP)
+			local offset = right * 16 - plan.forward * 6 + UP * (if t < times.Lift then -2 else 4)
+			return CFrame.lookAt(focus + offset, focus), if t > times.Flip and t < times.Land then 82 else 72
+		end, times.Length + 0.2)
+	end
+end
+
+function handlers.TempestDive(data, character, root)
+	local phase = data.phase
+	if phase == "Reach" then
+		play(character, ANIMS.Hawk)
+		local hand = handOf(character, "Right")
+		if hand then
+			gust(hand, 3, root.CFrame.LookVector)
+		end
+	elseif phase == "Whiff" then
+		gust(root.Position + root.CFrame.LookVector * 4, 2)
+	elseif phase == "Begin" then
+		playTempestDive(data, character, root)
+	elseif phase == "Impact" then
+		-- Driven in hard: a dome of wind, a crater ring, the ground split
+		-- and thrown up, a column of wind and dust.
+		local position: Vector3 = data.position
+		U.shockwave(position, WIND, 3, 26, 0.45, Enum.Material.ForceField)
+		U.shockwave(position, WIND_WHITE, 2, 12, 0.25)
+		U.ringBurst(CFrame.new(position + UP * 0.2), WIND_WHITE, 2, 16, 0.4, 0.45)
+		U.ringBurst(CFrame.new(position + UP * 0.3), WIND, 1, 11, 0.5, 0.25)
+		U.groundCracks(position, 12, 11, WIND, 1.6)
+		U.groundRocks(position, 12, 7, 1.8)
+		U.debris(position, 18, 45, 1)
+		U.pillar(position, WIND, 3, 22, 0.45, Enum.Material.ForceField, 0.25)
+		gust(position + UP, 9, UP)
+		U.light(position, WIND, 6, 40, 0.6)
+		local near = (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 60
+		if near then
+			U.colorGrade({ Brightness = 0.2, Contrast = 0.5, Saturation = -0.6 }, 0, 0.06, 0.25)
+			CameraShake.Add(0.45)
 		end
 	end
 end
@@ -21179,47 +21651,99 @@ function handlers.SpiritOfNotos(data, character, root)
 	end
 end
 
--- Spirit of Boreas: the wind sword condenses into a halberd (a long shaft,
--- an axe head and a spike), raised as he closes in and brought down; the
--- impact throws up a ring of wind and splits the ground.
-function handlers.SpiritOfBoreas(data, character, root)
-	if data.phase == "Form" then
-		play(character, ANIMS.BoreasForm)
-		hideSword(character, 0.95)
-		local shaft = U.newPart({ Size = Vector3.new(0.22, 7.5, 0.22), Color = WIND_DEEP })
-		local axe = U.newPart({ Size = Vector3.new(0.14, 1.9, 1.6), Color = WIND, Transparency = 0.15 })
-		local edge = U.newPart({ Size = Vector3.new(0.08, 2.1, 0.2), Color = WIND_WHITE })
-		local spike = U.newPart({ Size = Vector3.new(0.12, 1.4, 0.12), Color = WIND_WHITE })
-		local parts = { shaft, axe, edge, spike }
-		every(0.95, function()
-			local arm = character:FindFirstChild("Right Arm")
-			if not arm or not arm:IsA("BasePart") then
+-- Spirit of Zephyrus: he leaps into the sky on a burst of wind; hanging
+-- there in an archer's stance over a turning ring of wind, a great bow of
+-- wind in his hand, he looses a barrage of arrows down on them.
+local skyBows: { [Model]: () -> () } = {}
+
+function handlers.SpiritOfZephyrus(data, character, root)
+	local phase = data.phase
+	if phase == "Leap" then
+		play(character, ANIMS.Ark)
+		local feet = root.Position - UP * 2.9
+		U.ringBurst(CFrame.new(feet), WIND, 1, 9, 0.35, 0.3)
+		U.burst(feet, {
+			color = WIND_WHITE,
+			count = 24,
+			size = 0.5,
+			speed = NumberRange.new(30, 60),
+			lifetime = NumberRange.new(0.2, 0.4),
+			streaks = true,
+			spread = 40,
+			direction = -UP,
+		})
+		U.debris(feet, 6, 30, 0.5)
+		U.bodyTrail(character, WIND, data.rise + 0.1)
+		if U.isLocal(character) then
+			CameraShake.Add(0.15)
+			CameraShake.FovKick(6)
+		end
+	elseif phase == "Barrage" then
+		play(character, ANIMS.Bow)
+		local token = bump(character)
+		local segments = 12
+		local limbs = arcParts(arcPoints(Vector3.zero, Vector3.xAxis, UP, 1, -1, 1, segments), 0.3, WIND, 0.15)
+		local edge = arcParts(arcPoints(Vector3.zero, Vector3.xAxis, UP, 1, -1, 1, segments), 0.1, STAR, 0)
+		local halo = arcParts(
+			arcPoints(Vector3.zero, Vector3.xAxis, Vector3.zAxis, 1, 0, math.pi * 2, 16),
+			0.25,
+			WIND_WHITE,
+			0.2
+		)
+		local all = table.clone(limbs)
+		table.move(edge, 1, #edge, #all + 1, all)
+		table.move(halo, 1, #halo, #all + 1, all)
+		local function stop()
+			skyBows[character] = nil
+			fadeOut(all, 0.25)
+		end
+		skyBows[character] = stop
+		every(data.duration + 0.3, function(elapsed)
+			local hand = handOf(character, "Left")
+			if not live(character, token) or not hand then
 				return false
 			end
-			local grip = arm.CFrame * CFrame.new(0, -1.1, 0) * CFrame.Angles(rad(-90), 0, 0)
-			shaft.CFrame = grip * CFrame.new(0, 2.4, 0)
-			axe.CFrame = grip * CFrame.new(0, 5.2, -0.8)
-			edge.CFrame = grip * CFrame.new(0, 5.2, -1.6)
-			spike.CFrame = grip * CFrame.new(0, 6.6, 0)
+			local forward = root.CFrame.LookVector
+			local points = arcPoints(hand - forward * 1.4, forward, UP, 4.2, -1.15, 1.15, segments)
+			points[1] += forward * 0.8
+			points[#points] += forward * 0.8
+			poseArc(limbs, points)
+			poseArc(edge, points)
+			-- A ring of wind turning under his feet.
+			local below = root.Position - UP * 3.2
+			local spin = elapsed * 3
+			poseArc(
+				halo,
+				arcPoints(
+					below,
+					Vector3.new(math.cos(spin), 0, math.sin(spin)),
+					Vector3.new(-math.sin(spin), 0, math.cos(spin)),
+					5,
+					0,
+					math.pi * 2,
+					16
+				)
+			)
 			return true
 		end, function()
-			fadeOut(parts, 0.15)
+			if skyBows[character] == stop then
+				stop()
+			end
 		end)
-		U.flash(root.Position, WIND, 5, 0.2)
-		U.speedLines(root, root.CFrame.LookVector, 0.3, WIND)
-	elseif data.phase == "Chop" then
-		play(character, ANIMS.BoreasChop)
-		U.bodyTrail(character, WIND, 0.25)
-	elseif data.phase == "Impact" then
-		local position: Vector3 = data.position
-		U.shockwave(position, WIND, 2, 24, 0.4)
-		U.ringBurst(CFrame.new(position + UP * 0.2), WIND_WHITE, 1, 13, 0.4, 0.35)
-		U.groundCracks(position, 9, 9, WIND, 1.2)
-		U.groundRocks(position, 8, 6, 1.3)
-		U.debris(position, 12, 35, 0.8)
-		gust(position + UP, 8, UP)
-		if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 40 then
-			CameraShake.Add(0.3)
+		U.light(root.Position, WIND, 4, 24, data.duration + 0.3)
+	elseif phase == "Arrow" then
+		local origin: Vector3 = data.origin
+		local direction: Vector3 = data.direction
+		flyingArrow(origin, direction, data.speed, data.range, if data.last then 1.5 else 0.9)
+		U.flash(origin, WIND_WHITE, if data.last then 4 else 2, 0.12)
+		if U.isLocal(character) then
+			CameraShake.FovKick(if data.last then 5 else 1)
+		end
+	elseif phase == "Cancel" then
+		bump(character)
+		local stop = skyBows[character]
+		if stop then
+			stop()
 		end
 	end
 end
@@ -22088,7 +22612,7 @@ end
 return Kit
 ]]></string>
             </Properties>
-            <Item class="ModuleScript" referent="37">
+            <Item class="ModuleScript" referent="38">
               <Properties>
                 <string name="Name">Animations</string>
                 <string name="Source"><![CDATA[--[[
@@ -23034,95 +23558,6 @@ Animations.StormFire = {
 	},
 }
 
--- Spirit's Hushed Dance: poised and open.
-Animations.Dance = {
-	fadeOut = 0.15,
-	keys = {
-		{
-			0,
-			{
-				Torso = body(0.093, -3, 12),
-				Head = rot(2, -10),
-				RightArm = limb(12, 4, 10),
-				LeftArm = limb(30, -8, -16),
-				RightLeg = rot(-4, 0, 6),
-				LeftLeg = rot(6, 0, -7),
-			},
-		},
-		{
-			0.15,
-			{
-				Torso = body(0.105, -2, 20),
-				Head = rot(6, -16),
-				RightArm = limb(40, 0, 52),
-				LeftArm = limb(40, 0, -52),
-				RightLeg = rot(-8, 0, 6),
-				LeftLeg = rot(10, 0, -6),
-			},
-			"Sine",
-			"Out",
-		},
-		{
-			0.9,
-			{
-				Torso = body(0.105, -2, 20),
-				Head = rot(6, -16),
-				RightArm = limb(40, 0, 52),
-				LeftArm = limb(40, 0, -52),
-				RightLeg = rot(-8, 0, 6),
-				LeftLeg = rot(10, 0, -6),
-			},
-			"Linear",
-			"Out",
-		},
-	},
-}
-
--- Spirit's Hushed Dance: the spinning palm strike.
-Animations.DanceStrike = {
-	fadeIn = 0.01,
-	fadeOut = 0.25,
-	keys = {
-		{
-			0,
-			{
-				Torso = body(0.155, -6, 50),
-				Head = rot(4, -40),
-				RightArm = limb(-10, 0, 40),
-				LeftArm = limb(50, -10, -20),
-				RightLeg = rot(-14, 0, 8),
-				LeftLeg = rot(16, 0, -8),
-			},
-		},
-		{
-			0.08,
-			{
-				Torso = body(0.155, -14, -30),
-				Head = rot(10, 24),
-				RightArm = limb(96, -6),
-				LeftArm = limb(24, 0, -30),
-				RightLeg = rot(-22, 0, 8),
-				LeftLeg = rot(22, 0, -8),
-			},
-			"Quart",
-			"Out",
-		},
-		{
-			0.4,
-			{
-				Torso = body(0.155, -14, -30),
-				Head = rot(10, 24),
-				RightArm = limb(96, -6),
-				LeftArm = limb(24, 0, -30),
-				RightLeg = rot(-22, 0, 8),
-				LeftLeg = rot(22, 0, -8),
-			},
-			"Linear",
-			"Out",
-		},
-	},
-}
-
 -- Quartile Scutum: hands out, holding the barrier.
 Animations.Scutum = {
 	fadeOut = 0.2,
@@ -23313,7 +23748,7 @@ Animations.Notos = {
 	},
 }
 
--- Spirit of Boreas: halberd raised as he closes in.
+-- Tempest Dive: both hands raised over them at the top.
 Animations.BoreasForm = {
 	fadeOut = 0.05,
 	keys = {
@@ -23357,7 +23792,7 @@ Animations.BoreasForm = {
 	},
 }
 
--- Spirit of Boreas: the axe comes down.
+-- Tempest Dive: driving them down into the ground.
 Animations.BoreasChop = {
 	fadeIn = 0.01,
 	fadeOut = 0.3,
@@ -23694,7 +24129,7 @@ return Animations
             </Item>
           </Item>
         </Item>
-        <Item class="ModuleScript" referent="38">
+        <Item class="ModuleScript" referent="39">
           <Properties>
             <string name="Name">M1Animations</string>
             <string name="Source"><![CDATA[--[[
@@ -24082,7 +24517,7 @@ return M1Animations
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="39">
+        <Item class="ModuleScript" referent="40">
           <Properties>
             <string name="Name">Moves</string>
             <string name="Source"><![CDATA[--[[
@@ -24461,7 +24896,7 @@ return Moves
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="40">
+        <Item class="ModuleScript" referent="41">
           <Properties>
             <string name="Name">PoseAnimator</string>
             <string name="Source"><![CDATA[--[[
@@ -25030,7 +25465,7 @@ return PoseAnimator
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="41">
+        <Item class="ModuleScript" referent="42">
           <Properties>
             <string name="Name">Reactions</string>
             <string name="Source"><![CDATA[--[[
@@ -25259,7 +25694,7 @@ return Reactions
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="42">
+        <Item class="ModuleScript" referent="43">
           <Properties>
             <string name="Name">ShiftLock</string>
             <string name="Source"><![CDATA[--[[
@@ -25420,7 +25855,7 @@ return ShiftLock
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="43">
+        <Item class="ModuleScript" referent="44">
           <Properties>
             <string name="Name">TopBar</string>
             <string name="Source"><![CDATA[--[[
@@ -25710,7 +26145,7 @@ return TopBar
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="44">
+        <Item class="ModuleScript" referent="45">
           <Properties>
             <string name="Name">VFX</string>
             <string name="Source"><![CDATA[--[[
@@ -27079,13 +27514,13 @@ return VFX
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="45">
+  <Item class="Workspace" referent="46">
     <Properties>
       <string name="Name">Workspace</string>
       <float name="Gravity">225</float>
       <bool name="NeedsPivotMigration">false</bool>
     </Properties>
-    <Item class="Part" referent="46">
+    <Item class="Part" referent="47">
       <Properties>
         <string name="Name">Baseplate</string>
         <bool name="Anchored">true</bool>
@@ -27104,7 +27539,7 @@ return VFX
         </Vector3>
       </Properties>
     </Item>
-    <Item class="SpawnLocation" referent="47">
+    <Item class="SpawnLocation" referent="48">
       <Properties>
         <string name="Name">SpawnLocation</string>
         <bool name="Anchored">true</bool>

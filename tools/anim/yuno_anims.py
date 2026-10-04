@@ -125,14 +125,6 @@ STORM_PUSH = pose(R(-14, -10), R(8, 8), L(96, 8, 0), L(90, -28, 0), R(-24, 0, 10
 STORM_CHARGE = [(0.0, STANCE), (0.2, STORM_GATHER), (0.45, STORM_GATHER)]
 STORM_FIRE = [(0.0, STORM_GATHER), (0.06, STORM_PUSH), (0.7, STORM_PUSH)]
 
-# Spirit's Hushed Dance: poised and open, light on his feet; then a
-# spinning palm strike from behind them.
-DANCE_OPEN = pose(R(-2, 20), R(6, -16), L(40, 0, 52), L(40, 0, -52), R(-8, 0, 6), R(10, 0, -6))
-DANCE = [(0.0, STANCE), (0.15, DANCE_OPEN), (0.9, DANCE_OPEN)]
-DANCE_COIL = pose(R(-6, 50), R(4, -40), L(-10, 0, 40), L(50, -10, -20), R(-14, 0, 8), R(16, 0, -8))
-DANCE_HIT = pose(R(-14, -30), R(10, 24), L(96, -6, 0), L(24, 0, -30), R(-22, 0, 8), R(22, 0, -8))
-DANCE_STRIKE = [(0.0, DANCE_COIL), (0.08, DANCE_HIT), (0.4, DANCE_HIT)]
-
 # Quartile Scutum: both hands up and out in front, holding the barrier.
 SCUTUM_HOLD = pose(R(4), R(2), L(100, 22, 12), L(100, -22, -12), R(-16, 0, 8), R(16, 0, -8))
 SCUTUM = [(0.0, STANCE), (0.15, SCUTUM_HOLD), (2.5, SCUTUM_HOLD)]
@@ -150,8 +142,8 @@ NOTOS_GATHER = pose(R(-12), R(-6), L(82, -38, 0), L(82, 38, 0), R(-14, 0, 8), R(
 NOTOS_BURST = pose(R(8), R(16), L(96, 0, 80), L(96, 0, -80), R(-20, 0, 10), R(20, 0, -10))
 NOTOS = [(0.0, STANCE), (0.08, NOTOS_GATHER), (0.15, NOTOS_BURST), (0.45, NOTOS_BURST)]
 
-# Spirit of Boreas: the halberd raised in both hands as he closes in, then
-# the axe brought down.
+# Raised overhead in both hands, then brought down (Tempest Dive: over the
+# top of them, then driving them into the ground).
 BOREAS_RAISE = pose(R(6, 6), R(12), L(168, 10, 0), L(168, -10, 0), R(-14, 0, 6), R(14, 0, -6))
 BOREAS_DOWN = pose(R(-30, -4), R(14), L(44, 10, 0), L(44, -10, 0), R(-30, 0, 10), R(30, 0, -10))
 BOREAS_FORM = [(0.0, STANCE), (0.12, BOREAS_RAISE), (0.42, BOREAS_RAISE)]
@@ -201,14 +193,12 @@ SPEC = {
     'Warp': dict(keys=WARP, ease=[None, SINE_OUT], fadeIn=0.01, doc="Conjunction: arriving at the star, low and poised."),
     'StormCharge': dict(keys=STORM_CHARGE, ease=[None, SINE_OUT, LINEAR], fadeOut=0.05, doc="Spirit Storm: palm out, mana gathering."),
     'StormFire': dict(keys=STORM_FIRE, ease=[None, QUART_OUT, LINEAR], fadeIn=0.02, fadeOut=0.3, doc="Spirit Storm: leaning into the beam."),
-    'Dance': dict(keys=DANCE, ease=[None, SINE_OUT, LINEAR], fadeOut=0.15, doc="Spirit's Hushed Dance: poised and open."),
-    'DanceStrike': dict(keys=DANCE_STRIKE, ease=[None, QUART_OUT, LINEAR], fadeIn=0.01, fadeOut=0.25, doc="Spirit's Hushed Dance: the spinning palm strike."),
     'Scutum': dict(keys=SCUTUM, ease=[None, SINE_OUT, LINEAR], fadeOut=0.2, doc="Quartile Scutum: hands out, holding the barrier."),
     'HastaStars': dict(keys=HASTA_STARS, ease=[None, SINE_OUT, LINEAR], fadeOut=0.05, doc="Quartile Hasta: conducting the four stars."),
     'HastaFire': dict(keys=HASTA_FIRE, ease=[None, QUART_OUT, SINE_OUT], fadeIn=0.02, fadeOut=0.3, doc="Quartile Hasta: the lance goes, he rocks back."),
     'Notos': dict(keys=NOTOS, ease=snap(4), fadeOut=0.3, doc="Spirit of Notos: arms crossed, then flung wide."),
-    'BoreasForm': dict(keys=BOREAS_FORM, ease=[None, SINE_OUT, LINEAR], fadeOut=0.05, doc="Spirit of Boreas: halberd raised as he closes in."),
-    'BoreasChop': dict(keys=BOREAS_CHOP, ease=[None, QUAD_IN, LINEAR], fadeIn=0.01, fadeOut=0.3, doc="Spirit of Boreas: the axe comes down."),
+    'BoreasForm': dict(keys=BOREAS_FORM, ease=[None, SINE_OUT, LINEAR], fadeOut=0.05, doc="Tempest Dive: both hands raised over them at the top."),
+    'BoreasChop': dict(keys=BOREAS_CHOP, ease=[None, QUAD_IN, LINEAR], fadeIn=0.01, fadeOut=0.3, doc="Tempest Dive: driving them down into the ground."),
     'EurosDraw': dict(keys=EUROS_DRAW, ease=[None, SINE_OUT, SINE_IO, LINEAR], fadeOut=0.05, doc="Spirit of Euros: drawn deep and held."),
     'EurosLoose': dict(keys=EUROS_LOOSE, ease=[None, QUART_OUT, LINEAR], fadeIn=0.01, fadeOut=0.3, doc="Spirit of Euros: loosed, the drawing hand flies back."),
     'Neverland': dict(keys=NEVERLAND, ease=[None, SINE_OUT, LINEAR], fadeOut=0.3, doc="Neverland: arms raised to the sky."),

@@ -53,13 +53,16 @@ export type KitInfo = {
 	}?,
 	-- Extra jumps in the air (Yuno rides the wind: one more).
 	airJumps: number?,
-	-- A second, stronger stage of the awakening (Yuno: Full-Crown): dealing
-	-- `charge` damage while awakened lets G be pressed again. Its own moves
-	-- and stats, and the awakening's timer restarts at `duration`.
+	-- A second, stronger stage of the awakening (Yuno: Full-Crown): once
+	-- `charge` is reached in the first stage, G can be pressed again. It
+	-- charges with damage dealt, or, with `chargeByKit`, only when the kit
+	-- says so (Yuno: each landed Tempest Dive is 1). Its own moves and stats,
+	-- and the awakening's timer restarts at `duration`.
 	ascension: {
 		name: string,
 		duration: number,
 		charge: number,
+		chargeByKit: boolean?,
 		damageMultiplier: number,
 		cooldownMultiplier: number,
 		speedBonus: number,
@@ -187,7 +190,7 @@ Kits.List = {
 		-- Half-Crown Spirit of Zephyr (G): Sylph on his left side.
 		awakenedSkills = {
 			{ name = "Spirit Storm", cooldown = 12, type = "Bolt", airHold = true },
-			{ name = "Spirit's Hushed Dance", cooldown = 14, type = "Counter", airHold = true },
+			{ name = "Tempest Dive", cooldown = 16, type = "Melee", airHold = true },
 			{ name = "Quartile Scutum", cooldown = 16, type = "Counter" },
 			{ name = "Quartile Hasta", cooldown = 14, type = "Bolt", airHold = true },
 		},
@@ -198,18 +201,19 @@ Kits.List = {
 			cooldownMultiplier = 0.85,
 			speedBonus = 4,
 		},
-		-- Full-Crown Spirit of Zephyr: G again after dealing 45 damage in
-		-- the Half-Crown. Stronger than Black Form, but only 30 seconds.
+		-- Full-Crown Spirit of Zephyr: G again once Tempest Dive (Half-Crown
+		-- 2) has landed twice. Stronger than Black Form, but only 30 seconds.
 		ascension = {
 			name = "Full-Crown",
 			duration = 30,
-			charge = 45,
+			charge = 2,
+			chargeByKit = true,
 			damageMultiplier = 1.3,
 			cooldownMultiplier = 0.75,
 			speedBonus = 8,
 			skills = {
 				{ name = "Spirit of Notos", cooldown = 12, type = "Counter" },
-				{ name = "Spirit of Boreas", cooldown = 13, type = "Melee", airHold = true },
+				{ name = "Spirit of Zephyrus", cooldown = 13, type = "Bolt", airHold = true },
 				{ name = "Spirit of Euros", cooldown = 18, type = "Bolt", airHold = true },
 				{ name = "Neverland", cooldown = 30, type = "Melee" },
 			},

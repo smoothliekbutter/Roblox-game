@@ -428,10 +428,13 @@ local function update(dt: number)
 			if awakened and character:GetAttribute("Ascended") == true then
 				text = second
 			elseif awakened then
-				local charge = math.clamp((tonumber(character:GetAttribute("Ascension")) or 0) / ascension.charge, 0, 1)
-				text = if charge >= 1
+				local value = tonumber(character:GetAttribute("Ascension")) or 0
+				local progress = if ascension.chargeByKit
+					then math.floor(value) .. "/" .. ascension.charge
+					else math.floor(math.clamp(value / ascension.charge, 0, 1) * 100) .. "%"
+				text = if value >= ascension.charge
 					then "[G]  " .. second
-					else first .. "   ·   " .. second .. " " .. math.floor(charge * 100) .. "%"
+					else first .. "   ·   " .. second .. " " .. progress
 			end
 			ui.awakeningLabel.Text = text
 		end
