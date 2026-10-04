@@ -36,6 +36,10 @@ Config.M1 = {
 	InputTolerance = 0.1, -- accept swings this early to absorb network jitter
 
 	HitStun = 0.66, -- longer than SwingCooldown + WindUp (plus slack for ping), so strings are true combos
+	-- The 3rd hit sets up the finisher: long enough to jump and downslam
+	-- (3 hits, jump, hit) on a real player, ping included.
+	SetupStun = 1.0,
+	DownslamJumpAfter = 0.12, -- free to jump this soon after the 3rd hit
 	UppercutStun = 1.1,
 	-- The uppercut is a launcher: short end lag and an early jump, so you
 	-- can go up after them and carry on in the air.

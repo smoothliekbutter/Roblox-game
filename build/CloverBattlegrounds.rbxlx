@@ -430,6 +430,10 @@ Config.M1 = {
 	InputTolerance = 0.1, -- accept swings this early to absorb network jitter
 
 	HitStun = 0.66, -- longer than SwingCooldown + WindUp (plus slack for ping), so strings are true combos
+	-- The 3rd hit sets up the finisher: long enough to jump and downslam
+	-- (3 hits, jump, hit) on a real player, ping included.
+	SetupStun = 1.0,
+	DownslamJumpAfter = 0.12, -- free to jump this soon after the 3rd hit
 	UppercutStun = 1.1,
 	-- The uppercut is a launcher: short end lag and an early jump, so you
 	-- can go up after them and carry on in the air.
@@ -1204,6 +1208,7 @@ export type HitInfo = {
 	velocity: Vector3?, -- knockback (world space)
 	velocityTime: number?,
 	ragdoll: number?, -- seconds of ragdoll
+	hitsDowned: boolean?, -- can hit someone lying on the floor (the air Black Divider)
 	heavy: boolean?, -- bigger hit effect
 	effect: string?, -- VFX name to play instead of Hit / HeavyHit
 }
@@ -1724,7 +1729,7 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	-- No hitting people on the floor: stops infinites. A body still in the
 	-- air from an uppercut can be hit for a moment, so the combo carries on.
 	local juggled = victimData ~= nil and now < victimData.juggleUntil and CombatService.IsAirborne(victim)
-	if CombatState.HasIFrames(victim) or (CombatState.IsRagdolled(victim) and not juggled) then
+	if CombatState.HasIFrames(victim) or (CombatState.IsRagdolled(victim) and not juggled and not hit.hitsDowned) then
 		return "Immune"
 	end
 
@@ -1935,6 +1940,7 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 		if variant == "Uppercut"
 			then Config.M1.UppercutJumpAfter + 0.05 -- free to jump after them almost at once
 			elseif finisher then Config.M1.FinisherBusy
+			elseif index == Config.M1.ComboLength - 1 then Config.M1.DownslamJumpAfter -- jump for the downslam
 			else Config.M1.Busy
 	)
 
@@ -1955,10 +1961,19 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 			return
 		end
 		local hitboxCFrame = root.CFrame * CFrame.new(0, 0, -m1Value(character, "HitboxOffset"))
-		for _, victim in Hitbox.Box(character, hitboxCFrame, m1Value(character, "HitboxSize")) do
+		local hitboxSize = m1Value(character, "HitboxSize")
+		if variant == "Downslam" then
+			-- Swung down from the top of a jump: reaches the ground below.
+			hitboxCFrame *= CFrame.new(0, -3.5, -0.5)
+			hitboxSize += Vector3.new(1, 7, 1)
+		end
+		for _, victim in Hitbox.Box(character, hitboxCFrame, hitboxSize) do
 			CombatService.Hit(character, victim, {
 				damage = if finisher then m1Value(character, "FinisherDamage") else m1Value(character, "Damage"),
-				stun = if variant == "Uppercut" then Config.M1.UppercutStun else Config.M1.HitStun,
+				stun = if variant == "Uppercut"
+					then Config.M1.UppercutStun
+					elseif index == Config.M1.ComboLength - 1 then Config.M1.SetupStun
+					else Config.M1.HitStun,
 				attackType = "Melee",
 				guardBreak = finisher,
 				variant = variant,
@@ -2268,6 +2283,9 @@ function CombatService.Register(character: Model)
 
 	CombatState.Setup(character)
 	humanoid.BreakJointsOnDeath = false
+	-- Ragdolls swap the Neck motor for a socket; a player's own client kills
+	-- them the moment their neck "breaks" unless this is off.
+	humanoid.RequiresNeck = false
 	humanoid.UseJumpPower = false
 	-- Only our ragdoll should knock people over. (For players this has to be
 	-- repeated on their client, see Input.)
@@ -3902,12 +3920,21 @@ local function blackDivider(ctx)
 	local forward = look(ctx)
 	fx(ctx, "BlackDivider", "Release", { perfect = perfect, airborne = airborne })
 	if airborne then
-		local below = ctx.root.CFrame * CFrame.new(0, -2.5, -3)
-		for _, victim in c.Box(character, below, Vector3.new(10, 11, 10)) do
+		-- Down onto whoever's below, all the way to the ground, and it hits
+		-- people lying on the floor too (the ground version can't).
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = { character }
+		local floor = workspace:Raycast(ctx.root.Position, Vector3.new(0, -40, 0), params)
+		local depth = if floor then ctx.root.Position.Y - floor.Position.Y + 1 else 8
+		local height = math.clamp(depth + 3, 11, 40)
+		local below = ctx.root.CFrame * CFrame.new(0, 3 - height / 2, -3)
+		for _, victim in c.Box(character, below, Vector3.new(10, height, 10)) do
 			c.Hit(character, victim, {
 				damage = if perfect then 12 else 7,
 				stun = if perfect then 1.2 else 1,
 				attackType = "Melee", -- the air version can be blocked
+				hitsDowned = true,
 				heavy = true,
 				ragdoll = if perfect then 1.6 else 1.3,
 				velocity = forward * 18 + UP * -85,
@@ -3924,7 +3951,7 @@ local function blackDivider(ctx)
 	for _, victim in c.Box(character, box, Vector3.new(9, 7, 9)) do
 		if perfect then
 			c.Hit(character, victim, {
-				damage = 14,
+				damage = 17,
 				stun = 1.2,
 				attackType = "Melee",
 				unblockable = true,
@@ -3935,7 +3962,7 @@ local function blackDivider(ctx)
 			})
 		else
 			c.Hit(character, victim, {
-				damage = 8,
+				damage = 11,
 				stun = 1,
 				attackType = "Melee",
 				guardBreak = true,
@@ -5089,6 +5116,8 @@ function Ragdoll.Enable(character: Model)
 
 	local record: Record = { created = {}, motors = {}, groups = {}, physics = {} }
 	active[character] = record
+	-- The Neck motor goes off below: without this a player dies on the spot.
+	humanoid.RequiresNeck = false
 
 	for _, joint in character:GetDescendants() do
 		-- Body joints only: a weapon's grip (Part1 inside the weapon model) stays rigid.
@@ -6229,7 +6258,7 @@ local function tryM1()
 		end
 	else
 		nextM1 = t + Config.M1.SwingCooldown
-		noJumpUntil = t + Config.M1.Busy
+		noJumpUntil = t + (if index == Config.M1.ComboLength - 1 then Config.M1.DownslamJumpAfter else Config.M1.Busy)
 		-- Jumping after the 3rd hit is the downslam (3 hits, jump, hit). But
 		-- Space already held here means the uppercut is coming: no hop.
 		if index == Config.M1.ComboLength - 1 and jumpHeld(humanoid) then
@@ -6374,6 +6403,8 @@ local function onCharacterAdded(character: Model)
 			humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
 		end
 	end)
+	-- Ragdolls disable the Neck motor: don't die of a "broken neck".
+	humanoid.RequiresNeck = false
 	-- Don't let the default "fall over" states interrupt combat.
 	humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
 	humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
@@ -9703,7 +9734,13 @@ local HORN = {
 	{ size = Vector3.new(0.09, 0.32, 0.09), bend = rot(0) },
 }
 
+-- Asta's grimoire (defined further down, with the sword swap that uses it).
+type Grimoire = { open: (number) -> (), close: () -> (), burst: () -> () }
+local grimoire: (character: Model, root: BasePart, place: ((t: number) -> CFrame)?) -> Grimoire
+
 type BlackFormVisual = {
+	-- His grimoire, circling him while Black Form lasts.
+	book: Grimoire?,
 	flap: (() -> ())?,
 	-- Force a wing pose (a WING_STATES name), or nil to go back to normal.
 	setPose: ((string?) -> ())?,
@@ -10260,6 +10297,18 @@ local function setAwakened(character: Model, on: boolean)
 			end
 		end
 	end)
+	-- His grimoire comes out and circles him the whole time, open, bobbing
+	-- on the air and turning to keep its pages towards him.
+	local book = grimoire(character, root, function(t: number): CFrame
+		local angle = t * 1.3
+		local position = root.Position
+			+ Vector3.new(math.cos(angle) * 2.8, 1.2 + math.sin(t * 2.1) * 0.35, math.sin(angle) * 2.8)
+		return CFrame.lookAt(position, root.Position + UP * 1.2) * CFrame.Angles(rad(-15), 0, math.sin(t * 1.7) * 0.15)
+	end)
+	book.open(0.6)
+	visual.book = book
+	table.insert(cleanup, book.close)
+
 	table.insert(cleanup, function()
 		fading = os.clock()
 		if torso.Parent then
@@ -11584,7 +11633,9 @@ end
 
 -- Asta's grimoire: a tattered black book with a five-leaf clover floating
 -- over it. Anchored parts posed every frame around a moving anchor.
-local function grimoire(character: Model, root: BasePart): { open: (number) -> (), close: () -> (), burst: () -> () }
+-- `place` (seconds since it appeared -> where the book is) moves it
+-- somewhere other than beside him, with its pages fluttering.
+function grimoire(character: Model, root: BasePart, place: ((t: number) -> CFrame)?): Grimoire
 	local parts: { { part: BasePart, offset: CFrame, side: number } } = {}
 	local function piece(size: Vector3, color: Color3, material: Enum.Material, offset: CFrame, side: number): BasePart
 		local part = U.newPart({ Size = size, Color = color, Material = material, Transparency = 1 })
@@ -11633,16 +11684,28 @@ local function grimoire(character: Model, root: BasePart): { open: (number) -> (
 	local openAngle, visible = 0, 0
 	local anchorOffset = CFrame.new(-1.9, 0.6, -1.7)
 	local start = os.clock()
-	local connection = RunService.RenderStepped:Connect(function()
+	local connection
+	connection = RunService.RenderStepped:Connect(function()
 		if not root.Parent then
+			-- He's gone (died, left): the book goes with him.
+			connection:Disconnect()
+			for _, entry in parts do
+				entry.part:Destroy()
+			end
 			return
 		end
 		local t = os.clock() - start
-		local position = (root.CFrame * anchorOffset).Position + Vector3.new(0, math.sin(t * 3) * 0.12, 0)
-		-- Faces Asta, tilted back like it's being read.
-		local base = CFrame.lookAt(position, root.Position + Vector3.new(0, 0.6, 0)) * CFrame.Angles(rad(-20), 0, 0)
+		local base, flutter
+		if place then
+			base, flutter = place(t), math.sin(t * 6) * 7 + math.sin(t * 13) * 3
+		else
+			local position = (root.CFrame * anchorOffset).Position + Vector3.new(0, math.sin(t * 3) * 0.12, 0)
+			-- Faces Asta, tilted back like it's being read.
+			base = CFrame.lookAt(position, root.Position + Vector3.new(0, 0.6, 0)) * CFrame.Angles(rad(-20), 0, 0)
+			flutter = 0
+		end
 		for _, entry in parts do
-			local hinge = CFrame.Angles(0, -entry.side * rad(openAngle), 0)
+			local hinge = CFrame.Angles(0, -entry.side * rad(openAngle + flutter * visible), 0)
 			local spin = if entry.side == 0 and entry.offset.Y > 0.5
 				then CFrame.new(0, 1.1, -0.4) * CFrame.Angles(0, 0, t * 1.5) * CFrame.new(0, -1.1, 0.4)
 				else CFrame.identity
@@ -11779,9 +11842,16 @@ function handlers.SwordSwap(data, character, root)
 			swordAura(character, 0.2, 40)
 		end
 	end
-	local book = grimoire(character, root)
-	book.open(0.18)
-	task.delay(0.65, book.close)
+	-- In Black Form it's the grimoire already circling him; otherwise one
+	-- opens beside him for the draw.
+	local visual = awakenedVisuals[character]
+	local book = visual and visual.book
+	if not book then
+		local beside = grimoire(character, root)
+		beside.open(0.18)
+		task.delay(0.65, beside.close)
+		book = beside
+	end
 
 	local arrived = false
 	local connection

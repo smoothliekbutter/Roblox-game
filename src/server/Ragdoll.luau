@@ -118,6 +118,8 @@ function Ragdoll.Enable(character: Model)
 
 	local record: Record = { created = {}, motors = {}, groups = {}, physics = {} }
 	active[character] = record
+	-- The Neck motor goes off below: without this a player dies on the spot.
+	humanoid.RequiresNeck = false
 
 	for _, joint in character:GetDescendants() do
 		-- Body joints only: a weapon's grip (Part1 inside the weapon model) stays rigid.

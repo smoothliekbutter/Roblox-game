@@ -3159,7 +3159,13 @@ local HORN = {
 	{ size = Vector3.new(0.09, 0.32, 0.09), bend = rot(0) },
 }
 
+-- Asta's grimoire (defined further down, with the sword swap that uses it).
+type Grimoire = { open: (number) -> (), close: () -> (), burst: () -> () }
+local grimoire: (character: Model, root: BasePart, place: ((t: number) -> CFrame)?) -> Grimoire
+
 type BlackFormVisual = {
+	-- His grimoire, circling him while Black Form lasts.
+	book: Grimoire?,
 	flap: (() -> ())?,
 	-- Force a wing pose (a WING_STATES name), or nil to go back to normal.
 	setPose: ((string?) -> ())?,
@@ -3716,6 +3722,18 @@ local function setAwakened(character: Model, on: boolean)
 			end
 		end
 	end)
+	-- His grimoire comes out and circles him the whole time, open, bobbing
+	-- on the air and turning to keep its pages towards him.
+	local book = grimoire(character, root, function(t: number): CFrame
+		local angle = t * 1.3
+		local position = root.Position
+			+ Vector3.new(math.cos(angle) * 2.8, 1.2 + math.sin(t * 2.1) * 0.35, math.sin(angle) * 2.8)
+		return CFrame.lookAt(position, root.Position + UP * 1.2) * CFrame.Angles(rad(-15), 0, math.sin(t * 1.7) * 0.15)
+	end)
+	book.open(0.6)
+	visual.book = book
+	table.insert(cleanup, book.close)
+
 	table.insert(cleanup, function()
 		fading = os.clock()
 		if torso.Parent then
@@ -5040,7 +5058,9 @@ end
 
 -- Asta's grimoire: a tattered black book with a five-leaf clover floating
 -- over it. Anchored parts posed every frame around a moving anchor.
-local function grimoire(character: Model, root: BasePart): { open: (number) -> (), close: () -> (), burst: () -> () }
+-- `place` (seconds since it appeared -> where the book is) moves it
+-- somewhere other than beside him, with its pages fluttering.
+function grimoire(character: Model, root: BasePart, place: ((t: number) -> CFrame)?): Grimoire
 	local parts: { { part: BasePart, offset: CFrame, side: number } } = {}
 	local function piece(size: Vector3, color: Color3, material: Enum.Material, offset: CFrame, side: number): BasePart
 		local part = U.newPart({ Size = size, Color = color, Material = material, Transparency = 1 })
@@ -5089,16 +5109,28 @@ local function grimoire(character: Model, root: BasePart): { open: (number) -> (
 	local openAngle, visible = 0, 0
 	local anchorOffset = CFrame.new(-1.9, 0.6, -1.7)
 	local start = os.clock()
-	local connection = RunService.RenderStepped:Connect(function()
+	local connection
+	connection = RunService.RenderStepped:Connect(function()
 		if not root.Parent then
+			-- He's gone (died, left): the book goes with him.
+			connection:Disconnect()
+			for _, entry in parts do
+				entry.part:Destroy()
+			end
 			return
 		end
 		local t = os.clock() - start
-		local position = (root.CFrame * anchorOffset).Position + Vector3.new(0, math.sin(t * 3) * 0.12, 0)
-		-- Faces Asta, tilted back like it's being read.
-		local base = CFrame.lookAt(position, root.Position + Vector3.new(0, 0.6, 0)) * CFrame.Angles(rad(-20), 0, 0)
+		local base, flutter
+		if place then
+			base, flutter = place(t), math.sin(t * 6) * 7 + math.sin(t * 13) * 3
+		else
+			local position = (root.CFrame * anchorOffset).Position + Vector3.new(0, math.sin(t * 3) * 0.12, 0)
+			-- Faces Asta, tilted back like it's being read.
+			base = CFrame.lookAt(position, root.Position + Vector3.new(0, 0.6, 0)) * CFrame.Angles(rad(-20), 0, 0)
+			flutter = 0
+		end
 		for _, entry in parts do
-			local hinge = CFrame.Angles(0, -entry.side * rad(openAngle), 0)
+			local hinge = CFrame.Angles(0, -entry.side * rad(openAngle + flutter * visible), 0)
 			local spin = if entry.side == 0 and entry.offset.Y > 0.5
 				then CFrame.new(0, 1.1, -0.4) * CFrame.Angles(0, 0, t * 1.5) * CFrame.new(0, -1.1, 0.4)
 				else CFrame.identity
@@ -5235,9 +5267,16 @@ function handlers.SwordSwap(data, character, root)
 			swordAura(character, 0.2, 40)
 		end
 	end
-	local book = grimoire(character, root)
-	book.open(0.18)
-	task.delay(0.65, book.close)
+	-- In Black Form it's the grimoire already circling him; otherwise one
+	-- opens beside him for the draw.
+	local visual = awakenedVisuals[character]
+	local book = visual and visual.book
+	if not book then
+		local beside = grimoire(character, root)
+		beside.open(0.18)
+		task.delay(0.65, beside.close)
+		book = beside
+	end
 
 	local arrived = false
 	local connection

@@ -188,7 +188,7 @@ local function tryM1()
 		end
 	else
 		nextM1 = t + Config.M1.SwingCooldown
-		noJumpUntil = t + Config.M1.Busy
+		noJumpUntil = t + (if index == Config.M1.ComboLength - 1 then Config.M1.DownslamJumpAfter else Config.M1.Busy)
 		-- Jumping after the 3rd hit is the downslam (3 hits, jump, hit). But
 		-- Space already held here means the uppercut is coming: no hop.
 		if index == Config.M1.ComboLength - 1 and jumpHeld(humanoid) then
@@ -333,6 +333,8 @@ local function onCharacterAdded(character: Model)
 			humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
 		end
 	end)
+	-- Ragdolls disable the Neck motor: don't die of a "broken neck".
+	humanoid.RequiresNeck = false
 	-- Don't let the default "fall over" states interrupt combat.
 	humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
 	humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)

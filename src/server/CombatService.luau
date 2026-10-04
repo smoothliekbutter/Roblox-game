@@ -64,6 +64,7 @@ export type HitInfo = {
 	velocity: Vector3?, -- knockback (world space)
 	velocityTime: number?,
 	ragdoll: number?, -- seconds of ragdoll
+	hitsDowned: boolean?, -- can hit someone lying on the floor (the air Black Divider)
 	heavy: boolean?, -- bigger hit effect
 	effect: string?, -- VFX name to play instead of Hit / HeavyHit
 }
@@ -584,7 +585,7 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	-- No hitting people on the floor: stops infinites. A body still in the
 	-- air from an uppercut can be hit for a moment, so the combo carries on.
 	local juggled = victimData ~= nil and now < victimData.juggleUntil and CombatService.IsAirborne(victim)
-	if CombatState.HasIFrames(victim) or (CombatState.IsRagdolled(victim) and not juggled) then
+	if CombatState.HasIFrames(victim) or (CombatState.IsRagdolled(victim) and not juggled and not hit.hitsDowned) then
 		return "Immune"
 	end
 
@@ -795,6 +796,7 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 		if variant == "Uppercut"
 			then Config.M1.UppercutJumpAfter + 0.05 -- free to jump after them almost at once
 			elseif finisher then Config.M1.FinisherBusy
+			elseif index == Config.M1.ComboLength - 1 then Config.M1.DownslamJumpAfter -- jump for the downslam
 			else Config.M1.Busy
 	)
 
@@ -815,10 +817,19 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 			return
 		end
 		local hitboxCFrame = root.CFrame * CFrame.new(0, 0, -m1Value(character, "HitboxOffset"))
-		for _, victim in Hitbox.Box(character, hitboxCFrame, m1Value(character, "HitboxSize")) do
+		local hitboxSize = m1Value(character, "HitboxSize")
+		if variant == "Downslam" then
+			-- Swung down from the top of a jump: reaches the ground below.
+			hitboxCFrame *= CFrame.new(0, -3.5, -0.5)
+			hitboxSize += Vector3.new(1, 7, 1)
+		end
+		for _, victim in Hitbox.Box(character, hitboxCFrame, hitboxSize) do
 			CombatService.Hit(character, victim, {
 				damage = if finisher then m1Value(character, "FinisherDamage") else m1Value(character, "Damage"),
-				stun = if variant == "Uppercut" then Config.M1.UppercutStun else Config.M1.HitStun,
+				stun = if variant == "Uppercut"
+					then Config.M1.UppercutStun
+					elseif index == Config.M1.ComboLength - 1 then Config.M1.SetupStun
+					else Config.M1.HitStun,
 				attackType = "Melee",
 				guardBreak = finisher,
 				variant = variant,
@@ -1128,6 +1139,9 @@ function CombatService.Register(character: Model)
 
 	CombatState.Setup(character)
 	humanoid.BreakJointsOnDeath = false
+	-- Ragdolls swap the Neck motor for a socket; a player's own client kills
+	-- them the moment their neck "breaks" unless this is off.
+	humanoid.RequiresNeck = false
 	humanoid.UseJumpPower = false
 	-- Only our ragdoll should knock people over. (For players this has to be
 	-- repeated on their client, see Input.)

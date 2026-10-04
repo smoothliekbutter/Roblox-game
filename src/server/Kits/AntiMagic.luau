@@ -1163,12 +1163,21 @@ local function blackDivider(ctx)
 	local forward = look(ctx)
 	fx(ctx, "BlackDivider", "Release", { perfect = perfect, airborne = airborne })
 	if airborne then
-		local below = ctx.root.CFrame * CFrame.new(0, -2.5, -3)
-		for _, victim in c.Box(character, below, Vector3.new(10, 11, 10)) do
+		-- Down onto whoever's below, all the way to the ground, and it hits
+		-- people lying on the floor too (the ground version can't).
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = { character }
+		local floor = workspace:Raycast(ctx.root.Position, Vector3.new(0, -40, 0), params)
+		local depth = if floor then ctx.root.Position.Y - floor.Position.Y + 1 else 8
+		local height = math.clamp(depth + 3, 11, 40)
+		local below = ctx.root.CFrame * CFrame.new(0, 3 - height / 2, -3)
+		for _, victim in c.Box(character, below, Vector3.new(10, height, 10)) do
 			c.Hit(character, victim, {
 				damage = if perfect then 12 else 7,
 				stun = if perfect then 1.2 else 1,
 				attackType = "Melee", -- the air version can be blocked
+				hitsDowned = true,
 				heavy = true,
 				ragdoll = if perfect then 1.6 else 1.3,
 				velocity = forward * 18 + UP * -85,
@@ -1185,7 +1194,7 @@ local function blackDivider(ctx)
 	for _, victim in c.Box(character, box, Vector3.new(9, 7, 9)) do
 		if perfect then
 			c.Hit(character, victim, {
-				damage = 14,
+				damage = 17,
 				stun = 1.2,
 				attackType = "Melee",
 				unblockable = true,
@@ -1196,7 +1205,7 @@ local function blackDivider(ctx)
 			})
 		else
 			c.Hit(character, victim, {
-				damage = 8,
+				damage = 11,
 				stun = 1,
 				attackType = "Melee",
 				guardBreak = true,
