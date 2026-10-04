@@ -35,12 +35,20 @@ end
 function MeteorVortex.At(origin: CFrame, t: number, top: number?): CFrame
 	local a = math.clamp(t / MeteorVortex.Length, 0, 1)
 	local angle = MeteorVortex.Angle(a)
-	-- Rising overall, bobbing down and up twice on the way.
-	local height = (top or MeteorVortex.Top) * smooth(a) + MeteorVortex.Bob * math.sin(a * math.pi * 4)
+	-- Rising overall, bobbing down and up twice on the way (the bobs ease in
+	-- and out, so it starts and ends without a jolt).
+	local height = (top or MeteorVortex.Top) * smooth(a)
+		+ MeteorVortex.Bob * math.sin(a * math.pi * 4) * math.sin(a * math.pi)
 	local circle = (origin.RightVector * math.sin(angle) + origin.LookVector * (math.cos(angle) - 1))
 		* MeteorVortex.Radius
 	local position = origin.Position + UP * height + circle
-	return CFrame.new(position) * origin.Rotation * CFrame.Angles(0, -angle, 0)
+	-- He banks into the turn and leans back against their weight, most at
+	-- full speed.
+	local pull = 4 * a * (1 - a)
+	return CFrame.new(position)
+		* origin.Rotation
+		* CFrame.Angles(0, -angle, 0)
+		* CFrame.Angles(math.rad(10) * pull, 0, -math.rad(12) * pull)
 end
 
 return MeteorVortex

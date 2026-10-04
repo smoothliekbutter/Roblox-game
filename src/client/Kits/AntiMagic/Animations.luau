@@ -2349,9 +2349,9 @@ Animations.MeteorRise = {
 
 -- Black Meteorite: whirling round in the vortex with them held out, then the sword up for the slam.
 Animations.MeteorSpin = {
-	fadeIn = 0.08,
+	fadeIn = 0.12,
 	fadeOut = 0.1,
-	delays = { Sword = 0.04, Head = 0.02 },
+	delays = { Sword = 0.05, Head = 0.03, LeftArm = 0.02, RightLeg = 0.04, LeftLeg = 0.06 },
 	keys = {
 		{
 			0,
@@ -2366,12 +2366,12 @@ Animations.MeteorSpin = {
 			},
 		},
 		{
-			0.15,
+			0.14,
 			{
-				Torso = rot(10, 8),
-				Head = rot(-6, -6),
+				Torso = rot(12, 6),
+				Head = rot(-6, -9),
 				RightArm = limb(86, -84),
-				Sword = aim(0.996, -0.071, 0.052),
+				Sword = aim(0.993, -0.08, 0.084),
 				LeftArm = limb(100, -6),
 				RightLeg = rot(24),
 				LeftLeg = rot(-10),
@@ -2380,13 +2380,41 @@ Animations.MeteorSpin = {
 			"Out",
 		},
 		{
-			0.45,
+			0.34,
 			{
-				Torso = rot(6, 8),
-				Head = rot(-6, -6),
-				RightArm = limb(86, -84),
-				Sword = aim(0.996, -0.067, 0.057),
-				LeftArm = limb(100, -6),
+				Torso = rot(18, 18),
+				Head = rot(-6, -15),
+				RightArm = limb(96, -84),
+				Sword = aim(0.984, 0.167, -0.061),
+				LeftArm = limb(97, -6),
+				RightLeg = rot(40),
+				LeftLeg = rot(-26),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.54,
+			{
+				Torso = rot(12, 4),
+				Head = rot(-6, -8),
+				RightArm = limb(84, -84),
+				Sword = aim(0.986, -0.126, 0.109),
+				LeftArm = limb(100.6, -6),
+				RightLeg = rot(16),
+				LeftLeg = rot(-2),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.74,
+			{
+				Torso = rot(18, 16),
+				Head = rot(-6, -14),
+				RightArm = limb(98, -84),
+				Sword = aim(0.981, 0.193, -0.016),
+				LeftArm = limb(96.4, -6),
 				RightLeg = rot(38),
 				LeftLeg = rot(-24),
 			},
@@ -2394,21 +2422,7 @@ Animations.MeteorSpin = {
 			"InOut",
 		},
 		{
-			0.75,
-			{
-				Torso = rot(10, 8),
-				Head = rot(-6, -6),
-				RightArm = limb(86, -84),
-				Sword = aim(0.996, -0.071, 0.052),
-				LeftArm = limb(100, -6),
-				RightLeg = rot(18),
-				LeftLeg = rot(-4),
-			},
-			"Sine",
-			"InOut",
-		},
-		{
-			0.95,
+			0.94,
 			{
 				Torso = rot(14, 5),
 				Head = rot(-12),

@@ -171,7 +171,10 @@ local function tryM1()
 		end
 	else
 		nextM1 = t + Config.M1.SwingCooldown
-		noJumpUntil = t + Config.M1.Busy
+		-- Before the finisher, stay on the ground for the whole window:
+		-- holding Space for the uppercut mustn't hop you into the air (which
+		-- would turn it into the downslam).
+		noJumpUntil = t + if index == Config.M1.ComboLength - 1 then Config.M1.ResetTime else Config.M1.Busy
 	end
 
 	Remotes.Action:FireServer("M1", { jump = jump, airborne = inAir })

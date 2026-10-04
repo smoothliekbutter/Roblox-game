@@ -778,12 +778,20 @@ end
 function MeteorVortex.At(origin: CFrame, t: number, top: number?): CFrame
 	local a = math.clamp(t / MeteorVortex.Length, 0, 1)
 	local angle = MeteorVortex.Angle(a)
-	-- Rising overall, bobbing down and up twice on the way.
-	local height = (top or MeteorVortex.Top) * smooth(a) + MeteorVortex.Bob * math.sin(a * math.pi * 4)
+	-- Rising overall, bobbing down and up twice on the way (the bobs ease in
+	-- and out, so it starts and ends without a jolt).
+	local height = (top or MeteorVortex.Top) * smooth(a)
+		+ MeteorVortex.Bob * math.sin(a * math.pi * 4) * math.sin(a * math.pi)
 	local circle = (origin.RightVector * math.sin(angle) + origin.LookVector * (math.cos(angle) - 1))
 		* MeteorVortex.Radius
 	local position = origin.Position + UP * height + circle
-	return CFrame.new(position) * origin.Rotation * CFrame.Angles(0, -angle, 0)
+	-- He banks into the turn and leans back against their weight, most at
+	-- full speed.
+	local pull = 4 * a * (1 - a)
+	return CFrame.new(position)
+		* origin.Rotation
+		* CFrame.Angles(0, -angle, 0)
+		* CFrame.Angles(math.rad(10) * pull, 0, -math.rad(12) * pull)
 end
 
 return MeteorVortex
@@ -3032,25 +3040,7 @@ local function seize(ctx, target: Model, grabTime: number): ((() -> ())?, ((CFra
 	return c.Grab(character, target, HOLD_SEIZE, grabTime, "Left Arm")
 end
 
--- Black Moon's grab: lunges, and if someone is caught, seizes them.
--- Whiffing leaves him open for a moment.
-local function lungeGrab(ctx, skill: string, grabTime: number): (Model?, (() -> ())?, ((CFrame) -> ())?)
-	local character = ctx.character
-	CombatState.SetCasting(character, 0.55)
-	fx(ctx, skill, "Lunge", { airborne = ctx.airborne })
-	local target = lunge(ctx, look(ctx) * 72, 0.3, Vector3.new(5.5, 6.5, 6))
-	if not target then
-		CombatState.SetCasting(character, 0.5)
-		return nil, nil, nil
-	end
-	local release, hold = seize(ctx, target, grabTime)
-	if not release then
-		return nil, nil, nil
-	end
-	return target, release, hold
-end
-
--- Black Meteorite's grab: no dash. He plants (in the air he hangs there)
+-- The grab (Black Meteorite and Black Moon): no dash. He plants (in the air he hangs there)
 -- and his free hand shoots out. At full stretch it seizes whoever is right
 -- in front of him, for a moment. The startup is the MeteorReach
 -- animation's thrust (REACH_AT in tools/anim/asta_anims.py): keep them in
@@ -3081,11 +3071,12 @@ local function inReach(ctx): Model?
 	return closest
 end
 
-local function reachGrab(ctx, grabTime: number): (Model?, (() -> ())?, ((CFrame) -> ())?)
+local function reachGrab(ctx, grabTime: number, skill: string?): (Model?, (() -> ())?, ((CFrame) -> ())?)
 	local c, character = ctx.combat, ctx.character
 	local airborne = ctx.airborne
 	CombatState.SetCasting(character, REACH_STARTUP + REACH_WINDOW + 0.1)
-	fx(ctx, "BlackMeteorite", "Reach", { airborne = airborne })
+	local name = skill or "BlackMeteorite"
+	fx(ctx, name, "Reach", { airborne = airborne })
 	if airborne then
 		c.ApplyVelocity(character, HOVER, REACH_STARTUP + REACH_WINDOW)
 	else
@@ -3093,7 +3084,7 @@ local function reachGrab(ctx, grabTime: number): (Model?, (() -> ())?, ((CFrame)
 	end
 	task.wait(REACH_STARTUP)
 	if interrupted(ctx) then
-		fx(ctx, "BlackMeteorite", "Cancel")
+		fx(ctx, name, "Cancel")
 		return nil, nil, nil
 	end
 	if not airborne then
@@ -3106,14 +3097,14 @@ local function reachGrab(ctx, grabTime: number): (Model?, (() -> ())?, ((CFrame)
 	while not target and os.clock() - start < REACH_WINDOW do
 		task.wait()
 		if interrupted(ctx) then
-			fx(ctx, "BlackMeteorite", "Cancel")
+			fx(ctx, name, "Cancel")
 			return nil, nil, nil
 		end
 		target = inReach(ctx)
 	end
 	if not target then
 		-- The hand closes on nothing and he's left open.
-		fx(ctx, "BlackMeteorite", "Whiff", { airborne = airborne })
+		fx(ctx, name, "Whiff", { airborne = airborne })
 		CombatState.SetCasting(character, REACH_WHIFF)
 		return nil, nil, nil
 	end
@@ -3500,7 +3491,7 @@ local MOON_SEIZE = 0.4
 
 local function blackMoon(ctx)
 	local c, character = ctx.combat, ctx.character
-	local target, release = lungeGrab(ctx, "BlackMoon", MOON_SEIZE + 0.3)
+	local target, release = reachGrab(ctx, MOON_SEIZE + 0.3, "BlackMoon")
 	if not target or not release then
 		return
 	end
@@ -5058,7 +5049,10 @@ local function tryM1()
 		end
 	else
 		nextM1 = t + Config.M1.SwingCooldown
-		noJumpUntil = t + Config.M1.Busy
+		-- Before the finisher, stay on the ground for the whole window:
+		-- holding Space for the uppercut mustn't hop you into the air (which
+		-- would turn it into the downslam).
+		noJumpUntil = t + if index == Config.M1.ComboLength - 1 then Config.M1.ResetTime else Config.M1.Busy
 	end
 
 	Remotes.Action:FireServer("M1", { jump = jump, airborne = inAir })
@@ -5389,6 +5383,7 @@ type Animation = PoseAnimator.Animation
 local BLACK = Color3.fromRGB(8, 8, 10)
 local RED = Color3.fromRGB(200, 25, 35)
 local DARK_RED = Color3.fromRGB(110, 8, 18)
+local RIM_RED = Color3.fromRGB(235, 40, 50) -- Black Form's outline: bright, a touch of glow
 local WHITE = Color3.new(1, 1, 1)
 
 local rad = math.rad
@@ -6888,36 +6883,6 @@ function handlers.BlackMeteorite(data, character, root)
 		local current = PoseAnimator.Current(character)
 		if current == ANIMS.MeteorReach or current == ANIMS.AirMeteorReach then
 			PoseAnimator.FadeOut(character, 0.15)
-		end
-	elseif phase == "Lunge" then
-		-- Black Moon's lunge grab.
-		local direction = root.CFrame.LookVector
-		local air = data.airborne == true
-		play(character, if air then ANIMS.AirMeteorLunge else ANIMS.MeteorLunge)
-		swordTrail(character, 0.35)
-		-- Anti-magic coats him for the lunge (lightly: he stays visible).
-		U.highlight(character, BLACK, 0.35, 0.7)
-		local back = root.Position - direction * 1.2
-		U.flash(back, BLACK, 5, 0.16)
-		U.impactRing(back, direction, BLACK, 0.6, 4.5, 0.22)
-		task.delay(0.04, U.impactRing, back, direction, RED, 0.4, 3.2, 0.2)
-		blackSmoke(back, 10, 2.6, 14)
-		local base = if air then root.Position - UP * 2.5 else feetOf(character, root) + UP * 0.1
-		U.ringBurst(CFrame.new(base), BLACK, 0.6, 4, 0.25, 0.18)
-		task.delay(0.04, U.ringBurst, CFrame.new(base + UP * 0.1), RED, 0.5, 3.2, 0.22, 0.12)
-		blackLightning(back, 2, 2.5, 0.18)
-		U.speedLines(root, direction, 0.3)
-		U.bodyTrail(character, BLACK, 0.35)
-		crackle(root, 0.3, 0.06, 2.6)
-		for i = 0, 3 do
-			task.delay(i * 0.06, function()
-				if character.Parent then
-					U.afterimage(character, if i % 2 == 0 then BLACK else DARK_RED, 0.25)
-				end
-			end)
-		end
-		if U.isLocal(character) then
-			CameraShake.FovKick(8)
 		end
 	elseif phase == "Seize" then
 		-- The grab: his free hand clamps on their throat and hoists them,
@@ -8436,8 +8401,8 @@ local function setAwakened(character: Model, on: boolean)
 		swordLook.Adornee = sword
 		swordLook.FillColor = BLACK
 		swordLook.FillTransparency = 0.6
-		swordLook.OutlineColor = DARK_RED
-		swordLook.OutlineTransparency = 0.25
+		swordLook.OutlineColor = RIM_RED
+		swordLook.OutlineTransparency = 0.2
 		swordLook.DepthMode = Enum.HighlightDepthMode.Occluded
 		swordLook.Parent = U.folder
 		table.insert(cleanup, function()
@@ -8445,16 +8410,25 @@ local function setAwakened(character: Model, on: boolean)
 		end)
 	end
 
+	-- A red rim that breathes slowly (see the frame loop below), with the
+	-- faintest red glow over him; his avatar shows through.
 	local outline = Instance.new("Highlight")
 	outline.Adornee = character
-	outline.FillColor = BLACK
-	outline.FillTransparency = 0.82
-	outline.OutlineColor = DARK_RED
-	outline.OutlineTransparency = 0.2
+	outline.FillColor = Color3.fromRGB(45, 4, 10)
+	outline.FillTransparency = 0.8
+	outline.OutlineColor = RIM_RED
+	outline.OutlineTransparency = 0.12
 	outline.DepthMode = Enum.HighlightDepthMode.Occluded
 	outline.Parent = character
+	local rimGlow = Instance.new("PointLight")
+	rimGlow.Color = RIM_RED
+	rimGlow.Brightness = 0.6
+	rimGlow.Range = 7
+	rimGlow.Shadows = false
+	rimGlow.Parent = torso
 	table.insert(cleanup, function()
 		outline:Destroy()
+		rimGlow:Destroy()
 	end)
 
 	-----------------------------------------------------------------------
@@ -8675,6 +8649,10 @@ local function setAwakened(character: Model, on: boolean)
 			end
 			return
 		end
+		-- The rim breathes: a slow, soft swell.
+		local breath = 0.5 + 0.5 * math.sin((now - born) * 2.2)
+		outline.OutlineTransparency = 0.18 - 0.12 * breath
+		rimGlow.Brightness = 0.45 + 0.35 * breath
 
 		-- What is he doing? Ground check a few times a second.
 		if now >= nextGroundCheck then
@@ -9829,8 +9807,8 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		outline.Adornee = character
 		outline.FillColor = BLACK
 		outline.FillTransparency = 0.72
-		outline.OutlineColor = RED
-		outline.OutlineTransparency = 0.1
+		outline.OutlineColor = RIM_RED
+		outline.OutlineTransparency = 0.05
 		outline.DepthMode = Enum.HighlightDepthMode.Occluded
 		outline.Parent = character -- goes with him if he leaves mid-cutscene
 		silhouette = outline
@@ -12762,9 +12740,9 @@ Animations.MeteorRise = {
 
 -- Black Meteorite: whirling round in the vortex with them held out, then the sword up for the slam.
 Animations.MeteorSpin = {
-	fadeIn = 0.08,
+	fadeIn = 0.12,
 	fadeOut = 0.1,
-	delays = { Sword = 0.04, Head = 0.02 },
+	delays = { Sword = 0.05, Head = 0.03, LeftArm = 0.02, RightLeg = 0.04, LeftLeg = 0.06 },
 	keys = {
 		{
 			0,
@@ -12779,12 +12757,12 @@ Animations.MeteorSpin = {
 			},
 		},
 		{
-			0.15,
+			0.14,
 			{
-				Torso = rot(10, 8),
-				Head = rot(-6, -6),
+				Torso = rot(12, 6),
+				Head = rot(-6, -9),
 				RightArm = limb(86, -84),
-				Sword = aim(0.996, -0.071, 0.052),
+				Sword = aim(0.993, -0.08, 0.084),
 				LeftArm = limb(100, -6),
 				RightLeg = rot(24),
 				LeftLeg = rot(-10),
@@ -12793,13 +12771,41 @@ Animations.MeteorSpin = {
 			"Out",
 		},
 		{
-			0.45,
+			0.34,
 			{
-				Torso = rot(6, 8),
-				Head = rot(-6, -6),
-				RightArm = limb(86, -84),
-				Sword = aim(0.996, -0.067, 0.057),
-				LeftArm = limb(100, -6),
+				Torso = rot(18, 18),
+				Head = rot(-6, -15),
+				RightArm = limb(96, -84),
+				Sword = aim(0.984, 0.167, -0.061),
+				LeftArm = limb(97, -6),
+				RightLeg = rot(40),
+				LeftLeg = rot(-26),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.54,
+			{
+				Torso = rot(12, 4),
+				Head = rot(-6, -8),
+				RightArm = limb(84, -84),
+				Sword = aim(0.986, -0.126, 0.109),
+				LeftArm = limb(100.6, -6),
+				RightLeg = rot(16),
+				LeftLeg = rot(-2),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.74,
+			{
+				Torso = rot(18, 16),
+				Head = rot(-6, -14),
+				RightArm = limb(98, -84),
+				Sword = aim(0.981, 0.193, -0.016),
+				LeftArm = limb(96.4, -6),
 				RightLeg = rot(38),
 				LeftLeg = rot(-24),
 			},
@@ -12807,21 +12813,7 @@ Animations.MeteorSpin = {
 			"InOut",
 		},
 		{
-			0.75,
-			{
-				Torso = rot(10, 8),
-				Head = rot(-6, -6),
-				RightArm = limb(86, -84),
-				Sword = aim(0.996, -0.071, 0.052),
-				LeftArm = limb(100, -6),
-				RightLeg = rot(18),
-				LeftLeg = rot(-4),
-			},
-			"Sine",
-			"InOut",
-		},
-		{
-			0.95,
+			0.94,
 			{
 				Torso = rot(14, 5),
 				Head = rot(-12),

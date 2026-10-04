@@ -28,6 +28,7 @@ type Animation = PoseAnimator.Animation
 local BLACK = Color3.fromRGB(8, 8, 10)
 local RED = Color3.fromRGB(200, 25, 35)
 local DARK_RED = Color3.fromRGB(110, 8, 18)
+local RIM_RED = Color3.fromRGB(235, 40, 50) -- Black Form's outline: bright, a touch of glow
 local WHITE = Color3.new(1, 1, 1)
 
 local rad = math.rad
@@ -1527,36 +1528,6 @@ function handlers.BlackMeteorite(data, character, root)
 		local current = PoseAnimator.Current(character)
 		if current == ANIMS.MeteorReach or current == ANIMS.AirMeteorReach then
 			PoseAnimator.FadeOut(character, 0.15)
-		end
-	elseif phase == "Lunge" then
-		-- Black Moon's lunge grab.
-		local direction = root.CFrame.LookVector
-		local air = data.airborne == true
-		play(character, if air then ANIMS.AirMeteorLunge else ANIMS.MeteorLunge)
-		swordTrail(character, 0.35)
-		-- Anti-magic coats him for the lunge (lightly: he stays visible).
-		U.highlight(character, BLACK, 0.35, 0.7)
-		local back = root.Position - direction * 1.2
-		U.flash(back, BLACK, 5, 0.16)
-		U.impactRing(back, direction, BLACK, 0.6, 4.5, 0.22)
-		task.delay(0.04, U.impactRing, back, direction, RED, 0.4, 3.2, 0.2)
-		blackSmoke(back, 10, 2.6, 14)
-		local base = if air then root.Position - UP * 2.5 else feetOf(character, root) + UP * 0.1
-		U.ringBurst(CFrame.new(base), BLACK, 0.6, 4, 0.25, 0.18)
-		task.delay(0.04, U.ringBurst, CFrame.new(base + UP * 0.1), RED, 0.5, 3.2, 0.22, 0.12)
-		blackLightning(back, 2, 2.5, 0.18)
-		U.speedLines(root, direction, 0.3)
-		U.bodyTrail(character, BLACK, 0.35)
-		crackle(root, 0.3, 0.06, 2.6)
-		for i = 0, 3 do
-			task.delay(i * 0.06, function()
-				if character.Parent then
-					U.afterimage(character, if i % 2 == 0 then BLACK else DARK_RED, 0.25)
-				end
-			end)
-		end
-		if U.isLocal(character) then
-			CameraShake.FovKick(8)
 		end
 	elseif phase == "Seize" then
 		-- The grab: his free hand clamps on their throat and hoists them,
@@ -3075,8 +3046,8 @@ local function setAwakened(character: Model, on: boolean)
 		swordLook.Adornee = sword
 		swordLook.FillColor = BLACK
 		swordLook.FillTransparency = 0.6
-		swordLook.OutlineColor = DARK_RED
-		swordLook.OutlineTransparency = 0.25
+		swordLook.OutlineColor = RIM_RED
+		swordLook.OutlineTransparency = 0.2
 		swordLook.DepthMode = Enum.HighlightDepthMode.Occluded
 		swordLook.Parent = U.folder
 		table.insert(cleanup, function()
@@ -3084,16 +3055,25 @@ local function setAwakened(character: Model, on: boolean)
 		end)
 	end
 
+	-- A red rim that breathes slowly (see the frame loop below), with the
+	-- faintest red glow over him; his avatar shows through.
 	local outline = Instance.new("Highlight")
 	outline.Adornee = character
-	outline.FillColor = BLACK
-	outline.FillTransparency = 0.82
-	outline.OutlineColor = DARK_RED
-	outline.OutlineTransparency = 0.2
+	outline.FillColor = Color3.fromRGB(45, 4, 10)
+	outline.FillTransparency = 0.8
+	outline.OutlineColor = RIM_RED
+	outline.OutlineTransparency = 0.12
 	outline.DepthMode = Enum.HighlightDepthMode.Occluded
 	outline.Parent = character
+	local rimGlow = Instance.new("PointLight")
+	rimGlow.Color = RIM_RED
+	rimGlow.Brightness = 0.6
+	rimGlow.Range = 7
+	rimGlow.Shadows = false
+	rimGlow.Parent = torso
 	table.insert(cleanup, function()
 		outline:Destroy()
+		rimGlow:Destroy()
 	end)
 
 	-----------------------------------------------------------------------
@@ -3314,6 +3294,10 @@ local function setAwakened(character: Model, on: boolean)
 			end
 			return
 		end
+		-- The rim breathes: a slow, soft swell.
+		local breath = 0.5 + 0.5 * math.sin((now - born) * 2.2)
+		outline.OutlineTransparency = 0.18 - 0.12 * breath
+		rimGlow.Brightness = 0.45 + 0.35 * breath
 
 		-- What is he doing? Ground check a few times a second.
 		if now >= nextGroundCheck then
@@ -4468,8 +4452,8 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		outline.Adornee = character
 		outline.FillColor = BLACK
 		outline.FillTransparency = 0.72
-		outline.OutlineColor = RED
-		outline.OutlineTransparency = 0.1
+		outline.OutlineColor = RIM_RED
+		outline.OutlineTransparency = 0.05
 		outline.DepthMode = Enum.HighlightDepthMode.Occluded
 		outline.Parent = character -- goes with him if he leaves mid-cutscene
 		silhouette = outline

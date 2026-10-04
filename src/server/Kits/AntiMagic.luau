@@ -581,25 +581,7 @@ local function seize(ctx, target: Model, grabTime: number): ((() -> ())?, ((CFra
 	return c.Grab(character, target, HOLD_SEIZE, grabTime, "Left Arm")
 end
 
--- Black Moon's grab: lunges, and if someone is caught, seizes them.
--- Whiffing leaves him open for a moment.
-local function lungeGrab(ctx, skill: string, grabTime: number): (Model?, (() -> ())?, ((CFrame) -> ())?)
-	local character = ctx.character
-	CombatState.SetCasting(character, 0.55)
-	fx(ctx, skill, "Lunge", { airborne = ctx.airborne })
-	local target = lunge(ctx, look(ctx) * 72, 0.3, Vector3.new(5.5, 6.5, 6))
-	if not target then
-		CombatState.SetCasting(character, 0.5)
-		return nil, nil, nil
-	end
-	local release, hold = seize(ctx, target, grabTime)
-	if not release then
-		return nil, nil, nil
-	end
-	return target, release, hold
-end
-
--- Black Meteorite's grab: no dash. He plants (in the air he hangs there)
+-- The grab (Black Meteorite and Black Moon): no dash. He plants (in the air he hangs there)
 -- and his free hand shoots out. At full stretch it seizes whoever is right
 -- in front of him, for a moment. The startup is the MeteorReach
 -- animation's thrust (REACH_AT in tools/anim/asta_anims.py): keep them in
@@ -630,11 +612,12 @@ local function inReach(ctx): Model?
 	return closest
 end
 
-local function reachGrab(ctx, grabTime: number): (Model?, (() -> ())?, ((CFrame) -> ())?)
+local function reachGrab(ctx, grabTime: number, skill: string?): (Model?, (() -> ())?, ((CFrame) -> ())?)
 	local c, character = ctx.combat, ctx.character
 	local airborne = ctx.airborne
 	CombatState.SetCasting(character, REACH_STARTUP + REACH_WINDOW + 0.1)
-	fx(ctx, "BlackMeteorite", "Reach", { airborne = airborne })
+	local name = skill or "BlackMeteorite"
+	fx(ctx, name, "Reach", { airborne = airborne })
 	if airborne then
 		c.ApplyVelocity(character, HOVER, REACH_STARTUP + REACH_WINDOW)
 	else
@@ -642,7 +625,7 @@ local function reachGrab(ctx, grabTime: number): (Model?, (() -> ())?, ((CFrame)
 	end
 	task.wait(REACH_STARTUP)
 	if interrupted(ctx) then
-		fx(ctx, "BlackMeteorite", "Cancel")
+		fx(ctx, name, "Cancel")
 		return nil, nil, nil
 	end
 	if not airborne then
@@ -655,14 +638,14 @@ local function reachGrab(ctx, grabTime: number): (Model?, (() -> ())?, ((CFrame)
 	while not target and os.clock() - start < REACH_WINDOW do
 		task.wait()
 		if interrupted(ctx) then
-			fx(ctx, "BlackMeteorite", "Cancel")
+			fx(ctx, name, "Cancel")
 			return nil, nil, nil
 		end
 		target = inReach(ctx)
 	end
 	if not target then
 		-- The hand closes on nothing and he's left open.
-		fx(ctx, "BlackMeteorite", "Whiff", { airborne = airborne })
+		fx(ctx, name, "Whiff", { airborne = airborne })
 		CombatState.SetCasting(character, REACH_WHIFF)
 		return nil, nil, nil
 	end
@@ -1049,7 +1032,7 @@ local MOON_SEIZE = 0.4
 
 local function blackMoon(ctx)
 	local c, character = ctx.combat, ctx.character
-	local target, release = lungeGrab(ctx, "BlackMoon", MOON_SEIZE + 0.3)
+	local target, release = reachGrab(ctx, MOON_SEIZE + 0.3, "BlackMoon")
 	if not target or not release then
 		return
 	end

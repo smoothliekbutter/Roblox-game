@@ -325,12 +325,13 @@ METEOR_RISE = [(0.0, M_HOLD), (0.2, M_RISE), (0.55, M_APEX)]
 # The vortex: whirling round with them held out at arm's length, leaning
 # back against the pull, sword swept out wide in the other hand, legs
 # kicking as he bobs; at the end the sword comes up overhead for the slam.
-def m_spin(lean, kick):
-    t = R(lean, 8)
-    return {'Torso': t, 'Head': R(-6, -6), 'RightArm': L(86, -84), 'Sword': torso_dir(t, (0.97, -0.06, 0.2)),
-            'LeftArm': L(100, -6), 'RightLeg': R(24 + kick), 'LeftLeg': R(-10 - kick)}
-METEOR_SPIN = [(0.0, M_HOLD), (0.15, m_spin(10, 0)), (0.45, m_spin(6, 14)), (0.75, m_spin(10, -6)),
-               (0.95, M_RISE), (1.2, M_APEX)]
+def m_spin(lean, kick, twist, lift):
+    t = R(lean, twist)
+    return {'Torso': t, 'Head': R(-6, -6 - twist * 0.5), 'RightArm': L(86 + lift, -84),
+            'Sword': torso_dir(t, (0.97, -0.06 + lift * 0.02, 0.2)),
+            'LeftArm': L(100 - lift * 0.3, -6), 'RightLeg': R(24 + kick), 'LeftLeg': R(-10 - kick)}
+METEOR_SPIN = [(0.0, M_HOLD), (0.14, m_spin(12, 0, 6, 0)), (0.34, m_spin(18, 16, 18, 10)),
+               (0.54, m_spin(12, -8, 4, -2)), (0.74, m_spin(18, 14, 16, 12)), (0.94, M_RISE), (1.2, M_APEX)]
 METEOR_SLAM = [(0.0, M_APEX), (0.12, M_SLAM), (0.6, M_SLAM)]
 METEOR_IMPACT = [(0.0, M_SLAM), (0.25, M_RECOVER), (0.5, M_RECOVER)]
 
