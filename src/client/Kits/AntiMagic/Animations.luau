@@ -1842,7 +1842,7 @@ Animations.AirPropel = {
 	},
 }
 
--- Air Black Meteorite: swooping in hand-first.
+-- Air lunge grab (Black Moon): swooping in hand-first.
 Animations.AirMeteorLunge = {
 	fadeIn = 0.03,
 	fadeOut = 0.1,
@@ -1884,6 +1884,98 @@ Animations.AirMeteorLunge = {
 				LeftLeg = rot(-30),
 			},
 			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Air Black Meteorite: hanging in the air, the free hand shoots out for their throat.
+Animations.AirMeteorReach = {
+	fadeIn = 0.03,
+	fadeOut = 0.2,
+	delays = { Sword = 0.03, Head = -0.01 },
+	events = {
+		{ time = 0.16, name = "Grasp" },
+	},
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.09,
+			{
+				Torso = rot(-12, 24),
+				Head = rot(10, -20),
+				RightArm = limb(-12, -10, 28),
+				Sword = aim(0.3, 0.15, 0.94),
+				LeftArm = limb(-20, 0, -30),
+				RightLeg = rot(16, -20),
+				LeftLeg = rot(-8, -20),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.16,
+			{
+				Torso = rot(-22, -16),
+				Head = rot(12, 12),
+				RightArm = limb(-18, -10, 32),
+				Sword = aim(0.3, 0.15, 0.94),
+				LeftArm = limb(116, -4),
+				RightLeg = rot(-14, 8),
+				LeftLeg = rot(12, 8),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.3,
+			{
+				Torso = rot(-26, -14),
+				Head = rot(14, 10),
+				RightArm = limb(-16, -10, 30),
+				Sword = aim(0.3, 0.15, 0.94),
+				LeftArm = limb(112, -6),
+				RightLeg = rot(-16, 6),
+				LeftLeg = rot(6, 6),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.5,
+			{
+				Torso = rot(-36, -8),
+				Head = rot(28, 6),
+				RightArm = limb(-15, -10, 30),
+				Sword = aim(0.3, 0.15, 0.94),
+				LeftArm = limb(95, -8),
+				RightLeg = rot(-16),
+				LeftLeg = rot(-30),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.75,
+			{
+				Torso = rot(-36, -8),
+				Head = rot(28, 6),
+				RightArm = limb(-15, -10, 30),
+				Sword = aim(0.3, 0.15, 0.94),
+				LeftArm = limb(95, -8),
+				RightLeg = rot(-16),
+				LeftLeg = rot(-30),
+			},
+			"Linear",
 			"Out",
 		},
 	},
@@ -1998,7 +2090,7 @@ Animations.AirDeflectStance = {
 	},
 }
 
--- Black Meteorite: lunging grab, free hand reaching out.
+-- Black Moon: lunging grab, free hand reaching out.
 Animations.MeteorLunge = {
 	fadeIn = 0.03,
 	fadeOut = 0.1,
@@ -2040,6 +2132,98 @@ Animations.MeteorLunge = {
 				LeftLeg = rot(40),
 			},
 			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Black Meteorite: planted, the free hand draws back and shoots out for their throat.
+Animations.MeteorReach = {
+	fadeIn = 0.03,
+	fadeOut = 0.2,
+	delays = { Sword = 0.03, Head = -0.01 },
+	events = {
+		{ time = 0.16, name = "Grasp" },
+	},
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.049, -6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.09,
+			{
+				Torso = body(0.12, -12, 24),
+				Head = rot(10, -20),
+				RightArm = limb(-12, -10, 28),
+				Sword = aim(0.3, 0.15, 0.94),
+				LeftArm = limb(-20, 0, -30),
+				RightLeg = rot(-14, -22),
+				LeftLeg = rot(16, -22),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.16,
+			{
+				Torso = body(0.01, -20, -16),
+				Head = rot(12, 12),
+				RightArm = limb(-18, -10, 32),
+				Sword = aim(0.3, 0.15, 0.94),
+				LeftArm = limb(116, -4),
+				RightLeg = rot(-44, 8),
+				LeftLeg = rot(36, 8),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.3,
+			{
+				Torso = rot(-22, -14),
+				Head = rot(14, 10),
+				RightArm = limb(-16, -10, 30),
+				Sword = aim(0.3, 0.15, 0.94),
+				LeftArm = limb(112, -6),
+				RightLeg = rot(-46, 6),
+				LeftLeg = rot(38, 6),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.5,
+			{
+				Torso = body(-0.028, -28, -8),
+				Head = rot(22, 6),
+				RightArm = limb(-15, -10, 30),
+				Sword = aim(0.3, 0.15, 0.94),
+				LeftArm = limb(95, -8),
+				RightLeg = rot(-48),
+				LeftLeg = rot(40),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.75,
+			{
+				Torso = body(-0.028, -28, -8),
+				Head = rot(22, 6),
+				RightArm = limb(-15, -10, 30),
+				Sword = aim(0.3, 0.15, 0.94),
+				LeftArm = limb(95, -8),
+				RightLeg = rot(-48),
+				LeftLeg = rot(40),
+			},
+			"Linear",
 			"Out",
 		},
 	},

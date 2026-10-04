@@ -304,7 +304,23 @@ M_SLAM = {'Torso': R(-38), 'Head': R(18), 'RightArm': L(40, 8), 'Sword': A(0, -0
           'LeftArm': L(50, -10), 'RightLeg': R(-28), 'LeftLeg': R(30)}
 M_RECOVER = {'Torso': R(-20), 'Head': R(8), 'RightArm': L(55, 8), 'Sword': A(0, -0.4, -0.92),
              'LeftArm': L(25, 0, -25), 'RightLeg': R(-40), 'LeftLeg': R(34)}
+# Black Moon's lunge grab.
 METEOR_LUNGE = [(0.0, UPPER), (0.07, M_LUNGE), (0.35, M_LUNGE)]
+# Black Meteorite's grab: no dash. He plants, the free hand draws back past
+# his hip with the left shoulder turned away, then shoots out for their
+# throat on a half-step. It stays open a moment, then (if nobody was there)
+# he sags into the overreach, which is also where the Seize starts from.
+# The server checks for someone to seize from the thrust key: keep REACH_AT
+# in step with REACH_STARTUP in Server/Kits/AntiMagic.
+REACH_AT = 0.16
+R_COCK = {'Torso': R(-12, 24), 'Head': R(10, -20), 'RightArm': L(-12, -10, 28), 'Sword': A(0.3, 0.15, 0.94),
+          'LeftArm': L(-20, 0, -30), 'RightLeg': R(-14, -22), 'LeftLeg': R(16, -22)}
+R_THRUST = {'Torso': R(-20, -16), 'Head': R(12, 12), 'RightArm': L(-18, -10, 32), 'Sword': A(0.3, 0.15, 0.94),
+            'LeftArm': L(116, -4), 'RightLeg': R(-44, 8), 'LeftLeg': R(36, 8)}
+R_OPEN = {'Torso': R(-22, -14), 'Head': R(14, 10), 'RightArm': L(-16, -10, 30), 'Sword': A(0.3, 0.15, 0.94),
+          'LeftArm': L(112, -6), 'RightLeg': R(-46, 6), 'LeftLeg': R(38, 6)}
+METEOR_REACH = [(0.0, UPPER), (REACH_AT - 0.07, R_COCK), (REACH_AT, R_THRUST), (0.3, R_OPEN), (0.5, M_LUNGE),
+                (0.75, M_LUNGE)]
 METEOR_RISE = [(0.0, M_HOLD), (0.2, M_RISE), (0.55, M_APEX)]
 METEOR_SLAM = [(0.0, M_APEX), (0.12, M_SLAM), (0.6, M_SLAM)]
 METEOR_IMPACT = [(0.0, M_SLAM), (0.25, M_RECOVER), (0.5, M_RECOVER)]
@@ -407,13 +423,20 @@ AIR_DIVIDER_RELEASE = [(0.0, ad_charge(17)), (0.05, flip(-70)), (0.1, flip(-180)
 AP_POSE = {'Torso': R(-48, 6), 'Head': R(34, -4), 'RightArm': L(70, 4), 'Sword': A(0, -0.5, -0.87),
            'LeftArm': L(-40, 0, -30), 'RightLeg': R(-14), 'LeftLeg': R(-30)}
 AIR_PROPEL = [(0.0, UPPER), (0.07, AP_POSE), (0.62, AP_POSE)]
-# Air Black Meteorite: swoops in hand-first, then hangs on to their throat
-# with the legs dangling.
+# Air lunge grab (Black Moon used in the air): swoops in hand-first. The air
+# Seize then hangs on to their throat with the legs dangling.
 AM_LUNGE = M_LUNGE | {'Torso': R(-36, -8), 'Head': R(28, 6), 'RightLeg': R(-16), 'LeftLeg': R(-30)}
 AS_CLAMP = SEIZE_CLAMP | {'RightLeg': R(-22), 'LeftLeg': R(8)}
 AS_LIFT = SEIZE_LIFT | {'RightLeg': R(-10), 'LeftLeg': R(16)}
 AIR_METEOR_LUNGE = [(0.0, UPPER), (0.07, AM_LUNGE), (0.35, AM_LUNGE)]
 AIR_SEIZE = [(0.0, AM_LUNGE), (0.08, AS_CLAMP), (0.3, AS_LIFT), (0.45, AS_LIFT)]
+# The air reach: the same thrust while he hangs there, legs dangling,
+# sagging into the swoop pose the air Seize starts from.
+AR_COCK = R_COCK | {'RightLeg': R(16, -20), 'LeftLeg': R(-8, -20)}
+AR_THRUST = R_THRUST | {'Torso': R(-22, -16), 'RightLeg': R(-14, 8), 'LeftLeg': R(12, 8)}
+AR_OPEN = R_OPEN | {'Torso': R(-26, -14), 'RightLeg': R(-16, 6), 'LeftLeg': R(6, 6)}
+AIR_METEOR_REACH = [(0.0, UPPER), (REACH_AT - 0.07, AR_COCK), (REACH_AT, AR_THRUST), (0.3, AR_OPEN),
+                    (0.5, AM_LUNGE), (0.75, AM_LUNGE)]
 # Air Deflect: the same guard, knees tucked up under him.
 AF_STANCE = F_STANCE | {'RightLeg': R(42), 'LeftLeg': R(18)}
 AIR_DEFLECT_STANCE = [(0.0, UPPER), (0.08, AF_STANCE), (0.82, AF_STANCE)]
@@ -503,9 +526,10 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grab
        'Hurricane': HURRICANE, 'BlackSlash': BLACK_SLASH, 'GrandCharge': GRAND_CHARGE, 'GrandRelease': GRAND_RELEASE,
        'Leap': LEAP, 'Plunge': PLUNGE, 'PlungeImpact': PLUNGE_IMPACT,
        'AirDividerCharge': AIR_DIVIDER_CHARGE, 'AirDividerRelease': AIR_DIVIDER_RELEASE, 'Propel': PROPEL, 'BullCombo': BULL_COMBO,
-       'AirPropel': AIR_PROPEL, 'AirMeteorLunge': AIR_METEOR_LUNGE, 'AirSeize': AIR_SEIZE,
+       'AirPropel': AIR_PROPEL, 'AirMeteorLunge': AIR_METEOR_LUNGE, 'AirMeteorReach': AIR_METEOR_REACH,
+       'AirSeize': AIR_SEIZE,
        'AirDeflectStance': AIR_DEFLECT_STANCE,
-       'MeteorLunge': METEOR_LUNGE, 'MeteorRise': METEOR_RISE, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
+       'MeteorLunge': METEOR_LUNGE, 'MeteorReach': METEOR_REACH, 'MeteorRise': METEOR_RISE, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
        'DividerCharge': DIVIDER_CHARGE, 'DividerRelease': DIVIDER_RELEASE,
        'DeflectStance': DEFLECT_STANCE, 'DeflectCounter': DEFLECT_COUNTER, 'DeflectReflect': DEFLECT_REFLECT,
        'Awaken': AWAKEN,
@@ -518,7 +542,7 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grab
 # wide stances). These are played in the air instead, or leave the ground
 # (planted only up to the time given).
 AIRBORNE = {'Air', 'Grabbed', 'Launched', 'MoonPerch', 'MoonFlight', 'Plunge', 'AirDividerCharge', 'AirDividerRelease', 'MeteorRise', 'MeteorSlam', 'Chop',
-            'AirPropel', 'AirMeteorLunge', 'AirSeize', 'AirDeflectStance'}
+            'AirPropel', 'AirMeteorLunge', 'AirMeteorReach', 'AirSeize', 'AirDeflectStance'}
 PLANT_UNTIL = {'Leap': 0.1}
 UNPLANTED = dict(ALL)
 ALL = {name: keys if name in AIRBORNE else plant(keys, PLANT_UNTIL.get(name)) for name, keys in ALL.items()}
@@ -534,7 +558,8 @@ if __name__ == '__main__':
              'GrandRelease': dict(floor=-3.6),  # the cleave bites into the ground
              'Plunge': dict(floor=-10), 'Grabbed': dict(floor=-10), 'Launched': dict(floor=-10),
              'MoonPerch': dict(floor=-10), 'MoonFlight': dict(floor=-10), 'AirDividerCharge': dict(floor=-10), 'AirDividerRelease': dict(floor=-10),
-             'AirPropel': dict(floor=-10), 'AirMeteorLunge': dict(floor=-10), 'AirSeize': dict(floor=-10),
+             'AirPropel': dict(floor=-10), 'AirMeteorLunge': dict(floor=-10), 'AirMeteorReach': dict(floor=-10),
+             'AirSeize': dict(floor=-10),
              'AirDeflectStance': dict(floor=-10)}
     ok = True
     for name, keys in ALL.items():

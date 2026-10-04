@@ -425,7 +425,7 @@ function Input.Start()
 			return
 		end
 		local mover = Impulse.Apply(root, velocity, math.clamp(duration, 0, 1), "Knockback")
-		-- Dives (air Bull Thrust, air Meteorite, Plunge): once we touch down,
+		-- Dives (air Bull Thrust, the Meteorite slam, Plunge): once we touch down,
 		-- stop pushing into the floor and carry on as a skid.
 		if type(options) == "table" and options.landStop == true and velocity.Y < 0 then
 			local connection

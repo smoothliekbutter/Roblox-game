@@ -9,7 +9,8 @@
 	  1 Bull Thrust         charge in sword-first; on contact, a five-hit sword combo
 	                        ending in a thrust (in the air: dives diagonally down,
 	                        and if it catches no one he slams the ground, guard break)
-	  2 Black Meteorite     anti-magic lunge grab, carry them up, slam into a crater (unblockable)
+	  2 Black Meteorite     standing anti-magic grab (no dash), carry them up, slam into
+	                        a crater (unblockable)
 	  3 Black Divider       charged cleave. Press 3 again on the red flash for a
 	                        perfect Divider: huge damage, unblockable
 	  4 Anti-Magic Deflect  counters EVERY attack type. Melee attackers get slashed
@@ -564,51 +565,128 @@ local HOLD_RISE = CFrame.new(-1.5, 0.4, -1.7) * FACING
 -- landing; clients show them driven down in front of him.
 local HOLD_SLAM = CFrame.new(-1.3, 0, -1.8) * FACING
 
--- Shared by Black Meteorite and Black Moon: lunge, and if someone is
--- caught (and not countering/immune), seize them by the throat. Whiffing
--- leaves him open for a moment.
-local function lungeGrab(
-	ctx,
-	skill: string,
-	grabTime: number,
-	velocity: Vector3?
-): (Model?, (() -> ())?, ((CFrame) -> ())?)
+-- Seizes `target` by the throat with his free hand. Grabs can't be
+-- blocked, but counters and i-frames still beat them, and leave him open
+-- for a moment. Returns release() and hold() when it lands.
+local function seize(ctx, target: Model, grabTime: number): ((() -> ())?, ((CFrame) -> ())?)
 	local c, character = ctx.combat, ctx.character
+	if c.Hit(character, target, { damage = 1, stun = 2, attackType = "Melee", unblockable = true }) ~= "Hit" then
+		CombatState.SetCasting(character, 0.5)
+		return nil, nil
+	end
+	CombatState.SetCasting(character, grabTime + 0.2)
+	CombatState.GiveIFrames(character, grabTime)
+	return c.Grab(character, target, HOLD_SEIZE, grabTime, "Left Arm")
+end
+
+-- Black Moon's grab: lunges, and if someone is caught, seizes them.
+-- Whiffing leaves him open for a moment.
+local function lungeGrab(ctx, skill: string, grabTime: number): (Model?, (() -> ())?, ((CFrame) -> ())?)
+	local character = ctx.character
 	CombatState.SetCasting(character, 0.55)
 	fx(ctx, skill, "Lunge", { airborne = ctx.airborne })
-	local target = lunge(ctx, velocity or look(ctx) * 72, 0.3, Vector3.new(5.5, 6.5, 6))
+	local target = lunge(ctx, look(ctx) * 72, 0.3, Vector3.new(5.5, 6.5, 6))
 	if not target then
 		CombatState.SetCasting(character, 0.5)
 		return nil, nil, nil
 	end
-	-- Grabs can't be blocked, but counters and i-frames still beat them.
-	if c.Hit(character, target, { damage = 1, stun = 2, attackType = "Melee", unblockable = true }) ~= "Hit" then
-		CombatState.SetCasting(character, 0.5)
+	local release, hold = seize(ctx, target, grabTime)
+	if not release then
 		return nil, nil, nil
 	end
-	CombatState.SetCasting(character, grabTime + 0.2)
-	CombatState.GiveIFrames(character, grabTime)
-	local release, hold = c.Grab(character, target, HOLD_SEIZE, grabTime, "Left Arm")
 	return target, release, hold
 end
 
--- The grab. Lunges, seizes them by the throat and hoists them up while
--- anti-magic surges through them, then leaps into the sky with them and
--- comes down like a meteor. In the air: dives at them, seizes them and
--- spikes them straight into the ground.
+-- Black Meteorite's grab: no dash. He plants (in the air he hangs there)
+-- and his free hand shoots out. At full stretch it seizes whoever is right
+-- in front of him, for a moment. The startup is the MeteorReach
+-- animation's thrust (REACH_AT in tools/anim/asta_anims.py): keep them in
+-- step.
+local REACH_STARTUP = 0.16
+local REACH_WINDOW = 0.1 -- the hand stays open this long (slack for ping)
+-- Reaches 5.5 studs out in front of him: catches someone about 6 studs away.
+local REACH_BOX = Vector3.new(5, 7, 5)
+local REACH_STEP = 6 -- studs per second: the half-step he takes into it
+local REACH_WHIFF = 0.55 -- left open after grabbing at nothing
+
+-- The closest person in reach who can be grabbed (not on the floor, not
+-- untouchable).
+local function inReach(ctx): Model?
+	local c, character = ctx.combat, ctx.character
+	local box = ctx.root.CFrame * CFrame.new(0, if ctx.airborne then -0.5 else 0, -(0.5 + REACH_BOX.Z / 2))
+	local closest: Model? = nil
+	local closestDistance = math.huge
+	for _, victim in c.Box(character, box, REACH_BOX) do
+		local victimRoot = victim:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if victimRoot and not CombatState.HasIFrames(victim) and not CombatState.IsRagdolled(victim) then
+			local distance = (victimRoot.Position - ctx.root.Position).Magnitude
+			if distance < closestDistance then
+				closest, closestDistance = victim, distance
+			end
+		end
+	end
+	return closest
+end
+
+local function reachGrab(ctx, grabTime: number): (Model?, (() -> ())?, ((CFrame) -> ())?)
+	local c, character = ctx.combat, ctx.character
+	local airborne = ctx.airborne
+	CombatState.SetCasting(character, REACH_STARTUP + REACH_WINDOW + 0.1)
+	fx(ctx, "BlackMeteorite", "Reach", { airborne = airborne })
+	if airborne then
+		c.ApplyVelocity(character, HOVER, REACH_STARTUP + REACH_WINDOW)
+	else
+		c.ApplyVelocity(character, look(ctx) * REACH_STEP, REACH_STARTUP)
+	end
+	task.wait(REACH_STARTUP)
+	if interrupted(ctx) then
+		fx(ctx, "BlackMeteorite", "Cancel")
+		return nil, nil, nil
+	end
+	if not airborne then
+		-- Planted while the hand is out.
+		c.ApplyVelocity(character, Vector3.zero, REACH_WINDOW)
+	end
+
+	local start = os.clock()
+	local target = inReach(ctx)
+	while not target and os.clock() - start < REACH_WINDOW do
+		task.wait()
+		if interrupted(ctx) then
+			fx(ctx, "BlackMeteorite", "Cancel")
+			return nil, nil, nil
+		end
+		target = inReach(ctx)
+	end
+	if not target then
+		-- The hand closes on nothing and he's left open.
+		fx(ctx, "BlackMeteorite", "Whiff", { airborne = airborne })
+		CombatState.SetCasting(character, REACH_WHIFF)
+		return nil, nil, nil
+	end
+	local release, hold = seize(ctx, target, grabTime)
+	if not release then
+		return nil, nil, nil
+	end
+	return target, release, hold
+end
+
+-- The grab. His free hand shoots out (no dash), seizes them by the throat
+-- and hoists them up while anti-magic surges through them, then he leaps
+-- into the sky with them and comes down like a meteor. In the air: hangs
+-- there, seizes whoever is in front of him and spikes them straight into
+-- the ground.
 local SEIZE_TIME = 0.4 -- the Seize animation's hoist
 local SURGE_AT = 0.2
 
 local function blackMeteorite(ctx)
 	local c, character = ctx.combat, ctx.character
 	local airborne = ctx.airborne
-	local forward = look(ctx)
-	local velocity = if airborne then (forward + UP * -0.55).Unit * 80 else forward * 72
-	local target, release, hold = lungeGrab(ctx, "BlackMeteorite", if airborne then 1.5 else 2.1, velocity)
+	local target, release, hold = reachGrab(ctx, if airborne then 1.5 else 2.1)
 	if not target or not release or not hold then
 		return
 	end
-	forward = look(ctx)
+	local forward = look(ctx)
 
 	-- The seize: he plants and hoists them up. In the air he rises a little
 	-- with them, so the spike has somewhere to fall from.

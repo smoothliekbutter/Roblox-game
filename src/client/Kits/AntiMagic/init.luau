@@ -1321,12 +1321,214 @@ function handlers.BullThrust(data, character, root)
 end
 
 ---------------------------------------------------------------------------
--- Black Meteorite: lunge grab, carry them up, crater slam
+-- Black Meteorite: standing grab, carry them up, crater slam (Black Moon's
+-- lunge grab is drawn here too)
 ---------------------------------------------------------------------------
+
+-- His free hand's fist, where the grab closes.
+local function gripPoint(character: Model): Vector3?
+	local hand = character:FindFirstChild("Left Arm")
+	return if hand and hand:IsA("BasePart") then (hand.CFrame * CFrame.new(0, -1, 0)).Position else nil
+end
+
+-- Anti-magic winding round his free hand: black and red ribbons orbiting
+-- the forearm and fist, closing in as it goes. Follows the arm; `alive`
+-- cuts it short.
+local function handSwirl(arm: BasePart, duration: number, alive: () -> boolean)
+	local colors = { BLACK, RED, BLACK, DARK_RED }
+	local ribbons: { BasePart } = {}
+	for _, color in colors do
+		local part = U.newPart({ Size = Vector3.one * 0.1, Transparency = 1, CFrame = arm.CFrame })
+		local a0 = Instance.new("Attachment")
+		a0.Position = Vector3.new(0, 0.14, 0)
+		a0.Parent = part
+		local a1 = Instance.new("Attachment")
+		a1.Position = Vector3.new(0, -0.14, 0)
+		a1.Parent = part
+		local dark = color == BLACK
+		local trail = Instance.new("Trail")
+		trail.Attachment0 = a0
+		trail.Attachment1 = a1
+		trail.Color = ColorSequence.new(color)
+		trail.LightEmission = if dark then 0 else 1
+		trail.LightInfluence = 0
+		trail.Lifetime = 0.16
+		trail.MinLength = 0
+		trail.FaceCamera = true
+		trail.Transparency = NumberSequence.new(if dark then 0.05 else 0.15, 1)
+		trail.WidthScale = NumberSequence.new(1, 0)
+		trail.Parent = part
+		table.insert(ribbons, part)
+	end
+	local start = os.clock()
+	local connection
+	connection = RunService.RenderStepped:Connect(function()
+		local t = (os.clock() - start) / duration
+		if t >= 1 or not arm.Parent or not alive() then
+			connection:Disconnect()
+			for _, part in ribbons do
+				for _, child in part:GetChildren() do
+					if child:IsA("Trail") then
+						child.Enabled = false
+					end
+				end
+				task.delay(0.3, part.Destroy, part)
+			end
+			return
+		end
+		local radius = 1.2 * (1 - 0.6 * t)
+		for i, part in ribbons do
+			local angle = t * math.pi * 6 + (i / #ribbons) * math.pi * 2
+			-- Half round the fist, half further up the forearm.
+			local along = if i % 2 == 0 then -0.95 else -0.4
+			part.CFrame = arm.CFrame * CFrame.new(math.cos(angle) * radius, along, math.sin(angle) * radius)
+		end
+	end)
+end
+
+-- Black lightning crawling down his arm, shoulder to fist, hop by hop.
+local function armCrawl(arm: BasePart, duration: number, alive: () -> boolean)
+	local start = os.clock()
+	task.spawn(function()
+		local hop = 0
+		while os.clock() - start < duration and arm.Parent and alive() do
+			-- R6 arms are 2 studs long: the shoulder is at +1, the fist at -1.
+			local from = 0.9 - (hop % 4) * 0.45
+			local a = arm.CFrame:PointToWorldSpace(Vector3.new(0, from, 0) + U.randomUnit() * 0.3)
+			local b = arm.CFrame:PointToWorldSpace(Vector3.new(0, from - 0.65, 0) + U.randomUnit() * 0.35)
+			U.lightning(a, b, BLACK, RED, 0.08, 0.12, false)
+			hop += 1
+			task.wait(0.035)
+		end
+	end)
+end
+
+-- The hand at full stretch, when the server checks for someone to seize: a
+-- grasp flash at the fist, a ring snapping shut on it and a jolt of
+-- anti-magic out ahead. On the ground his front foot bites in.
+local function grasp(character: Model, root: BasePart, air: boolean)
+	local at = gripPoint(character)
+	if not at then
+		return
+	end
+	local forward = root.CFrame.LookVector
+	U.flash(at, WHITE, 2, 0.06)
+	U.flash(at, BLACK, 4.5, 0.2)
+	U.flash(at, RED, 2.6, 0.12)
+	U.glint(at, 0.8, RED)
+	U.impactRing(at, forward, RED, 2.4, 0.2, 0.1)
+	task.delay(0.03, U.impactRing, at + forward * 0.5, forward, BLACK, 0.4, 3.4, 0.22)
+	U.burst(at, {
+		color = RED,
+		count = 10,
+		size = 0.4,
+		speed = NumberRange.new(18, 34),
+		lifetime = NumberRange.new(0.1, 0.25),
+		streaks = true,
+		spread = 30,
+		direction = forward,
+	})
+	blackSmoke(at, 5, 1.6, 6)
+	blackLightning(at, 3, 2.4, 0.16)
+	U.light(at, RED, 7, 12, 0.3)
+	if not air then
+		local feet = feetOf(character, root)
+		U.ringBurst(CFrame.new(feet + UP * 0.1), BLACK, 0.6, 4, 0.25, 0.16)
+		U.groundCracks(feet + forward * 0.8, 4, 3, RED, 1)
+		blackSmoke(feet + UP * 0.3, 4, 1.6, 5)
+	end
+	if U.isLocal(character) then
+		CameraShake.Add(0.12)
+	end
+end
 
 function handlers.BlackMeteorite(data, character, root)
 	local phase = data.phase
-	if phase == "Lunge" then
+	if phase == "Reach" then
+		-- No dash: he plants (or hangs there, in the air) and his free hand
+		-- shoots out for their throat, anti-magic winding round it.
+		local air = data.airborne == true
+		local token = bump(character)
+		local function alive(): boolean
+			return live(character, token)
+		end
+		play(character, if air then ANIMS.AirMeteorReach else ANIMS.MeteorReach, function(event)
+			if event == "Grasp" and alive() then
+				grasp(character, root, air)
+			end
+		end)
+		local arm = character:FindFirstChild("Left Arm")
+		if arm and arm:IsA("BasePart") then
+			handSwirl(arm, 0.45, alive)
+			armCrawl(arm, 0.4, alive)
+			-- Black wisps peeling off the arm, red embers.
+			partEmitter(arm, {
+				Texture = U.textures.Smoke,
+				Color = ColorSequence.new(BLACK),
+				LightEmission = 0,
+				Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.5), NumberSequenceKeypoint.new(1, 1.3) }),
+				Transparency = NumberSequence.new({
+					NumberSequenceKeypoint.new(0, 0.2),
+					NumberSequenceKeypoint.new(1, 1),
+				}),
+				Lifetime = NumberRange.new(0.25, 0.45),
+				Rate = 40,
+				Speed = NumberRange.new(0.5, 2),
+				SpreadAngle = Vector2.new(180, 180),
+				Acceleration = Vector3.new(0, 4, 0),
+				Drag = 2,
+			}, 0.4)
+			partEmitter(arm, {
+				Texture = U.textures.Spark,
+				Color = ColorSequence.new(RED),
+				LightEmission = 1,
+				Size = NumberSequence.new(0.2, 0),
+				Lifetime = NumberRange.new(0.15, 0.35),
+				Rate = 18,
+				Speed = NumberRange.new(2, 5),
+				SpreadAngle = Vector2.new(180, 180),
+			}, 0.4)
+		end
+		-- Anti-magic streaking in to the hand as it draws back.
+		for i = 0, 5 do
+			task.delay(i * 0.025, function()
+				local at = gripPoint(character)
+				if at and alive() then
+					inflow(at, 3)
+				end
+			end)
+		end
+		U.light(root.Position, RED, 3, 10, 0.45)
+		if U.isLocal(character) then
+			CameraShake.FovKick(-5)
+		end
+	elseif phase == "Whiff" then
+		-- Nobody there: the hand closes on nothing and the anti-magic
+		-- gutters out of it.
+		bump(character)
+		local at = gripPoint(character)
+		if at then
+			U.flash(at, BLACK, 2.4, 0.18)
+			blackSmoke(at, 7, 1.4, 4)
+			U.burst(at, {
+				color = RED,
+				count = 6,
+				size = 0.3,
+				speed = NumberRange.new(2, 6),
+				lifetime = NumberRange.new(0.4, 0.7),
+				acceleration = Vector3.new(0, -14, 0),
+				drag = 1,
+			})
+		end
+	elseif phase == "Cancel" then
+		-- Hit out of the reach.
+		bump(character)
+		local current = PoseAnimator.Current(character)
+		if current == ANIMS.MeteorReach or current == ANIMS.AirMeteorReach then
+			PoseAnimator.FadeOut(character, 0.15)
+		end
+	elseif phase == "Lunge" then
+		-- Black Moon's lunge grab.
 		local direction = root.CFrame.LookVector
 		local air = data.airborne == true
 		play(character, if air then ANIMS.AirMeteorLunge else ANIMS.MeteorLunge)
@@ -1362,12 +1564,8 @@ function handlers.BlackMeteorite(data, character, root)
 		play(character, if air then ANIMS.AirSeize else ANIMS.Seize)
 		local target = data.target
 		local mine = involves(data, character)
-		local function grip(): Vector3?
-			local hand = character:FindFirstChild("Left Arm")
-			return if hand and hand:IsA("BasePart") then (hand.CFrame * CFrame.new(0, -1, 0)).Position else nil
-		end
 		task.delay(0.07, function()
-			local at = grip()
+			local at = gripPoint(character)
 			if not at or not character.Parent then
 				return
 			end
@@ -1392,7 +1590,7 @@ function handlers.BlackMeteorite(data, character, root)
 		end)
 		-- The surge (it lands with the server's 2-damage hit).
 		task.delay(0.2, function()
-			local at = grip()
+			local at = gripPoint(character)
 			local targetRoot = U.getRoot(target)
 			if not at or not targetRoot or not character.Parent then
 				return
@@ -4387,7 +4585,7 @@ function handlers.BlackMoon(data, character, root)
 	if data.phase == "Begin" then
 		playBlackMoon(data, character, root)
 	else
-		-- The lunge and the seize are the same as Black Meteorite's.
+		-- The lunge and the seize are drawn with Black Meteorite's.
 		handlers.BlackMeteorite(data, character, root)
 	end
 end
