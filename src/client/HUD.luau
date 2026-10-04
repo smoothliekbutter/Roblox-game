@@ -70,6 +70,7 @@ local lastComboHit = 0
 local shownHealth = 1
 local shownKit: string? = "?"
 local shownAwakened = false
+local shownSword: string? = nil
 local toastToken = 0
 
 local function corner(parent: Instance, radius: UDim)
@@ -330,11 +331,13 @@ end
 local function refreshKit(character: Model?)
 	local kitId = if character then character:GetAttribute("Kit") :: string? else nil
 	local awakened = character ~= nil and CombatState.IsAwakened(character)
-	if kitId == shownKit and awakened == shownAwakened then
+	local sword = if character then character:GetAttribute("Sword") :: string? else nil
+	if kitId == shownKit and awakened == shownAwakened and sword == shownSword then
 		return
 	end
 	shownKit = kitId
 	shownAwakened = awakened
+	shownSword = sword
 	local kit = Kits.Get(kitId)
 	local skills = if character then Kits.SkillsOf(character) else {}
 

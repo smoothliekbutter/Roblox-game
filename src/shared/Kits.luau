@@ -19,6 +19,13 @@ export type SkillInfo = {
 	airHold: boolean?,
 }
 
+-- One of a character's weapons (Asta's swords): its name and the moves 1
+-- and 2 it gives him while awakened.
+export type SwordInfo = {
+	name: string,
+	skills: { SkillInfo },
+}
+
 export type KitInfo = {
 	id: string,
 	title: string, -- shown in the character picker
@@ -32,6 +39,11 @@ export type KitInfo = {
 	special: SkillInfo?,
 	-- Awakening swaps the move set (like Vessel -> Sukuna, Hero Hunter -> Rampage).
 	awakenedSkills: { SkillInfo }?,
+	-- A different R while awakened (Asta: swap to another of his swords).
+	awakenedSpecial: SkillInfo?,
+	-- Weapons that change moves 1 and 2 while awakened, by the character's
+	-- "Sword" attribute (see Kits.SkillsOf).
+	swords: { [string]: SwordInfo }?,
 	awakening: {
 		name: string,
 		duration: number,
@@ -93,6 +105,18 @@ Kits.List = {
 			{ name = "Grand Divider", cooldown = 13, type = "Explosion", airHold = true },
 			{ name = "Black Moon", cooldown = 25, type = "Melee" },
 		},
+		-- In Black Form R draws another of his swords from the grimoire, at
+		-- random; moves 1 and 2 come from the sword in his hand.
+		awakenedSpecial = { name = "Swap Sword", cooldown = 8, type = "Melee" },
+		swords = {
+			Slayer = {
+				name = "Demon-Slayer Sword",
+				skills = {
+					{ name = "Black Hurricane", cooldown = 9, type = "Melee", airHold = true },
+					{ name = "Black Slash", cooldown = 7, type = "Bolt", airHold = true },
+				},
+			},
+		},
 		awakening = {
 			name = "Black Form",
 			duration = 40,
@@ -123,6 +147,16 @@ function Kits.SkillsOf(character: Model): { SkillInfo }
 		return {}
 	end
 	if character:GetAttribute("Awakened") == true and kit.awakenedSkills then
+		-- Moves 1 and 2 come from the sword in his hand.
+		local sword = character:GetAttribute("Sword")
+		local weapon = if kit.swords and type(sword) == "string" then kit.swords[sword] else nil
+		if weapon then
+			local merged = table.clone(kit.awakenedSkills)
+			for slot, skill in weapon.skills do
+				merged[slot] = skill
+			end
+			return merged
+		end
 		return kit.awakenedSkills
 	end
 	return kit.skills

@@ -3286,32 +3286,47 @@ local function setAwakened(character: Model, on: boolean)
 		end)
 	end
 
-	-- The sword smoulders too.
-	local sword = getSword(character)
-	local blade = bladeOf(character)
-	if sword and blade then
-		emitter(blade, {
-			Texture = U.textures.Smoke,
-			Color = ColorSequence.new(BLACK),
-			LightEmission = 0,
-			Size = NumberSequence.new(0.5, 1.1),
-			Transparency = NumberSequence.new(0.35, 1),
-			Lifetime = NumberRange.new(0.25, 0.45),
-			Rate = 14,
-			Speed = NumberRange.new(0.5, 2),
-			Acceleration = Vector3.new(0, 5, 0),
-			SpreadAngle = Vector2.new(180, 180),
-		})
-		emitter(blade, {
-			Texture = U.textures.Spark,
-			Color = ColorSequence.new(RED),
-			LightEmission = 1,
-			Size = NumberSequence.new(0.18, 0),
-			Lifetime = NumberRange.new(0.2, 0.4),
-			Rate = 5,
-			Speed = NumberRange.new(1, 3),
-			SpreadAngle = Vector2.new(180, 180),
-		})
+	-- The sword smoulders too, and stays dark and rimmed in red. Whichever
+	-- sword he's holding: a swap (R in Black Form) dresses the new one.
+	local swordDressing: { Instance } = {}
+	local function dressSword()
+		for _, instance in swordDressing do
+			instance:Destroy()
+		end
+		table.clear(swordDressing)
+		local sword = getSword(character)
+		local blade = bladeOf(character)
+		if not sword or not blade then
+			return
+		end
+		table.insert(
+			swordDressing,
+			emitter(blade, {
+				Texture = U.textures.Smoke,
+				Color = ColorSequence.new(BLACK),
+				LightEmission = 0,
+				Size = NumberSequence.new(0.5, 1.1),
+				Transparency = NumberSequence.new(0.35, 1),
+				Lifetime = NumberRange.new(0.25, 0.45),
+				Rate = 14,
+				Speed = NumberRange.new(0.5, 2),
+				Acceleration = Vector3.new(0, 5, 0),
+				SpreadAngle = Vector2.new(180, 180),
+			})
+		)
+		table.insert(
+			swordDressing,
+			emitter(blade, {
+				Texture = U.textures.Spark,
+				Color = ColorSequence.new(RED),
+				LightEmission = 1,
+				Size = NumberSequence.new(0.18, 0),
+				Lifetime = NumberRange.new(0.2, 0.4),
+				Rate = 5,
+				Speed = NumberRange.new(1, 3),
+				SpreadAngle = Vector2.new(180, 180),
+			})
+		)
 		local swordLook = Instance.new("Highlight")
 		swordLook.Adornee = sword
 		swordLook.FillColor = BLACK
@@ -3320,10 +3335,20 @@ local function setAwakened(character: Model, on: boolean)
 		swordLook.OutlineTransparency = 0.2
 		swordLook.DepthMode = Enum.HighlightDepthMode.Occluded
 		swordLook.Parent = U.folder
-		table.insert(cleanup, function()
-			swordLook:Destroy()
-		end)
+		table.insert(swordDressing, swordLook)
 	end
+	dressSword()
+	local swordAdded = character.ChildAdded:Connect(function(child)
+		if child.Name == "KitWeapon" then
+			task.defer(dressSword)
+		end
+	end)
+	table.insert(cleanup, function()
+		swordAdded:Disconnect()
+		for _, instance in swordDressing do
+			instance:Destroy()
+		end
+	end)
 
 	-- A red rim that breathes slowly (see the frame loop below), with the
 	-- faintest red glow over him; his avatar shows through.
@@ -5175,6 +5200,80 @@ function handlers.Entrance(data, character, root)
 			end
 		elseif event == "Settle" then
 			cleanup()
+		end
+	end)
+end
+
+---------------------------------------------------------------------------
+-- Sword swap (R in Black Form): another of his swords out of the grimoire
+---------------------------------------------------------------------------
+
+local SWORD_NAMES = {
+	Slayer = "DEMON-SLAYER SWORD",
+	Dweller = "DEMON-DWELLER SWORD",
+	Destroyer = "DEMON-DESTROYER SWORD",
+	Slasher = "DEMON-SLASHER KATANA",
+}
+
+-- The old sword dissolves into black smoke while the grimoire opens beside
+-- him; the new one (the server swaps the model 0.22s in) forms in his hand
+-- out of anti-magic as he draws it, and its name flashes up.
+function handlers.SwordSwap(data, character, root)
+	local kind = data.sword
+	play(character, ANIMS.SwordSwap)
+	local old = getSword(character)
+	if old then
+		for _, part in old:GetDescendants() do
+			if part:IsA("BasePart") then
+				U.tween(part, 0.2, { Transparency = 1 })
+			end
+		end
+		local blade = bladeOf(character)
+		if blade then
+			blackSmoke(blade.Position, 12, 3, 8)
+			redSparks(blade.Position, 10, 0.6)
+			swordAura(character, 0.2, 40)
+		end
+	end
+	local book = grimoire(character, root)
+	book.open(0.18)
+	task.delay(0.65, book.close)
+
+	local arrived = false
+	local connection
+	connection = character.ChildAdded:Connect(function(child)
+		if child.Name ~= "KitWeapon" or arrived then
+			return
+		end
+		arrived = true
+		connection:Disconnect()
+		task.defer(function()
+			-- It forms out of anti-magic.
+			for _, part in child:GetDescendants() do
+				if part:IsA("BasePart") then
+					local shown = part.Transparency
+					part.Transparency = 1
+					U.tween(part, 0.15, { Transparency = shown })
+				end
+			end
+			book.burst()
+			local blade = bladeOf(character)
+			if blade then
+				glowBurst(blade.Position, 4, 0.3)
+				edgeGlow(character, 0.45, 1)
+				blackLightning(blade.Position, 4, 3, 0.2)
+				blackSmoke(blade.Position, 8, 2.5, 8)
+			end
+			U.ringBurst(CFrame.new(root.Position - UP * 2.8), BLACK, 1, 9, 0.35, 0.3)
+			U.popup(root.Position + UP * 4.5, SWORD_NAMES[kind] or "", RED, 1.6)
+			if U.isLocal(character) then
+				CameraShake.Add(0.15)
+			end
+		end)
+	end)
+	task.delay(1, function()
+		if connection.Connected then
+			connection:Disconnect()
 		end
 	end)
 end

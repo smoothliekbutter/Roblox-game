@@ -2562,6 +2562,93 @@ Animations.MeteorLand = {
 	},
 }
 
+-- Black Form R: the old sword dissolves, the new one drawn low across the body and flicked out.
+Animations.SwordSwap = {
+	fadeIn = 0.04,
+	fadeOut = 0.2,
+	delays = { Sword = 0.02, Head = 0.02 },
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.049, -6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.1,
+			{
+				Torso = body(0.065, 4, 12),
+				Head = rot(-6, -8),
+				RightArm = limb(125, -12),
+				Sword = aim(0.08, 0.95, -0.3),
+				LeftArm = limb(60, 35, -10),
+				RightLeg = rot(-12),
+				LeftLeg = rot(12),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.22,
+			{
+				Torso = body(0.065, 4, 12),
+				Head = rot(-6, -8),
+				RightArm = limb(125, -12),
+				Sword = aim(0.08, 0.95, -0.3),
+				LeftArm = limb(60, 35, -10),
+				RightLeg = rot(-12),
+				LeftLeg = rot(12),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.3,
+			{
+				Torso = body(0.038, -10, 34),
+				Head = rot(6, -24),
+				RightArm = limb(60, 74),
+				Sword = aim(-0.72, -0.25, -0.65),
+				LeftArm = limb(30, -30),
+				RightLeg = rot(-18),
+				LeftLeg = rot(16),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.4,
+			{
+				Torso = body(0.062, -8, -26),
+				Head = rot(4, 20),
+				RightArm = limb(84, -70),
+				Sword = aim(0.86, -0.25, -0.44),
+				LeftArm = limb(35, -20),
+				RightLeg = rot(-16),
+				LeftLeg = rot(14),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.6,
+			{
+				Torso = body(0.049, -6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
 -- Black Meteorite: crashing down, sword driven into the ground.
 Animations.MeteorSlam = {
 	fadeIn = 0.02,

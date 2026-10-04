@@ -71,6 +71,60 @@ local function swordPart(
 	return part
 end
 
+type BladeMarks = {
+	guard: number, -- blade-local Y of the guard end
+	tip: number, -- where effects treat as the business end
+	point: number, -- the very point
+}
+
+-- Joins a sword built around its handle at the origin, marks out its blade
+-- for the clients' effects (see alongBlade in the client kit) and gives it a
+-- swing trail. Every sword has a "Handle" (gripped) and a "Blade".
+local function assemble(model: Model, handle: BasePart, parts: { BasePart }, marks: BladeMarks): Model
+	-- Plain Welds with the offset written into C0, not WeldConstraints:
+	-- a WeldConstraint works its offset out from where the parts happen to
+	-- be when it switches on, which differs between the server (builds the
+	-- sword) and the client (simulates the character), so pieces ended up
+	-- floating off or falling. C0 replicates, so every machine agrees.
+	for _, part in parts do
+		local weld = Instance.new("Weld")
+		weld.Name = "Join"
+		weld.Part0 = handle
+		weld.Part1 = part
+		weld.C0 = part.CFrame -- built relative to the handle at the origin
+		weld.Parent = part
+		part.Parent = model
+	end
+
+	local blade = model:FindFirstChild("Blade") :: Part
+	blade:SetAttribute("GuardY", marks.guard)
+	blade:SetAttribute("TipY", marks.tip)
+	blade:SetAttribute("PointY", marks.point)
+	-- Swing trail between the blade's base and tip. Clients switch it on during attacks.
+	local base = Instance.new("Attachment")
+	base.Name = "TrailBase"
+	base.Position = Vector3.new(0, marks.guard + 0.23, 0)
+	base.Parent = blade
+	local tip = Instance.new("Attachment")
+	tip.Name = "TrailTip"
+	tip.Position = Vector3.new(0, marks.tip - 0.46, 0)
+	tip.Parent = blade
+	local trail = Instance.new("Trail")
+	trail.Name = "SwingTrail"
+	trail.Attachment0 = base
+	trail.Attachment1 = tip
+	-- Subtle: just enough to read the blade's path.
+	trail.Color = ColorSequence.new(Color3.fromRGB(30, 30, 34), Color3.fromRGB(90, 90, 100))
+	trail.Transparency = NumberSequence.new(0.55, 1)
+	trail.LightEmission = 0
+	trail.LightInfluence = 0
+	trail.Lifetime = 0.12
+	trail.MinLength = 0
+	trail.Enabled = false
+	trail.Parent = blade
+	return model
+end
+
 -- The Demon-Slayer Sword, as in the series: a huge, broad black greatsword
 -- (about as tall as Asta), battered and stained, with a pointed tip, a faint
 -- ridge down the middle and worn edges; a thin bronze crossbar and a long
@@ -78,7 +132,7 @@ end
 -- handle's +Y axis; built around the handle at the origin, then welded.
 -- (Only the look: hitboxes don't depend on it. The animation checker in
 -- tools/anim/rig.py models the blade from 0.86 to the tip, keep in step.)
-local function buildSword(): Model
+local function buildSlayer(): Model
 	local model = Instance.new("Model")
 	model.Name = "KitWeapon"
 
@@ -167,62 +221,19 @@ local function buildSword(): Model
 		swordPart("NickC", Vector3.new(0.16, 0.26, 0.1), CFrame.new(0, 3.9, -0.66), nick, metal),
 		swordPart("NickD", Vector3.new(0.16, 0.18, 0.1), CFrame.new(0, 2.5, 0.66), nick, metal),
 	}
-	-- Plain Welds with the offset written into C0, not WeldConstraints:
-	-- a WeldConstraint works its offset out from where the parts happen to
-	-- be when it switches on, which differs between the server (builds the
-	-- sword) and the client (simulates the character), so pieces ended up
-	-- floating off or falling. C0 replicates, so every machine agrees.
-	for _, part in parts do
-		local weld = Instance.new("Weld")
-		weld.Name = "Join"
-		weld.Part0 = handle
-		weld.Part1 = part
-		weld.C0 = part.CFrame -- built relative to the handle at the origin
-		weld.Parent = part
-		part.Parent = model
-	end
-
-	-- Swing trail between the blade's base and tip. Clients switch it on during attacks.
-	local blade = model:FindFirstChild("Blade") :: Part
-	-- Where the guard and the business end are, along the blade, for the
-	-- clients' effects (see alongBlade in the client kit).
-	blade:SetAttribute("GuardY", -1.87)
-	blade:SetAttribute("TipY", 2.62)
-	blade:SetAttribute("PointY", 3.07) -- the very point
-	local base = Instance.new("Attachment")
-	base.Name = "TrailBase"
-	base.Position = Vector3.new(0, -1.64, 0)
-	base.Parent = blade
-	local tip = Instance.new("Attachment")
-	tip.Name = "TrailTip"
-	tip.Position = Vector3.new(0, 2.16, 0)
-	tip.Parent = blade
-
-	local trail = Instance.new("Trail")
-	trail.Name = "SwingTrail"
-	trail.Attachment0 = base
-	trail.Attachment1 = tip
-	-- Subtle: just enough to read the blade's path.
-	trail.Color = ColorSequence.new(Color3.fromRGB(30, 30, 34), Color3.fromRGB(90, 90, 100))
-	trail.Transparency = NumberSequence.new(0.55, 1)
-	trail.LightEmission = 0
-	trail.LightInfluence = 0
-	trail.Lifetime = 0.12
-	trail.MinLength = 0
-	trail.Enabled = false
-	trail.Parent = blade
-
-	return model
+	return assemble(model, handle, parts, { guard = -1.87, tip = 2.62, point = 3.07 })
 end
 
-function Kit.Equip(character: Model)
-	character:WaitForChild("Right Arm", 5)
-	local sword = buildSword()
-	local handle = sword.PrimaryPart :: BasePart
+-- Asta's swords (Black Form's R swaps between them at random).
+local SWORDS: { [string]: () -> Model } = {
+	Slayer = buildSlayer,
+}
 
-	-- Held in the right hand, blade 35 degrees forward of the arm. A Motor6D
-	-- rather than a Weld so clients can animate it like a wrist (resting the
-	-- sword on the shoulder, angling it through swings).
+-- Puts a built sword in his right hand. A Motor6D rather than a Weld so
+-- clients can animate it like a wrist (resting it on the shoulder, angling
+-- it through swings); the blade sits 35 degrees forward of the arm.
+local function wield(character: Model, sword: Model)
+	local handle = sword.PrimaryPart :: BasePart
 	local weld = Instance.new("Motor6D")
 	weld.Name = "SwordGrip"
 	weld.Part1 = handle
@@ -253,7 +264,8 @@ function Kit.Equip(character: Model)
 	sword.Parent = character
 
 	-- Watchdog: if the arm gets rebuilt (avatar changes) or the grip breaks,
-	-- re-grip instead of leaving the sword on the floor.
+	-- re-grip instead of leaving the sword on the floor. Stops when this
+	-- sword is put away (or swapped for another).
 	task.spawn(function()
 		local warned = false
 		while sword.Parent == character and character.Parent do
@@ -272,11 +284,33 @@ function Kit.Equip(character: Model)
 	end)
 end
 
+-- Swaps the sword in his hand for another of his swords (see SWORDS). The
+-- "Sword" attribute says which he's holding; moves 1 and 2 in Black Form
+-- follow it.
+local function setSword(character: Model, kind: string)
+	local build = SWORDS[kind]
+	if not build then
+		return
+	end
+	local old = character:FindFirstChild("KitWeapon")
+	if old then
+		old:Destroy()
+	end
+	character:SetAttribute("Sword", kind)
+	wield(character, build())
+end
+
+function Kit.Equip(character: Model)
+	character:WaitForChild("Right Arm", 5)
+	setSword(character, "Slayer")
+end
+
 function Kit.Unequip(character: Model)
 	local sword = character:FindFirstChild("KitWeapon")
 	if sword then
 		sword:Destroy()
 	end
+	character:SetAttribute("Sword", nil)
 end
 
 ---------------------------------------------------------------------------
@@ -1278,7 +1312,45 @@ function Kit.Special(ctx)
 end
 
 Kit.Skills = { bullThrust, blackMeteorite, blackDivider, antiMagicDeflect }
-Kit.AwakenedSkills = { blackHurricane, blackSlashMove, grandDivider, blackMoon }
+
+-- In Black Form, moves 1 and 2 belong to the sword in his hand (the
+-- "Sword" attribute; names and cooldowns in Shared/Kits swords).
+local SWORD_MOVES: { [string]: { (any) -> () } } = {
+	Slayer = { blackHurricane, blackSlashMove },
+}
+local function swordMove(slot: number): (any) -> ()
+	return function(ctx)
+		local moves = SWORD_MOVES[ctx.character:GetAttribute("Sword")] or SWORD_MOVES.Slayer
+		moves[slot](ctx)
+	end
+end
+Kit.AwakenedSkills = { swordMove(1), swordMove(2), grandDivider, blackMoon }
+
+-- R in Black Form: one of his other swords, at random, out of the grimoire.
+-- The new one is in his hand when the SwordSwap animation draws it.
+local SWORD_KINDS = { "Slayer", "Dweller", "Destroyer", "Slasher" }
+local SWAP_DRAW = 0.22
+
+function Kit.AwakenedSpecial(ctx)
+	local character = ctx.character
+	local current = character:GetAttribute("Sword")
+	local choices = {}
+	for _, kind in SWORD_KINDS do
+		if kind ~= current and SWORDS[kind] then
+			table.insert(choices, kind)
+		end
+	end
+	if #choices == 0 then
+		return
+	end
+	local kind = choices[math.random(1, #choices)]
+	CombatState.SetCasting(character, 0.4)
+	fx(ctx, "SwordSwap", "Swap", { sword = kind })
+	task.wait(SWAP_DRAW)
+	if CombatState.IsAlive(character) and character.Parent then
+		setSword(character, kind)
+	end
+end
 
 ---------------------------------------------------------------------------
 -- Awakening: Black Form (Devil Union)
@@ -1320,6 +1392,11 @@ end
 
 function Kit.AwakenEnd(ctx)
 	fx(ctx, "Awaken", "End")
+	-- Out of Black Form he's back to the Demon-Slayer Sword.
+	local character = ctx.character
+	if character:GetAttribute("Sword") ~= "Slayer" and character.Parent then
+		setSword(character, "Slayer")
+	end
 end
 
 return Kit

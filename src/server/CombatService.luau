@@ -936,9 +936,12 @@ function CombatService.UseSpecial(character: Model, clientAirborne: boolean?)
 	if not ctx then
 		return
 	end
-	local info = ctx.kit.special
+	-- Awakened, a kit can have a different special (Asta swaps swords).
 	local serverKit = serverKits[ctx.kit.id]
-	if not info or not serverKit or not serverKit.Special then
+	local awakenedSpecial = ctx.awakened and ctx.kit.awakenedSpecial ~= nil and serverKit and serverKit.AwakenedSpecial
+	local info = if awakenedSpecial then ctx.kit.awakenedSpecial else ctx.kit.special
+	local run = if awakenedSpecial then serverKit.AwakenedSpecial else serverKit and serverKit.Special
+	if not info or not run then
 		return
 	end
 	local slot = CombatState.SpecialSlot
@@ -955,7 +958,7 @@ function CombatService.UseSpecial(character: Model, clientAirborne: boolean?)
 	CombatState.StartCooldown(character, slot, info.cooldown * (if awakening then awakening.cooldownMultiplier else 1))
 	CombatState.SetBlocking(character, false)
 	ctx.data.moveToken += 1
-	task.spawn(serverKit.Special, ctx)
+	task.spawn(run, ctx)
 end
 
 local function endAwakening(character: Model)

@@ -603,6 +603,18 @@ GRAND_CHARGE = [(0.0, UPPER), (0.1, G_LIFT), (0.2, raise_sword(0)), (0.35, raise
 GRAND_RELEASE = [(0.0, raise_sword(3)), (0.03, G_ARCH), (0.065, G_THROUGH), (0.1, G_STRIKE), (0.2, G_RECOIL),
                  (0.6, G_STRIKE)]
 
+# ---------------- Sword swap (R in Black Form) ----------------
+# He holds the old sword up as it dissolves, pulls the new one out of the
+# air low across his body (it's in his hand at 0.22, when the server swaps
+# the model), flicks it out to his side, then settles into his stance.
+SW_OFFER = {'Torso': R(4, 12), 'Head': R(-6, -8), 'RightArm': L(125, -12), 'Sword': A(0.08, 0.95, -0.3),
+            'LeftArm': L(60, 35, -10), 'RightLeg': R(-12), 'LeftLeg': R(12)}
+SW_DRAW = {'Torso': R(-10, 34), 'Head': R(6, -24), 'RightArm': L(60, 74), 'Sword': A(-0.72, -0.25, -0.65),
+           'LeftArm': L(30, -30), 'RightLeg': R(-18), 'LeftLeg': R(16)}
+SW_FLICK = {'Torso': R(-8, -26), 'Head': R(4, 20), 'RightArm': L(84, -70), 'Sword': A(0.86, -0.25, -0.44),
+            'LeftArm': L(35, -20), 'RightLeg': R(-16), 'LeftLeg': R(14)}
+SWORD_SWAP = [(0.0, UPPER), (0.1, SW_OFFER), (0.22, SW_OFFER), (0.3, SW_DRAW), (0.4, SW_FLICK), (0.6, UPPER)]
+
 ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grabbed': GRABBED,
        'MoonThrow': MOON_THROW, 'MoonPerch': MOON_PERCH, 'MoonFlight': MOON_FLIGHT, 'Launched': LAUNCHED,
        'Hurricane': HURRICANE, 'BlackSlash': BLACK_SLASH, 'GrandCharge': GRAND_CHARGE, 'GrandRelease': GRAND_RELEASE,
@@ -611,7 +623,7 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grab
        'AirPropel': AIR_PROPEL, 'AirMeteorLunge': AIR_METEOR_LUNGE, 'AirMeteorReach': AIR_METEOR_REACH,
        'AirSeize': AIR_SEIZE,
        'AirDeflectStance': AIR_DEFLECT_STANCE,
-       'MeteorLunge': METEOR_LUNGE, 'MeteorReach': METEOR_REACH, 'MeteorRise': METEOR_RISE, 'MeteorSpin': METEOR_SPIN, 'MeteorDrill': METEOR_DRILL, 'MeteorLand': METEOR_LAND, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
+       'MeteorLunge': METEOR_LUNGE, 'MeteorReach': METEOR_REACH, 'MeteorRise': METEOR_RISE, 'MeteorSpin': METEOR_SPIN, 'SwordSwap': SWORD_SWAP, 'MeteorDrill': METEOR_DRILL, 'MeteorLand': METEOR_LAND, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
        'DividerCharge': DIVIDER_CHARGE, 'DividerRelease': DIVIDER_RELEASE,
        'DeflectStance': DEFLECT_STANCE, 'DeflectCounter': DEFLECT_COUNTER, 'DeflectReflect': DEFLECT_REFLECT,
        'Awaken': AWAKEN,
