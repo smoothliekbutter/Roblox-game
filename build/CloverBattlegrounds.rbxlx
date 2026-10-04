@@ -435,13 +435,8 @@ Config.M1 = {
 	-- can go up after them and carry on in the air.
 	UppercutEndLag = 0.4,
 	UppercutJumpAfter = 0.2,
-	-- Near the top of the launch they drift: the climb and fall slow to a
-	-- float for UppercutHang seconds, starting UppercutFloatAt into the
-	-- flight and ending at UppercutFloatEnd studs/s.
-	UppercutFloatAt = 0.16,
-	UppercutHang = 0.45,
-	UppercutFloatEnd = -10,
-	JuggleTime = 1.1, -- how long a launched body can still be hit in the air
+	UppercutGravity = 1.6, -- the launched body falls this much harder: a snappy arc
+	JuggleTime = 0.85, -- how long a launched body can still be hit in the air
 
 	HitboxSize = Vector3.new(5.5, 6, 6),
 	HitboxOffset = 3.25, -- studs in front of the root
@@ -454,8 +449,8 @@ Config.M1 = {
 
 	KnockbackForce = 65,
 	KnockbackLift = 18,
-	UppercutForce = 50, -- a ragdoll launch: with the float, about 7 studs up, in reach of a jump
-	UppercutRagdoll = 1.3,
+	UppercutForce = 85, -- a ragdoll launch: about 10 studs up on 1.6x gravity (up and down in half a second)
+	UppercutRagdoll = 1.1,
 	DownslamForce = 75,
 }
 
@@ -1259,28 +1254,39 @@ function CombatService.Launch(victim: Model, velocity: Vector3, duration: number
 	end)
 end
 
--- Eases a launched ragdoll through the top of its arc: its climb and fall
--- slow to a drift (a fraction of gravity) for `duration`, ending at
--- `endSpeed` (studs/s, negative is down), then gravity takes it back. Reads
--- as hang time, not as the body stopping.
-function CombatService.Float(character: Model, duration: number, endSpeed: number)
-	local root = getRoot(character)
-	if not root or not Ragdoll.IsActive(character) then
+-- Heavier gravity on a ragdoll for `duration` (a multiplier on the world's):
+-- a snappy launch that goes up fast and comes straight back down. Gone when
+-- the time is up or the ragdoll ends.
+function CombatService.HeavyFall(character: Model, multiplier: number, duration: number)
+	local extra = workspace.Gravity * (multiplier - 1)
+	if extra <= 0 then
 		return
 	end
-	local start = root.AssemblyLinearVelocity
-	local startY = if math.abs(start.Y) < 0.05 then 0.05 else start.Y
-	local mover = Impulse.Apply(root, Vector3.new(start.X, startY, start.Z), duration, "Knockback")
-	local began = os.clock()
+	local forces: { Instance } = {}
+	for _, part in character:GetChildren() do
+		if part:IsA("BasePart") and not part.Massless then
+			local attachment = Instance.new("Attachment")
+			attachment.Name = "HeavyFall"
+			attachment.Parent = part
+			local force = Instance.new("VectorForce")
+			force.Attachment0 = attachment
+			force.RelativeTo = Enum.ActuatorRelativeTo.World
+			force.ApplyAtCenterOfMass = true
+			force.Force = Vector3.new(0, -extra * part:GetMass(), 0)
+			force.Parent = attachment
+			table.insert(forces, attachment)
+		end
+	end
+	local started = os.clock()
 	local connection
 	connection = RunService.Heartbeat:Connect(function()
-		if not mover.Parent then
-			connection:Disconnect()
+		if os.clock() - started < duration and Ragdoll.IsActive(character) then
 			return
 		end
-		local a = math.clamp((os.clock() - began) / duration, 0, 1)
-		local drift = Vector3.new(start.X, 0, start.Z) * (1 - 0.6 * a)
-		mover.VectorVelocity = drift + Vector3.new(0, startY + (endSpeed - startY) * a, 0)
+		connection:Disconnect()
+		for _, attachment in forces do
+			attachment:Destroy()
+		end
 	end)
 end
 
@@ -1641,20 +1647,15 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 			Config.Physics.HitStop
 		)
 	elseif variant == "Uppercut" then
-		-- Knocked off their feet and sent up tumbling (about 7 studs), where
-		-- they hang for a beat: jump after them to carry on in the air.
+		-- Knocked off their feet and sent up tumbling, high and fast: about
+		-- 10 studs on heavier gravity, so it snaps up and comes straight back
+		-- down. They can still be hit on the way: jump after them.
 		CombatService.Ragdoll(victim, Config.M1.UppercutRagdoll)
 		if victimData then
 			victimData.juggleUntil = now + Config.M1.JuggleTime
 		end
 		CombatService.Launch(victim, Vector3.new(0, Config.M1.UppercutForce, 0) + look * 5, 0.2, Config.Physics.HitStop)
-		local token = victimData and victimData.ragdollToken
-		task.delay(Config.Physics.HitStop + Config.M1.UppercutFloatAt, function()
-			-- Still flying from this uppercut (no new hit took over): the hang.
-			if victimData and victimData.ragdollToken == token and Ragdoll.IsActive(victim) then
-				CombatService.Float(victim, Config.M1.UppercutHang, Config.M1.UppercutFloatEnd)
-			end
-		end)
+		CombatService.HeavyFall(victim, Config.M1.UppercutGravity, Config.M1.UppercutRagdoll)
 	elseif variant == "Downslam" then
 		CombatService.Ragdoll(victim, Config.Ragdoll.Duration)
 		CombatService.Launch(
@@ -2688,24 +2689,33 @@ local function buildSword(): Model
 		swordPart("GuardCapA", Vector3.new(0.24, 0.22, 0.12), CFrame.new(0, 0.6, 0.94), darkBronze, metal),
 		swordPart("GuardCapB", Vector3.new(0.24, 0.22, 0.12), CFrame.new(0, 0.6, -0.94), darkBronze, metal),
 		swordPart("Collar", Vector3.new(0.26, 0.2, 0.72), CFrame.new(0, 0.77, 0), darkBronze, metal),
-		-- The blade (0.86 to 5.0, then the tip to 5.8): full width right up to
-		-- the guard. The thin side faces forward so swings lead with an edge.
-		swordPart("Blade", Vector3.new(0.2, 4.14, 1.4), CFrame.new(0, 2.93, 0), black, metal),
+		-- The blade: full width right up to the guard (from 0.86), and cut off
+		-- in one long straight slant across its whole width, from 4.3 on one
+		-- edge to the point at 5.8 on the other. The thin side faces forward
+		-- so swings lead with an edge.
+		swordPart("Blade", Vector3.new(0.2, 3.44, 1.4), CFrame.new(0, 2.58, 0), black, metal),
+		swordPart("Tip", Vector3.new(0.2, 1.5, 1.4), CFrame.new(0, 5.05, 0), black, metal, "WedgePart"),
 		swordPart("Ridge", Vector3.new(0.22, 3.7, 0.12), CFrame.new(0, 2.85, 0), ridge, Enum.Material.SmoothPlastic),
-		-- Worn edges on both sides.
-		swordPart("EdgeA", Vector3.new(0.14, 4.0, 0.08), CFrame.new(0, 2.93, -0.69), worn, metal),
-		swordPart("EdgeB", Vector3.new(0.14, 4.0, 0.08), CFrame.new(0, 2.93, 0.69), worn, metal),
-		-- Chisel tip: a wedge cut at a slant across the blade.
-		swordPart("Tip", Vector3.new(0.2, 0.8, 1.4), CFrame.new(0, 5.4, 0), black, metal, "WedgePart"),
+		-- Worn edges: the short one stops at the cut, the long one runs on
+		-- to the point, and a worn bevel runs along the cut itself.
+		swordPart("EdgeA", Vector3.new(0.14, 3.37, 0.08), CFrame.new(0, 2.615, -0.69), worn, metal),
+		swordPart("EdgeB", Vector3.new(0.14, 4.87, 0.08), CFrame.new(0, 3.365, 0.69), worn, metal),
+		swordPart(
+			"CutEdge",
+			Vector3.new(0.22, 0.1, 2.05),
+			CFrame.new(0, 5.016, 0.037) * CFrame.Angles(math.rad(-46.97), 0, 0),
+			worn,
+			metal
+		),
 		-- Stains and scars across the flats.
 		flat("StainA", Vector3.new(0.215, 0.9, 0.45), 1.7, 0.25, 20),
 		flat("StainB", Vector3.new(0.215, 0.6, 0.35), 2.6, -0.3, -15),
 		flat("StainC", Vector3.new(0.215, 1.1, 0.4), 3.6, 0.2, 10),
-		flat("StainD", Vector3.new(0.215, 0.5, 0.3), 4.5, -0.25, 30),
+		flat("StainD", Vector3.new(0.215, 0.5, 0.3), 4.1, 0.25, 30),
 		-- Nicks along the edges.
 		swordPart("NickA", Vector3.new(0.16, 0.22, 0.1), CFrame.new(0, 1.9, -0.66), nick, metal),
 		swordPart("NickB", Vector3.new(0.16, 0.16, 0.1), CFrame.new(0, 3.2, 0.66), nick, metal),
-		swordPart("NickC", Vector3.new(0.16, 0.26, 0.1), CFrame.new(0, 4.3, -0.66), nick, metal),
+		swordPart("NickC", Vector3.new(0.16, 0.26, 0.1), CFrame.new(0, 3.9, -0.66), nick, metal),
 		swordPart("NickD", Vector3.new(0.16, 0.18, 0.1), CFrame.new(0, 2.5, 0.66), nick, metal),
 	}
 	-- Plain Welds with the offset written into C0, not WeldConstraints:
@@ -2725,13 +2735,17 @@ local function buildSword(): Model
 
 	-- Swing trail between the blade's base and tip. Clients switch it on during attacks.
 	local blade = model:FindFirstChild("Blade") :: Part
+	-- Where the guard and the business end are, along the blade, for the
+	-- clients' effects (see alongBlade in the client kit).
+	blade:SetAttribute("GuardY", -1.72)
+	blade:SetAttribute("TipY", 2.77)
 	local base = Instance.new("Attachment")
 	base.Name = "TrailBase"
-	base.Position = Vector3.new(0, -1.84, 0)
+	base.Position = Vector3.new(0, -1.49, 0)
 	base.Parent = blade
 	local tip = Instance.new("Attachment")
 	tip.Name = "TrailTip"
-	tip.Position = Vector3.new(0, 1.95, 0)
+	tip.Position = Vector3.new(0, 2.31, 0)
 	tip.Parent = blade
 
 	local trail = Instance.new("Trail")
@@ -5063,6 +5077,9 @@ local nextM1 = 0
 -- Jumping is locked while swinging. The server enforces it too (JumpHeight 0),
 -- but locking it here as well means there's no ping delay.
 local noJumpUntil = 0
+-- The uppercut is thrown with Space held: that same press mustn't then jump
+-- you up after them. Jumping waits until Space has been let go.
+local jumpNeedsRelease = false
 local jumpEnabled = true
 
 local function getCharacter(): (Model?, Humanoid?, BasePart?)
@@ -5179,6 +5196,7 @@ local function tryM1()
 			variant = "Uppercut"
 			nextM1 = t + Config.M1.UppercutEndLag
 			noJumpUntil = t + Config.M1.UppercutJumpAfter
+			jumpNeedsRelease = true
 		else
 			variant = "Knockback"
 		end
@@ -5406,8 +5424,12 @@ function Input.Start()
 		end
 
 		local character, humanoid = getCharacter()
+		if jumpNeedsRelease and humanoid and not jumpHeld(humanoid) then
+			jumpNeedsRelease = false
+		end
 		if character and humanoid then
 			local canJump = os.clock() >= noJumpUntil
+				and not jumpNeedsRelease
 				and CombatState.CanAct(character)
 				and not CombatState.IsBlocking(character)
 				and not CombatState.IsBusy(character)
@@ -5600,9 +5622,10 @@ for name, raw in Generated do
 end
 
 -- Signature stance: wide footing, the greatsword resting on the right
--- shoulder, slow breathing. Runs leaning forward with the sword bobbing on
--- his shoulder, walks upright when slowed down; knee up and free arm out
--- in the air.
+-- shoulder, slow breathing. Sprints leaning in hard with the sword steady on
+-- his shoulder, walks upright when slowed down; knee up and free arm out in
+-- the air. The strides are how far one loop of each cycle carries him
+-- (RUN_STRIDE / WALK_STRIDE in tools/anim/asta_anims.py).
 Kit.Idle = {
 	stand = ANIMS.Idle,
 	move = ANIMS.Run,
@@ -5610,6 +5633,8 @@ Kit.Idle = {
 	air = ANIMS.Air,
 	moveSpeed = 16,
 	walkSpeed = 8,
+	moveStride = 5.75,
+	walkStride = 4.24,
 }
 
 -- Getting hit / blocking, with the sword (see Client/Reactions for the names).
@@ -5919,10 +5944,19 @@ local function bladeOf(character: Model): BasePart?
 	return if blade and blade:IsA("BasePart") then blade else nil
 end
 
--- Distances along the blade below are written for a 3.6-stud blade (0 its
--- middle, 2.1 the tip, -1.8 the guard); they stretch with the real one.
+-- Distances along the blade below are written for the original sword:
+-- -1.8 at the guard, 2.1 out at the tip. They map onto the real blade from
+-- the guard and tip points the sword carries (blade-local Y).
+local function bladeY(blade: BasePart, along: number): number
+	local guard, tip = blade:GetAttribute("GuardY"), blade:GetAttribute("TipY")
+	if type(guard) == "number" and type(tip) == "number" then
+		return guard + (along + 1.8) / 3.9 * (tip - guard)
+	end
+	return along * blade.Size.Y / 3.6
+end
+
 local function alongBlade(blade: BasePart, along: number): CFrame
-	return blade.CFrame * CFrame.new(0, along * blade.Size.Y / 3.6, 0)
+	return blade.CFrame * CFrame.new(0, bladeY(blade, along), 0)
 end
 
 -- A point along the blade: 0 is its middle, 2.1 the tip, -1.8 the guard.
@@ -5941,7 +5975,7 @@ local function heavyTrail(character: Model, duration: number)
 	local made: { Instance } = {}
 	local function attachment(y: number): Attachment
 		local a = Instance.new("Attachment")
-		a.Position = Vector3.new(0, y * blade.Size.Y / 3.6, 0)
+		a.Position = Vector3.new(0, bladeY(blade, y), 0)
 		a.Parent = blade
 		table.insert(made, a)
 		return a
@@ -9827,28 +9861,30 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		end)
 	end
 
-	-- Pale moonlight on the two of them, so the fight still reads at night.
+	-- Soft blue moonlight on the two of them, so the fight still reads at
+	-- night. Kept gentle on him: up close a strong light washes him out.
 	local moonlights: { PointLight } = {}
+	local MOONLIT = { 1.1, 2 } -- him, them
 	for _, part in { root, victimRoot } :: { BasePart? } do
 		if part then
 			local light = Instance.new("PointLight")
-			light.Color = Color3.fromRGB(200, 212, 255)
+			light.Color = Color3.fromRGB(165, 180, 235)
 			light.Brightness = 0
-			light.Range = 24
+			light.Range = 18
 			light.Shadows = false
 			light.Parent = part
 			table.insert(moonlights, light)
 		end
 	end
 	task.delay(T.Night, function()
-		for _, light in moonlights do
-			U.tween(light, 0.6, { Brightness = 2.6 })
+		for i, light in moonlights do
+			U.tween(light, 0.6, { Brightness = MOONLIT[i] or 2 })
 		end
 	end)
-	task.delay(T.Land + 0.4, function()
+	task.delay(T.Land, function()
 		for _, light in moonlights do
-			U.tween(light, 0.8, { Brightness = 0 })
-			task.delay(0.85, light.Destroy, light)
+			U.tween(light, 0.4, { Brightness = 0 })
+			task.delay(0.45, light.Destroy, light)
 		end
 	end)
 
@@ -10058,7 +10094,7 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 			visual.setPose("glide") -- swept back for speed
 		end
 		if moonlights[1] then
-			U.tween(moonlights[1], 0.15, { Brightness = 2.6 })
+			U.tween(moonlights[1], 0.15, { Brightness = MOONLIT[1] })
 		end
 		heavyTrail(character, 0.45)
 		U.bodyTrail(character, BLACK, 0.3)
@@ -10136,7 +10172,8 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 			visual.setPose("spread") -- flared open as he stops
 		end
 		if mine then
-			U.colorGrade({ Saturation = -1, Contrast = 0.3, Brightness = 0.14 }, 0.05, T.Land - T.Arrive - 0.1, 0.15)
+			-- Drained of colour, not of light: he mustn't wash out white.
+			U.colorGrade({ Saturation = -0.7, Contrast = 0.25, Brightness = 0.02 }, 0.05, T.Land - T.Arrive - 0.1, 0.15)
 		end
 	end)
 
@@ -10171,8 +10208,9 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		})
 		lingerSmoke(cutAt, 2.5, 14)
 		if mine then
-			impactFrame(1.5)
-			U.screenFlash(RED, 0.5)
+			-- A sharp frame, not a white-out.
+			impactFrame(0.9)
+			U.screenFlash(RED, 0.35)
 			CameraShake.Add(0.8)
 		end
 		-- Watch them fall and make the crater where they hit.
@@ -10617,7 +10655,7 @@ Animations.Idle = {
 	},
 }
 
--- Moving: forward-leaning run, sword bobbing on the shoulder. Speeds up with movement speed.
+-- Moving: a sprint, leaning in hard, the sword steady on the shoulder. Plays with the distance travelled.
 Animations.Run = {
 	loop = true,
 	delays = { Head = 0.04, Sword = 0.05, LeftArm = 0.02 },
@@ -10625,67 +10663,67 @@ Animations.Run = {
 		{
 			0,
 			{
-				Torso = body(-0.07, -18, 8),
-				Head = rot(12, -8),
-				RightArm = limb(82, 25, 10),
-				Sword = aim(0.399, 0.627, 0.67),
-				LeftArm = limb(55, -14, -6),
-				RightLeg = rot(50),
-				LeftLeg = rot(-42),
+				Torso = body(-0.296, -22, -8),
+				Head = rot(16, 8),
+				RightArm = limb(84, 25, 10),
+				Sword = aim(0.154, 0.701, 0.696),
+				LeftArm = limb(58, -6, -8),
+				RightLeg = rot(68),
+				LeftLeg = rot(-24),
 			},
 		},
 		{
-			0.125,
+			0.1,
 			{
-				Torso = rot(-20),
-				Head = rot(14),
+				Torso = body(-0.045, -24),
+				Head = rot(18),
 				RightArm = limb(88, 25, 10),
-				Sword = aim(0.279, 0.666, 0.692),
-				LeftArm = limb(8, -6, -8),
-				RightLeg = rot(4),
-				LeftLeg = rot(4),
+				Sword = aim(0.279, 0.712, 0.644),
+				LeftArm = limb(8, -4, -10),
+				RightLeg = rot(20),
+				LeftLeg = rot(30),
 			},
 			"Sine",
 			"InOut",
 		},
 		{
-			0.25,
+			0.2,
 			{
-				Torso = body(-0.07, -18, -8),
-				Head = rot(12, 8),
-				RightArm = limb(82, 25, 10),
-				Sword = aim(0.154, 0.651, 0.744),
-				LeftArm = limb(-45, 6, -10),
-				RightLeg = rot(-42),
-				LeftLeg = rot(50),
+				Torso = body(-0.296, -22, 8),
+				Head = rot(16, -8),
+				RightArm = limb(84, 25, 10),
+				Sword = aim(0.399, 0.672, 0.624),
+				LeftArm = limb(-42, 4, -12),
+				RightLeg = rot(-24),
+				LeftLeg = rot(68),
 			},
 			"Sine",
 			"InOut",
 		},
 		{
-			0.375,
+			0.3,
 			{
-				Torso = rot(-20),
-				Head = rot(14),
+				Torso = body(-0.045, -24),
+				Head = rot(18),
 				RightArm = limb(88, 25, 10),
-				Sword = aim(0.279, 0.666, 0.692),
-				LeftArm = limb(8, -6, -8),
-				RightLeg = rot(4),
-				LeftLeg = rot(4),
+				Sword = aim(0.279, 0.712, 0.644),
+				LeftArm = limb(8, -4, -10),
+				RightLeg = rot(30),
+				LeftLeg = rot(20),
 			},
 			"Sine",
 			"InOut",
 		},
 		{
-			0.5,
+			0.4,
 			{
-				Torso = body(-0.07, -18, 8),
-				Head = rot(12, -8),
-				RightArm = limb(82, 25, 10),
-				Sword = aim(0.399, 0.627, 0.67),
-				LeftArm = limb(55, -14, -6),
-				RightLeg = rot(50),
-				LeftLeg = rot(-42),
+				Torso = body(-0.296, -22, -8),
+				Head = rot(16, 8),
+				RightArm = limb(84, 25, 10),
+				Sword = aim(0.154, 0.701, 0.696),
+				LeftArm = limb(58, -6, -8),
+				RightLeg = rot(68),
+				LeftLeg = rot(-24),
 			},
 			"Sine",
 			"InOut",
@@ -10693,7 +10731,7 @@ Animations.Run = {
 	},
 }
 
--- Moving slowly (attacking, blocking, casting): upright walk, same step timing as the run.
+-- Moving slowly (attacking, blocking, casting): upright walk, same leg phase as the run.
 Animations.Walk = {
 	loop = true,
 	delays = { Head = 0.05, Sword = 0.07, LeftArm = 0.03 },
@@ -10701,25 +10739,39 @@ Animations.Walk = {
 		{
 			0,
 			{
-				Torso = body(0.053, -5, 4),
-				Head = rot(4, -4),
+				Torso = body(-0.041, -6, -4),
+				Head = rot(4, 4),
 				RightArm = limb(86, 25, 10),
-				Sword = aim(0.34, 0.462, 0.819),
-				LeftArm = limb(22, -8, -6),
-				RightLeg = rot(24),
-				LeftLeg = rot(-22),
+				Sword = aim(0.217, 0.48, 0.85),
+				LeftArm = limb(28, -6, -6),
+				RightLeg = rot(38),
+				LeftLeg = rot(-26),
 			},
 		},
 		{
-			0.225,
+			0.15,
 			{
-				Torso = body(0.021, -4),
+				Torso = body(0.042, -5),
 				Head = rot(3),
 				RightArm = limb(87, 25, 10),
-				Sword = aim(0.279, 0.449, 0.849),
+				Sword = aim(0.279, 0.464, 0.841),
 				LeftArm = limb(4, -4, -8),
-				RightLeg = rot(1),
-				LeftLeg = rot(1),
+				RightLeg = rot(8),
+				LeftLeg = rot(12),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.3,
+			{
+				Torso = body(-0.041, -6, 4),
+				Head = rot(4, -4),
+				RightArm = limb(86, 25, 10),
+				Sword = aim(0.34, 0.476, 0.811),
+				LeftArm = limb(-20, 2, -10),
+				RightLeg = rot(-26),
+				LeftLeg = rot(38),
 			},
 			"Sine",
 			"InOut",
@@ -10727,41 +10779,27 @@ Animations.Walk = {
 		{
 			0.45,
 			{
-				Torso = body(0.053, -5, -4),
-				Head = rot(4, 4),
-				RightArm = limb(86, 25, 10),
-				Sword = aim(0.217, 0.466, 0.858),
-				LeftArm = limb(-16, 2, -10),
-				RightLeg = rot(-22),
-				LeftLeg = rot(24),
-			},
-			"Sine",
-			"InOut",
-		},
-		{
-			0.675,
-			{
-				Torso = body(0.021, -4),
+				Torso = body(0.042, -5),
 				Head = rot(3),
 				RightArm = limb(87, 25, 10),
-				Sword = aim(0.279, 0.449, 0.849),
+				Sword = aim(0.279, 0.464, 0.841),
 				LeftArm = limb(4, -4, -8),
-				RightLeg = rot(1),
-				LeftLeg = rot(1),
+				RightLeg = rot(12),
+				LeftLeg = rot(8),
 			},
 			"Sine",
 			"InOut",
 		},
 		{
-			0.9,
+			0.6,
 			{
-				Torso = body(0.053, -5, 4),
-				Head = rot(4, -4),
+				Torso = body(-0.041, -6, -4),
+				Head = rot(4, 4),
 				RightArm = limb(86, 25, 10),
-				Sword = aim(0.34, 0.462, 0.819),
-				LeftArm = limb(22, -8, -6),
-				RightLeg = rot(24),
-				LeftLeg = rot(-22),
+				Sword = aim(0.217, 0.48, 0.85),
+				LeftArm = limb(28, -6, -6),
+				RightLeg = rot(38),
+				LeftLeg = rot(-26),
 			},
 			"Sine",
 			"InOut",
@@ -16073,6 +16111,11 @@ export type IdleSet = {
 	-- or slower with the character's actual speed so feet don't slide.
 	moveSpeed: number?,
 	walkSpeed: number?,
+	-- Better: the ground each cycle covers in one loop (studs). The cycle
+	-- then moves exactly with the distance travelled, so the planted foot
+	-- stays put at any speed.
+	moveStride: number?,
+	walkStride: number?,
 }
 
 local JOINTS = {
@@ -16312,8 +16355,12 @@ local function idleValues(character: Model, idle: Idle, now: number, dt: number)
 	local runSpeed = set.moveSpeed or 16
 	local walkSpeed = set.walkSpeed or 8
 	local runWeight = if set.walk then smooth((speed - walkSpeed * 1.2) / (runSpeed * 0.85 - walkSpeed * 1.2)) else 1
-	local walkRate = math.clamp(speed / walkSpeed, 0.5, 1.8) / walkLength
-	local runRate = math.clamp(speed / runSpeed, 0.5, 2) / runLength
+	local walkRate = if set.walkStride
+		then math.clamp(speed / set.walkStride, 0.4, 3)
+		else math.clamp(speed / walkSpeed, 0.5, 1.8) / walkLength
+	local runRate = if set.moveStride
+		then math.clamp(speed / set.moveStride, 0.4, 3.4)
+		else math.clamp(speed / runSpeed, 0.5, 2) / runLength
 	local rate = walkRate + (runRate - walkRate) * runWeight
 	idle.phase = (idle.phase + dt * rate * (if backTarget == 1 then -1 else 1)) % 1
 

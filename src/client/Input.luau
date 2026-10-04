@@ -53,6 +53,9 @@ local nextM1 = 0
 -- Jumping is locked while swinging. The server enforces it too (JumpHeight 0),
 -- but locking it here as well means there's no ping delay.
 local noJumpUntil = 0
+-- The uppercut is thrown with Space held: that same press mustn't then jump
+-- you up after them. Jumping waits until Space has been let go.
+local jumpNeedsRelease = false
 local jumpEnabled = true
 
 local function getCharacter(): (Model?, Humanoid?, BasePart?)
@@ -169,6 +172,7 @@ local function tryM1()
 			variant = "Uppercut"
 			nextM1 = t + Config.M1.UppercutEndLag
 			noJumpUntil = t + Config.M1.UppercutJumpAfter
+			jumpNeedsRelease = true
 		else
 			variant = "Knockback"
 		end
@@ -396,8 +400,12 @@ function Input.Start()
 		end
 
 		local character, humanoid = getCharacter()
+		if jumpNeedsRelease and humanoid and not jumpHeld(humanoid) then
+			jumpNeedsRelease = false
+		end
 		if character and humanoid then
 			local canJump = os.clock() >= noJumpUntil
+				and not jumpNeedsRelease
 				and CombatState.CanAct(character)
 				and not CombatState.IsBlocking(character)
 				and not CombatState.IsBusy(character)

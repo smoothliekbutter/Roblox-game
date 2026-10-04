@@ -252,28 +252,39 @@ function CombatService.Launch(victim: Model, velocity: Vector3, duration: number
 	end)
 end
 
--- Eases a launched ragdoll through the top of its arc: its climb and fall
--- slow to a drift (a fraction of gravity) for `duration`, ending at
--- `endSpeed` (studs/s, negative is down), then gravity takes it back. Reads
--- as hang time, not as the body stopping.
-function CombatService.Float(character: Model, duration: number, endSpeed: number)
-	local root = getRoot(character)
-	if not root or not Ragdoll.IsActive(character) then
+-- Heavier gravity on a ragdoll for `duration` (a multiplier on the world's):
+-- a snappy launch that goes up fast and comes straight back down. Gone when
+-- the time is up or the ragdoll ends.
+function CombatService.HeavyFall(character: Model, multiplier: number, duration: number)
+	local extra = workspace.Gravity * (multiplier - 1)
+	if extra <= 0 then
 		return
 	end
-	local start = root.AssemblyLinearVelocity
-	local startY = if math.abs(start.Y) < 0.05 then 0.05 else start.Y
-	local mover = Impulse.Apply(root, Vector3.new(start.X, startY, start.Z), duration, "Knockback")
-	local began = os.clock()
+	local forces: { Instance } = {}
+	for _, part in character:GetChildren() do
+		if part:IsA("BasePart") and not part.Massless then
+			local attachment = Instance.new("Attachment")
+			attachment.Name = "HeavyFall"
+			attachment.Parent = part
+			local force = Instance.new("VectorForce")
+			force.Attachment0 = attachment
+			force.RelativeTo = Enum.ActuatorRelativeTo.World
+			force.ApplyAtCenterOfMass = true
+			force.Force = Vector3.new(0, -extra * part:GetMass(), 0)
+			force.Parent = attachment
+			table.insert(forces, attachment)
+		end
+	end
+	local started = os.clock()
 	local connection
 	connection = RunService.Heartbeat:Connect(function()
-		if not mover.Parent then
-			connection:Disconnect()
+		if os.clock() - started < duration and Ragdoll.IsActive(character) then
 			return
 		end
-		local a = math.clamp((os.clock() - began) / duration, 0, 1)
-		local drift = Vector3.new(start.X, 0, start.Z) * (1 - 0.6 * a)
-		mover.VectorVelocity = drift + Vector3.new(0, startY + (endSpeed - startY) * a, 0)
+		connection:Disconnect()
+		for _, attachment in forces do
+			attachment:Destroy()
+		end
 	end)
 end
 
@@ -634,20 +645,15 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 			Config.Physics.HitStop
 		)
 	elseif variant == "Uppercut" then
-		-- Knocked off their feet and sent up tumbling (about 7 studs), where
-		-- they hang for a beat: jump after them to carry on in the air.
+		-- Knocked off their feet and sent up tumbling, high and fast: about
+		-- 10 studs on heavier gravity, so it snaps up and comes straight back
+		-- down. They can still be hit on the way: jump after them.
 		CombatService.Ragdoll(victim, Config.M1.UppercutRagdoll)
 		if victimData then
 			victimData.juggleUntil = now + Config.M1.JuggleTime
 		end
 		CombatService.Launch(victim, Vector3.new(0, Config.M1.UppercutForce, 0) + look * 5, 0.2, Config.Physics.HitStop)
-		local token = victimData and victimData.ragdollToken
-		task.delay(Config.Physics.HitStop + Config.M1.UppercutFloatAt, function()
-			-- Still flying from this uppercut (no new hit took over): the hang.
-			if victimData and victimData.ragdollToken == token and Ragdoll.IsActive(victim) then
-				CombatService.Float(victim, Config.M1.UppercutHang, Config.M1.UppercutFloatEnd)
-			end
-		end)
+		CombatService.HeavyFall(victim, Config.M1.UppercutGravity, Config.M1.UppercutRagdoll)
 	elseif variant == "Downslam" then
 		CombatService.Ragdoll(victim, Config.Ragdoll.Duration)
 		CombatService.Launch(

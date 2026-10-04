@@ -62,6 +62,11 @@ export type IdleSet = {
 	-- or slower with the character's actual speed so feet don't slide.
 	moveSpeed: number?,
 	walkSpeed: number?,
+	-- Better: the ground each cycle covers in one loop (studs). The cycle
+	-- then moves exactly with the distance travelled, so the planted foot
+	-- stays put at any speed.
+	moveStride: number?,
+	walkStride: number?,
 }
 
 local JOINTS = {
@@ -301,8 +306,12 @@ local function idleValues(character: Model, idle: Idle, now: number, dt: number)
 	local runSpeed = set.moveSpeed or 16
 	local walkSpeed = set.walkSpeed or 8
 	local runWeight = if set.walk then smooth((speed - walkSpeed * 1.2) / (runSpeed * 0.85 - walkSpeed * 1.2)) else 1
-	local walkRate = math.clamp(speed / walkSpeed, 0.5, 1.8) / walkLength
-	local runRate = math.clamp(speed / runSpeed, 0.5, 2) / runLength
+	local walkRate = if set.walkStride
+		then math.clamp(speed / set.walkStride, 0.4, 3)
+		else math.clamp(speed / walkSpeed, 0.5, 1.8) / walkLength
+	local runRate = if set.moveStride
+		then math.clamp(speed / set.moveStride, 0.4, 3.4)
+		else math.clamp(speed / runSpeed, 0.5, 2) / runLength
 	local rate = walkRate + (runRate - walkRate) * runWeight
 	idle.phase = (idle.phase + dt * rate * (if backTarget == 1 then -1 else 1)) % 1
 

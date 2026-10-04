@@ -124,24 +124,33 @@ local function buildSword(): Model
 		swordPart("GuardCapA", Vector3.new(0.24, 0.22, 0.12), CFrame.new(0, 0.6, 0.94), darkBronze, metal),
 		swordPart("GuardCapB", Vector3.new(0.24, 0.22, 0.12), CFrame.new(0, 0.6, -0.94), darkBronze, metal),
 		swordPart("Collar", Vector3.new(0.26, 0.2, 0.72), CFrame.new(0, 0.77, 0), darkBronze, metal),
-		-- The blade (0.86 to 5.0, then the tip to 5.8): full width right up to
-		-- the guard. The thin side faces forward so swings lead with an edge.
-		swordPart("Blade", Vector3.new(0.2, 4.14, 1.4), CFrame.new(0, 2.93, 0), black, metal),
+		-- The blade: full width right up to the guard (from 0.86), and cut off
+		-- in one long straight slant across its whole width, from 4.3 on one
+		-- edge to the point at 5.8 on the other. The thin side faces forward
+		-- so swings lead with an edge.
+		swordPart("Blade", Vector3.new(0.2, 3.44, 1.4), CFrame.new(0, 2.58, 0), black, metal),
+		swordPart("Tip", Vector3.new(0.2, 1.5, 1.4), CFrame.new(0, 5.05, 0), black, metal, "WedgePart"),
 		swordPart("Ridge", Vector3.new(0.22, 3.7, 0.12), CFrame.new(0, 2.85, 0), ridge, Enum.Material.SmoothPlastic),
-		-- Worn edges on both sides.
-		swordPart("EdgeA", Vector3.new(0.14, 4.0, 0.08), CFrame.new(0, 2.93, -0.69), worn, metal),
-		swordPart("EdgeB", Vector3.new(0.14, 4.0, 0.08), CFrame.new(0, 2.93, 0.69), worn, metal),
-		-- Chisel tip: a wedge cut at a slant across the blade.
-		swordPart("Tip", Vector3.new(0.2, 0.8, 1.4), CFrame.new(0, 5.4, 0), black, metal, "WedgePart"),
+		-- Worn edges: the short one stops at the cut, the long one runs on
+		-- to the point, and a worn bevel runs along the cut itself.
+		swordPart("EdgeA", Vector3.new(0.14, 3.37, 0.08), CFrame.new(0, 2.615, -0.69), worn, metal),
+		swordPart("EdgeB", Vector3.new(0.14, 4.87, 0.08), CFrame.new(0, 3.365, 0.69), worn, metal),
+		swordPart(
+			"CutEdge",
+			Vector3.new(0.22, 0.1, 2.05),
+			CFrame.new(0, 5.016, 0.037) * CFrame.Angles(math.rad(-46.97), 0, 0),
+			worn,
+			metal
+		),
 		-- Stains and scars across the flats.
 		flat("StainA", Vector3.new(0.215, 0.9, 0.45), 1.7, 0.25, 20),
 		flat("StainB", Vector3.new(0.215, 0.6, 0.35), 2.6, -0.3, -15),
 		flat("StainC", Vector3.new(0.215, 1.1, 0.4), 3.6, 0.2, 10),
-		flat("StainD", Vector3.new(0.215, 0.5, 0.3), 4.5, -0.25, 30),
+		flat("StainD", Vector3.new(0.215, 0.5, 0.3), 4.1, 0.25, 30),
 		-- Nicks along the edges.
 		swordPart("NickA", Vector3.new(0.16, 0.22, 0.1), CFrame.new(0, 1.9, -0.66), nick, metal),
 		swordPart("NickB", Vector3.new(0.16, 0.16, 0.1), CFrame.new(0, 3.2, 0.66), nick, metal),
-		swordPart("NickC", Vector3.new(0.16, 0.26, 0.1), CFrame.new(0, 4.3, -0.66), nick, metal),
+		swordPart("NickC", Vector3.new(0.16, 0.26, 0.1), CFrame.new(0, 3.9, -0.66), nick, metal),
 		swordPart("NickD", Vector3.new(0.16, 0.18, 0.1), CFrame.new(0, 2.5, 0.66), nick, metal),
 	}
 	-- Plain Welds with the offset written into C0, not WeldConstraints:
@@ -161,13 +170,17 @@ local function buildSword(): Model
 
 	-- Swing trail between the blade's base and tip. Clients switch it on during attacks.
 	local blade = model:FindFirstChild("Blade") :: Part
+	-- Where the guard and the business end are, along the blade, for the
+	-- clients' effects (see alongBlade in the client kit).
+	blade:SetAttribute("GuardY", -1.72)
+	blade:SetAttribute("TipY", 2.77)
 	local base = Instance.new("Attachment")
 	base.Name = "TrailBase"
-	base.Position = Vector3.new(0, -1.84, 0)
+	base.Position = Vector3.new(0, -1.49, 0)
 	base.Parent = blade
 	local tip = Instance.new("Attachment")
 	tip.Name = "TrailTip"
-	tip.Position = Vector3.new(0, 1.95, 0)
+	tip.Position = Vector3.new(0, 2.31, 0)
 	tip.Parent = blade
 
 	local trail = Instance.new("Trail")

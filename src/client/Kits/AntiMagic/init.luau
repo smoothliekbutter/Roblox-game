@@ -109,9 +109,10 @@ for name, raw in Generated do
 end
 
 -- Signature stance: wide footing, the greatsword resting on the right
--- shoulder, slow breathing. Runs leaning forward with the sword bobbing on
--- his shoulder, walks upright when slowed down; knee up and free arm out
--- in the air.
+-- shoulder, slow breathing. Sprints leaning in hard with the sword steady on
+-- his shoulder, walks upright when slowed down; knee up and free arm out in
+-- the air. The strides are how far one loop of each cycle carries him
+-- (RUN_STRIDE / WALK_STRIDE in tools/anim/asta_anims.py).
 Kit.Idle = {
 	stand = ANIMS.Idle,
 	move = ANIMS.Run,
@@ -119,6 +120,8 @@ Kit.Idle = {
 	air = ANIMS.Air,
 	moveSpeed = 16,
 	walkSpeed = 8,
+	moveStride = 5.75,
+	walkStride = 4.24,
 }
 
 -- Getting hit / blocking, with the sword (see Client/Reactions for the names).
@@ -428,10 +431,19 @@ local function bladeOf(character: Model): BasePart?
 	return if blade and blade:IsA("BasePart") then blade else nil
 end
 
--- Distances along the blade below are written for a 3.6-stud blade (0 its
--- middle, 2.1 the tip, -1.8 the guard); they stretch with the real one.
+-- Distances along the blade below are written for the original sword:
+-- -1.8 at the guard, 2.1 out at the tip. They map onto the real blade from
+-- the guard and tip points the sword carries (blade-local Y).
+local function bladeY(blade: BasePart, along: number): number
+	local guard, tip = blade:GetAttribute("GuardY"), blade:GetAttribute("TipY")
+	if type(guard) == "number" and type(tip) == "number" then
+		return guard + (along + 1.8) / 3.9 * (tip - guard)
+	end
+	return along * blade.Size.Y / 3.6
+end
+
 local function alongBlade(blade: BasePart, along: number): CFrame
-	return blade.CFrame * CFrame.new(0, along * blade.Size.Y / 3.6, 0)
+	return blade.CFrame * CFrame.new(0, bladeY(blade, along), 0)
 end
 
 -- A point along the blade: 0 is its middle, 2.1 the tip, -1.8 the guard.
@@ -450,7 +462,7 @@ local function heavyTrail(character: Model, duration: number)
 	local made: { Instance } = {}
 	local function attachment(y: number): Attachment
 		local a = Instance.new("Attachment")
-		a.Position = Vector3.new(0, y * blade.Size.Y / 3.6, 0)
+		a.Position = Vector3.new(0, bladeY(blade, y), 0)
 		a.Parent = blade
 		table.insert(made, a)
 		return a
@@ -4336,28 +4348,30 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		end)
 	end
 
-	-- Pale moonlight on the two of them, so the fight still reads at night.
+	-- Soft blue moonlight on the two of them, so the fight still reads at
+	-- night. Kept gentle on him: up close a strong light washes him out.
 	local moonlights: { PointLight } = {}
+	local MOONLIT = { 1.1, 2 } -- him, them
 	for _, part in { root, victimRoot } :: { BasePart? } do
 		if part then
 			local light = Instance.new("PointLight")
-			light.Color = Color3.fromRGB(200, 212, 255)
+			light.Color = Color3.fromRGB(165, 180, 235)
 			light.Brightness = 0
-			light.Range = 24
+			light.Range = 18
 			light.Shadows = false
 			light.Parent = part
 			table.insert(moonlights, light)
 		end
 	end
 	task.delay(T.Night, function()
-		for _, light in moonlights do
-			U.tween(light, 0.6, { Brightness = 2.6 })
+		for i, light in moonlights do
+			U.tween(light, 0.6, { Brightness = MOONLIT[i] or 2 })
 		end
 	end)
-	task.delay(T.Land + 0.4, function()
+	task.delay(T.Land, function()
 		for _, light in moonlights do
-			U.tween(light, 0.8, { Brightness = 0 })
-			task.delay(0.85, light.Destroy, light)
+			U.tween(light, 0.4, { Brightness = 0 })
+			task.delay(0.45, light.Destroy, light)
 		end
 	end)
 
@@ -4567,7 +4581,7 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 			visual.setPose("glide") -- swept back for speed
 		end
 		if moonlights[1] then
-			U.tween(moonlights[1], 0.15, { Brightness = 2.6 })
+			U.tween(moonlights[1], 0.15, { Brightness = MOONLIT[1] })
 		end
 		heavyTrail(character, 0.45)
 		U.bodyTrail(character, BLACK, 0.3)
@@ -4645,7 +4659,8 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 			visual.setPose("spread") -- flared open as he stops
 		end
 		if mine then
-			U.colorGrade({ Saturation = -1, Contrast = 0.3, Brightness = 0.14 }, 0.05, T.Land - T.Arrive - 0.1, 0.15)
+			-- Drained of colour, not of light: he mustn't wash out white.
+			U.colorGrade({ Saturation = -0.7, Contrast = 0.25, Brightness = 0.02 }, 0.05, T.Land - T.Arrive - 0.1, 0.15)
 		end
 	end)
 
@@ -4680,8 +4695,9 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		})
 		lingerSmoke(cutAt, 2.5, 14)
 		if mine then
-			impactFrame(1.5)
-			U.screenFlash(RED, 0.5)
+			-- A sharp frame, not a white-out.
+			impactFrame(0.9)
+			U.screenFlash(RED, 0.35)
 			CameraShake.Add(0.8)
 		end
 		-- Watch them fall and make the crater where they hit.

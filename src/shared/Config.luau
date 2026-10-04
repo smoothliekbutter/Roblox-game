@@ -41,13 +41,8 @@ Config.M1 = {
 	-- can go up after them and carry on in the air.
 	UppercutEndLag = 0.4,
 	UppercutJumpAfter = 0.2,
-	-- Near the top of the launch they drift: the climb and fall slow to a
-	-- float for UppercutHang seconds, starting UppercutFloatAt into the
-	-- flight and ending at UppercutFloatEnd studs/s.
-	UppercutFloatAt = 0.16,
-	UppercutHang = 0.45,
-	UppercutFloatEnd = -10,
-	JuggleTime = 1.1, -- how long a launched body can still be hit in the air
+	UppercutGravity = 1.6, -- the launched body falls this much harder: a snappy arc
+	JuggleTime = 0.85, -- how long a launched body can still be hit in the air
 
 	HitboxSize = Vector3.new(5.5, 6, 6),
 	HitboxOffset = 3.25, -- studs in front of the root
@@ -60,8 +55,8 @@ Config.M1 = {
 
 	KnockbackForce = 65,
 	KnockbackLift = 18,
-	UppercutForce = 50, -- a ragdoll launch: with the float, about 7 studs up, in reach of a jump
-	UppercutRagdoll = 1.3,
+	UppercutForce = 85, -- a ragdoll launch: about 10 studs up on 1.6x gravity (up and down in half a second)
+	UppercutRagdoll = 1.1,
 	DownslamForce = 75,
 }
 

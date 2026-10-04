@@ -30,31 +30,40 @@ IDLE = [
     (2.6, idle_key((-6,-18), (5,16), 85, L(10,0,-14), R(-6,0,9), R(12,0,-10))),
 ]
 
-# Run cycle (0.5s at speed 16; plays faster or slower with the actual
-# speed): forward lean, long strides, left arm pumping against them, sword
-# bobbing on the shoulder, hips and shoulders twisting with each step.
+# Run and walk cycles. The phase follows the distance travelled (RUN_STRIDE
+# and WALK_STRIDE studs per loop, see Kit.Idle), so the feet stay planted at
+# any speed. Leg angles are against the leaning torso: a leg's angle in the
+# world is its own minus the lean, so the strides below swing evenly about
+# straight down. The free arm swings against the legs and the shoulders turn
+# with it; the head stays level and looking ahead. (Planting the feet drops
+# the body when the legs are apart, which gives the bob.)
 def run_key(torso, head, arm_pitch, larm, rleg, lleg):
     t = R(*torso)
     return {'Torso': t, 'Head': R(*head), 'RightArm': L(arm_pitch, 25, 10),
             'Sword': torso_dir(t, SHOULDER), 'LeftArm': larm, 'RightLeg': R(rleg), 'LeftLeg': R(lleg)}
 
+# Sprint: leaning in hard, legs 46 degrees either side of straight down in
+# the world (lean 22), the sword steady on the shoulder.
+RUN_LEAN, RUN_SWING = 22, 46
+RUN_STRIDE = round(2 * 2 * 2 * __import__('math').sin(__import__('math').radians(RUN_SWING)), 2)
 RUN = [
-    (0.000, run_key((-18, 8), (12, -8), 82, L(55, -14, -6), 50, -42)),
-    (0.125, run_key((-20, 0), (14, 0), 88, L(8, -6, -8), 4, 4)),
-    (0.250, run_key((-18, -8), (12, 8), 82, L(-45, 6, -10), -42, 50)),
-    (0.375, run_key((-20, 0), (14, 0), 88, L(8, -6, -8), 4, 4)),
-    (0.500, run_key((-18, 8), (12, -8), 82, L(55, -14, -6), 50, -42)),
+    (0.0, run_key((-RUN_LEAN, -8), (16, 8), 84, L(58, -6, -8), RUN_SWING + RUN_LEAN, -RUN_SWING + RUN_LEAN)),
+    (0.1, run_key((-RUN_LEAN - 2, 0), (18, 0), 88, L(8, -4, -10), RUN_LEAN - 2, RUN_LEAN + 8)),
+    (0.2, run_key((-RUN_LEAN, 8), (16, -8), 84, L(-42, 4, -12), -RUN_SWING + RUN_LEAN, RUN_SWING + RUN_LEAN)),
+    (0.3, run_key((-RUN_LEAN - 2, 0), (18, 0), 88, L(8, -4, -10), RUN_LEAN + 8, RUN_LEAN - 2)),
+    (0.4, run_key((-RUN_LEAN, -8), (16, 8), 84, L(58, -6, -8), RUN_SWING + RUN_LEAN, -RUN_SWING + RUN_LEAN)),
 ]
 
-# Walk cycle (0.9s at speed 8): used when he's slowed down (attacking,
-# blocking, casting). Upright, shorter steps, same leg phase as the run so
-# the two blend into each other.
+# Walk (when slowed: attacking, blocking, casting): upright, shorter steps,
+# same leg phase as the run so the two blend into each other.
+WALK_LEAN, WALK_SWING = 6, 32
+WALK_STRIDE = round(2 * 2 * 2 * __import__('math').sin(__import__('math').radians(WALK_SWING)), 2)
 WALK = [
-    (0.000, run_key((-5, 4), (4, -4), 86, L(22, -8, -6), 24, -22)),
-    (0.225, run_key((-4, 0), (3, 0), 87, L(4, -4, -8), 1, 1)),
-    (0.450, run_key((-5, -4), (4, 4), 86, L(-16, 2, -10), -22, 24)),
-    (0.675, run_key((-4, 0), (3, 0), 87, L(4, -4, -8), 1, 1)),
-    (0.900, run_key((-5, 4), (4, -4), 86, L(22, -8, -6), 24, -22)),
+    (0.00, run_key((-WALK_LEAN, -4), (4, 4), 86, L(28, -6, -6), WALK_SWING + WALK_LEAN, -WALK_SWING + WALK_LEAN)),
+    (0.15, run_key((-WALK_LEAN + 1, 0), (3, 0), 87, L(4, -4, -8), WALK_LEAN + 2, WALK_LEAN + 6)),
+    (0.30, run_key((-WALK_LEAN, 4), (4, -4), 86, L(-20, 2, -10), -WALK_SWING + WALK_LEAN, WALK_SWING + WALK_LEAN)),
+    (0.45, run_key((-WALK_LEAN + 1, 0), (3, 0), 87, L(4, -4, -8), WALK_LEAN + 6, WALK_LEAN + 2)),
+    (0.60, run_key((-WALK_LEAN, -4), (4, 4), 86, L(28, -6, -6), WALK_SWING + WALK_LEAN, -WALK_SWING + WALK_LEAN)),
 ]
 
 # In the air (jumping or falling): knee up, free arm out for balance.
