@@ -106,10 +106,24 @@ local function reach(ctx, origin: Vector3, direction: Vector3, maxRange: number)
 	return maxRange
 end
 
--- The floor under a point (or 3 studs under it when there's none in reach).
+-- The floor under a point (or 3 studs under it when there's none in reach),
+-- looking past anyone standing there.
 local function floorUnder(ctx, position: Vector3): Vector3
-	local hit = workspace:Raycast(position + UP * 2, Vector3.new(0, -60, 0), rayParams(ctx))
-	return if hit then hit.Position else position - UP * 3
+	local params = rayParams(ctx)
+	local ignore: { Instance } = { ctx.character }
+	for _ = 1, 4 do
+		local hit = workspace:Raycast(position + UP * 2, Vector3.new(0, -60, 0), params)
+		if not hit then
+			break
+		end
+		local model = hit.Instance:FindFirstAncestorWhichIsA("Model")
+		if not (model and model:FindFirstChildOfClass("Humanoid")) then
+			return hit.Position
+		end
+		table.insert(ignore, model)
+		params.FilterDescendantsInstances = ignore
+	end
+	return position - UP * 3
 end
 
 -- Who he's most likely aiming at: the closest enemy within `range` studs

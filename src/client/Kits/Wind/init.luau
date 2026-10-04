@@ -1498,8 +1498,26 @@ local function buildLook(character: Model, full: boolean): () -> ()
 	end
 
 	local start = os.clock()
-	local connection = RunService.RenderStepped:Connect(function()
+	local connection: RBXScriptConnection
+	local function destroy()
+		connection:Disconnect()
+		if looks[character] == look then
+			looks[character] = nil
+		end
+		for _, emitter in emitters do
+			emitter.Enabled = false
+			task.delay(1, emitter.Destroy, emitter)
+		end
+		local parts = {}
+		for _, entry in entries do
+			table.insert(parts, entry.part)
+		end
+		fadeOut(parts, 0.4)
+	end
+	connection = RunService.RenderStepped:Connect(function()
 		if not torso.Parent or not head.Parent then
+			-- He's gone (died, left): the look goes with him.
+			destroy()
 			return
 		end
 		local t = os.clock() - start
@@ -1563,19 +1581,9 @@ local function buildLook(character: Model, full: boolean): () -> ()
 	end)
 
 	return function()
-		connection:Disconnect()
-		if looks[character] == look then
-			looks[character] = nil
+		if connection.Connected then
+			destroy()
 		end
-		for _, emitter in emitters do
-			emitter.Enabled = false
-			task.delay(1, emitter.Destroy, emitter)
-		end
-		local parts = {}
-		for _, entry in entries do
-			table.insert(parts, entry.part)
-		end
-		fadeOut(parts, 0.4)
 	end
 end
 
