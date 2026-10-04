@@ -51,6 +51,18 @@ export type KitInfo = {
 		cooldownMultiplier: number,
 		speedBonus: number,
 	}?,
+	-- A second, stronger stage of the awakening (Yuno: Full-Crown): dealing
+	-- `charge` damage while awakened lets G be pressed again. Its own moves
+	-- and stats, and the awakening's timer restarts at `duration`.
+	ascension: {
+		name: string,
+		duration: number,
+		charge: number,
+		damageMultiplier: number,
+		cooldownMultiplier: number,
+		speedBonus: number,
+		skills: { SkillInfo },
+	}?,
 }
 
 local Kits = {}
@@ -147,7 +159,58 @@ Kits.List = {
 		},
 	} :: KitInfo,
 
-	Wind = comingSoon("Wind", "Wind Prodigy", "Spirit-blessed wind magic.", Color3.fromRGB(90, 220, 150)),
+	Wind = {
+		id = "Wind",
+		title = "Prince of Wind",
+		description = "Wind magic blessed by the spirit Sylph, and star magic. Fights from range and is never where you left him.",
+		color = Color3.fromRGB(90, 220, 150),
+		playable = true,
+		m1 = {
+			-- Wind-wrapped strikes reach a little further than bare fists.
+			HitboxOffset = 3.5,
+		},
+		-- Mid-range zoner (Asta's opposite): a rain of blades to pin people
+		-- down, a homing hawk, a launcher, a six-arrow volley. Less damage
+		-- per move than Asta's sword, but from where the sword can't reach.
+		skills = {
+			{ name = "Wind Blades Shower", cooldown = 11, type = "Swarm", airHold = true },
+			{ name = "Swift White Hawk", cooldown = 8, type = "Bolt", airHold = true },
+			{ name = "Heavenly Wind Ark", cooldown = 12, type = "Zone", airHold = true },
+			{ name = "Gale White Bow", cooldown = 15, type = "Bolt", airHold = true },
+		},
+		-- Star magic: place a star, press R again to be there.
+		special = { name = "Conjunction", cooldown = 10, type = "Melee" },
+		-- Half-Crown Spirit of Zephyr (G): Sylph on his left side.
+		awakenedSkills = {
+			{ name = "Spirit Storm", cooldown = 12, type = "Bolt", airHold = true },
+			{ name = "Spirit's Hushed Dance", cooldown = 14, type = "Counter", airHold = true },
+			{ name = "Quartile Scutum", cooldown = 16, type = "Counter" },
+			{ name = "Quartile Hasta", cooldown = 14, type = "Bolt", airHold = true },
+		},
+		awakening = {
+			name = "Half-Crown",
+			duration = 45,
+			damageMultiplier = 1.15,
+			cooldownMultiplier = 0.85,
+			speedBonus = 4,
+		},
+		-- Full-Crown Spirit of Zephyr: G again after dealing 45 damage in
+		-- the Half-Crown. Stronger than Black Form, but only 30 seconds.
+		ascension = {
+			name = "Full-Crown",
+			duration = 30,
+			charge = 45,
+			damageMultiplier = 1.3,
+			cooldownMultiplier = 0.75,
+			speedBonus = 8,
+			skills = {
+				{ name = "Spirit of Notos", cooldown = 12, type = "Counter" },
+				{ name = "Spirit of Boreas", cooldown = 13, type = "Melee", airHold = true },
+				{ name = "Spirit of Euros", cooldown = 18, type = "Bolt", airHold = true },
+				{ name = "Neverland", cooldown = 35, type = "Zone" },
+			},
+		},
+	} :: KitInfo,
 	Water = comingSoon("Water", "Water Princess", "Royal water magic.", Color3.fromRGB(80, 160, 255)),
 	Dark = comingSoon("Dark", "Dark Captain", "Dark magic that slices space.", Color3.fromRGB(120, 70, 190)),
 	Flame = comingSoon("Flame", "Flame Lioness", "Overwhelming flame magic.", Color3.fromRGB(255, 120, 40)),
@@ -166,6 +229,9 @@ function Kits.SkillsOf(character: Model): { SkillInfo }
 	local kit = Kits.Of(character)
 	if not kit then
 		return {}
+	end
+	if character:GetAttribute("Awakened") == true and kit.ascension and character:GetAttribute("Ascended") == true then
+		return kit.ascension.skills
 	end
 	if character:GetAttribute("Awakened") == true and kit.awakenedSkills then
 		-- Moves 1 and 2 come from the sword in his hand.

@@ -27,6 +27,8 @@ type Counter = {
 	untilTime: number,
 	types: { [string]: boolean },
 	onCounter: (attacker: Model, hit: HitInfo) -> (),
+	-- Only hits this accepts are countered (e.g. from the front); the rest land.
+	filter: ((attacker: Model, hit: HitInfo) -> boolean)?,
 }
 
 export type CharData = {
@@ -133,8 +135,30 @@ end
 
 local function awakeningOf(character: Model)
 	local kit = Kits.Of(character)
-	return if kit and CombatState.IsAwakened(character) then kit.awakening else nil
+	if not kit or not CombatState.IsAwakened(character) then
+		return nil
+	end
+	if kit.ascension and character:GetAttribute("Ascended") == true then
+		return kit.ascension
+	end
+	return kit.awakening
 end
+
+-- The second stage a character can still reach in this awakening, if any.
+local function pendingAscension(character: Model)
+	local kit = Kits.Of(character)
+	if kit and kit.ascension and CombatState.IsAwakened(character) and character:GetAttribute("Ascended") ~= true then
+		return kit.ascension
+	end
+	return nil
+end
+
+-- Timed states a move can put on someone (Yuno's Neverland): stronger or
+-- weaker hits, slowed down. Server-only, so os.clock() times.
+local function stateActive(character: Model, attribute: string): boolean
+	return (tonumber(character:GetAttribute(attribute)) or 0) > os.clock()
+end
+CombatService.StateActive = stateActive
 
 function CombatService.Flat(vector: Vector3): Vector3
 	return flat(vector)
@@ -342,11 +366,12 @@ function CombatService.SetCounter(
 	character: Model,
 	duration: number,
 	types: { [string]: boolean },
-	onCounter: (attacker: Model, hit: HitInfo) -> ()
+	onCounter: (attacker: Model, hit: HitInfo) -> (),
+	filter: ((attacker: Model, hit: HitInfo) -> boolean)?
 )
 	local data = registry[character]
 	if data then
-		data.counter = { untilTime = os.clock() + duration, types = types, onCounter = onCounter }
+		data.counter = { untilTime = os.clock() + duration, types = types, onCounter = onCounter, filter = filter }
 	end
 end
 
@@ -600,7 +625,12 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 
 	local attackType = hit.attackType or "Melee"
 	local counter = victimData and victimData.counter
-	if counter and now <= counter.untilTime and counter.types[attackType] then
+	if
+		counter
+		and now <= counter.untilTime
+		and counter.types[attackType]
+		and (not counter.filter or counter.filter(attacker, hit))
+	then
 		victimData.counter = nil
 		task.spawn(counter.onCounter, attacker, hit)
 		return "Countered"
@@ -648,6 +678,12 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	-- The hit lands.
 	local awakening = awakeningOf(attacker)
 	local damage = hit.damage * (if awakening then awakening.damageMultiplier else 1)
+	if stateActive(attacker, "PowerUntil") then
+		damage *= Config.States.PowerMultiplier
+	end
+	if stateActive(attacker, "WeakUntil") then
+		damage *= Config.States.WeakMultiplier
+	end
 	humanoid:TakeDamage(damage)
 	CombatState.SetBlocking(victim, false)
 	CombatState.Stun(victim, hit.stun)
@@ -658,6 +694,12 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	addMeter(victim, "Evasive", damage * Config.Evasive.GainPerDamage, Config.Evasive.Max)
 	if not CombatState.IsAwakened(attacker) then
 		addMeter(attacker, "Awakening", damage * Config.Awakening.GainPerDamageDealt, Config.Awakening.Max)
+	else
+		-- Fighting in the first stage charges the second (Yuno's Full-Crown).
+		local ascension = pendingAscension(attacker)
+		if ascension then
+			addMeter(attacker, "Ascension", damage, ascension.charge)
+		end
 	end
 	if not CombatState.IsAwakened(victim) then
 		addMeter(victim, "Awakening", damage * Config.Awakening.GainPerDamageTaken, Config.Awakening.Max)
@@ -1022,6 +1064,8 @@ local function endAwakening(character: Model)
 	end
 	if CombatState.IsAwakened(character) then
 		character:SetAttribute("Awakened", false)
+		character:SetAttribute("Ascended", false)
+		character:SetAttribute("Ascension", 0)
 		CombatState.ResetCooldowns(character)
 		local kit = Kits.Of(character)
 		local serverKit = kit and serverKits[kit.id]
@@ -1030,6 +1074,50 @@ local function endAwakening(character: Model)
 			task.spawn(serverKit.AwakenEnd, ctx)
 		end
 	end
+end
+
+-- The meter drains over `duration`, and the awakening ends when it's empty.
+-- A new drain (the second stage starting) replaces the old one.
+local function drainAwakening(character: Model, data: CharData, duration: number)
+	data.awakenToken += 1
+	local token = data.awakenToken
+	character:SetAttribute("Awakening", Config.Awakening.Max)
+	task.spawn(function()
+		local start = os.clock()
+		while data.awakenToken == token and registry[character] == data do
+			local remaining = 1 - (os.clock() - start) / duration
+			if remaining <= 0 then
+				character:SetAttribute("Awakening", 0)
+				endAwakening(character)
+				break
+			end
+			character:SetAttribute("Awakening", Config.Awakening.Max * remaining)
+			task.wait(0.25)
+		end
+	end)
+end
+
+-- G again while awakened, once the second stage is charged (Kits ascension):
+-- its own moves, stats and a fresh timer.
+local function ascend(ctx: Context)
+	local character, data = ctx.character, ctx.data
+	local ascension = pendingAscension(character)
+	local serverKit = serverKits[ctx.kit.id]
+	if not ascension or not serverKit or not serverKit.Ascend then
+		return
+	end
+	if not CombatState.CanAct(character) or CombatState.IsCasting(character) then
+		return
+	end
+	if (tonumber(character:GetAttribute("Ascension")) or 0) < ascension.charge then
+		return
+	end
+	character:SetAttribute("Ascended", true)
+	character:SetAttribute("Ascension", 0)
+	CombatState.ResetCooldowns(character)
+	data.moveToken += 1
+	drainAwakening(character, data, ascension.duration)
+	task.spawn(serverKit.Ascend, ctx)
 end
 
 function CombatService.Awaken(character: Model)
@@ -1042,7 +1130,11 @@ function CombatService.Awaken(character: Model)
 	if not awakening or not serverKit or not serverKit.Awaken then
 		return
 	end
-	if CombatState.IsAwakened(character) or not CombatState.CanAct(character) or CombatState.IsCasting(character) then
+	if CombatState.IsAwakened(character) then
+		ascend(ctx)
+		return
+	end
+	if not CombatState.CanAct(character) or CombatState.IsCasting(character) then
 		return
 	end
 	if (tonumber(character:GetAttribute("Awakening")) or 0) < Config.Awakening.Max then
@@ -1050,28 +1142,13 @@ function CombatService.Awaken(character: Model)
 	end
 
 	local data = ctx.data
-	data.awakenToken += 1
-	local token = data.awakenToken
 	character:SetAttribute("Awakened", true)
+	character:SetAttribute("Ascension", 0)
 	CombatState.ResetCooldowns(character) -- fresh awakened move set
 	ctx.awakened = true
 	data.moveToken += 1
+	drainAwakening(character, data, awakening.duration)
 	task.spawn(serverKit.Awaken, ctx)
-
-	-- The meter drains over the awakening's duration.
-	task.spawn(function()
-		local start = os.clock()
-		while data.awakenToken == token and registry[character] == data do
-			local remaining = 1 - (os.clock() - start) / awakening.duration
-			if remaining <= 0 then
-				character:SetAttribute("Awakening", 0)
-				endAwakening(character)
-				break
-			end
-			character:SetAttribute("Awakening", Config.Awakening.Max * remaining)
-			task.wait(0.25)
-		end
-	end)
 end
 
 -- Puts `kitId` on a character: weapon model, fresh cooldowns, no awakening.
@@ -1286,6 +1363,9 @@ local function updateMovement()
 				speed, jump = Config.Movement.BlockingSpeed, 0
 			elseif CombatState.IsBusy(character) then
 				speed, jump = Config.Movement.AttackingSpeed + bonus, 0
+			end
+			if stateActive(character, "SlowUntil") then
+				speed *= Config.States.SlowMultiplier
 			end
 			if humanoid.WalkSpeed ~= speed then
 				humanoid.WalkSpeed = speed

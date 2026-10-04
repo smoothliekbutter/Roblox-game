@@ -77,6 +77,8 @@ local shownHealth = 1
 local shownKit: string? = "?"
 local shownAwakened = false
 local shownSword: string? = nil
+local shownAscended = false
+local awakeningColor = COLORS.Awakening
 local toastToken = 0
 
 local function corner(parent: Instance, radius: UDim)
@@ -352,12 +354,14 @@ local function refreshKit(character: Model?)
 	local kitId = if character then character:GetAttribute("Kit") :: string? else nil
 	local awakened = character ~= nil and CombatState.IsAwakened(character)
 	local sword = if character then character:GetAttribute("Sword") :: string? else nil
-	if kitId == shownKit and awakened == shownAwakened and sword == shownSword then
+	local ascended = character ~= nil and character:GetAttribute("Ascended") == true
+	if kitId == shownKit and awakened == shownAwakened and sword == shownSword and ascended == shownAscended then
 		return
 	end
 	shownKit = kitId
 	shownAwakened = awakened
 	shownSword = sword
+	shownAscended = ascended
 	local kit = Kits.Get(kitId)
 	local skills = if character then Kits.SkillsOf(character) else {}
 
@@ -369,6 +373,9 @@ local function refreshKit(character: Model?)
 	end
 	local awakening = kit and kit.awakening
 	ui.awakening.Visible = awakening ~= nil
+	awakeningColor = if kit then kit.color else COLORS.Awakening
+	ui.awakeningFill.BackgroundColor3 = awakeningColor
+	ui.awakeningStroke.Color = awakeningColor
 	ui.special.Visible = kit ~= nil and (kit.special ~= nil or kit.awakenedSpecial ~= nil)
 	ui.awakeningLabel.Text = if awakening then "[G]  " .. string.upper(awakening.name) else ""
 end
@@ -410,7 +417,24 @@ local function update(dt: number)
 		local awakened = CombatState.IsAwakened(character)
 		ui.awakeningFill.Size = UDim2.fromScale(awakening, 1)
 		ui.awakeningStroke.Transparency = if awakening >= 1 or awakened then pulse else 1
-		ui.awakeningLabel.TextColor3 = if awakening >= 1 or awakened then COLORS.Awakening else COLORS.SubText
+		ui.awakeningLabel.TextColor3 = if awakening >= 1 or awakened then awakeningColor else COLORS.SubText
+
+		-- A second stage (Yuno's Full-Crown): how close it is, then G again.
+		local kit = Kits.Of(character)
+		local ascension = kit and kit.ascension
+		if kit and ascension and kit.awakening then
+			local first, second = string.upper(kit.awakening.name), string.upper(ascension.name)
+			local text = "[G]  " .. first
+			if awakened and character:GetAttribute("Ascended") == true then
+				text = second
+			elseif awakened then
+				local charge = math.clamp((tonumber(character:GetAttribute("Ascension")) or 0) / ascension.charge, 0, 1)
+				text = if charge >= 1
+					then "[G]  " .. second
+					else first .. "   ·   " .. second .. " " .. math.floor(charge * 100) .. "%"
+			end
+			ui.awakeningLabel.Text = text
+		end
 
 		for i, s in ui.skills do
 			setSlotCooldown(s, CombatState.Cooldown(character, i))

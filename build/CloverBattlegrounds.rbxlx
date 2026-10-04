@@ -491,6 +491,14 @@ Config.Awakening = {
 	GainPerDamageTaken = 0.5,
 }
 
+-- Timed states moves can put on people (Yuno's Neverland): PowerUntil hits
+-- harder, WeakUntil hits softer, SlowUntil moves slower.
+Config.States = {
+	PowerMultiplier = 1.15,
+	WeakMultiplier = 0.75,
+	SlowMultiplier = 0.6,
+}
+
 -- Switching characters is blocked this long after dealing or taking damage.
 Config.KitSwitchCombatLock = 5
 
@@ -674,6 +682,18 @@ export type KitInfo = {
 		cooldownMultiplier: number,
 		speedBonus: number,
 	}?,
+	-- A second, stronger stage of the awakening (Yuno: Full-Crown): dealing
+	-- `charge` damage while awakened lets G be pressed again. Its own moves
+	-- and stats, and the awakening's timer restarts at `duration`.
+	ascension: {
+		name: string,
+		duration: number,
+		charge: number,
+		damageMultiplier: number,
+		cooldownMultiplier: number,
+		speedBonus: number,
+		skills: { SkillInfo },
+	}?,
 }
 
 local Kits = {}
@@ -770,7 +790,58 @@ Kits.List = {
 		},
 	} :: KitInfo,
 
-	Wind = comingSoon("Wind", "Wind Prodigy", "Spirit-blessed wind magic.", Color3.fromRGB(90, 220, 150)),
+	Wind = {
+		id = "Wind",
+		title = "Prince of Wind",
+		description = "Wind magic blessed by the spirit Sylph, and star magic. Fights from range and is never where you left him.",
+		color = Color3.fromRGB(90, 220, 150),
+		playable = true,
+		m1 = {
+			-- Wind-wrapped strikes reach a little further than bare fists.
+			HitboxOffset = 3.5,
+		},
+		-- Mid-range zoner (Asta's opposite): a rain of blades to pin people
+		-- down, a homing hawk, a launcher, a six-arrow volley. Less damage
+		-- per move than Asta's sword, but from where the sword can't reach.
+		skills = {
+			{ name = "Wind Blades Shower", cooldown = 11, type = "Swarm", airHold = true },
+			{ name = "Swift White Hawk", cooldown = 8, type = "Bolt", airHold = true },
+			{ name = "Heavenly Wind Ark", cooldown = 12, type = "Zone", airHold = true },
+			{ name = "Gale White Bow", cooldown = 15, type = "Bolt", airHold = true },
+		},
+		-- Star magic: place a star, press R again to be there.
+		special = { name = "Conjunction", cooldown = 10, type = "Melee" },
+		-- Half-Crown Spirit of Zephyr (G): Sylph on his left side.
+		awakenedSkills = {
+			{ name = "Spirit Storm", cooldown = 12, type = "Bolt", airHold = true },
+			{ name = "Spirit's Hushed Dance", cooldown = 14, type = "Counter", airHold = true },
+			{ name = "Quartile Scutum", cooldown = 16, type = "Counter" },
+			{ name = "Quartile Hasta", cooldown = 14, type = "Bolt", airHold = true },
+		},
+		awakening = {
+			name = "Half-Crown",
+			duration = 45,
+			damageMultiplier = 1.15,
+			cooldownMultiplier = 0.85,
+			speedBonus = 4,
+		},
+		-- Full-Crown Spirit of Zephyr: G again after dealing 45 damage in
+		-- the Half-Crown. Stronger than Black Form, but only 30 seconds.
+		ascension = {
+			name = "Full-Crown",
+			duration = 30,
+			charge = 45,
+			damageMultiplier = 1.3,
+			cooldownMultiplier = 0.75,
+			speedBonus = 8,
+			skills = {
+				{ name = "Spirit of Notos", cooldown = 12, type = "Counter" },
+				{ name = "Spirit of Boreas", cooldown = 13, type = "Melee", airHold = true },
+				{ name = "Spirit of Euros", cooldown = 18, type = "Bolt", airHold = true },
+				{ name = "Neverland", cooldown = 35, type = "Zone" },
+			},
+		},
+	} :: KitInfo,
 	Water = comingSoon("Water", "Water Princess", "Royal water magic.", Color3.fromRGB(80, 160, 255)),
 	Dark = comingSoon("Dark", "Dark Captain", "Dark magic that slices space.", Color3.fromRGB(120, 70, 190)),
 	Flame = comingSoon("Flame", "Flame Lioness", "Overwhelming flame magic.", Color3.fromRGB(255, 120, 40)),
@@ -789,6 +860,9 @@ function Kits.SkillsOf(character: Model): { SkillInfo }
 	local kit = Kits.Of(character)
 	if not kit then
 		return {}
+	end
+	if character:GetAttribute("Awakened") == true and kit.ascension and character:GetAttribute("Ascended") == true then
+		return kit.ascension.skills
 	end
 	if character:GetAttribute("Awakened") == true and kit.awakenedSkills then
 		-- Moves 1 and 2 come from the sword in his hand.
@@ -1175,6 +1249,8 @@ type Counter = {
 	untilTime: number,
 	types: { [string]: boolean },
 	onCounter: (attacker: Model, hit: HitInfo) -> (),
+	-- Only hits this accepts are countered (e.g. from the front); the rest land.
+	filter: ((attacker: Model, hit: HitInfo) -> boolean)?,
 }
 
 export type CharData = {
@@ -1281,8 +1357,30 @@ end
 
 local function awakeningOf(character: Model)
 	local kit = Kits.Of(character)
-	return if kit and CombatState.IsAwakened(character) then kit.awakening else nil
+	if not kit or not CombatState.IsAwakened(character) then
+		return nil
+	end
+	if kit.ascension and character:GetAttribute("Ascended") == true then
+		return kit.ascension
+	end
+	return kit.awakening
 end
+
+-- The second stage a character can still reach in this awakening, if any.
+local function pendingAscension(character: Model)
+	local kit = Kits.Of(character)
+	if kit and kit.ascension and CombatState.IsAwakened(character) and character:GetAttribute("Ascended") ~= true then
+		return kit.ascension
+	end
+	return nil
+end
+
+-- Timed states a move can put on someone (Yuno's Neverland): stronger or
+-- weaker hits, slowed down. Server-only, so os.clock() times.
+local function stateActive(character: Model, attribute: string): boolean
+	return (tonumber(character:GetAttribute(attribute)) or 0) > os.clock()
+end
+CombatService.StateActive = stateActive
 
 function CombatService.Flat(vector: Vector3): Vector3
 	return flat(vector)
@@ -1490,11 +1588,12 @@ function CombatService.SetCounter(
 	character: Model,
 	duration: number,
 	types: { [string]: boolean },
-	onCounter: (attacker: Model, hit: HitInfo) -> ()
+	onCounter: (attacker: Model, hit: HitInfo) -> (),
+	filter: ((attacker: Model, hit: HitInfo) -> boolean)?
 )
 	local data = registry[character]
 	if data then
-		data.counter = { untilTime = os.clock() + duration, types = types, onCounter = onCounter }
+		data.counter = { untilTime = os.clock() + duration, types = types, onCounter = onCounter, filter = filter }
 	end
 end
 
@@ -1748,7 +1847,12 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 
 	local attackType = hit.attackType or "Melee"
 	local counter = victimData and victimData.counter
-	if counter and now <= counter.untilTime and counter.types[attackType] then
+	if
+		counter
+		and now <= counter.untilTime
+		and counter.types[attackType]
+		and (not counter.filter or counter.filter(attacker, hit))
+	then
 		victimData.counter = nil
 		task.spawn(counter.onCounter, attacker, hit)
 		return "Countered"
@@ -1796,6 +1900,12 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	-- The hit lands.
 	local awakening = awakeningOf(attacker)
 	local damage = hit.damage * (if awakening then awakening.damageMultiplier else 1)
+	if stateActive(attacker, "PowerUntil") then
+		damage *= Config.States.PowerMultiplier
+	end
+	if stateActive(attacker, "WeakUntil") then
+		damage *= Config.States.WeakMultiplier
+	end
 	humanoid:TakeDamage(damage)
 	CombatState.SetBlocking(victim, false)
 	CombatState.Stun(victim, hit.stun)
@@ -1806,6 +1916,12 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	addMeter(victim, "Evasive", damage * Config.Evasive.GainPerDamage, Config.Evasive.Max)
 	if not CombatState.IsAwakened(attacker) then
 		addMeter(attacker, "Awakening", damage * Config.Awakening.GainPerDamageDealt, Config.Awakening.Max)
+	else
+		-- Fighting in the first stage charges the second (Yuno's Full-Crown).
+		local ascension = pendingAscension(attacker)
+		if ascension then
+			addMeter(attacker, "Ascension", damage, ascension.charge)
+		end
 	end
 	if not CombatState.IsAwakened(victim) then
 		addMeter(victim, "Awakening", damage * Config.Awakening.GainPerDamageTaken, Config.Awakening.Max)
@@ -2170,6 +2286,8 @@ local function endAwakening(character: Model)
 	end
 	if CombatState.IsAwakened(character) then
 		character:SetAttribute("Awakened", false)
+		character:SetAttribute("Ascended", false)
+		character:SetAttribute("Ascension", 0)
 		CombatState.ResetCooldowns(character)
 		local kit = Kits.Of(character)
 		local serverKit = kit and serverKits[kit.id]
@@ -2178,6 +2296,50 @@ local function endAwakening(character: Model)
 			task.spawn(serverKit.AwakenEnd, ctx)
 		end
 	end
+end
+
+-- The meter drains over `duration`, and the awakening ends when it's empty.
+-- A new drain (the second stage starting) replaces the old one.
+local function drainAwakening(character: Model, data: CharData, duration: number)
+	data.awakenToken += 1
+	local token = data.awakenToken
+	character:SetAttribute("Awakening", Config.Awakening.Max)
+	task.spawn(function()
+		local start = os.clock()
+		while data.awakenToken == token and registry[character] == data do
+			local remaining = 1 - (os.clock() - start) / duration
+			if remaining <= 0 then
+				character:SetAttribute("Awakening", 0)
+				endAwakening(character)
+				break
+			end
+			character:SetAttribute("Awakening", Config.Awakening.Max * remaining)
+			task.wait(0.25)
+		end
+	end)
+end
+
+-- G again while awakened, once the second stage is charged (Kits ascension):
+-- its own moves, stats and a fresh timer.
+local function ascend(ctx: Context)
+	local character, data = ctx.character, ctx.data
+	local ascension = pendingAscension(character)
+	local serverKit = serverKits[ctx.kit.id]
+	if not ascension or not serverKit or not serverKit.Ascend then
+		return
+	end
+	if not CombatState.CanAct(character) or CombatState.IsCasting(character) then
+		return
+	end
+	if (tonumber(character:GetAttribute("Ascension")) or 0) < ascension.charge then
+		return
+	end
+	character:SetAttribute("Ascended", true)
+	character:SetAttribute("Ascension", 0)
+	CombatState.ResetCooldowns(character)
+	data.moveToken += 1
+	drainAwakening(character, data, ascension.duration)
+	task.spawn(serverKit.Ascend, ctx)
 end
 
 function CombatService.Awaken(character: Model)
@@ -2190,7 +2352,11 @@ function CombatService.Awaken(character: Model)
 	if not awakening or not serverKit or not serverKit.Awaken then
 		return
 	end
-	if CombatState.IsAwakened(character) or not CombatState.CanAct(character) or CombatState.IsCasting(character) then
+	if CombatState.IsAwakened(character) then
+		ascend(ctx)
+		return
+	end
+	if not CombatState.CanAct(character) or CombatState.IsCasting(character) then
 		return
 	end
 	if (tonumber(character:GetAttribute("Awakening")) or 0) < Config.Awakening.Max then
@@ -2198,28 +2364,13 @@ function CombatService.Awaken(character: Model)
 	end
 
 	local data = ctx.data
-	data.awakenToken += 1
-	local token = data.awakenToken
 	character:SetAttribute("Awakened", true)
+	character:SetAttribute("Ascension", 0)
 	CombatState.ResetCooldowns(character) -- fresh awakened move set
 	ctx.awakened = true
 	data.moveToken += 1
+	drainAwakening(character, data, awakening.duration)
 	task.spawn(serverKit.Awaken, ctx)
-
-	-- The meter drains over the awakening's duration.
-	task.spawn(function()
-		local start = os.clock()
-		while data.awakenToken == token and registry[character] == data do
-			local remaining = 1 - (os.clock() - start) / awakening.duration
-			if remaining <= 0 then
-				character:SetAttribute("Awakening", 0)
-				endAwakening(character)
-				break
-			end
-			character:SetAttribute("Awakening", Config.Awakening.Max * remaining)
-			task.wait(0.25)
-		end
-	end)
 end
 
 -- Puts `kitId` on a character: weapon model, fresh cooldowns, no awakening.
@@ -2434,6 +2585,9 @@ local function updateMovement()
 				speed, jump = Config.Movement.BlockingSpeed, 0
 			elseif CombatState.IsBusy(character) then
 				speed, jump = Config.Movement.AttackingSpeed + bonus, 0
+			end
+			if stateActive(character, "SlowUntil") then
+				speed *= Config.States.SlowMultiplier
 			end
 			if humanoid.WalkSpeed ~= speed then
 				humanoid.WalkSpeed = speed
@@ -4911,8 +5065,950 @@ return Kit
 ]]></string>
           </Properties>
         </Item>
+        <Item class="ModuleScript" referent="22">
+          <Properties>
+            <string name="Name">Wind</string>
+            <string name="Source"><![CDATA[--[[
+	Prince of Wind (Yuno), server side.
+
+	A mid-range zoner, Asta's opposite: wind spells that pin people down and
+	push them around from where a sword can't reach, star magic to be
+	somewhere else in an instant. Less damage per move than Asta, more
+	range and control. Spells are Bolt / Swarm / Zone attacks, so Asta's
+	Deflect sends them back and his Conquering Eon drinks them in.
+
+	Base: Prince of Wind
+	  1 Wind Blades Shower   a rain of wind blades on whoever he faces (or a
+	                         way ahead): six waves of hits, the last pops them up
+	  2 Swift White Hawk     a hawk of wind that flies at them, curving after
+	                         them, and blows them away
+	  3 Heavenly Wind Ark    a crescent of wind rises out of the ground ahead and
+	                         launches them; he rides the updraft after them
+	                         (air: it sweeps down and spikes them)
+	  4 Gale White Bow       a great bow of wind; six big arrows, aimed at whoever
+	                         he faces
+	  R Conjunction          a star goes down where he's moving (ahead if he's
+	                         still); R again within 4s and he's there
+	Half-Crown Spirit of Zephyr (G): Sylph on his left side
+	  1 Spirit Storm         a dense beam of swirling wind out of his palm
+	  2 Spirit's Hushed Dance  reads the mana around him: the next attack misses
+	                         and he dances along the wind to behind them and strikes
+	  3 Quartile Scutum      four stars and the light between them: a wall in
+	                         front that stops everything, melee thrown back off it
+	  4 Quartile Hasta       four star beams converge into one: guard-breaking
+	Full-Crown Spirit of Zephyr (G again, once 45 damage is dealt in Half-Crown)
+	  1 Spirit of Notos      the south wind bursts out of him, and blows spells
+	                         thrown at him back where they came from
+	  2 Spirit of Boreas     the wind sword becomes a halberd: he closes in and
+	                         brings the axe down, guard break
+	  3 Spirit of Euros      a recurve bow of wind; one arrow, too fast to see,
+	                         through everything in a line (unblockable)
+	  4 Neverland            he and Sylph raise a dome of turning stars: time stops
+	                         for everyone inside, then they're weaker and slower
+	                         while Sylph's clones strike them and he hits harder
+
+	All visuals are in StarterPlayerScripts.Client.Kits.Wind, which gets
+	("Skill", {skill, phase, ...}) events from here.
+]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
+local Projectile = require(script.Parent.Parent.Projectile)
+
+local KIT_ID = "Wind"
+local UP = Vector3.yAxis
+-- Holds a character in the air (a tiny upward velocity switches on the
+-- vertical force, so gravity stops pulling).
+local HOVER = Vector3.new(0, 0.05, 0)
+local SPELLS = { Bolt = true, Explosion = true, Swarm = true, Zone = true }
+local ALL_TYPES = { Melee = true, Bolt = true, Explosion = true, Swarm = true, Zone = true }
+
+local Kit = {}
+
+---------------------------------------------------------------------------
+-- Helpers
+---------------------------------------------------------------------------
+
+local function fx(ctx, skill: string, phase: string, extra: { [string]: any }?)
+	local data: { [string]: any } = { character = ctx.character, kit = KIT_ID, skill = skill, phase = phase }
+	if extra then
+		for key, value in extra do
+			data[key] = value
+		end
+	end
+	ctx.combat.FireVFX("Skill", data)
+end
+
+local function look(ctx): Vector3
+	return ctx.combat.Flat(ctx.root.CFrame.LookVector)
+end
+
+local function rootOf(character: Model): BasePart?
+	return character:FindFirstChild("HumanoidRootPart") :: BasePart?
+end
+
+-- Interrupted by getting hit, ragdolled or dying.
+local function interrupted(ctx): boolean
+	local character = ctx.character
+	return not CombatState.IsAlive(character) or CombatState.IsStunned(character) or CombatState.IsRagdolled(character)
+end
+
+local function rayParams(ctx): RaycastParams
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { ctx.character }
+	return params
+end
+
+local function isCharacterPart(part: Instance): boolean
+	local model = part:FindFirstAncestorWhichIsA("Model")
+	return model ~= nil and model:FindFirstChildOfClass("Humanoid") ~= nil
+end
+
+-- How far a spell can go along `direction` before it meets the ground or a
+-- wall (people don't stop it).
+local function reach(ctx, origin: Vector3, direction: Vector3, maxRange: number): number
+	local hit = workspace:Raycast(origin, direction * maxRange, rayParams(ctx))
+	if hit and not isCharacterPart(hit.Instance) then
+		return math.max((hit.Position - origin).Magnitude + 1, 6)
+	end
+	return maxRange
+end
+
+-- The floor under a point (or 3 studs under it when there's none in reach).
+local function floorUnder(ctx, position: Vector3): Vector3
+	local hit = workspace:Raycast(position + UP * 2, Vector3.new(0, -60, 0), rayParams(ctx))
+	return if hit then hit.Position else position - UP * 3
+end
+
+-- Who he's most likely aiming at: the closest enemy within `range` studs
+-- and `cone` degrees of where he faces.
+local function softTarget(ctx, range: number, cone: number): Model?
+	local forward = look(ctx)
+	local minDot = math.cos(math.rad(cone))
+	local best, bestDistance = nil, math.huge
+	for _, victim in ctx.combat.Sphere(ctx.character, ctx.root.Position, range) do
+		local victimRoot = rootOf(victim)
+		if victimRoot then
+			local offset = victimRoot.Position - ctx.root.Position
+			if ctx.combat.Flat(offset):Dot(forward) >= minDot and offset.Magnitude < bestDistance then
+				best, bestDistance = victim, offset.Magnitude
+			end
+		end
+	end
+	return best
+end
+
+-- Where a spell aims: straight at the soft target if there is one, else
+-- ahead (and down at an angle from the air).
+local function aimFrom(ctx, origin: Vector3, target: Model?, dip: number): Vector3
+	local targetRoot = target and rootOf(target)
+	if targetRoot then
+		return (targetRoot.Position - origin).Unit
+	end
+	local forward = look(ctx)
+	return if ctx.airborne then (forward + UP * -dip).Unit else forward
+end
+
+-- Everyone along a line (a beam).
+local function lineVictims(ctx, origin: Vector3, direction: Vector3, length: number, width: number): { Model }
+	local box = CFrame.lookAt(origin + direction * (length / 2), origin + direction * length)
+	return ctx.combat.Box(ctx.character, box, Vector3.new(width, width + 1, length))
+end
+
+---------------------------------------------------------------------------
+-- Base moves: Prince of Wind
+---------------------------------------------------------------------------
+
+-- Wind Blades Shower: blades of wind form in the sky over whoever he faces
+-- (or a way ahead) and rain down in waves. The waves pin them in place; the
+-- last one pops them up. The blades keep falling even if he's hit.
+local SHOWER_CAST = 0.35
+local SHOWER_WAVES = 6
+local SHOWER_GAP = 0.15
+local SHOWER_RADIUS = 9
+
+local function windBladesShower(ctx)
+	local c, character = ctx.combat, ctx.character
+	CombatState.SetCasting(character, SHOWER_CAST + 0.25)
+	if ctx.airborne then
+		c.ApplyVelocity(character, HOVER, SHOWER_CAST + 0.3)
+	end
+	local target = softTarget(ctx, 40, 50)
+	local targetRoot = target and rootOf(target)
+	local center = floorUnder(ctx, if targetRoot then targetRoot.Position else ctx.root.Position + look(ctx) * 18)
+	fx(ctx, "WindBladesShower", "Cast", {
+		center = center,
+		radius = SHOWER_RADIUS,
+		waves = SHOWER_WAVES,
+		gap = SHOWER_GAP,
+		delay = SHOWER_CAST,
+		airborne = ctx.airborne,
+	})
+	task.wait(SHOWER_CAST)
+	if interrupted(ctx) then
+		fx(ctx, "WindBladesShower", "Cancel")
+		return
+	end
+	for wave = 1, SHOWER_WAVES do
+		local last = wave == SHOWER_WAVES
+		for _, victim in c.Sphere(character, center + UP * 3, SHOWER_RADIUS + 2) do
+			local victimRoot = rootOf(victim)
+			local offset = if victimRoot then victimRoot.Position - center else Vector3.zero
+			if victimRoot and Vector3.new(offset.X, 0, offset.Z).Magnitude <= SHOWER_RADIUS then
+				c.Hit(character, victim, {
+					damage = if last then 2.5 else 1.4,
+					stun = if last then 0.8 else 0.5,
+					attackType = "Swarm",
+					heavy = last,
+					velocity = if last then UP * 26 else nil,
+					velocityTime = 0.15,
+				})
+			end
+		end
+		task.wait(SHOWER_GAP)
+	end
+end
+
+-- Swift White Hawk: a hawk of wind that flies at them, curving after whoever
+-- he faced when he threw it, and blows them away when it strikes.
+local HAWK_CAST = 0.22
+local HAWK_SPEED = 80
+local HAWK_RANGE = 75
+local HAWK_TURN = math.rad(140) -- per second
+
+local function swiftWhiteHawk(ctx)
+	local c, character = ctx.combat, ctx.character
+	CombatState.SetCasting(character, HAWK_CAST + 0.2)
+	if ctx.airborne then
+		c.ApplyVelocity(character, HOVER, HAWK_CAST + 0.2)
+	end
+	fx(ctx, "SwiftWhiteHawk", "Cast", { airborne = ctx.airborne })
+	task.wait(HAWK_CAST)
+	if interrupted(ctx) then
+		return
+	end
+	local target = softTarget(ctx, HAWK_RANGE, 45)
+	local position = ctx.root.Position + look(ctx) * 2.5 + UP * 0.6
+	local direction = aimFrom(ctx, position, nil, 0.3)
+	fx(ctx, "SwiftWhiteHawk", "Fly", {
+		origin = position,
+		direction = direction,
+		target = target,
+		speed = HAWK_SPEED,
+		turn = HAWK_TURN,
+		range = HAWK_RANGE,
+	})
+	local params = rayParams(ctx)
+	local travelled = 0
+	local last = os.clock()
+	while travelled < HAWK_RANGE do
+		task.wait()
+		local now = os.clock()
+		local dt = now - last
+		last = now
+		local targetRoot = target and rootOf(target)
+		if targetRoot and CombatState.IsAlive(target :: Model) then
+			local want = (targetRoot.Position - position).Unit
+			local angle = math.acos(math.clamp(direction:Dot(want), -1, 1))
+			if angle > 1e-3 then
+				direction = direction:Lerp(want, math.min(1, HAWK_TURN * dt / angle)).Unit
+			end
+		end
+		local step = HAWK_SPEED * dt
+		local wall = workspace:Raycast(position, direction * step, params)
+		if wall and not isCharacterPart(wall.Instance) then
+			fx(ctx, "SwiftWhiteHawk", "Burst", { position = wall.Position })
+			return
+		end
+		position += direction * step
+		travelled += step
+		local victims = c.Sphere(character, position, 3.5)
+		if #victims > 0 then
+			for _, victim in victims do
+				c.Hit(character, victim, {
+					damage = 8,
+					stun = 0.9,
+					attackType = "Bolt",
+					heavy = true,
+					velocity = c.Flat(direction) * 38 + UP * 14,
+					velocityTime = 0.2,
+				})
+			end
+			fx(ctx, "SwiftWhiteHawk", "Burst", { position = position })
+			return
+		end
+	end
+	fx(ctx, "SwiftWhiteHawk", "Burst", { position = position, fade = true })
+end
+
+-- Heavenly Wind Ark: a great crescent of wind rises out of the ground in
+-- front of him and launches whoever it catches; he rides the updraft up
+-- after them for air M1s. In the air the ark sweeps down beneath him
+-- instead and spikes them into the ground.
+local ARK_CAST = 0.18
+
+local function heavenlyWindArk(ctx)
+	local c, character = ctx.combat, ctx.character
+	local airborne = ctx.airborne
+	CombatState.SetCasting(character, ARK_CAST + 0.35)
+	if airborne then
+		c.ApplyVelocity(character, HOVER, ARK_CAST + 0.1)
+	end
+	fx(ctx, "HeavenlyWindArk", "Cast", { airborne = airborne })
+	task.wait(ARK_CAST)
+	if interrupted(ctx) then
+		return
+	end
+	local forward = look(ctx)
+	fx(ctx, "HeavenlyWindArk", "Rise", { airborne = airborne, origin = ctx.root.Position, direction = forward })
+	if airborne then
+		for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, -4, -4), Vector3.new(12, 11, 12)) do
+			c.Hit(character, victim, {
+				damage = 8,
+				stun = 1,
+				attackType = "Zone",
+				heavy = true,
+				ragdoll = 1.2,
+				velocity = forward * 10 + UP * -70,
+			})
+		end
+		c.ApplyVelocity(character, UP * 18, 0.12)
+		return
+	end
+	local launched = false
+	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 1, -5.5), Vector3.new(11, 9, 11)) do
+		-- The M1 uppercut's launch: limp, up and straight back down, and
+		-- still hittable on the way.
+		if
+			c.Hit(character, victim, {
+				damage = 7,
+				stun = 1.2,
+				attackType = "Zone",
+				heavy = true,
+				variant = "Uppercut",
+			}) == "Hit"
+		then
+			launched = true
+		end
+	end
+	if launched then
+		c.ApplyVelocity(character, UP * 50 + forward * 6, 0.25)
+	end
+end
+
+-- Gale White Bow: a great bow of wind and six big arrows, one after the
+-- other, each aimed at whoever he faces at that moment. The first five keep
+-- them stunned, the sixth knocks them back.
+local BOW_DRAW = 0.35
+local BOW_ARROWS = 6
+local BOW_GAP = 0.12
+
+local function galeWhiteBow(ctx)
+	local c, character = ctx.combat, ctx.character
+	local volley = BOW_DRAW + BOW_ARROWS * BOW_GAP
+	CombatState.SetCasting(character, volley + 0.2)
+	if ctx.airborne then
+		c.ApplyVelocity(character, HOVER, volley + 0.1)
+	end
+	fx(ctx, "GaleWhiteBow", "Draw", { airborne = ctx.airborne, draw = BOW_DRAW, arrows = BOW_ARROWS, gap = BOW_GAP })
+	task.wait(BOW_DRAW)
+	for i = 1, BOW_ARROWS do
+		if interrupted(ctx) then
+			fx(ctx, "GaleWhiteBow", "Cancel")
+			return
+		end
+		local last = i == BOW_ARROWS
+		local side = ctx.root.CFrame.RightVector * (if i % 2 == 0 then 0.5 else -0.5)
+		local origin = ctx.root.Position + look(ctx) * 2 + UP * 0.8 + side
+		local direction = aimFrom(ctx, origin, softTarget(ctx, 90, 30), 0.3)
+		fx(
+			ctx,
+			"GaleWhiteBow",
+			"Arrow",
+			{ origin = origin, direction = direction, speed = 170, range = 90, last = last }
+		)
+		Projectile.Fire({
+			owner = character,
+			origin = origin,
+			direction = direction,
+			speed = 170,
+			range = 90,
+			size = Vector3.new(2.5, 2.5, 5),
+			onHit = function(victim)
+				c.Hit(character, victim, {
+					damage = if last then 3 else 2,
+					stun = if last then 0.9 else 0.55,
+					attackType = "Bolt",
+					heavy = last,
+					velocity = if last then c.Flat(direction) * 40 + UP * 15 else c.Flat(direction) * 6,
+					velocityTime = 0.15,
+				})
+			end,
+		})
+		task.wait(BOW_GAP)
+	end
+	CombatState.SetCasting(character, 0.2)
+end
+
+---------------------------------------------------------------------------
+-- R: Conjunction (star magic)
+---------------------------------------------------------------------------
+
+-- A star goes down 22 studs the way he's moving (to the side or back for a
+-- dodge), or straight ahead when he's standing still. R again within 4s and
+-- he's there in an instant. A press while he's stunned does nothing.
+local STAR_DISTANCE = 22
+local STAR_LIFE = 4
+
+function Kit.Special(ctx)
+	local c, character = ctx.combat, ctx.character
+	local velocity = ctx.root.AssemblyLinearVelocity
+	local moving = Vector3.new(velocity.X, 0, velocity.Z)
+	local direction = if moving.Magnitude > 4 then moving.Unit else look(ctx)
+	local origin = ctx.root.Position
+	local wall = workspace:Raycast(origin, direction * STAR_DISTANCE, rayParams(ctx))
+	local star = if wall and not isCharacterPart(wall.Instance)
+		then wall.Position - direction * 2
+		else origin + direction * STAR_DISTANCE
+	local placedAt = os.clock()
+	local since = placedAt
+	fx(ctx, "Conjunction", "Place", { origin = origin, star = star, life = STAR_LIFE })
+	while os.clock() - placedAt < STAR_LIFE and CombatState.IsAlive(character) do
+		task.wait()
+		if c.PressedSince(character, CombatState.SpecialSlot, since) then
+			if not CombatState.CanAct(character) or CombatState.IsCasting(character) then
+				since = os.clock()
+				continue
+			end
+			local from = ctx.root.Position
+			CombatState.GiveIFrames(character, 0.3)
+			ctx.root.CFrame = CFrame.lookAt(star, star + c.Flat(ctx.root.CFrame.LookVector))
+			c.ApplyVelocity(character, Vector3.zero, 0.05)
+			fx(ctx, "Conjunction", "Warp", { from = from, star = star })
+			return
+		end
+	end
+	fx(ctx, "Conjunction", "Fade", { star = star })
+end
+
+---------------------------------------------------------------------------
+-- Half-Crown Spirit of Zephyr
+---------------------------------------------------------------------------
+
+-- Spirit Storm: mana gathered in his palm, let out as a dense beam of
+-- swirling wind that drags them along it; the last of it blows them away.
+local STORM_CHARGE = 0.45
+local STORM_TICKS = 6
+local STORM_TICK = 0.1
+local STORM_LENGTH = 50
+
+local function spiritStorm(ctx)
+	local c, character = ctx.combat, ctx.character
+	local airborne = ctx.airborne
+	local beam = STORM_TICKS * STORM_TICK
+	CombatState.SetCasting(character, STORM_CHARGE + beam + 0.3)
+	if airborne then
+		c.ApplyVelocity(character, HOVER, STORM_CHARGE + beam + 0.1)
+	end
+	fx(ctx, "SpiritStorm", "Charge", { airborne = airborne, duration = STORM_CHARGE })
+	task.wait(STORM_CHARGE)
+	if interrupted(ctx) then
+		fx(ctx, "SpiritStorm", "Cancel")
+		return
+	end
+	local origin = ctx.root.Position + look(ctx) * 2 + UP * 0.6
+	local direction = aimFrom(ctx, origin, softTarget(ctx, STORM_LENGTH, 25), 0.4)
+	local length = reach(ctx, origin, direction, STORM_LENGTH)
+	fx(ctx, "SpiritStorm", "Fire", { origin = origin, direction = direction, length = length, duration = beam })
+	for tick = 1, STORM_TICKS do
+		local last = tick == STORM_TICKS
+		for _, victim in lineVictims(ctx, origin, direction, length, 5) do
+			c.Hit(character, victim, {
+				damage = if last then 3 else 1.6,
+				stun = if last then 1 else 0.45,
+				attackType = "Bolt",
+				heavy = last,
+				velocity = direction * (if last then 55 else 22) + UP * (if last then 18 else 2),
+				velocityTime = if last then 0.2 else 0.12,
+			})
+		end
+		task.wait(STORM_TICK)
+	end
+	CombatState.SetCasting(character, 0.25)
+end
+
+-- Spirit's Hushed Dance: he reads the mana around him. The next attack
+-- (anything, from anywhere) misses; he dances along a stream of wind to
+-- just behind whoever threw it and strikes, a launcher. From too far away
+-- he just slips aside.
+local DANCE_WINDOW = 0.9
+local DANCE_REACH = 45
+
+local function hushedDance(ctx)
+	local c, character = ctx.combat, ctx.character
+	local countered = false
+	CombatState.SetCasting(character, DANCE_WINDOW + 0.1)
+	if ctx.airborne then
+		c.ApplyVelocity(character, HOVER, DANCE_WINDOW)
+	end
+	fx(ctx, "HushedDance", "Stance", { window = DANCE_WINDOW })
+	c.SetCounter(character, DANCE_WINDOW, ALL_TYPES, function(attacker: Model)
+		countered = true
+		CombatState.GiveIFrames(character, 0.7)
+		CombatState.SetCasting(character, 0.5)
+		local attackerRoot = rootOf(attacker)
+		if not attackerRoot then
+			return
+		end
+		local from = ctx.root.Position
+		if (attackerRoot.Position - from).Magnitude <= DANCE_REACH then
+			local behind = attackerRoot.Position - c.Flat(attackerRoot.CFrame.LookVector) * 3.5
+			ctx.root.CFrame =
+				CFrame.lookAt(behind, Vector3.new(attackerRoot.Position.X, behind.Y, attackerRoot.Position.Z))
+			c.ApplyVelocity(character, if ctx.airborne then HOVER else Vector3.zero, 0.2)
+			fx(ctx, "HushedDance", "Evade", { from = from, to = behind, target = attacker })
+			task.wait(0.12)
+			if CombatState.IsAlive(attacker) then
+				c.Hit(character, attacker, {
+					damage = 8,
+					stun = 1.2,
+					attackType = "Melee",
+					unblockable = true,
+					heavy = true,
+					velocity = c.Flat(attackerRoot.Position - ctx.root.Position) * 25 + UP * 30,
+					velocityTime = 0.2,
+				})
+			end
+		else
+			local side = ctx.root.CFrame.RightVector * (if math.random() < 0.5 then -9 else 9)
+			ctx.root.CFrame += side
+			fx(ctx, "HushedDance", "Evade", { from = from, to = ctx.root.Position })
+		end
+	end)
+	task.wait(DANCE_WINDOW + 0.02)
+	if not countered then
+		c.ClearCounter(character)
+		fx(ctx, "HushedDance", "End")
+		CombatState.SetCasting(character, 0.4)
+	end
+end
+
+-- Quartile Scutum: four stars in a rectangle in front of him and beams of
+-- light between them, a wall that stops anything from the front for 2.5s
+-- (even moves that break guards); whoever runs into it in melee is thrown
+-- back off the light. He can still walk, slowly, but not attack.
+local SCUTUM_TIME = 2.5
+
+local function quartileScutum(ctx)
+	local c, character = ctx.combat, ctx.character
+	CombatState.SetCasting(character, SCUTUM_TIME)
+	if ctx.airborne then
+		c.ApplyVelocity(character, HOVER, SCUTUM_TIME)
+	end
+	local raisedAt = os.clock()
+	fx(ctx, "QuartileScutum", "Raise", { duration = SCUTUM_TIME })
+	local function inFront(attacker: Model): boolean
+		local attackerRoot = rootOf(attacker)
+		return attackerRoot ~= nil and c.Flat(attackerRoot.Position - ctx.root.Position):Dot(look(ctx)) > 0.1
+	end
+	local function absorb(attacker: Model, hit: any)
+		local attackerRoot = rootOf(attacker)
+		fx(ctx, "QuartileScutum", "Block", { from = if attackerRoot then attackerRoot.Position else nil })
+		local close = attackerRoot ~= nil and (attackerRoot.Position - ctx.root.Position).Magnitude < 14
+		if close and (hit.attackType or "Melee") == "Melee" and attackerRoot then
+			c.Hit(character, attacker, {
+				damage = 3,
+				stun = 0.6,
+				attackType = "Zone",
+				unblockable = true,
+				velocity = c.Flat(attackerRoot.Position - ctx.root.Position) * 45 + UP * 12,
+				velocityTime = 0.18,
+			})
+		end
+		local left = SCUTUM_TIME - (os.clock() - raisedAt)
+		if left > 0.05 then
+			c.SetCounter(character, left, ALL_TYPES, absorb, inFront)
+		end
+	end
+	c.SetCounter(character, SCUTUM_TIME, ALL_TYPES, absorb, inFront)
+	task.wait(SCUTUM_TIME)
+	c.ClearCounter(character)
+	fx(ctx, "QuartileScutum", "Drop")
+end
+
+-- Quartile Hasta: four stars around his outstretched hand, their beams
+-- converging into one far bigger: a single, guard-breaking lance of light.
+local HASTA_CHARGE = 0.5
+local HASTA_LENGTH = 60
+
+local function quartileHasta(ctx)
+	local c, character = ctx.combat, ctx.character
+	local airborne = ctx.airborne
+	CombatState.SetCasting(character, HASTA_CHARGE + 0.45)
+	if airborne then
+		c.ApplyVelocity(character, HOVER, HASTA_CHARGE + 0.3)
+	end
+	fx(ctx, "QuartileHasta", "Stars", { airborne = airborne, duration = HASTA_CHARGE })
+	task.wait(HASTA_CHARGE)
+	if interrupted(ctx) then
+		fx(ctx, "QuartileHasta", "Cancel")
+		return
+	end
+	local origin = ctx.root.Position + look(ctx) * 3 + UP * 0.8
+	local direction = aimFrom(ctx, origin, softTarget(ctx, HASTA_LENGTH, 25), 0.4)
+	local length = reach(ctx, origin, direction, HASTA_LENGTH)
+	fx(ctx, "QuartileHasta", "Fire", { origin = origin, direction = direction, length = length })
+	for _, victim in lineVictims(ctx, origin, direction, length, 6) do
+		c.Hit(character, victim, {
+			damage = 14,
+			stun = 1.2,
+			attackType = "Bolt",
+			guardBreak = true,
+			heavy = true,
+			ragdoll = 1.3,
+			velocity = c.Flat(direction) * 55 + UP * 18,
+		})
+	end
+	c.ShakeArea(origin, 45, 0.4)
+	task.wait(0.3)
+	CombatState.SetCasting(character, 0.2)
+end
+
+---------------------------------------------------------------------------
+-- Full-Crown Spirit of Zephyr
+---------------------------------------------------------------------------
+
+-- Spirit of Notos: the south wind bursts out of him and throws everyone
+-- near away; for a moment after, spells thrown at him are blown back at
+-- whoever threw them.
+local NOTOS_RADIUS = 16
+local NOTOS_GUARD = 0.8
+
+local function spiritOfNotos(ctx)
+	local c, character = ctx.combat, ctx.character
+	CombatState.SetCasting(character, 0.45)
+	if ctx.airborne then
+		c.ApplyVelocity(character, HOVER, 0.45)
+	end
+	fx(ctx, "SpiritOfNotos", "Blast", { airborne = ctx.airborne })
+	task.wait(0.1)
+	for _, victim in c.Sphere(character, ctx.root.Position, NOTOS_RADIUS) do
+		local victimRoot = rootOf(victim)
+		if victimRoot then
+			c.Hit(character, victim, {
+				damage = 6,
+				stun = 0.9,
+				attackType = "Zone",
+				heavy = true,
+				ragdoll = 1,
+				velocity = c.Flat(victimRoot.Position - ctx.root.Position) * 70 + UP * 22,
+			})
+		end
+	end
+	local guardFrom = os.clock()
+	local function blowBack(attacker: Model)
+		local attackerRoot = rootOf(attacker)
+		if attackerRoot then
+			local origin = ctx.root.Position + UP * 0.6
+			local direction = (attackerRoot.Position - origin).Unit
+			fx(ctx, "SpiritOfNotos", "Gust", { origin = origin, direction = direction })
+			Projectile.Fire({
+				owner = character,
+				origin = origin + direction * 2,
+				direction = direction,
+				speed = 120,
+				range = 90,
+				size = Vector3.new(6, 6, 3),
+				onHit = function(victim)
+					c.Hit(character, victim, {
+						damage = 7,
+						stun = 0.9,
+						attackType = "Bolt",
+						heavy = true,
+						velocity = c.Flat(direction) * 45 + UP * 15,
+					})
+				end,
+			})
+		end
+		local left = NOTOS_GUARD - (os.clock() - guardFrom)
+		if left > 0.02 then
+			c.SetCounter(character, left, SPELLS, blowBack)
+		end
+	end
+	c.SetCounter(character, NOTOS_GUARD, SPELLS, blowBack)
+	c.ShakeArea(ctx.root.Position, 40, 0.35)
+end
+
+-- Spirit of Boreas: the wind sword condenses into a halberd with an axe
+-- head. He closes in, then the axe comes down: a guard-breaking cleave, and
+-- the wind off the impact hits everyone around it.
+local BOREAS_LUNGE = 0.3
+
+local function spiritOfBoreas(ctx)
+	local c, character = ctx.combat, ctx.character
+	local airborne = ctx.airborne
+	CombatState.SetCasting(character, 0.95)
+	fx(ctx, "SpiritOfBoreas", "Form", { airborne = airborne })
+	task.wait(0.12)
+	if interrupted(ctx) then
+		return
+	end
+	local forward = look(ctx)
+	c.ApplyVelocity(
+		character,
+		forward * 70 + (if airborne then UP * -30 else Vector3.zero),
+		BOREAS_LUNGE,
+		if airborne then { landStop = true, landKeep = 0 } else nil
+	)
+	local start = os.clock()
+	while os.clock() - start < BOREAS_LUNGE do
+		if interrupted(ctx) then
+			return
+		end
+		if #c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -3), Vector3.new(6, 7, 6)) > 0 then
+			c.ApplyVelocity(character, Vector3.zero, 0.05)
+			break
+		end
+		task.wait()
+	end
+	fx(ctx, "SpiritOfBoreas", "Chop", { airborne = airborne })
+	task.wait(0.14)
+	if interrupted(ctx) then
+		return
+	end
+	local impact = floorUnder(ctx, (ctx.root.CFrame * CFrame.new(0, 0, -5)).Position)
+	local struck: { [Model]: boolean } = {}
+	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, -0.5, -5), Vector3.new(9, 9, 10)) do
+		struck[victim] = true
+		c.Hit(character, victim, {
+			damage = 14,
+			stun = 1.3,
+			attackType = "Melee",
+			guardBreak = true,
+			heavy = true,
+			ragdoll = 1.5,
+			velocity = forward * 30 + UP * -40,
+		})
+	end
+	for _, victim in c.Sphere(character, impact, 11) do
+		local victimRoot = rootOf(victim)
+		if not struck[victim] and victimRoot then
+			c.Hit(character, victim, {
+				damage = 5,
+				stun = 0.7,
+				attackType = "Zone",
+				velocity = c.Flat(victimRoot.Position - impact) * 35 + UP * 15,
+				velocityTime = 0.18,
+			})
+		end
+	end
+	fx(ctx, "SpiritOfBoreas", "Impact", { position = impact })
+	c.ShakeArea(impact, 50, 0.5)
+	CombatState.SetCasting(character, 0.3)
+end
+
+-- Spirit of Euros: a recurve bow of wind, drawn while the wind spirals into
+-- the arrow. Loosed, it's too fast to see: everyone along its line is hit
+-- at once, through guards and through each other.
+local EUROS_DRAW = 0.8
+local EUROS_RANGE = 120
+
+local function spiritOfEuros(ctx)
+	local c, character = ctx.combat, ctx.character
+	local airborne = ctx.airborne
+	CombatState.SetCasting(character, EUROS_DRAW + 0.35)
+	if airborne then
+		c.ApplyVelocity(character, HOVER, EUROS_DRAW + 0.2)
+	else
+		character:SetAttribute("Rooted", true)
+	end
+	fx(ctx, "SpiritOfEuros", "Draw", { airborne = airborne, duration = EUROS_DRAW })
+	task.wait(EUROS_DRAW)
+	character:SetAttribute("Rooted", false)
+	if interrupted(ctx) then
+		fx(ctx, "SpiritOfEuros", "Cancel")
+		return
+	end
+	local origin = ctx.root.Position + look(ctx) * 2 + UP * 0.8
+	local direction = aimFrom(ctx, origin, softTarget(ctx, EUROS_RANGE, 20), 0.3)
+	local length = reach(ctx, origin, direction, EUROS_RANGE)
+	fx(ctx, "SpiritOfEuros", "Loose", { origin = origin, direction = direction, length = length })
+	for _, victim in lineVictims(ctx, origin, direction, length, 3.5) do
+		c.Hit(character, victim, {
+			damage = 16,
+			stun = 1.3,
+			attackType = "Bolt",
+			unblockable = true,
+			heavy = true,
+			ragdoll = 1.4,
+			velocity = c.Flat(direction) * 70 + UP * 14,
+		})
+	end
+	c.ShakeArea(origin, 40, 0.35)
+end
+
+-- Neverland: he and Sylph raise a dome of turning stars over everything
+-- around him. Time stops for everyone caught inside; then, for as long as
+-- it stands, they're weaker and slower while Sylph's clones strike them,
+-- and he hits harder inside it.
+local NEVERLAND_CAST = 1.0
+local NEVERLAND_TIME = 7
+local NEVERLAND_RADIUS = 28
+
+local function neverland(ctx)
+	local c, character = ctx.combat, ctx.character
+	CombatState.SetCasting(character, NEVERLAND_CAST + 0.2)
+	CombatState.GiveIFrames(character, NEVERLAND_CAST + 0.1)
+	if ctx.airborne then
+		c.ApplyVelocity(character, HOVER, NEVERLAND_CAST)
+	else
+		character:SetAttribute("Rooted", true)
+	end
+	local center = floorUnder(ctx, ctx.root.Position)
+	fx(ctx, "Neverland", "Horn", {
+		center = center,
+		radius = NEVERLAND_RADIUS,
+		cast = NEVERLAND_CAST,
+		duration = NEVERLAND_TIME,
+	})
+	task.wait(NEVERLAND_CAST)
+	character:SetAttribute("Rooted", false)
+	if not CombatState.IsAlive(character) then
+		fx(ctx, "Neverland", "Close", { center = center })
+		return
+	end
+	fx(ctx, "Neverland", "Open", { center = center, radius = NEVERLAND_RADIUS })
+	local frozen = {}
+	for _, victim in c.Sphere(character, center, NEVERLAND_RADIUS) do
+		if
+			c.Hit(
+				character,
+				victim,
+				{ damage = 4, stun = 1.5, attackType = "Zone", unblockable = true, noShake = true }
+			) == "Hit"
+		then
+			c.ApplyVelocity(victim, Vector3.zero, 1.4)
+			table.insert(frozen, victim)
+		end
+	end
+	if #frozen > 0 then
+		fx(ctx, "Neverland", "Freeze", { targets = frozen, duration = 1.4 })
+	end
+	local opened = os.clock()
+	local nextStrike = opened + 1.5
+	while os.clock() - opened < NEVERLAND_TIME and character.Parent do
+		local now = os.clock()
+		local inside = c.Sphere(character, center, NEVERLAND_RADIUS)
+		for _, victim in inside do
+			victim:SetAttribute("WeakUntil", now + 0.4)
+			victim:SetAttribute("SlowUntil", now + 0.4)
+		end
+		if (ctx.root.Position - center).Magnitude <= NEVERLAND_RADIUS then
+			character:SetAttribute("PowerUntil", now + 0.4)
+		end
+		if now >= nextStrike then
+			nextStrike += 1
+			local struck = {}
+			for _, victim in inside do
+				if
+					c.Hit(character, victim, {
+						damage = 2,
+						stun = 0.35,
+						attackType = "Zone",
+						unblockable = true,
+						noShake = true,
+					}) == "Hit"
+				then
+					table.insert(struck, victim)
+				end
+			end
+			if #struck > 0 then
+				fx(ctx, "Neverland", "Strike", { targets = struck })
+			end
+		end
+		task.wait(0.2)
+	end
+	fx(ctx, "Neverland", "Close", { center = center })
+end
+
+---------------------------------------------------------------------------
+-- Move sets
+---------------------------------------------------------------------------
+
+Kit.Skills = { windBladesShower, swiftWhiteHawk, heavenlyWindArk, galeWhiteBow }
+
+-- Awakened, the moves follow the stage: Half-Crown, or Full-Crown once he's
+-- ascended (the "Ascended" attribute; names and cooldowns in Shared/Kits).
+local HALF_CROWN = { spiritStorm, hushedDance, quartileScutum, quartileHasta }
+local FULL_CROWN = { spiritOfNotos, spiritOfBoreas, spiritOfEuros, neverland }
+local function stageMove(slot: number): (any) -> ()
+	return function(ctx)
+		local moves = if ctx.character:GetAttribute("Ascended") == true then FULL_CROWN else HALF_CROWN
+		moves[slot](ctx)
+	end
+end
+Kit.AwakenedSkills = { stageMove(1), stageMove(2), stageMove(3), stageMove(4) }
+
+---------------------------------------------------------------------------
+-- Half-Crown / Full-Crown Spirit of Zephyr
+---------------------------------------------------------------------------
+
+-- The client's Awaken / Ascend animations: wind gathers round him, Sylph
+-- merges into him at the burst, and he settles into the new stance. Rooted
+-- and untouchable the whole time.
+local TRANSFORM_TIME = 1.5
+local TRANSFORM_BURST = 0.8
+
+local function transform(ctx, skill: string, radius: number)
+	local c, character = ctx.combat, ctx.character
+	CombatState.SetCasting(character, TRANSFORM_TIME)
+	CombatState.GiveIFrames(character, TRANSFORM_TIME + 0.1)
+	character:SetAttribute("Rooted", true)
+	fx(ctx, skill, "Start")
+	c.ShakeArea(ctx.root.Position, 30, 0.2)
+	task.wait(TRANSFORM_BURST)
+	if CombatState.IsAlive(character) then
+		fx(ctx, skill, "Burst")
+		c.ShakeArea(ctx.root.Position, 70, 0.6)
+		for _, victim in c.Sphere(character, ctx.root.Position, radius) do
+			local victimRoot = rootOf(victim)
+			if victimRoot and not CombatState.HasIFrames(victim) and not CombatState.IsRagdolled(victim) then
+				c.ApplyVelocity(victim, c.Flat(victimRoot.Position - ctx.root.Position) * 55 + UP * 18, 0.2)
+			end
+		end
+	end
+	task.wait(TRANSFORM_TIME - TRANSFORM_BURST)
+	if character.Parent then
+		character:SetAttribute("Rooted", false)
+	end
+end
+
+function Kit.Awaken(ctx)
+	transform(ctx, "Awaken", 14)
+end
+
+function Kit.Ascend(ctx)
+	transform(ctx, "Ascend", 18)
+end
+
+function Kit.AwakenEnd(ctx)
+	fx(ctx, "Awaken", "End")
+end
+
+function Kit.Unequip(character: Model)
+	for _, attribute in { "PowerUntil", "WeakUntil", "SlowUntil", "Rooted" } do
+		character:SetAttribute(attribute, nil)
+	end
+end
+
+return Kit
+]]></string>
+          </Properties>
+        </Item>
       </Item>
-      <Item class="ModuleScript" referent="22">
+      <Item class="ModuleScript" referent="23">
         <Properties>
           <string name="Name">Projectile</string>
           <string name="Source"><![CDATA[--[[
@@ -5008,7 +6104,7 @@ return Projectile
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="23">
+      <Item class="ModuleScript" referent="24">
         <Properties>
           <string name="Name">Ragdoll</string>
           <string name="Source"><![CDATA[--[[
@@ -5304,16 +6400,16 @@ return Ragdoll
       </Item>
     </Item>
   </Item>
-  <Item class="StarterPlayer" referent="24">
+  <Item class="StarterPlayer" referent="25">
     <Properties>
       <string name="Name">StarterPlayer</string>
       <bool name="EnableMouseLockOption">false</bool>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="25">
+    <Item class="StarterPlayerScripts" referent="26">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="LocalScript" referent="26">
+      <Item class="LocalScript" referent="27">
         <Properties>
           <string name="Name">Client</string>
           <string name="Source"><![CDATA[--[[
@@ -5344,7 +6440,7 @@ ShiftLock.Start()
 TopBar.Start()
 ]]></string>
         </Properties>
-        <Item class="ModuleScript" referent="27">
+        <Item class="ModuleScript" referent="28">
           <Properties>
             <string name="Name">CameraShake</string>
             <string name="Source"><![CDATA[--[[
@@ -5410,7 +6506,7 @@ return CameraShake
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="28">
+        <Item class="ModuleScript" referent="29">
           <Properties>
             <string name="Name">Cinematic</string>
             <string name="Source"><![CDATA[--[[
@@ -5639,7 +6735,7 @@ return Cinematic
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="29">
+        <Item class="ModuleScript" referent="30">
           <Properties>
             <string name="Name">HUD</string>
             <string name="Source"><![CDATA[--[[
@@ -5721,6 +6817,8 @@ local shownHealth = 1
 local shownKit: string? = "?"
 local shownAwakened = false
 local shownSword: string? = nil
+local shownAscended = false
+local awakeningColor = COLORS.Awakening
 local toastToken = 0
 
 local function corner(parent: Instance, radius: UDim)
@@ -5996,12 +7094,14 @@ local function refreshKit(character: Model?)
 	local kitId = if character then character:GetAttribute("Kit") :: string? else nil
 	local awakened = character ~= nil and CombatState.IsAwakened(character)
 	local sword = if character then character:GetAttribute("Sword") :: string? else nil
-	if kitId == shownKit and awakened == shownAwakened and sword == shownSword then
+	local ascended = character ~= nil and character:GetAttribute("Ascended") == true
+	if kitId == shownKit and awakened == shownAwakened and sword == shownSword and ascended == shownAscended then
 		return
 	end
 	shownKit = kitId
 	shownAwakened = awakened
 	shownSword = sword
+	shownAscended = ascended
 	local kit = Kits.Get(kitId)
 	local skills = if character then Kits.SkillsOf(character) else {}
 
@@ -6013,6 +7113,9 @@ local function refreshKit(character: Model?)
 	end
 	local awakening = kit and kit.awakening
 	ui.awakening.Visible = awakening ~= nil
+	awakeningColor = if kit then kit.color else COLORS.Awakening
+	ui.awakeningFill.BackgroundColor3 = awakeningColor
+	ui.awakeningStroke.Color = awakeningColor
 	ui.special.Visible = kit ~= nil and (kit.special ~= nil or kit.awakenedSpecial ~= nil)
 	ui.awakeningLabel.Text = if awakening then "[G]  " .. string.upper(awakening.name) else ""
 end
@@ -6054,7 +7157,24 @@ local function update(dt: number)
 		local awakened = CombatState.IsAwakened(character)
 		ui.awakeningFill.Size = UDim2.fromScale(awakening, 1)
 		ui.awakeningStroke.Transparency = if awakening >= 1 or awakened then pulse else 1
-		ui.awakeningLabel.TextColor3 = if awakening >= 1 or awakened then COLORS.Awakening else COLORS.SubText
+		ui.awakeningLabel.TextColor3 = if awakening >= 1 or awakened then awakeningColor else COLORS.SubText
+
+		-- A second stage (Yuno's Full-Crown): how close it is, then G again.
+		local kit = Kits.Of(character)
+		local ascension = kit and kit.ascension
+		if kit and ascension and kit.awakening then
+			local first, second = string.upper(kit.awakening.name), string.upper(ascension.name)
+			local text = "[G]  " .. first
+			if awakened and character:GetAttribute("Ascended") == true then
+				text = second
+			elseif awakened then
+				local charge = math.clamp((tonumber(character:GetAttribute("Ascension")) or 0) / ascension.charge, 0, 1)
+				text = if charge >= 1
+					then "[G]  " .. second
+					else first .. "   ·   " .. second .. " " .. math.floor(charge * 100) .. "%"
+			end
+			ui.awakeningLabel.Text = text
+		end
 
 		for i, s in ui.skills do
 			setSlotCooldown(s, CombatState.Cooldown(character, i))
@@ -6107,7 +7227,7 @@ return HUD
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="30">
+        <Item class="ModuleScript" referent="31">
           <Properties>
             <string name="Name">Input</string>
             <string name="Source"><![CDATA[--[[
@@ -6618,11 +7738,11 @@ return Input
 ]]></string>
           </Properties>
         </Item>
-        <Item class="Folder" referent="31">
+        <Item class="Folder" referent="32">
           <Properties>
             <string name="Name">Kits</string>
           </Properties>
-          <Item class="ModuleScript" referent="32">
+          <Item class="ModuleScript" referent="33">
             <Properties>
               <string name="Name">AntiMagic</string>
               <string name="Source"><![CDATA[--[[
@@ -12746,7 +13866,7 @@ end)
 return Kit
 ]]></string>
             </Properties>
-            <Item class="ModuleScript" referent="33">
+            <Item class="ModuleScript" referent="34">
               <Properties>
                 <string name="Name">Animations</string>
                 <string name="Source"><![CDATA[--[[
@@ -18614,8 +19734,3244 @@ return Animations
               </Properties>
             </Item>
           </Item>
+          <Item class="ModuleScript" referent="35">
+            <Properties>
+              <string name="Name">Wind</string>
+              <string name="Source"><![CDATA[--[[
+	Prince of Wind (Yuno), client side: stance and spell animations, every
+	spell's visuals and the Half-Crown / Full-Crown looks. The server sends
+	("Skill", {skill, phase, ...}) events (Server/Kits/Wind) and every client
+	draws them locally.
+
+	Wind is pale green with a white core, star magic gold-white. Spells are
+	built from anchored neon parts posed every frame, so they follow him and
+	look the same at any ping.
+]]
+
+local RunService = game:GetService("RunService")
+
+local CameraShake = require(script.Parent.Parent.CameraShake)
+local M1Animations = require(script.Parent.Parent.M1Animations)
+local PoseAnimator = require(script.Parent.Parent.PoseAnimator)
+local VFX = require(script.Parent.Parent.VFX)
+
+type Animation = PoseAnimator.Animation
+
+local U = VFX.Util
+local rad = math.rad
+local UP = Vector3.yAxis
+
+local WIND = Color3.fromRGB(120, 235, 175)
+local WIND_DEEP = Color3.fromRGB(35, 170, 110)
+local WIND_WHITE = Color3.fromRGB(228, 255, 240)
+local STAR = Color3.fromRGB(255, 226, 130)
+local STAR_WHITE = Color3.fromRGB(255, 250, 228)
+local TIME_STOP = Color3.fromRGB(200, 236, 255)
+
+local Kit = {}
+
+VFX.SetPalette("Wind", { hit = WIND, heavy = WIND_DEEP, flash = WIND_WHITE })
+
+---------------------------------------------------------------------------
+-- Animations (generated by tools/anim/yuno_anims.py, see Animations.luau)
+---------------------------------------------------------------------------
+
+local function build(raw: { [string]: any }): Animation
+	local keyframes = {}
+	for _, key in raw.keys do
+		table.insert(keyframes, {
+			time = key[1],
+			pose = key[2],
+			easing = if key[3] then (Enum.EasingStyle :: any)[key[3]] else nil,
+			direction = if key[4] then (Enum.EasingDirection :: any)[key[4]] else nil,
+		})
+	end
+	return {
+		keyframes = keyframes,
+		loop = raw.loop,
+		fadeIn = raw.fadeIn,
+		fadeOut = raw.fadeOut,
+		delays = raw.delays,
+	}
+end
+
+local ANIMS: { [string]: Animation } = {}
+for name, raw in require(script.Animations) do
+	ANIMS[name] = build(raw)
+end
+
+-- Calm, upright stance; a light sprint with both arms swinging. The strides
+-- are how far one loop (two steps) carries him (RUN_STRIDE / WALK_STRIDE
+-- in tools/anim/yuno_anims.py), so the feet keep pace with the ground.
+Kit.Idle = {
+	stand = ANIMS.Idle,
+	move = ANIMS.Run,
+	walk = ANIMS.Walk,
+	air = ANIMS.Air,
+	moveSpeed = 16,
+	walkSpeed = 8,
+	moveStride = 10.88,
+	walkStride = 6.13,
+}
+
+local function play(character: Model, animation: Animation, onEvent: ((string) -> ())?)
+	PoseAnimator.Play(character, animation, onEvent)
+end
+
+---------------------------------------------------------------------------
+-- M1: wind-wrapped strikes (the shared fist string), each with a gust
+---------------------------------------------------------------------------
+
+function Kit.PlayM1(character: Model, index: number, variant: string)
+	local name = M1Animations.NameFor(index, variant)
+	local animation = M1Animations.Clips[name]
+	if not animation then
+		return
+	end
+	local heavy = variant ~= "Normal"
+	local strikers = M1Animations.Strikers[name] or {}
+	play(character, animation, function(event)
+		if event ~= "Strike" then
+			return
+		end
+		for _, limbName in strikers do
+			VFX.LimbTrail(character, limbName, if heavy then 0.2 else 0.13, WIND)
+			local limb = character:FindFirstChild(limbName)
+			if limb and limb:IsA("BasePart") then
+				local tip = (limb.CFrame * CFrame.new(0, -1, 0)).Position
+				U.burst(tip, {
+					color = WIND_WHITE,
+					count = if heavy then 10 else 5,
+					size = 0.35,
+					speed = NumberRange.new(10, 24),
+					lifetime = NumberRange.new(0.1, 0.22),
+					streaks = true,
+					spread = 50,
+					direction = (limb.CFrame.LookVector * -1 + limb.CFrame.UpVector * -1).Unit,
+				})
+			end
+		end
+		VFX.AirPop(character, heavy)
+	end)
+end
+
+---------------------------------------------------------------------------
+-- Building blocks
+---------------------------------------------------------------------------
+
+local handlers: { [string]: (data: any, character: Model, root: BasePart) -> () } = {}
+
+local function involves(data, character: Model): boolean
+	return U.isLocal(character) or U.isLocal(data.target)
+end
+
+-- Bumped whenever a skill phase starts, so a loop drawing the last phase
+-- stops as soon as that skill is released or cancelled.
+local castTokens: { [Model]: number } = setmetatable({}, { __mode = "k" }) :: any
+local function bump(character: Model): number
+	local token = (castTokens[character] or 0) + 1
+	castTokens[character] = token
+	return token
+end
+local function live(character: Model, token: number): boolean
+	return castTokens[character] == token and character.Parent ~= nil
+end
+
+-- Runs `step(elapsed, dt)` every frame until it returns false, `duration`
+-- runs out or the cast is replaced; then `finish` (if any).
+local function every(duration: number, step: (number, number) -> boolean?, finish: (() -> ())?)
+	local start = os.clock()
+	local connection
+	connection = RunService.RenderStepped:Connect(function(dt)
+		local elapsed = os.clock() - start
+		if elapsed >= duration or step(elapsed, dt) == false then
+			connection:Disconnect()
+			if finish then
+				finish()
+			end
+		end
+	end)
+end
+
+local function fadeOut(parts: { BasePart }, duration: number)
+	for _, part in parts do
+		U.tween(part, duration, { Transparency = 1 })
+	end
+	task.delay(duration + 0.05, function()
+		for _, part in parts do
+			part:Destroy()
+		end
+	end)
+end
+
+local function handOf(character: Model, side: string): Vector3?
+	local arm = character:FindFirstChild(side .. " Arm")
+	return if arm and arm:IsA("BasePart") then (arm.CFrame * CFrame.new(0, -1.15, 0)).Position else nil
+end
+
+-- A straight bar of light or wind between two points.
+local function bar(from: Vector3, to: Vector3, width: number, color: Color3, transparency: number): BasePart
+	if (to - from).Magnitude < 1e-3 then
+		to = from + UP * 0.05
+	end
+	local length = math.max((to - from).Magnitude, 0.05)
+	return U.newPart({
+		Size = Vector3.new(width, width, length),
+		CFrame = CFrame.lookAt(from:Lerp(to, 0.5), to),
+		Color = color,
+		Transparency = transparency,
+	})
+end
+
+-- A round beam (cylinder) between two points.
+local function tube(from: Vector3, to: Vector3, width: number, color: Color3, transparency: number): BasePart
+	if (to - from).Magnitude < 1e-3 then
+		to = from + UP * 0.05
+	end
+	local length = math.max((to - from).Magnitude, 0.05)
+	return U.newPart({
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(length, width, width),
+		CFrame = CFrame.lookAt(from:Lerp(to, 0.5), to) * CFrame.Angles(0, rad(90), 0),
+		Color = color,
+		Transparency = transparency,
+	})
+end
+
+-- Wind streaming into a point from all round it.
+local function inflow(target: Vector3, radius: number, color: Color3?)
+	local from = target + U.randomUnit() * radius
+	local wisp = bar(from, from + (target - from).Unit * 1.2, 0.08, color or WIND_WHITE, 0.3)
+	U.tween(wisp, 0.22, { CFrame = CFrame.lookAt(target, target + (target - from).Unit), Transparency = 1 })
+	task.delay(0.25, wisp.Destroy, wisp)
+end
+
+-- A burst of pale wind streaks.
+local function gust(position: Vector3, size: number, direction: Vector3?)
+	U.burst(position, {
+		color = WIND_WHITE,
+		count = math.floor(8 + size * 3),
+		size = 0.3 + size * 0.06,
+		speed = NumberRange.new(14 + size * 4, 28 + size * 8),
+		lifetime = NumberRange.new(0.15, 0.35),
+		streaks = true,
+		spread = if direction then 40 else 180,
+		direction = direction,
+	})
+	U.ringBurst(CFrame.new(position), WIND, size * 0.2, size, 0.3, 0.12)
+	U.light(position, WIND, 3, size * 2.5, 0.25)
+end
+
+-- A four-pointed star of light (star magic): a white core, a gold cross and
+-- a smaller diagonal cross, always turned to face the camera.
+type Star = { place: (Vector3, number) -> (), fade: (number) -> (), parts: { BasePart } }
+
+local function makeStar(size: number, color: Color3?): Star
+	local tint = color or STAR
+	local parts: { BasePart } = {}
+	local offsets: { CFrame } = {}
+	local function add(part: BasePart, offset: CFrame)
+		table.insert(parts, part)
+		table.insert(offsets, offset)
+	end
+	add(
+		U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * size * 0.32, Color = STAR_WHITE }),
+		CFrame.identity
+	)
+	for i = 0, 3 do
+		local long = i % 2 == 0
+		add(
+			U.newPart({
+				Size = Vector3.new(size * 0.07, size * (if long then 1.15 else 0.55), size * 0.07),
+				Color = tint,
+				Transparency = 0.05,
+			}),
+			CFrame.Angles(0, 0, i * math.pi / 4)
+		)
+	end
+	add(
+		U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * size * 0.95, Color = tint, Transparency = 0.82 }),
+		CFrame.identity
+	)
+	local light = Instance.new("PointLight")
+	light.Color = tint
+	light.Range = size * 6
+	light.Brightness = 2.5
+	light.Parent = parts[1]
+	local star = { parts = parts }
+	function star.place(position: Vector3, spin: number)
+		local base = CFrame.lookAt(position, workspace.CurrentCamera.CFrame.Position) * CFrame.Angles(0, 0, spin)
+		for i, part in parts do
+			part.CFrame = base * offsets[i]
+		end
+	end
+	function star.fade(duration: number)
+		light.Enabled = false
+		fadeOut(parts, duration)
+	end
+	return star
+end
+
+-- Sylph: a small spirit of wind, a glowing body with two fluttering wings.
+type Sprite = { place: (CFrame, number) -> (), fade: (number) -> () }
+
+local function makeSprite(scale: number): Sprite
+	local body = U.newPart({
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.new(0.5, 0.5, 0.5) * scale,
+		Color = WIND_WHITE,
+	})
+	local glow = U.newPart({
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.one * 1.3 * scale,
+		Color = WIND,
+		Transparency = 0.7,
+	})
+	local wings = {
+		U.newPart({ Size = Vector3.new(0.9, 0.05, 0.5) * scale, Color = WIND, Transparency = 0.35 }),
+		U.newPart({ Size = Vector3.new(0.9, 0.05, 0.5) * scale, Color = WIND, Transparency = 0.35 }),
+	}
+	local light = Instance.new("PointLight")
+	light.Color = WIND
+	light.Range = 6 * scale
+	light.Brightness = 2
+	light.Parent = body
+	local parts = { body, glow, wings[1], wings[2] }
+	local sprite = {}
+	function sprite.place(cframe: CFrame, t: number)
+		body.CFrame = cframe
+		glow.CFrame = cframe
+		local flap = math.sin(t * 30) * rad(40)
+		wings[1].CFrame = cframe * CFrame.Angles(0, 0, flap) * CFrame.new(0.45 * scale, 0, 0)
+		wings[2].CFrame = cframe * CFrame.Angles(0, 0, -flap) * CFrame.new(-0.45 * scale, 0, 0)
+	end
+	function sprite.fade(duration: number)
+		light.Enabled = false
+		fadeOut(parts, duration)
+	end
+	return sprite
+end
+
+-- An arc of thin segments (a bow, a crescent of wind): points on a circle of
+-- `radius` round `center` from angle `from` to `to` (radians) in the plane of
+-- `right` and `up`.
+local function arcPoints(
+	center: Vector3,
+	right: Vector3,
+	up: Vector3,
+	radius: number,
+	from: number,
+	to: number,
+	count: number
+): { Vector3 }
+	local points = {}
+	for i = 0, count do
+		local angle = from + (to - from) * i / count
+		table.insert(points, center + (right * math.cos(angle) + up * math.sin(angle)) * radius)
+	end
+	return points
+end
+
+local function arcParts(points: { Vector3 }, width: number, color: Color3, transparency: number): { BasePart }
+	local parts = {}
+	for i = 1, #points - 1 do
+		table.insert(parts, bar(points[i], points[i + 1], width, color, transparency))
+	end
+	return parts
+end
+
+local function poseArc(parts: { BasePart }, points: { Vector3 })
+	for i, part in parts do
+		local a, b = points[i], points[i + 1]
+		part.Size = Vector3.new(part.Size.X, part.Size.Y, (b - a).Magnitude + 0.05)
+		part.CFrame = CFrame.lookAt(a:Lerp(b, 0.5), b)
+	end
+end
+
+---------------------------------------------------------------------------
+-- Base: Prince of Wind
+---------------------------------------------------------------------------
+
+-- Wind Blades Shower: a ring of wind forms over the spot and blades fill
+-- the sky in it, then fall in waves, each bursting where it lands.
+local function fallingBlade(target: Vector3, formDelay: number, fallAt: number)
+	local start = target + Vector3.new(math.random(-30, 30) / 10, 20 + math.random() * 6, math.random(-30, 30) / 10)
+	local cframe = CFrame.lookAt(start, target) * CFrame.Angles(0, 0, math.random() * math.pi)
+	local blade =
+		U.newPart({ Size = Vector3.new(0.1, 0.65, 3.2), CFrame = cframe, Color = WIND_WHITE, Transparency = 1 })
+	local glow = U.newPart({ Size = Vector3.new(0.05, 1.5, 3.8), CFrame = cframe, Color = WIND, Transparency = 1 })
+	task.delay(formDelay, function()
+		U.tween(blade, 0.2, { Transparency = 0.1 })
+		U.tween(glow, 0.2, { Transparency = 0.6 })
+	end)
+	task.delay(fallAt, function()
+		local drop = target - start
+		U.tween(blade, 0.14, { CFrame = cframe + drop }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		U.tween(glow, 0.14, { CFrame = cframe + drop }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		task.delay(0.14, function()
+			blade:Destroy()
+			glow:Destroy()
+			U.burst(target, {
+				color = WIND_WHITE,
+				count = 5,
+				size = 0.35,
+				speed = NumberRange.new(10, 22),
+				lifetime = NumberRange.new(0.12, 0.25),
+				streaks = true,
+				spread = 70,
+			})
+			U.ringBurst(CFrame.new(target + UP * 0.1), WIND, 0.4, 2.4, 0.22, 0.08)
+		end)
+	end)
+end
+
+function handlers.WindBladesShower(data, character, root)
+	if data.phase == "Cast" then
+		play(character, ANIMS.Shower)
+		local center: Vector3 = data.center
+		local radius: number = data.radius
+		local delay: number = data.delay
+		-- Where it will fall: a faint circle on the ground and a ring of wind above.
+		U.ringBurst(CFrame.new(center + UP * 0.15), WIND, radius, radius, delay + data.waves * data.gap, 0.12)
+		U.ringBurst(CFrame.new(center + UP * 22), WIND_WHITE, 2, radius + 2, delay + 0.2, 0.3)
+		local hand = handOf(character, "Right")
+		if hand then
+			gust(hand, 3, UP)
+		end
+		for wave = 1, data.waves do
+			for _ = 1, 3 do
+				local angle = math.random() * math.pi * 2
+				local spot = center
+					+ Vector3.new(math.cos(angle), 0, math.sin(angle)) * radius * math.sqrt(math.random())
+				fallingBlade(spot, math.random() * delay * 0.6, delay + (wave - 1) * data.gap)
+			end
+		end
+		task.delay(delay + data.waves * data.gap, function()
+			gust(center + UP, 6, UP)
+			U.groundCracks(center, 6, radius * 0.7, WIND, 1)
+			if (workspace.CurrentCamera.CFrame.Position - center).Magnitude < 40 then
+				CameraShake.Add(0.12)
+			end
+		end)
+	end
+end
+
+-- Swift White Hawk: a hawk of wind (white core, green wings beating, a
+-- streaming tail) flies out and curves after its target, bursting into
+-- feathers of wind when it strikes.
+local hawks: { [Model]: { done: boolean, position: Vector3 } } = {}
+
+function handlers.SwiftWhiteHawk(data, character, root)
+	if data.phase == "Cast" then
+		play(character, ANIMS.Hawk)
+		local hand = handOf(character, "Right")
+		if hand then
+			for _ = 1, 6 do
+				inflow(hand, 4)
+			end
+		end
+	elseif data.phase == "Fly" then
+		local state = { done = false, position = data.origin :: Vector3 }
+		hawks[character] = state
+		local direction: Vector3 = data.direction
+		local target: Model? = data.target
+		local body = U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.new(1, 1, 1), Color = WIND_WHITE })
+		local aura = U.newPart({
+			Shape = Enum.PartType.Ball,
+			Size = Vector3.new(2.2, 2.2, 2.2),
+			Color = WIND,
+			Transparency = 0.65,
+		})
+		local head = U.newPart({ Size = Vector3.new(0.6, 0.6, 0.9), Color = WIND_WHITE })
+		local wings = {
+			U.newPart({ Size = Vector3.new(3, 0.08, 1.2), Color = WIND, Transparency = 0.2 }),
+			U.newPart({ Size = Vector3.new(3, 0.08, 1.2), Color = WIND, Transparency = 0.2 }),
+		}
+		local tail = U.newPart({ Size = Vector3.new(1.2, 0.06, 1.6), Color = WIND, Transparency = 0.3 })
+		local parts = { body, aura, head, wings[1], wings[2], tail }
+		local light = Instance.new("PointLight")
+		light.Color = WIND
+		light.Range = 14
+		light.Brightness = 3
+		light.Parent = body
+		local travelled = 0
+		every(data.range / data.speed + 0.3, function(elapsed, dt)
+			if state.done then
+				return false
+			end
+			local targetRoot = target and U.getRoot(target)
+			if targetRoot then
+				local want = (targetRoot.Position - state.position).Unit
+				local angle = math.acos(math.clamp(direction:Dot(want), -1, 1))
+				if angle > 1e-3 then
+					direction = direction:Lerp(want, math.min(1, data.turn * dt / angle)).Unit
+				end
+			end
+			local step = data.speed * dt
+			state.position += direction * step
+			travelled += step
+			local frame = CFrame.lookAt(state.position, state.position + direction)
+			body.CFrame = frame
+			aura.CFrame = frame
+			head.CFrame = frame * CFrame.new(0, 0.15, -0.8)
+			local flap = math.sin(elapsed * 22) * rad(35)
+			wings[1].CFrame = frame * CFrame.Angles(0, 0, flap) * CFrame.new(1.5, 0, 0.1)
+			wings[2].CFrame = frame * CFrame.Angles(0, 0, -flap) * CFrame.new(-1.5, 0, 0.1)
+			tail.CFrame = frame * CFrame.new(0, 0, 1.1)
+			if math.random() < 0.5 then
+				local streak = bar(state.position, state.position - direction * 2.5, 0.12, WIND_WHITE, 0.4)
+				U.tween(streak, 0.25, { Transparency = 1, Size = Vector3.new(0.02, 0.02, 2.5) })
+				task.delay(0.26, streak.Destroy, streak)
+			end
+			return travelled < data.range
+		end, function()
+			hawks[character] = nil
+			fadeOut(parts, 0.12)
+		end)
+		local hand = handOf(character, "Right")
+		if hand then
+			gust(hand, 3, direction)
+		end
+	elseif data.phase == "Burst" then
+		local state = hawks[character]
+		if state then
+			state.done = true
+		end
+		local position: Vector3 = data.position
+		if data.fade then
+			gust(position, 3)
+			return
+		end
+		gust(position, 7)
+		U.shockwave(position, WIND, 2, 9, 0.3)
+		U.burst(position, {
+			color = WIND,
+			count = 18,
+			size = 0.6,
+			speed = NumberRange.new(20, 40),
+			lifetime = NumberRange.new(0.25, 0.5),
+			spread = 180,
+			drag = 3,
+		})
+		if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 30 then
+			CameraShake.Add(0.15)
+		end
+	end
+end
+
+-- Heavenly Wind Ark: a great crescent of wind rises out of the ground in
+-- front of him (on the ground) or sweeps down beneath him (in the air).
+function handlers.HeavenlyWindArk(data, character, root)
+	if data.phase == "Cast" then
+		play(character, if data.airborne then ANIMS.AirArk else ANIMS.Ark)
+	elseif data.phase == "Rise" then
+		local forward: Vector3 = data.direction
+		local right = forward:Cross(UP).Unit
+		local air = data.airborne == true
+		local center = data.origin + forward * 5.5 + (if air then UP * -2 else UP * -3)
+		local from, to = if air then math.pi * 1.05 else -0.05, if air then math.pi * 1.95 else math.pi * 1.05
+		local points = arcPoints(center, right, UP, 6, from, to, 12)
+		local outer = arcParts(points, 0.9, WIND, 0.45)
+		local inner = arcParts(points, 0.3, WIND_WHITE, 0.05)
+		local shift = if air then UP * -8 else UP * 9
+		for _, part in outer do
+			U.tween(part, 0.45, { CFrame = part.CFrame + shift, Transparency = 1 })
+		end
+		for _, part in inner do
+			U.tween(part, 0.4, { CFrame = part.CFrame + shift, Transparency = 1 })
+		end
+		task.delay(0.5, function()
+			for _, part in outer do
+				part:Destroy()
+			end
+			for _, part in inner do
+				part:Destroy()
+			end
+		end)
+		if air then
+			U.burst(center, {
+				color = WIND_WHITE,
+				count = 20,
+				size = 0.5,
+				speed = NumberRange.new(30, 60),
+				lifetime = NumberRange.new(0.2, 0.4),
+				streaks = true,
+				spread = 30,
+				direction = -UP,
+			})
+		else
+			U.pillar(center, WIND, 3.5, 14, 0.4, Enum.Material.ForceField, 0.2)
+			U.burst(center, {
+				color = WIND_WHITE,
+				count = 24,
+				size = 0.5,
+				speed = NumberRange.new(35, 70),
+				lifetime = NumberRange.new(0.2, 0.45),
+				streaks = true,
+				spread = 25,
+				direction = UP,
+			})
+			U.groundCracks(center, 4, 5, WIND, 0.8)
+			U.debris(center, 6, 30, 0.6)
+		end
+		U.light(center, WIND, 4, 18, 0.35)
+		if U.isLocal(character) then
+			CameraShake.Add(0.14)
+			CameraShake.FovKick(5)
+		end
+	end
+end
+
+-- Gale White Bow: a great bow of wind in his left hand, the string drawn to
+-- his chin, held through the volley; each arrow streaks out as a long bolt
+-- of wind with a white core.
+local function flyingArrow(origin: Vector3, direction: Vector3, speed: number, range: number, scale: number)
+	local core = U.newPart({ Size = Vector3.new(0.3, 0.3, 4) * scale, Color = WIND_WHITE })
+	local glow = U.newPart({ Size = Vector3.new(1.1, 1.1, 5) * scale, Color = WIND, Transparency = 0.55 })
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { U.folder }
+	local position = origin
+	local travelled = 0
+	every(range / speed + 0.1, function(_, dt)
+		local step = speed * dt
+		local wall = workspace:Raycast(position, direction * step, params)
+		local model = wall and wall.Instance:FindFirstAncestorWhichIsA("Model")
+		if wall and not (model and model:FindFirstChildOfClass("Humanoid")) then
+			gust(wall.Position, 3)
+			return false
+		end
+		position += direction * step
+		travelled += step
+		local frame = CFrame.lookAt(position, position + direction)
+		core.CFrame = frame
+		glow.CFrame = frame
+		return travelled < range
+	end, function()
+		fadeOut({ core, glow }, 0.1)
+	end)
+end
+
+local bows: { [Model]: { stop: () -> () } } = {}
+
+function handlers.GaleWhiteBow(data, character, root)
+	if data.phase == "Draw" then
+		play(character, ANIMS.Bow)
+		local token = bump(character)
+		local length = data.draw + data.arrows * data.gap + 0.25
+		local segments = 10
+		local limbs = arcParts(table.create(segments + 1, Vector3.zero), 0.22, WIND, 0.2)
+		local core = arcParts(table.create(segments + 1, Vector3.zero), 0.08, WIND_WHITE, 0)
+		local strings = { bar(Vector3.zero, UP, 0.05, WIND_WHITE, 0.2), bar(Vector3.zero, UP, 0.05, WIND_WHITE, 0.2) }
+		local all = table.clone(limbs)
+		table.move(core, 1, #core, #all + 1, all)
+		table.move(strings, 1, 2, #all + 1, all)
+		local function stop()
+			bows[character] = nil
+			fadeOut(all, 0.2)
+		end
+		bows[character] = { stop = stop }
+		every(length, function(elapsed)
+			local hand = handOf(character, "Left")
+			local pull = handOf(character, "Right")
+			if not live(character, token) or not hand or not pull or not root.Parent then
+				return false
+			end
+			local forward = root.CFrame.LookVector
+			local right = forward:Cross(UP).Unit
+			local grow = math.min(elapsed / 0.2, 1)
+			local center = hand - forward * 1.2
+			local points = arcPoints(center, forward, UP, 3.4 * grow + 0.1, -1.1, 1.1, segments)
+			poseArc(limbs, points)
+			poseArc(core, points)
+			local nock = pull + right * 0.1
+			strings[1].Size = Vector3.new(0.05, 0.05, (points[1] - nock).Magnitude)
+			strings[1].CFrame = CFrame.lookAt(points[1]:Lerp(nock, 0.5), nock)
+			strings[2].Size = Vector3.new(0.05, 0.05, (points[#points] - nock).Magnitude)
+			strings[2].CFrame = CFrame.lookAt(points[#points]:Lerp(nock, 0.5), nock)
+			return true
+		end, function()
+			if bows[character] then
+				stop()
+			end
+		end)
+	elseif data.phase == "Arrow" then
+		local origin: Vector3 = data.origin
+		local direction: Vector3 = data.direction
+		flyingArrow(origin, direction, data.speed, data.range, if data.last then 1.4 else 1)
+		gust(origin, if data.last then 4 else 2, direction)
+		if U.isLocal(character) then
+			CameraShake.FovKick(if data.last then 5 else 2)
+		end
+	elseif data.phase == "Cancel" then
+		bump(character)
+		local bow = bows[character]
+		if bow then
+			bow.stop()
+		end
+	end
+end
+
+---------------------------------------------------------------------------
+-- R: Conjunction
+---------------------------------------------------------------------------
+
+local stars: { [Model]: Star } = {}
+
+function handlers.Conjunction(data, character, root)
+	if data.phase == "Place" then
+		play(character, ANIMS.Conjunction)
+		local old = stars[character]
+		if old then
+			old.fade(0.1)
+		end
+		local origin: Vector3 = data.origin
+		local spot: Vector3 = data.star
+		local star = makeStar(1.8)
+		stars[character] = star
+		-- Flicked out to its spot, then it hangs there turning, pulsing.
+		every(data.life, function(elapsed)
+			if stars[character] ~= star then
+				return false
+			end
+			local travel = math.min(elapsed / 0.15, 1)
+			local position = origin:Lerp(spot, 1 - (1 - travel) ^ 2)
+			star.place(position + UP * math.sin(elapsed * 3) * 0.15, elapsed * 2.5)
+			return true
+		end, function()
+			if stars[character] == star then
+				stars[character] = nil
+				star.fade(0.3)
+			end
+		end)
+		U.ringBurst(CFrame.new(spot), STAR, 0.4, 3, 0.35, 0.1)
+	elseif data.phase == "Warp" then
+		local star = stars[character]
+		stars[character] = nil
+		if star then
+			star.fade(0.15)
+		end
+		local from: Vector3 = data.from
+		local spot: Vector3 = data.star
+		play(character, ANIMS.Warp)
+		-- Gone in a flash of starlight, and there.
+		local line = bar(from, spot, 0.25, STAR_WHITE, 0.1)
+		local glow = bar(from, spot, 0.9, STAR, 0.6)
+		fadeOut({ line, glow }, 0.25)
+		for _, at in { from, spot } do
+			U.flash(at, STAR_WHITE, 6, 0.25)
+			U.ringBurst(CFrame.new(at - UP * 2.6), STAR, 1, 6, 0.3, 0.12)
+			U.burst(at, {
+				color = STAR,
+				count = 14,
+				size = 0.35,
+				speed = NumberRange.new(8, 20),
+				lifetime = NumberRange.new(0.3, 0.6),
+				spread = 180,
+				drag = 3,
+			})
+		end
+		U.light(spot, STAR, 4, 16, 0.3)
+		if U.isLocal(character) then
+			CameraShake.FovKick(-6)
+		end
+	elseif data.phase == "Fade" then
+		local star = stars[character]
+		stars[character] = nil
+		if star then
+			star.fade(0.3)
+		end
+	end
+end
+
+---------------------------------------------------------------------------
+-- Half-Crown Spirit of Zephyr
+---------------------------------------------------------------------------
+
+-- Spirit Storm: an orb of mana gathers in his palm, then a dense beam of
+-- swirling wind (a white core inside a green column, rings of wind
+-- spinning out along it) roars out.
+function handlers.SpiritStorm(data, character, root)
+	if data.phase == "Charge" then
+		play(character, ANIMS.StormCharge)
+		local token = bump(character)
+		local orb = U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.2, Color = WIND_WHITE })
+		local halo =
+			U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.4, Color = WIND, Transparency = 0.5 })
+		every(data.duration + 0.05, function(elapsed)
+			local hand = handOf(character, "Right")
+			if not live(character, token) or not hand then
+				return false
+			end
+			local grow = elapsed / data.duration
+			orb.Size = Vector3.one * (0.3 + 1.1 * grow)
+			halo.Size = Vector3.one * (0.8 + 2.4 * grow)
+			orb.CFrame = CFrame.new(hand + root.CFrame.LookVector * 0.6)
+			halo.CFrame = orb.CFrame
+			inflow(orb.Position, 5)
+			return true
+		end, function()
+			fadeOut({ orb, halo }, 0.08)
+		end)
+	elseif data.phase == "Fire" then
+		play(character, ANIMS.StormFire)
+		local token = bump(character)
+		local origin: Vector3 = data.origin
+		local direction: Vector3 = data.direction
+		local finish = origin + direction * data.length
+		local core = tube(origin, finish, 1.4, WIND_WHITE, 0.05)
+		local column = tube(origin, finish, 4.4, WIND, 0.55)
+		local sheath = tube(origin, finish, 6, WIND_DEEP, 0.85)
+		local light = Instance.new("PointLight")
+		light.Color = WIND
+		light.Range = 24
+		light.Brightness = 4
+		light.Parent = core
+		local nextRing = 0
+		every(data.duration, function(elapsed)
+			if not live(character, token) then
+				return false
+			end
+			if elapsed >= nextRing then
+				nextRing = elapsed + 0.05
+				local along = math.random() * data.length
+				U.impactRing(origin + direction * along, direction, WIND_WHITE, 1.5, 4.5, 0.18)
+			end
+			local wobble = 1 + math.sin(elapsed * 40) * 0.08
+			column.Size = Vector3.new(column.Size.X, 4.4 * wobble, 4.4 * wobble)
+			return true
+		end, function()
+			fadeOut({ core, column, sheath }, 0.2)
+			gust(finish, 6, direction)
+		end)
+		gust(origin, 5, direction)
+		U.light(origin, WIND, 5, 20, 0.6)
+		if U.isLocal(character) then
+			CameraShake.Add(0.2)
+			CameraShake.FovKick(8)
+		end
+	elseif data.phase == "Cancel" then
+		bump(character)
+	end
+end
+
+-- Spirit's Hushed Dance: wind streams circle him while he reads the mana;
+-- on an attack he flows along a ribbon of wind to behind them and strikes.
+function handlers.HushedDance(data, character, root)
+	if data.phase == "Stance" then
+		play(character, ANIMS.Dance)
+		U.spiral(root, WIND, 3, 5, data.window, 3, 0.08, 0.2)
+		U.highlight(character, WIND, data.window, 0.85)
+	elseif data.phase == "Evade" then
+		local from: Vector3 = data.from
+		local to: Vector3 = data.to
+		local side = (to - from):Cross(UP)
+		side = if side.Magnitude > 0.01 then side.Unit * 3 else Vector3.zero
+		-- A curving ribbon of wind along the way he went.
+		local previous = from
+		for i = 1, 10 do
+			local t = i / 10
+			local point = from:Lerp(to, t) + side * math.sin(t * math.pi)
+			local piece = bar(previous, point, 0.35, WIND, 0.3)
+			task.delay(0.02 * i, function()
+				U.tween(piece, 0.3, { Transparency = 1, Size = Vector3.new(0.05, 0.05, piece.Size.Z) })
+				task.delay(0.32, piece.Destroy, piece)
+			end)
+			previous = point
+		end
+		U.flash(from, WIND_WHITE, 4, 0.2)
+		gust(to, 4)
+		if data.target then
+			play(character, ANIMS.DanceStrike)
+			task.delay(0.12, function()
+				local targetRoot = U.getRoot(data.target)
+				if targetRoot then
+					gust(targetRoot.Position, 6, UP)
+					U.shockwave(targetRoot.Position, WIND, 1.5, 8, 0.25)
+				end
+			end)
+		end
+		if involves(data, character) then
+			CameraShake.FovKick(-8)
+		end
+	end
+end
+
+-- Quartile Scutum: four stars at the corners of a rectangle in front of him
+-- and beams of light between them, a pane of starlight filling it; it moves
+-- with him, ripples where it's struck and fades when it drops.
+local barriers: { [Model]: { ripple: (Vector3?) -> (), drop: () -> () } } = {}
+
+function handlers.QuartileScutum(data, character, root)
+	if data.phase == "Raise" then
+		play(character, ANIMS.Scutum)
+		local corners = {
+			Vector3.new(-3.6, -2.6, -3.2),
+			Vector3.new(3.6, -2.6, -3.2),
+			Vector3.new(3.6, 3.2, -3.2),
+			Vector3.new(-3.6, 3.2, -3.2),
+		}
+		local cornerStars = {}
+		for _ = 1, 4 do
+			table.insert(cornerStars, makeStar(1.4))
+		end
+		local edges = {}
+		for _ = 1, 4 do
+			table.insert(edges, bar(Vector3.zero, UP, 0.18, STAR_WHITE, 0.05))
+		end
+		local pane = U.newPart({
+			Size = Vector3.new(7.2, 5.8, 0.1),
+			Color = STAR,
+			Transparency = 0.82,
+			Material = Enum.Material.ForceField,
+		})
+		local done = false
+		local function drop()
+			done = true
+			barriers[character] = nil
+			for _, star in cornerStars do
+				star.fade(0.25)
+			end
+			fadeOut(edges, 0.25)
+			fadeOut({ pane }, 0.25)
+		end
+		barriers[character] = {
+			ripple = function(from: Vector3?)
+				U.impactRing(pane.Position, pane.CFrame.LookVector, STAR_WHITE, 0.5, 4, 0.3)
+				U.flash(pane.Position, STAR, 5, 0.15)
+				if from then
+					U.burst(pane.Position, {
+						color = STAR,
+						count = 10,
+						size = 0.3,
+						speed = NumberRange.new(10, 25),
+						lifetime = NumberRange.new(0.15, 0.3),
+						streaks = true,
+						spread = 50,
+						direction = (from - pane.Position).Unit,
+					})
+				end
+			end,
+			drop = drop,
+		}
+		every(data.duration + 0.5, function(elapsed)
+			if done or not root.Parent then
+				return false
+			end
+			local frame = root.CFrame
+			local world = {}
+			for i, corner in corners do
+				world[i] = frame:PointToWorldSpace(corner)
+				cornerStars[i].place(world[i], elapsed * 2 + i)
+			end
+			for i, edge in edges do
+				local a, b = world[i], world[i % 4 + 1]
+				local grow = math.min(elapsed / 0.15, 1)
+				local tip = a:Lerp(b, grow)
+				edge.Size = Vector3.new(0.18, 0.18, (tip - a).Magnitude + 0.05)
+				edge.CFrame = CFrame.lookAt(a:Lerp(tip, 0.5), tip)
+			end
+			pane.CFrame = frame * CFrame.new(0, 0.3, -3.2)
+			return true
+		end, function()
+			if not done then
+				drop()
+			end
+		end)
+	elseif data.phase == "Block" then
+		local barrier = barriers[character]
+		if barrier then
+			barrier.ripple(data.from)
+		end
+	elseif data.phase == "Drop" then
+		local barrier = barriers[character]
+		if barrier then
+			barrier.drop()
+		end
+	end
+end
+
+-- Quartile Hasta: four stars turn round his outstretched hand, growing;
+-- their beams converge ahead of him into one great lance of starlight.
+local hastaStars: { [Model]: { Star } } = {}
+
+function handlers.QuartileHasta(data, character, root)
+	if data.phase == "Stars" then
+		play(character, ANIMS.HastaStars)
+		local token = bump(character)
+		local set = {}
+		for _ = 1, 4 do
+			table.insert(set, makeStar(1.2))
+		end
+		hastaStars[character] = set
+		every(data.duration + 0.1, function(elapsed)
+			local hand = handOf(character, "Right")
+			if not live(character, token) or not hand then
+				return false
+			end
+			local grow = math.min(elapsed / 0.2, 1)
+			local frame = CFrame.lookAt(hand, hand + root.CFrame.LookVector) * CFrame.Angles(0, 0, elapsed * 3)
+			for i, star in set do
+				local angle = (i - 1) * math.pi / 2
+				star.place(frame * Vector3.new(math.cos(angle), math.sin(angle), -0.8) * 1.8 * grow, elapsed * 4)
+			end
+			return true
+		end, function()
+			if hastaStars[character] == set then
+				hastaStars[character] = nil
+			end
+			for _, star in set do
+				star.fade(0.15)
+			end
+		end)
+	elseif data.phase == "Fire" then
+		play(character, ANIMS.HastaFire)
+		local origin: Vector3 = data.origin
+		local direction: Vector3 = data.direction
+		local finish = origin + direction * data.length
+		local meet = origin + direction * 3
+		local set = hastaStars[character]
+		if set then
+			for _, star in set do
+				local from = star.parts[1].Position
+				local ray = bar(from, meet, 0.25, STAR_WHITE, 0.05)
+				fadeOut({ ray }, 0.2)
+			end
+		end
+		bump(character)
+		local core = tube(meet, finish, 1.6, STAR_WHITE, 0)
+		local glow = tube(meet, finish, 5.5, STAR, 0.6)
+		local sheath = tube(meet, finish, 8, STAR, 0.88)
+		U.tween(core, 0.4, { Size = Vector3.new(core.Size.X, 0.1, 0.1) })
+		U.tween(glow, 0.4, { Size = Vector3.new(glow.Size.X, 0.6, 0.6) })
+		fadeOut({ core, glow, sheath }, 0.4)
+		U.flash(meet, STAR_WHITE, 10, 0.25)
+		U.flash(finish, STAR, 8, 0.25)
+		U.impactRing(meet, direction, STAR_WHITE, 1, 8, 0.3)
+		U.light(meet, STAR, 6, 30, 0.4)
+		U.burst(finish, {
+			color = STAR,
+			count = 20,
+			size = 0.5,
+			speed = NumberRange.new(20, 45),
+			lifetime = NumberRange.new(0.2, 0.45),
+			spread = 180,
+		})
+		if U.isLocal(character) then
+			CameraShake.Add(0.25)
+			CameraShake.FovKick(10)
+		end
+	elseif data.phase == "Cancel" then
+		bump(character)
+	end
+end
+
+---------------------------------------------------------------------------
+-- Full-Crown Spirit of Zephyr
+---------------------------------------------------------------------------
+
+-- Looks (built further down); moves can hide his wind sword for a moment
+-- (the halberd, the bow).
+local looks: { [Model]: { hideSword: number } } = {}
+
+local function hideSword(character: Model, duration: number)
+	local look = looks[character]
+	if look then
+		look.hideSword = os.clock() + duration
+	end
+end
+
+-- Spirit of Notos: the south wind bursts out of him (a sphere of wind and a
+-- ring along the ground); spells blown back go as a whirling disc of wind.
+function handlers.SpiritOfNotos(data, character, root)
+	if data.phase == "Blast" then
+		play(character, ANIMS.Notos)
+		task.delay(0.1, function()
+			if not root.Parent then
+				return
+			end
+			local position = root.Position
+			U.shockwave(position, WIND, 4, 34, 0.5, Enum.Material.ForceField)
+			U.ringBurst(CFrame.new(position - UP * 2.8), WIND_WHITE, 2, 18, 0.4, 0.3)
+			U.burst(position, {
+				color = WIND_WHITE,
+				count = 36,
+				size = 0.5,
+				speed = NumberRange.new(60, 100),
+				lifetime = NumberRange.new(0.2, 0.4),
+				streaks = true,
+				spread = 180,
+			})
+			U.light(position, WIND, 5, 30, 0.4)
+			if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 30 then
+				CameraShake.Add(0.2)
+			end
+		end)
+	elseif data.phase == "Gust" then
+		local origin: Vector3 = data.origin
+		local direction: Vector3 = data.direction
+		local disc = U.newPart({
+			Shape = Enum.PartType.Cylinder,
+			Size = Vector3.new(0.3, 6, 6),
+			Color = WIND,
+			Transparency = 0.4,
+		})
+		local position = origin
+		every(0.75, function(elapsed, dt)
+			position += direction * 120 * dt
+			disc.CFrame = CFrame.lookAt(position, position + direction)
+				* CFrame.Angles(0, rad(90), 0)
+				* CFrame.Angles(elapsed * 20, 0, 0)
+			return true
+		end, function()
+			fadeOut({ disc }, 0.1)
+		end)
+		gust(origin, 5, direction)
+	end
+end
+
+-- Spirit of Boreas: the wind sword condenses into a halberd (a long shaft,
+-- an axe head and a spike), raised as he closes in and brought down; the
+-- impact throws up a ring of wind and splits the ground.
+function handlers.SpiritOfBoreas(data, character, root)
+	if data.phase == "Form" then
+		play(character, ANIMS.BoreasForm)
+		hideSword(character, 0.95)
+		local shaft = U.newPart({ Size = Vector3.new(0.22, 7.5, 0.22), Color = WIND_DEEP })
+		local axe = U.newPart({ Size = Vector3.new(0.14, 1.9, 1.6), Color = WIND, Transparency = 0.15 })
+		local edge = U.newPart({ Size = Vector3.new(0.08, 2.1, 0.2), Color = WIND_WHITE })
+		local spike = U.newPart({ Size = Vector3.new(0.12, 1.4, 0.12), Color = WIND_WHITE })
+		local parts = { shaft, axe, edge, spike }
+		every(0.95, function()
+			local arm = character:FindFirstChild("Right Arm")
+			if not arm or not arm:IsA("BasePart") then
+				return false
+			end
+			local grip = arm.CFrame * CFrame.new(0, -1.1, 0) * CFrame.Angles(rad(-90), 0, 0)
+			shaft.CFrame = grip * CFrame.new(0, 2.4, 0)
+			axe.CFrame = grip * CFrame.new(0, 5.2, -0.8)
+			edge.CFrame = grip * CFrame.new(0, 5.2, -1.6)
+			spike.CFrame = grip * CFrame.new(0, 6.6, 0)
+			return true
+		end, function()
+			fadeOut(parts, 0.15)
+		end)
+		U.flash(root.Position, WIND, 5, 0.2)
+		U.speedLines(root, root.CFrame.LookVector, 0.3, WIND)
+	elseif data.phase == "Chop" then
+		play(character, ANIMS.BoreasChop)
+		U.bodyTrail(character, WIND, 0.25)
+	elseif data.phase == "Impact" then
+		local position: Vector3 = data.position
+		U.shockwave(position, WIND, 2, 24, 0.4)
+		U.ringBurst(CFrame.new(position + UP * 0.2), WIND_WHITE, 1, 13, 0.4, 0.35)
+		U.groundCracks(position, 9, 9, WIND, 1.2)
+		U.groundRocks(position, 8, 6, 1.3)
+		U.debris(position, 12, 35, 0.8)
+		gust(position + UP, 8, UP)
+		if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 40 then
+			CameraShake.Add(0.3)
+		end
+	end
+end
+
+-- Spirit of Euros: a recurve bow of wind (curled tips) and an arrow that
+-- the wind spirals into as he draws; loosed, a white line is all there is,
+-- then the air along it rings.
+function handlers.SpiritOfEuros(data, character, root)
+	if data.phase == "Draw" then
+		play(character, ANIMS.EurosDraw)
+		local token = bump(character)
+		hideSword(character, data.duration + 0.4)
+		local segments = 12
+		local limbs = arcParts(table.create(segments + 1, Vector3.zero), 0.24, WIND, 0.15)
+		local arrow = bar(Vector3.zero, UP, 0.16, WIND_WHITE, 0)
+		local arrowGlow = bar(Vector3.zero, UP, 0.6, WIND, 0.5)
+		local all = table.clone(limbs)
+		table.insert(all, arrow)
+		table.insert(all, arrowGlow)
+		every(data.duration + 0.05, function(elapsed)
+			local hand = handOf(character, "Left")
+			local pull = handOf(character, "Right")
+			if not live(character, token) or not hand or not pull then
+				return false
+			end
+			local forward = root.CFrame.LookVector
+			local center = hand - forward * 1.3
+			-- Recurve: the tips curl forward again.
+			local points = arcPoints(center, forward, UP, 3.6, -1.2, 1.2, segments)
+			points[1] += forward * 0.7
+			points[#points] += forward * 0.7
+			poseArc(limbs, points)
+			local tip = hand + forward * 1.6
+			arrow.Size = Vector3.new(0.16, 0.16, (tip - pull).Magnitude)
+			arrow.CFrame = CFrame.lookAt(pull:Lerp(tip, 0.5), tip)
+			arrowGlow.Size = Vector3.new(0.6, 0.6, arrow.Size.Z) * (0.5 + elapsed / data.duration)
+			arrowGlow.CFrame = arrow.CFrame
+			inflow(tip, 4)
+			return true
+		end, function()
+			fadeOut(all, 0.1)
+		end)
+	elseif data.phase == "Loose" then
+		play(character, ANIMS.EurosLoose)
+		bump(character)
+		local origin: Vector3 = data.origin
+		local direction: Vector3 = data.direction
+		local finish = origin + direction * data.length
+		local line = bar(origin, finish, 0.2, WIND_WHITE, 0)
+		local glow = bar(origin, finish, 1.2, WIND, 0.55)
+		U.tween(line, 0.45, { Size = Vector3.new(0.02, 0.02, line.Size.Z) })
+		fadeOut({ line, glow }, 0.45)
+		for i = 0, 8 do
+			task.delay(i * 0.02, U.impactRing, origin:Lerp(finish, i / 8), direction, WIND_WHITE, 0.5, 3, 0.25)
+		end
+		U.flash(finish, WIND_WHITE, 8, 0.2)
+		gust(finish, 6, direction)
+		U.light(origin, WIND, 5, 24, 0.3)
+		if U.isLocal(character) then
+			CameraShake.Add(0.2)
+			CameraShake.FovKick(12)
+		end
+	elseif data.phase == "Cancel" then
+		bump(character)
+	end
+end
+
+-- Neverland: Sylph appears over him and sounds a star horn; a dome of wind
+-- rises over the whole area with stars turning across it and her small
+-- clones darting about inside. Time stops for whoever is caught (a pale
+-- frost of light on them); the clones strike whoever is still inside.
+local domes: { [Model]: { close: () -> () } } = {}
+
+function handlers.Neverland(data, character, root)
+	if data.phase == "Horn" then
+		play(character, ANIMS.Neverland)
+		local sylph = makeSprite(1.6)
+		local horn = U.newPart({ Size = Vector3.new(0.25, 0.25, 1.1), Color = STAR })
+		every(data.cast + 0.2, function(elapsed)
+			if not root.Parent then
+				return false
+			end
+			local position = root.Position + UP * (4 + math.sin(elapsed * 4) * 0.2)
+			sylph.place(CFrame.new(position) * CFrame.Angles(0, elapsed, 0), elapsed)
+			horn.CFrame = CFrame.new(position) * CFrame.Angles(0, elapsed, 0) * CFrame.new(0, 0, -0.9)
+			if elapsed > 0.4 and math.random() < 0.3 then
+				U.burst(horn.Position, {
+					color = STAR,
+					count = 2,
+					size = 0.3,
+					speed = NumberRange.new(4, 10),
+					lifetime = NumberRange.new(0.4, 0.8),
+					spread = 180,
+				})
+			end
+			return true
+		end, function()
+			sylph.fade(0.3)
+			fadeOut({ horn }, 0.3)
+		end)
+		U.ringBurst(CFrame.new(data.center + UP * 0.2), STAR, 2, data.radius, data.cast, 0.15)
+	elseif data.phase == "Open" then
+		local center: Vector3 = data.center
+		local radius: number = data.radius
+		local old = domes[character]
+		if old then
+			old.close()
+		end
+		local dome = U.newPart({
+			Shape = Enum.PartType.Ball,
+			Size = Vector3.one * 2,
+			CFrame = CFrame.new(center),
+			Color = WIND,
+			Material = Enum.Material.ForceField,
+			Transparency = 0.2,
+		})
+		U.tween(dome, 0.5, { Size = Vector3.one * radius * 2 }, Enum.EasingStyle.Quart)
+		local domeStars = {}
+		for i = 1, 16 do
+			table.insert(domeStars, { star = makeStar(1.6), ring = if i <= 10 then 1 else 2, index = i })
+		end
+		local clones = {}
+		for _ = 1, 6 do
+			table.insert(clones, { sprite = makeSprite(0.9), seed = math.random() * 10 })
+		end
+		local closed = false
+		local function close()
+			if closed then
+				return
+			end
+			closed = true
+			domes[character] = nil
+			U.tween(dome, 0.6, { Transparency = 1 })
+			task.delay(0.65, dome.Destroy, dome)
+			for _, entry in domeStars do
+				entry.star.fade(0.4)
+			end
+			for _, clone in clones do
+				clone.sprite.fade(0.3)
+			end
+		end
+		domes[character] = { close = close }
+		every(9, function(elapsed)
+			if closed then
+				return false
+			end
+			for _, entry in domeStars do
+				local count = if entry.ring == 1 then 10 else 6
+				local slot = if entry.ring == 1 then entry.index else entry.index - 10
+				local latitude = if entry.ring == 1 then rad(18) else rad(48)
+				local angle = slot / count * math.pi * 2 + elapsed * (if entry.ring == 1 then 0.25 else -0.35)
+				local horizontal = math.cos(latitude) * radius
+				local position = center
+					+ Vector3.new(
+						math.cos(angle) * horizontal,
+						math.sin(latitude) * radius,
+						math.sin(angle) * horizontal
+					)
+				entry.star.place(position, elapsed * 2)
+			end
+			for i, clone in clones do
+				local s = clone.seed + elapsed * 0.9
+				local position = center
+					+ Vector3.new(
+						math.cos(s * 1.3 + i) * radius * 0.55,
+						4 + math.sin(s * 2.1) * 3,
+						math.sin(s * 1.7 + i) * radius * 0.55
+					)
+				clone.sprite.place(CFrame.new(position), elapsed + i)
+			end
+			return true
+		end, close)
+		U.ringBurst(CFrame.new(center + UP * 0.2), WIND_WHITE, 2, radius, 0.5, 0.4)
+		U.light(center + UP * 4, WIND, 4, radius * 1.5, 1)
+		if (workspace.CurrentCamera.CFrame.Position - center).Magnitude < radius + 10 then
+			U.colorGrade({ Saturation = 0.25, TintColor = Color3.fromRGB(225, 255, 235) }, 0.3, 6.5, 0.6)
+			CameraShake.Add(0.2)
+		end
+	elseif data.phase == "Freeze" then
+		for _, target in data.targets do
+			local targetRoot = U.getRoot(target)
+			if targetRoot then
+				U.highlight(target, TIME_STOP, data.duration, 0.45)
+				U.ringBurst(
+					CFrame.new(targetRoot.Position) * CFrame.Angles(rad(90), 0, 0),
+					TIME_STOP,
+					3,
+					2.6,
+					data.duration,
+					0.08
+				)
+				U.burst(targetRoot.Position, {
+					color = TIME_STOP,
+					count = 10,
+					size = 0.3,
+					speed = NumberRange.new(1, 3),
+					lifetime = NumberRange.new(0.8, 1.4),
+					spread = 180,
+				})
+			end
+		end
+	elseif data.phase == "Strike" then
+		for _, target in data.targets do
+			local targetRoot = U.getRoot(target)
+			if targetRoot then
+				local from = targetRoot.Position + U.randomUnit() * 8 + UP * 3
+				local streak = bar(from, targetRoot.Position, 0.2, WIND_WHITE, 0.1)
+				fadeOut({ streak }, 0.2)
+				gust(targetRoot.Position, 3)
+			end
+		end
+	elseif data.phase == "Close" then
+		local dome = domes[character]
+		if dome then
+			dome.close()
+		end
+	end
+end
+
+---------------------------------------------------------------------------
+-- Half-Crown / Full-Crown: transformations and looks
+---------------------------------------------------------------------------
+
+-- Sylph circles in and merges into him at the burst; wind gathers, then
+-- blasts out.
+local function transformation(data, character: Model, root: BasePart, full: boolean)
+	if data.phase == "Start" then
+		play(character, if full then ANIMS.Ascend else ANIMS.Awaken)
+		local sylph = makeSprite(1.4)
+		every(0.8, function(elapsed)
+			if not root.Parent then
+				return false
+			end
+			local t = elapsed / 0.8
+			local angle = t * math.pi * 4
+			local radius = 5 * (1 - t) + 0.5
+			sylph.place(
+				CFrame.new(root.Position + Vector3.new(math.cos(angle) * radius, 3 - t * 2, math.sin(angle) * radius)),
+				elapsed
+			)
+			inflow(root.Position, 7)
+			return true
+		end, function()
+			sylph.fade(0.15)
+		end)
+		if full then
+			U.spiral(root, WIND, 4, 10, 1.3, 4, 0.2, 0.5)
+		end
+		U.ringBurst(CFrame.new(root.Position - UP * 2.8), WIND, 12, 2, 0.8, 0.2)
+	elseif data.phase == "Burst" then
+		local position = root.Position
+		U.shockwave(position, WIND, 3, if full then 40 else 28, 0.6, Enum.Material.ForceField)
+		U.ringBurst(CFrame.new(position - UP * 2.8), WIND_WHITE, 2, if full then 22 else 16, 0.5, 0.4)
+		U.pillar(position - UP * 3, WIND, 4, if full then 40 else 26, 0.6, Enum.Material.ForceField, 0.3)
+		U.burst(position, {
+			color = WIND_WHITE,
+			count = 40,
+			size = 0.6,
+			speed = NumberRange.new(40, 90),
+			lifetime = NumberRange.new(0.3, 0.6),
+			streaks = true,
+			spread = 180,
+		})
+		if full then
+			U.flash(position + UP * 3, STAR, 10, 0.3)
+		end
+		U.light(position, WIND, 6, 40, 0.8)
+		if U.isLocal(character) then
+			U.colorGrade({ Brightness = 0.15, Saturation = 0.3 }, 0, 0.1, 0.5)
+			CameraShake.Add(0.35)
+			CameraShake.FovKick(12)
+		end
+	elseif data.phase == "End" then
+		gust(root.Position, 6)
+	end
+end
+
+function handlers.Awaken(data, character, root)
+	transformation(data, character, root, false)
+end
+
+function handlers.Ascend(data, character, root)
+	transformation(data, character, root, true)
+end
+
+-- The look: green mana down one side (Half-Crown: his left, where Sylph
+-- sits) or both (Full-Crown); a wing of long wind feathers on that side,
+-- beating slowly; half a crown of gold spikes, or a full one; Full-Crown
+-- also puts a two-handed sword of wind in his hand. Anchored parts posed
+-- every frame round his torso, head and arms; they fade in.
+local FEATHERS = 4
+
+local function buildLook(character: Model, full: boolean): () -> ()
+	local torso = character:FindFirstChild("Torso") :: BasePart?
+	local head = character:FindFirstChild("Head") :: BasePart?
+	if not torso or not head then
+		return function() end
+	end
+	local look = { hideSword = 0 }
+	looks[character] = look
+	local entries: { { part: BasePart, base: number } } = {}
+	local function part(props: { [string]: any }, base: number): BasePart
+		props.Transparency = 1
+		local p = U.newPart(props)
+		table.insert(entries, { part = p, base = base })
+		return p
+	end
+
+	local sides = if full then { -1, 1 } else { -1 } -- -1: his left
+	local wings: { { side: number, feathers: { BasePart } } } = {}
+	for _, side in sides do
+		local feathers = {}
+		for i = 1, FEATHERS do
+			table.insert(feathers, part({ Size = Vector3.new(0.08, 0.5, 3.3 - i * 0.4), Color = WIND }, 0.3))
+		end
+		table.insert(wings, { side = side, feathers = feathers })
+	end
+
+	local spikes = {}
+	local spikeCount = if full then 9 else 5
+	for i = 1, spikeCount do
+		local tall = if i % 2 == 1 then 0.75 else 0.5
+		table.insert(spikes, { part = part({ Size = Vector3.new(0.12, tall, 0.12), Color = STAR }, 0.05), i = i })
+	end
+	local band = part({ Size = Vector3.new(1.3, 0.12, 1.3), Color = STAR, Shape = Enum.PartType.Cylinder }, 0.2)
+
+	local marks = {}
+	for _, side in sides do
+		local arm = character:FindFirstChild(if side < 0 then "Left Arm" else "Right Arm") :: BasePart?
+		if arm then
+			table.insert(
+				marks,
+				{ arm = arm, side = side, strip = part({ Size = Vector3.new(0.04, 1.7, 0.28), Color = WIND }, 0.15) }
+			)
+		end
+	end
+
+	local sword: { BasePart }? = nil
+	if full then
+		sword = {
+			part({ Size = Vector3.new(0.22, 1.1, 0.22), Color = WIND_DEEP }, 0),
+			part({ Size = Vector3.new(1.5, 0.18, 0.32), Color = STAR }, 0),
+			part({ Size = Vector3.new(0.2, 5.6, 0.85), Color = WIND }, 0.25),
+			part({ Size = Vector3.new(0.1, 5.4, 0.28), Color = WIND_WHITE }, 0),
+		}
+	end
+
+	-- Wisps of green mana off the marked arms.
+	local emitters = {}
+	for _, mark in marks do
+		local emitter = Instance.new("ParticleEmitter")
+		emitter.Texture = U.textures.Smoke
+		emitter.Color = ColorSequence.new(WIND)
+		emitter.LightEmission = 0.8
+		emitter.LightInfluence = 0
+		emitter.Size = NumberSequence.new(0.5, 0)
+		emitter.Transparency = NumberSequence.new(0.5, 1)
+		emitter.Lifetime = NumberRange.new(0.4, 0.7)
+		emitter.Rate = 18
+		emitter.Speed = NumberRange.new(0.5, 1.5)
+		emitter.Acceleration = Vector3.new(0, 3, 0)
+		emitter.Parent = mark.arm
+		table.insert(emitters, emitter)
+	end
+
+	local start = os.clock()
+	local connection = RunService.RenderStepped:Connect(function()
+		if not torso.Parent or not head.Parent then
+			return
+		end
+		local t = os.clock() - start
+		local alpha = math.min(t / 0.5, 1)
+		for _, entry in entries do
+			entry.part.Transparency = 1 - (1 - entry.base) * alpha
+		end
+
+		-- Wings: long feathers fanned out and back from the shoulder blade,
+		-- beating slowly.
+		local flap = math.sin(t * 2.2) * 10
+		for _, wing in wings do
+			local base = torso.CFrame * Vector3.new(wing.side * 0.55, 0.6, 0.55)
+			for i, feather in wing.feathers do
+				local spread = rad(8 + i * 17 + flap)
+				local localDirection =
+					Vector3.new(wing.side * math.cos(spread), math.sin(spread) * 0.9 + 0.15, 0.6).Unit
+				local direction = torso.CFrame:VectorToWorldSpace(localDirection)
+				local length = feather.Size.Z
+				feather.CFrame = CFrame.lookAt(base + direction * (length / 2), base + direction * length)
+			end
+		end
+
+		-- Crown: gold spikes round the top of his head (his left half only in Half-Crown).
+		local crown = head.CFrame * CFrame.new(0, 0.62, 0)
+		band.CFrame = crown * CFrame.Angles(0, 0, rad(90))
+		for _, spike in spikes do
+			local angle = if full
+				then (spike.i - 1) / spikeCount * math.pi * 2
+				else math.pi * 0.5 + (spike.i - 1) / (spikeCount - 1) * math.pi
+			local around = Vector3.new(math.cos(angle), 0, math.sin(angle)) * 0.62
+			spike.part.CFrame = crown
+				* CFrame.new(around + Vector3.new(0, spike.part.Size.Y / 2, 0))
+				* CFrame.Angles(around.Z * rad(-25), 0, around.X * rad(25))
+		end
+
+		-- Mana markings down the outside of each marked arm.
+		for _, mark in marks do
+			if mark.arm.Parent then
+				mark.strip.CFrame = mark.arm.CFrame * CFrame.new(mark.side * 0.51, 0, 0)
+			end
+		end
+
+		-- The wind sword, in the right hand.
+		if sword then
+			local arm = character:FindFirstChild("Right Arm") :: BasePart?
+			local hidden = os.clock() < look.hideSword
+			if arm then
+				local grip = arm.CFrame * CFrame.new(0, -1.1, 0) * CFrame.Angles(rad(-90), 0, 0)
+				sword[1].CFrame = grip
+				sword[2].CFrame = grip * CFrame.new(0, 0.6, 0)
+				sword[3].CFrame = grip * CFrame.new(0, 3.5, 0)
+				sword[4].CFrame = grip * CFrame.new(0, 3.5, 0)
+			end
+			if hidden then
+				for _, p in sword do
+					p.Transparency = 1
+				end
+			end
+		end
+	end)
+
+	return function()
+		connection:Disconnect()
+		if looks[character] == look then
+			looks[character] = nil
+		end
+		for _, emitter in emitters do
+			emitter.Enabled = false
+			task.delay(1, emitter.Destroy, emitter)
+		end
+		local parts = {}
+		for _, entry in entries do
+			table.insert(parts, entry.part)
+		end
+		fadeOut(parts, 0.4)
+	end
+end
+
+local destroyLook: { [Model]: () -> () } = {}
+local stageWatch: { [Model]: RBXScriptConnection } = {}
+
+function Kit.SetAwakened(character: Model, on: boolean)
+	local watch = stageWatch[character]
+	if watch then
+		watch:Disconnect()
+		stageWatch[character] = nil
+	end
+	local destroy = destroyLook[character]
+	if destroy then
+		destroyLook[character] = nil
+		destroy()
+	end
+	if not on then
+		return
+	end
+	local function rebuild()
+		local old = destroyLook[character]
+		if old then
+			old()
+		end
+		destroyLook[character] = buildLook(character, character:GetAttribute("Ascended") == true)
+	end
+	rebuild()
+	stageWatch[character] = character:GetAttributeChangedSignal("Ascended"):Connect(function()
+		if character:GetAttribute("Awakened") == true then
+			rebuild()
+		end
+	end)
+end
+
+function Kit.OnSkill(data)
+	local character = data.character
+	if typeof(character) ~= "Instance" or not character:IsA("Model") then
+		return
+	end
+	local root = U.getRoot(character)
+	local handler = handlers[data.skill]
+	if root and handler then
+		handler(data, character, root)
+	end
+end
+
+return Kit
+]]></string>
+            </Properties>
+            <Item class="ModuleScript" referent="36">
+              <Properties>
+                <string name="Name">Animations</string>
+                <string name="Source"><![CDATA[--[[
+	Prince of Wind (Yuno) animation data.
+
+	GENERATED by tools/anim/yuno_anims.py (feet checked against an R6 model
+	of the rig at every keyframe and in between). Edit the Python and re-run
+	it instead of editing this file by hand.
+
+	Each animation: keys = { {time, pose, easingStyle?, easingDirection?}, ... }
+	  rot(x, y, z)          torso/head/leg rotation (degrees)
+	  body(dy, x, y, z)     torso lowered/raised dy studs, then rotated
+	  limb(pitch, yaw, roll) arm/leg aim (degrees)
+]]
+
+local rad = math.rad
+
+local function rot(x: number, y: number?, z: number?): CFrame
+	return CFrame.Angles(rad(x), rad(y or 0), rad(z or 0))
+end
+
+local function body(dy: number, x: number, y: number?, z: number?): CFrame
+	return CFrame.new(0, dy, 0) * CFrame.Angles(rad(x), rad(y or 0), rad(z or 0))
+end
+
+local function limb(pitch: number, yaw: number?, roll: number?): CFrame
+	return CFrame.Angles(0, rad(yaw or 0), 0) * CFrame.Angles(0, 0, rad(roll or 0)) * CFrame.Angles(rad(pitch), 0, 0)
+end
+
+local Animations = {}
+
+-- Standing: calm, turned a little, the left hand loose in front where the wind gathers.
+Animations.Idle = {
+	loop = true,
+	delays = { Head = 0.12, RightArm = 0.1, LeftArm = 0.2 },
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+		},
+		{
+			1.4,
+			{
+				Torso = body(0.079, -1, 12),
+				Head = rot(4, -14),
+				RightArm = limb(15, 4, 11),
+				LeftArm = limb(34, -8, -18),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			2.8,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Moving: a light sprint, both arms swinging. Plays with the distance travelled (RUN_STRIDE studs a loop).
+Animations.Run = {
+	loop = true,
+	delays = { Head = 0.03, RightArm = 0.03, LeftArm = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.03, -14.05, 0, 3),
+				Head = rot(12.84, 0, -3),
+				RightArm = limb(6, 0, 8),
+				LeftArm = limb(6, 0, -8),
+				RightLeg = limb(21, 0, -1.8),
+				LeftLeg = limb(21, 0, -1.8),
+			},
+		},
+		{
+			0.062,
+			{
+				Torso = body(0.04, -14.07, -2.3, 2.77),
+				Head = rot(12.81, 2.3, -2.77),
+				RightArm = limb(-11.6, -3.06, 8.44),
+				LeftArm = limb(23.6, -3.06, -8.44),
+				RightLeg = limb(40.13, 2.3, -1.66),
+				LeftLeg = limb(1.87, 2.3, -1.66),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.125,
+			{
+				Torso = body(0.09, -14.49, -4.24, 2.12),
+				Head = rot(12.24, 4.24, -2.12),
+				RightArm = limb(-26.53, -5.66, 9.5),
+				LeftArm = limb(38.53, -5.66, -9.5),
+				RightLeg = limb(56.36, 4.24, -1.27),
+				LeftLeg = limb(-14.36, 4.24, -1.27),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.188,
+			{
+				Torso = body(0.15, -15.07, -5.54, 1.15),
+				Head = rot(11.48, 5.54, -1.15),
+				RightArm = limb(-36.5, -7.39, 10.56),
+				LeftArm = limb(48.5, -7.39, -10.56),
+				RightLeg = limb(67.19, 5.54, -0.69),
+				LeftLeg = limb(-25.19, 5.54, -0.69),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.25,
+			{
+				Torso = body(0.2, -15.45, -6),
+				Head = rot(10.96, 6),
+				RightArm = limb(-40, -8, 11),
+				LeftArm = limb(52, -8, -11),
+				RightLeg = limb(71, 6),
+				LeftLeg = limb(-29, 6),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.312,
+			{
+				Torso = body(0.2, -15.43, -5.54, -1.15),
+				Head = rot(10.99, 5.54, 1.15),
+				RightArm = limb(-36.5, -7.39, 10.56),
+				LeftArm = limb(48.5, -7.39, -10.56),
+				RightLeg = limb(67.19, 5.54, 0.69),
+				LeftLeg = limb(-25.19, 5.54, 0.69),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.375,
+			{
+				Torso = body(0.15, -15.01, -4.24, -2.12),
+				Head = rot(11.56, 4.24, 2.12),
+				RightArm = limb(-26.53, -5.66, 9.5),
+				LeftArm = limb(38.53, -5.66, -9.5),
+				RightLeg = limb(56.36, 4.24, 1.27),
+				LeftLeg = limb(-14.36, 4.24, 1.27),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.438,
+			{
+				Torso = body(0.08, -14.43, -2.3, -2.77),
+				Head = rot(12.32, 2.3, 2.77),
+				RightArm = limb(-11.6, -3.06, 8.44),
+				LeftArm = limb(23.6, -3.06, -8.44),
+				RightLeg = limb(40.13, 2.3, 1.66),
+				LeftLeg = limb(1.87, 2.3, 1.66),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.5,
+			{
+				Torso = body(0.03, -14.05, 0, -3),
+				Head = rot(12.84, 0, 3),
+				RightArm = limb(6, 0, 8),
+				LeftArm = limb(6, 0, -8),
+				RightLeg = limb(21, 0, 1.8),
+				LeftLeg = limb(21, 0, 1.8),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.562,
+			{
+				Torso = body(0.04, -14.07, 2.3, -2.77),
+				Head = rot(12.81, -2.3, 2.77),
+				RightArm = limb(23.6, 3.06, 8.44),
+				LeftArm = limb(-11.6, 3.06, -8.44),
+				RightLeg = limb(1.87, -2.3, 1.66),
+				LeftLeg = limb(40.13, -2.3, 1.66),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.625,
+			{
+				Torso = body(0.09, -14.49, 4.24, -2.12),
+				Head = rot(12.24, -4.24, 2.12),
+				RightArm = limb(38.53, 5.66, 9.5),
+				LeftArm = limb(-26.53, 5.66, -9.5),
+				RightLeg = limb(-14.36, -4.24, 1.27),
+				LeftLeg = limb(56.36, -4.24, 1.27),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.688,
+			{
+				Torso = body(0.15, -15.07, 5.54, -1.15),
+				Head = rot(11.48, -5.54, 1.15),
+				RightArm = limb(48.5, 7.39, 10.56),
+				LeftArm = limb(-36.5, 7.39, -10.56),
+				RightLeg = limb(-25.19, -5.54, 0.69),
+				LeftLeg = limb(67.19, -5.54, 0.69),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.75,
+			{
+				Torso = body(0.2, -15.45, 6),
+				Head = rot(10.96, -6),
+				RightArm = limb(52, 8, 11),
+				LeftArm = limb(-40, 8, -11),
+				RightLeg = limb(-29, -6),
+				LeftLeg = limb(71, -6),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.812,
+			{
+				Torso = body(0.2, -15.43, 5.54, 1.15),
+				Head = rot(10.99, -5.54, -1.15),
+				RightArm = limb(48.5, 7.39, 10.56),
+				LeftArm = limb(-36.5, 7.39, -10.56),
+				RightLeg = limb(-25.19, -5.54, -0.69),
+				LeftLeg = limb(67.19, -5.54, -0.69),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.875,
+			{
+				Torso = body(0.15, -15.01, 4.24, 2.12),
+				Head = rot(11.56, -4.24, -2.12),
+				RightArm = limb(38.53, 5.66, 9.5),
+				LeftArm = limb(-26.53, 5.66, -9.5),
+				RightLeg = limb(-14.36, -4.24, -1.27),
+				LeftLeg = limb(56.36, -4.24, -1.27),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.938,
+			{
+				Torso = body(0.08, -14.43, 2.3, 2.77),
+				Head = rot(12.32, -2.3, -2.77),
+				RightArm = limb(23.6, 3.06, 8.44),
+				LeftArm = limb(-11.6, 3.06, -8.44),
+				RightLeg = limb(1.87, -2.3, -1.66),
+				LeftLeg = limb(40.13, -2.3, -1.66),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			1,
+			{
+				Torso = body(0.03, -14.05, 0, 3),
+				Head = rot(12.84, 0, -3),
+				RightArm = limb(6, 0, 8),
+				LeftArm = limb(6, 0, -8),
+				RightLeg = limb(21, 0, -1.8),
+				LeftLeg = limb(21, 0, -1.8),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Moving slowly (casting, blocking): an easy walk, same phase as the run.
+Animations.Walk = {
+	loop = true,
+	delays = { Head = 0.03, RightArm = 0.03, LeftArm = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.048, -4, 0, 2),
+				Head = rot(3.8, 0, -2),
+				RightArm = limb(4, 0, 7),
+				LeftArm = limb(4, 0, -7),
+				RightLeg = limb(7, 0, -1.2),
+				LeftLeg = limb(7, 0, -1.2),
+			},
+		},
+		{
+			0.083,
+			{
+				Torso = body(0.082, -4, -2, 1.73),
+				Head = rot(3.5, 2, -1.73),
+				RightArm = limb(-8, -2.5, 7),
+				LeftArm = limb(16, -2.5, -7),
+				RightLeg = limb(21, 2, -1.04),
+				LeftLeg = limb(-7, 2, -1.04),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.167,
+			{
+				Torso = body(0.06, -4, -3.46, 1),
+				Head = rot(2.9, 3.46, -1),
+				RightArm = limb(-16.78, -4.33, 7),
+				LeftArm = limb(24.78, -4.33, -7),
+				RightLeg = limb(31.25, 3.46, -0.6),
+				LeftLeg = limb(-17.25, 3.46, -0.6),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.25,
+			{
+				Torso = body(0.026, -4, -4),
+				Head = rot(2.6, 4),
+				RightArm = limb(-20, -5, 7),
+				LeftArm = limb(28, -5, -7),
+				RightLeg = limb(35, 4),
+				LeftLeg = limb(-21, 4),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.333,
+			{
+				Torso = body(0.033, -4, -3.46, -1),
+				Head = rot(2.9, 3.46, 1),
+				RightArm = limb(-16.78, -4.33, 7),
+				LeftArm = limb(24.78, -4.33, -7),
+				RightLeg = limb(31.25, 3.46, 0.6),
+				LeftLeg = limb(-17.25, 3.46, 0.6),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.417,
+			{
+				Torso = body(0.077, -4, -2, -1.73),
+				Head = rot(3.5, 2, 1.73),
+				RightArm = limb(-8, -2.5, 7),
+				LeftArm = limb(16, -2.5, -7),
+				RightLeg = limb(21, 2, 1.04),
+				LeftLeg = limb(-7, 2, 1.04),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.5,
+			{
+				Torso = body(0.048, -4, 0, -2),
+				Head = rot(3.8, 0, 2),
+				RightArm = limb(4, 0, 7),
+				LeftArm = limb(4, 0, -7),
+				RightLeg = limb(7, 0, 1.2),
+				LeftLeg = limb(7, 0, 1.2),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.583,
+			{
+				Torso = body(0.082, -4, 2, -1.73),
+				Head = rot(3.5, -2, 1.73),
+				RightArm = limb(16, 2.5, 7),
+				LeftArm = limb(-8, 2.5, -7),
+				RightLeg = limb(-7, -2, 1.04),
+				LeftLeg = limb(21, -2, 1.04),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.667,
+			{
+				Torso = body(0.06, -4, 3.46, -1),
+				Head = rot(2.9, -3.46, 1),
+				RightArm = limb(24.78, 4.33, 7),
+				LeftArm = limb(-16.78, 4.33, -7),
+				RightLeg = limb(-17.25, -3.46, 0.6),
+				LeftLeg = limb(31.25, -3.46, 0.6),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.75,
+			{
+				Torso = body(0.026, -4, 4),
+				Head = rot(2.6, -4),
+				RightArm = limb(28, 5, 7),
+				LeftArm = limb(-20, 5, -7),
+				RightLeg = limb(-21, -4),
+				LeftLeg = limb(35, -4),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.833,
+			{
+				Torso = body(0.033, -4, 3.46, 1),
+				Head = rot(2.9, -3.46, -1),
+				RightArm = limb(24.78, 4.33, 7),
+				LeftArm = limb(-16.78, 4.33, -7),
+				RightLeg = limb(-17.25, -3.46, -0.6),
+				LeftLeg = limb(31.25, -3.46, -0.6),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.917,
+			{
+				Torso = body(0.077, -4, 2, 1.73),
+				Head = rot(3.5, -2, -1.73),
+				RightArm = limb(16, 2.5, 7),
+				LeftArm = limb(-8, 2.5, -7),
+				RightLeg = limb(-7, -2, -1.04),
+				LeftLeg = limb(21, -2, -1.04),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			1,
+			{
+				Torso = body(0.048, -4, 0, 2),
+				Head = rot(3.8, 0, -2),
+				RightArm = limb(4, 0, 7),
+				LeftArm = limb(4, 0, -7),
+				RightLeg = limb(7, 0, -1.2),
+				LeftLeg = limb(7, 0, -1.2),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Jumping or falling: arms out on the wind, one knee up.
+Animations.Air = {
+	loop = true,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6),
+				Head = rot(4),
+				RightArm = limb(40, 0, 30),
+				LeftArm = limb(40, 0, -30),
+				RightLeg = rot(30),
+				LeftLeg = rot(-12),
+			},
+		},
+	},
+}
+
+-- Wind Blades Shower: hand to the sky, then down to send the blades.
+Animations.Shower = {
+	fadeOut = 0.25,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+		},
+		{
+			0.2,
+			{
+				Torso = body(0.119, 4, 18),
+				Head = rot(16, -12),
+				RightArm = limb(172, -6, 8),
+				LeftArm = limb(40, -10, -30),
+				RightLeg = rot(-12, 0, 8),
+				LeftLeg = rot(14, 0, -8),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.35,
+			{
+				Torso = body(0.103, -10, -8),
+				Head = rot(4, 6),
+				RightArm = limb(112, 4, 6),
+				LeftArm = limb(30, -10, -26),
+				RightLeg = rot(-16, 0, 8),
+				LeftLeg = rot(18, 0, -8),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.7,
+			{
+				Torso = body(0.103, -10, -8),
+				Head = rot(4, 6),
+				RightArm = limb(112, 4, 6),
+				LeftArm = limb(30, -10, -26),
+				RightLeg = rot(-16, 0, 8),
+				LeftLeg = rot(18, 0, -8),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Swift White Hawk: wound back, then the palm thrust out.
+Animations.Hawk = {
+	fadeOut = 0.25,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+		},
+		{
+			0.12,
+			{
+				Torso = body(0.118, -4, 30),
+				Head = rot(6, -26),
+				RightArm = limb(30, -10, 30),
+				LeftArm = limb(60, -20, -10),
+				RightLeg = rot(-14, 0, 6),
+				LeftLeg = rot(16, 0, -6),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.22,
+			{
+				Torso = body(0.122, -12, -20),
+				Head = rot(10, 18),
+				RightArm = limb(96, 10, 2),
+				LeftArm = limb(20, 0, -20),
+				RightLeg = rot(-22, 0, 6),
+				LeftLeg = rot(22, 0, -6),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.5,
+			{
+				Torso = body(0.122, -12, -20),
+				Head = rot(10, 18),
+				RightArm = limb(96, 10, 2),
+				LeftArm = limb(20, 0, -20),
+				RightLeg = rot(-22, 0, 6),
+				LeftLeg = rot(22, 0, -6),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Heavenly Wind Ark: low and wide, then both arms sweep up.
+Animations.Ark = {
+	fadeOut = 0.3,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+		},
+		{
+			0.1,
+			{
+				Torso = body(0.057, -18),
+				Head = rot(10),
+				RightArm = limb(-12, 0, 24),
+				LeftArm = limb(-12, 0, -24),
+				RightLeg = rot(-26, 0, 10),
+				LeftLeg = rot(26, 0, -10),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.18,
+			{
+				Torso = body(0.079, 8),
+				Head = rot(20),
+				RightArm = limb(165, -8, 10),
+				LeftArm = limb(165, 8, -10),
+				RightLeg = rot(-10, 0, 6),
+				LeftLeg = rot(12, 0, -6),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.5,
+			{
+				Torso = body(0.079, 8),
+				Head = rot(20),
+				RightArm = limb(165, -8, 10),
+				LeftArm = limb(165, 8, -10),
+				RightLeg = rot(-10, 0, 6),
+				LeftLeg = rot(12, 0, -6),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Heavenly Wind Ark in the air: both arms sweep down.
+Animations.AirArk = {
+	fadeOut = 0.3,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6),
+				Head = rot(4),
+				RightArm = limb(40, 0, 30),
+				LeftArm = limb(40, 0, -30),
+				RightLeg = rot(30),
+				LeftLeg = rot(-12),
+			},
+		},
+		{
+			0.1,
+			{
+				Torso = rot(6),
+				Head = rot(14),
+				RightArm = limb(160, -6, 12),
+				LeftArm = limb(160, 6, -12),
+				RightLeg = rot(10),
+				LeftLeg = rot(-8),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.18,
+			{
+				Torso = rot(-24),
+				Head = rot(-6),
+				RightArm = limb(15, 0, 16),
+				LeftArm = limb(15, 0, -16),
+				RightLeg = rot(30),
+				LeftLeg = rot(-14),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.5,
+			{
+				Torso = rot(-24),
+				Head = rot(-6),
+				RightArm = limb(15, 0, 16),
+				LeftArm = limb(15, 0, -16),
+				RightLeg = rot(30),
+				LeftLeg = rot(-14),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Gale White Bow: archer's stance, held through the volley.
+Animations.Bow = {
+	fadeOut = 0.25,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+		},
+		{
+			0.2,
+			{
+				Torso = body(0.099, -4, -68),
+				Head = rot(4, 62),
+				RightArm = limb(92, 70),
+				LeftArm = limb(90, 64),
+				RightLeg = rot(-16, 20, 8),
+				LeftLeg = rot(16, 20, -6),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.35,
+			{
+				Torso = body(0.098, -6, -72),
+				Head = rot(4, 66),
+				RightArm = limb(90, 50, -2),
+				LeftArm = limb(90, 70),
+				RightLeg = rot(-18, 22, 8),
+				LeftLeg = rot(18, 22, -6),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			1.2,
+			{
+				Torso = body(0.098, -6, -72),
+				Head = rot(4, 66),
+				RightArm = limb(90, 50, -2),
+				LeftArm = limb(90, 70),
+				RightLeg = rot(-18, 22, 8),
+				LeftLeg = rot(18, 22, -6),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Conjunction: points where the star goes.
+Animations.Conjunction = {
+	fadeOut = 0.2,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+		},
+		{
+			0.12,
+			{
+				Torso = body(0.097, -4, -10),
+				Head = rot(6, 10),
+				RightArm = limb(104, 14, 4),
+				LeftArm = limb(20, 0, -18),
+				RightLeg = rot(-10, 0, 6),
+				LeftLeg = rot(12, 0, -6),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.4,
+			{
+				Torso = body(0.097, -4, -10),
+				Head = rot(6, 10),
+				RightArm = limb(104, 14, 4),
+				LeftArm = limb(20, 0, -18),
+				RightLeg = rot(-10, 0, 6),
+				LeftLeg = rot(12, 0, -6),
+			},
+			"Quart",
+			"Out",
+		},
+	},
+}
+
+-- Conjunction: arriving at the star, low and poised.
+Animations.Warp = {
+	fadeIn = 0.01,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.017, -16, 10),
+				Head = rot(10, -8),
+				RightArm = limb(30, 0, 40),
+				LeftArm = limb(30, 0, -40),
+				RightLeg = rot(-22, 0, 12),
+				LeftLeg = rot(22, 0, -12),
+			},
+		},
+		{
+			0.35,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Spirit Storm: palm out, mana gathering.
+Animations.StormCharge = {
+	fadeOut = 0.05,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+		},
+		{
+			0.2,
+			{
+				Torso = body(0.122, -8, -12),
+				Head = rot(4, 10),
+				RightArm = limb(92, 10),
+				LeftArm = limb(86, -30),
+				RightLeg = rot(-20, 0, 8),
+				LeftLeg = rot(20, 0, -8),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.45,
+			{
+				Torso = body(0.122, -8, -12),
+				Head = rot(4, 10),
+				RightArm = limb(92, 10),
+				LeftArm = limb(86, -30),
+				RightLeg = rot(-20, 0, 8),
+				LeftLeg = rot(20, 0, -8),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Spirit Storm: leaning into the beam.
+Animations.StormFire = {
+	fadeIn = 0.02,
+	fadeOut = 0.3,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.122, -8, -12),
+				Head = rot(4, 10),
+				RightArm = limb(92, 10),
+				LeftArm = limb(86, -30),
+				RightLeg = rot(-20, 0, 8),
+				LeftLeg = rot(20, 0, -8),
+			},
+		},
+		{
+			0.06,
+			{
+				Torso = body(0.117, -14, -10),
+				Head = rot(8, 8),
+				RightArm = limb(96, 8),
+				LeftArm = limb(90, -28),
+				RightLeg = rot(-24, 0, 10),
+				LeftLeg = rot(24, 0, -10),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.7,
+			{
+				Torso = body(0.117, -14, -10),
+				Head = rot(8, 8),
+				RightArm = limb(96, 8),
+				LeftArm = limb(90, -28),
+				RightLeg = rot(-24, 0, 10),
+				LeftLeg = rot(24, 0, -10),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Spirit's Hushed Dance: poised and open.
+Animations.Dance = {
+	fadeOut = 0.15,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+		},
+		{
+			0.15,
+			{
+				Torso = body(0.105, -2, 20),
+				Head = rot(6, -16),
+				RightArm = limb(40, 0, 52),
+				LeftArm = limb(40, 0, -52),
+				RightLeg = rot(-8, 0, 6),
+				LeftLeg = rot(10, 0, -6),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.9,
+			{
+				Torso = body(0.105, -2, 20),
+				Head = rot(6, -16),
+				RightArm = limb(40, 0, 52),
+				LeftArm = limb(40, 0, -52),
+				RightLeg = rot(-8, 0, 6),
+				LeftLeg = rot(10, 0, -6),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Spirit's Hushed Dance: the spinning palm strike.
+Animations.DanceStrike = {
+	fadeIn = 0.01,
+	fadeOut = 0.25,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.155, -6, 50),
+				Head = rot(4, -40),
+				RightArm = limb(-10, 0, 40),
+				LeftArm = limb(50, -10, -20),
+				RightLeg = rot(-14, 0, 8),
+				LeftLeg = rot(16, 0, -8),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = body(0.155, -14, -30),
+				Head = rot(10, 24),
+				RightArm = limb(96, -6),
+				LeftArm = limb(24, 0, -30),
+				RightLeg = rot(-22, 0, 8),
+				LeftLeg = rot(22, 0, -8),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.4,
+			{
+				Torso = body(0.155, -14, -30),
+				Head = rot(10, 24),
+				RightArm = limb(96, -6),
+				LeftArm = limb(24, 0, -30),
+				RightLeg = rot(-22, 0, 8),
+				LeftLeg = rot(22, 0, -8),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Quartile Scutum: hands out, holding the barrier.
+Animations.Scutum = {
+	fadeOut = 0.2,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+		},
+		{
+			0.15,
+			{
+				Torso = body(0.107, 4),
+				Head = rot(2),
+				RightArm = limb(100, 22, 12),
+				LeftArm = limb(100, -22, -12),
+				RightLeg = rot(-16, 0, 8),
+				LeftLeg = rot(16, 0, -8),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			2.5,
+			{
+				Torso = body(0.107, 4),
+				Head = rot(2),
+				RightArm = limb(100, 22, 12),
+				LeftArm = limb(100, -22, -12),
+				RightLeg = rot(-16, 0, 8),
+				LeftLeg = rot(16, 0, -8),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Quartile Hasta: conducting the four stars.
+Animations.HastaStars = {
+	fadeOut = 0.05,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+		},
+		{
+			0.2,
+			{
+				Torso = body(0.118, -4, -12),
+				Head = rot(6, 10),
+				RightArm = limb(92, 10),
+				LeftArm = limb(150, -10, -22),
+				RightLeg = rot(-16, 0, 8),
+				LeftLeg = rot(16, 0, -8),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.5,
+			{
+				Torso = body(0.118, -4, -12),
+				Head = rot(6, 10),
+				RightArm = limb(92, 10),
+				LeftArm = limb(150, -10, -22),
+				RightLeg = rot(-16, 0, 8),
+				LeftLeg = rot(16, 0, -8),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Quartile Hasta: the lance goes, he rocks back.
+Animations.HastaFire = {
+	fadeIn = 0.02,
+	fadeOut = 0.3,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.118, -4, -12),
+				Head = rot(6, 10),
+				RightArm = limb(92, 10),
+				LeftArm = limb(150, -10, -22),
+				RightLeg = rot(-16, 0, 8),
+				LeftLeg = rot(16, 0, -8),
+			},
+		},
+		{
+			0.05,
+			{
+				Torso = body(0.115, 6, -8),
+				Head = rot(10, 6),
+				RightArm = limb(100, 8),
+				LeftArm = limb(140, -10, -26),
+				RightLeg = rot(-18, 0, 8),
+				LeftLeg = rot(18, 0, -8),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.45,
+			{
+				Torso = body(0.115, 6, -8),
+				Head = rot(10, 6),
+				RightArm = limb(100, 8),
+				LeftArm = limb(140, -10, -26),
+				RightLeg = rot(-18, 0, 8),
+				LeftLeg = rot(18, 0, -8),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Spirit of Notos: arms crossed, then flung wide.
+Animations.Notos = {
+	fadeOut = 0.3,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = body(0.044, -12),
+				Head = rot(-6),
+				RightArm = limb(82, -38),
+				LeftArm = limb(82, 38),
+				RightLeg = rot(-14, 0, 8),
+				LeftLeg = rot(14, 0, -8),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.15,
+			{
+				Torso = body(0.106, 8),
+				Head = rot(16),
+				RightArm = limb(96, 0, 80),
+				LeftArm = limb(96, 0, -80),
+				RightLeg = rot(-20, 0, 10),
+				LeftLeg = rot(20, 0, -10),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.45,
+			{
+				Torso = body(0.106, 8),
+				Head = rot(16),
+				RightArm = limb(96, 0, 80),
+				LeftArm = limb(96, 0, -80),
+				RightLeg = rot(-20, 0, 10),
+				LeftLeg = rot(20, 0, -10),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Spirit of Boreas: halberd raised as he closes in.
+Animations.BoreasForm = {
+	fadeOut = 0.05,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+		},
+		{
+			0.12,
+			{
+				Torso = body(0.092, 6, 6),
+				Head = rot(12),
+				RightArm = limb(168, 10),
+				LeftArm = limb(168, -10),
+				RightLeg = rot(-14, 0, 6),
+				LeftLeg = rot(14, 0, -6),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.42,
+			{
+				Torso = body(0.092, 6, 6),
+				Head = rot(12),
+				RightArm = limb(168, 10),
+				LeftArm = limb(168, -10),
+				RightLeg = rot(-14, 0, 6),
+				LeftLeg = rot(14, 0, -6),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Spirit of Boreas: the axe comes down.
+Animations.BoreasChop = {
+	fadeIn = 0.01,
+	fadeOut = 0.3,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.092, 6, 6),
+				Head = rot(12),
+				RightArm = limb(168, 10),
+				LeftArm = limb(168, -10),
+				RightLeg = rot(-14, 0, 6),
+				LeftLeg = rot(14, 0, -6),
+			},
+		},
+		{
+			0.1,
+			{
+				Torso = body(-0.048, -30, -4),
+				Head = rot(14),
+				RightArm = limb(44, 10),
+				LeftArm = limb(44, -10),
+				RightLeg = rot(-30, 0, 10),
+				LeftLeg = rot(30, 0, -10),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.5,
+			{
+				Torso = body(-0.048, -30, -4),
+				Head = rot(14),
+				RightArm = limb(44, 10),
+				LeftArm = limb(44, -10),
+				RightLeg = rot(-30, 0, 10),
+				LeftLeg = rot(30, 0, -10),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Spirit of Euros: drawn deep and held.
+Animations.EurosDraw = {
+	fadeOut = 0.05,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+		},
+		{
+			0.25,
+			{
+				Torso = body(0.099, -4, -68),
+				Head = rot(4, 62),
+				RightArm = limb(92, 70),
+				LeftArm = limb(90, 64),
+				RightLeg = rot(-16, 20, 8),
+				LeftLeg = rot(16, 20, -6),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.8,
+			{
+				Torso = body(0.097, -8, -74),
+				Head = rot(4, 68),
+				RightArm = limb(90, 44, -4),
+				LeftArm = limb(90, 72),
+				RightLeg = rot(-20, 22, 8),
+				LeftLeg = rot(20, 22, -6),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			1,
+			{
+				Torso = body(0.097, -8, -74),
+				Head = rot(4, 68),
+				RightArm = limb(90, 44, -4),
+				LeftArm = limb(90, 72),
+				RightLeg = rot(-20, 22, 8),
+				LeftLeg = rot(20, 22, -6),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Spirit of Euros: loosed, the drawing hand flies back.
+Animations.EurosLoose = {
+	fadeIn = 0.01,
+	fadeOut = 0.3,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.097, -8, -74),
+				Head = rot(4, 68),
+				RightArm = limb(90, 44, -4),
+				LeftArm = limb(90, 72),
+				RightLeg = rot(-20, 22, 8),
+				LeftLeg = rot(20, 22, -6),
+			},
+		},
+		{
+			0.05,
+			{
+				Torso = body(0.076, -4, -74),
+				Head = rot(6, 68),
+				RightArm = limb(84, 120, -6),
+				LeftArm = limb(92, 72),
+				RightLeg = rot(-20, 22, 8),
+				LeftLeg = rot(20, 22, -6),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.5,
+			{
+				Torso = body(0.076, -4, -74),
+				Head = rot(6, 68),
+				RightArm = limb(84, 120, -6),
+				LeftArm = limb(92, 72),
+				RightLeg = rot(-20, 22, 8),
+				LeftLeg = rot(20, 22, -6),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Neverland: arms raised to the sky.
+Animations.Neverland = {
+	fadeOut = 0.3,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+		},
+		{
+			0.3,
+			{
+				Torso = body(0.086, 8),
+				Head = rot(24),
+				RightArm = limb(160, 0, 26),
+				LeftArm = limb(160, 0, -26),
+				RightLeg = rot(-10, 0, 6),
+				LeftLeg = rot(10, 0, -6),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			1.2,
+			{
+				Torso = body(0.086, 8),
+				Head = rot(24),
+				RightArm = limb(160, 0, 26),
+				LeftArm = limb(160, 0, -26),
+				RightLeg = rot(-10, 0, 6),
+				LeftLeg = rot(10, 0, -6),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Half-Crown: wind gathers, Sylph merges on the burst.
+Animations.Awaken = {
+	fadeOut = 0.2,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+		},
+		{
+			0.3,
+			{
+				Torso = body(0.028, -16),
+				Head = rot(-20),
+				RightArm = limb(70, -44),
+				LeftArm = limb(70, 44),
+				RightLeg = rot(-18, 0, 8),
+				LeftLeg = rot(18, 0, -8),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.8,
+			{
+				Torso = body(0.097, 10),
+				Head = rot(22),
+				RightArm = limb(140, 0, 46),
+				LeftArm = limb(140, 0, -46),
+				RightLeg = rot(-20, 0, 10),
+				LeftLeg = rot(20, 0, -10),
+			},
+			"Back",
+			"Out",
+		},
+		{
+			1.1,
+			{
+				Torso = body(0.097, 10),
+				Head = rot(22),
+				RightArm = limb(140, 0, 46),
+				LeftArm = limb(140, 0, -46),
+				RightLeg = rot(-20, 0, 10),
+				LeftLeg = rot(20, 0, -10),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			1.5,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Full-Crown: the same, arms thrown to the sky.
+Animations.Ascend = {
+	fadeOut = 0.2,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+		},
+		{
+			0.35,
+			{
+				Torso = body(0.028, -16),
+				Head = rot(-20),
+				RightArm = limb(70, -44),
+				LeftArm = limb(70, 44),
+				RightLeg = rot(-18, 0, 8),
+				LeftLeg = rot(18, 0, -8),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.8,
+			{
+				Torso = body(0.09, 12),
+				Head = rot(28),
+				RightArm = limb(176, 0, 18),
+				LeftArm = limb(176, 0, -18),
+				RightLeg = rot(-22, 0, 10),
+				LeftLeg = rot(22, 0, -10),
+			},
+			"Back",
+			"Out",
+		},
+		{
+			1.15,
+			{
+				Torso = body(0.09, 12),
+				Head = rot(28),
+				RightArm = limb(176, 0, 18),
+				LeftArm = limb(176, 0, -18),
+				RightLeg = rot(-22, 0, 10),
+				LeftLeg = rot(22, 0, -10),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			1.5,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+return Animations
+]]></string>
+              </Properties>
+            </Item>
+          </Item>
         </Item>
-        <Item class="ModuleScript" referent="34">
+        <Item class="ModuleScript" referent="37">
           <Properties>
             <string name="Name">M1Animations</string>
             <string name="Source"><![CDATA[--[[
@@ -19003,7 +23359,7 @@ return M1Animations
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="35">
+        <Item class="ModuleScript" referent="38">
           <Properties>
             <string name="Name">Moves</string>
             <string name="Source"><![CDATA[--[[
@@ -19382,7 +23738,7 @@ return Moves
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="36">
+        <Item class="ModuleScript" referent="39">
           <Properties>
             <string name="Name">PoseAnimator</string>
             <string name="Source"><![CDATA[--[[
@@ -19951,7 +24307,7 @@ return PoseAnimator
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="37">
+        <Item class="ModuleScript" referent="40">
           <Properties>
             <string name="Name">Reactions</string>
             <string name="Source"><![CDATA[--[[
@@ -20180,7 +24536,7 @@ return Reactions
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="38">
+        <Item class="ModuleScript" referent="41">
           <Properties>
             <string name="Name">ShiftLock</string>
             <string name="Source"><![CDATA[--[[
@@ -20341,7 +24697,7 @@ return ShiftLock
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="39">
+        <Item class="ModuleScript" referent="42">
           <Properties>
             <string name="Name">TopBar</string>
             <string name="Source"><![CDATA[--[[
@@ -20631,7 +24987,7 @@ return TopBar
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="40">
+        <Item class="ModuleScript" referent="43">
           <Properties>
             <string name="Name">VFX</string>
             <string name="Source"><![CDATA[--[[
@@ -22000,13 +26356,13 @@ return VFX
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="41">
+  <Item class="Workspace" referent="44">
     <Properties>
       <string name="Name">Workspace</string>
       <float name="Gravity">225</float>
       <bool name="NeedsPivotMigration">false</bool>
     </Properties>
-    <Item class="Part" referent="42">
+    <Item class="Part" referent="45">
       <Properties>
         <string name="Name">Baseplate</string>
         <bool name="Anchored">true</bool>
@@ -22025,7 +26381,7 @@ return VFX
         </Vector3>
       </Properties>
     </Item>
-    <Item class="SpawnLocation" referent="43">
+    <Item class="SpawnLocation" referent="46">
       <Properties>
         <string name="Name">SpawnLocation</string>
         <bool name="Anchored">true</bool>

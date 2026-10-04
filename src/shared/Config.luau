@@ -97,6 +97,14 @@ Config.Awakening = {
 	GainPerDamageTaken = 0.5,
 }
 
+-- Timed states moves can put on people (Yuno's Neverland): PowerUntil hits
+-- harder, WeakUntil hits softer, SlowUntil moves slower.
+Config.States = {
+	PowerMultiplier = 1.15,
+	WeakMultiplier = 0.75,
+	SlowMultiplier = 0.6,
+}
+
 -- Switching characters is blocked this long after dealing or taking damage.
 Config.KitSwitchCombatLock = 5
 

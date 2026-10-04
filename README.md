@@ -111,9 +111,51 @@ All of Asta's animations are generated from `tools/anim/asta_anims.py` and check
 - On grounded animations the body is lowered or raised so his soles rest on the floor. That's what lets lunges sink into their stance and runs bob.
 - The run and walk are smooth loops sampled from curves (no stalling at keyframes). Their speed follows the ground covered: a foot passing under him sweeps back as fast as he moves, about 11 studs a loop for the sprint (the same pace as Roblox's own R6 run), so the legs never scurry. The sprint leans in with a runner's bob: the foot is flat on the floor as each leg passes under him, and he lifts off between steps. His shoulders turn with the pumping free arm while his hips stay square, and his head stays level. The walk stays planted and rides over each step.
 
-Run `python3 tools/anim/asta_anims.py`, then `python3 tools/anim/emit.py src/client/Kits/AntiMagic/Animations.luau`.
+Run `python3 tools/anim/asta_anims.py`, then `python3 tools/anim/emit.py src/client/Kits/AntiMagic/Animations.luau`. Yuno's are in `tools/anim/yuno_anims.py`: run it to check them, then `python3 tools/anim/yuno_anims.py src/client/Kits/Wind/Animations.luau` to write them.
 
 Grabs pin the victim to the grabber's actual hand on every screen, so the hold looks solid at any ping. The victim plays a struggling "held by the throat" animation.
+
+### Prince of Wind (Yuno)
+
+Wind, spirit and star magic, built as Asta's opposite: a mid-range zoner who pins people down and pushes them around from where a sword can't reach. Star magic lets him be somewhere else in an instant. Each move does less damage than Asta's, but from range and with more control. His spells are Bolt, Swarm and Zone attacks, so Asta's Deflect sends them back and Conquering Eon drinks them in. Wind is pale green with a white core, star magic gold-white.
+
+| Key | Base: Prince of Wind | Half-Crown Spirit of Zephyr (G) | Full-Crown Spirit of Zephyr (G again) |
+|---|---|---|---|
+| 1 | **Wind Blades Shower**: wind blades fill the sky over whoever he faces (or a way ahead; a circle on the ground shows where) and rain down in six waves. The waves pin people in place and the last one pops them up. The blades keep falling even if he's hit. | **Spirit Storm**: mana gathers in his palm as an orb, then a dense beam of swirling wind roars out, dragging people along it; the last of it blows them away. | **Spirit of Notos**: the south wind bursts out of him and throws everyone near away. For a moment after, spells thrown at him are blown back at whoever threw them. |
+| 2 | **Swift White Hawk**: a hawk of wind, wings beating, curves after whoever he faced and blows them away when it strikes. | **Spirit's Hushed Dance**: he reads the mana around him. The next attack of any kind misses, and he flows along a ribbon of wind to just behind the attacker for a launching palm strike (from too far away he just slips aside). | **Spirit of Boreas**: the wind sword becomes a halberd with an axe head. He closes in and brings the axe down to break their guard; the impact wind hits everyone around it. |
+| 3 | **Heavenly Wind Ark**: a great crescent of wind rises out of the ground ahead and launches people like the M1 uppercut. He rides the updraft up after them for air M1s. **Air:** the ark sweeps down beneath him and spikes them into the ground. | **Quartile Scutum**: four stars in a rectangle in front of him, with beams of light between them and a pane of starlight. For 2.5s it stops anything from the front, even guard breaks, and throws melee attackers back. Hits from behind still land. He can walk slowly but not attack. | **Spirit of Euros**: a recurve bow of wind, drawn (and rooted) while the wind spirals into the arrow. Loosed, it's too fast to see: everyone along the line is hit at once, unblockable. |
+| 4 | **Gale White Bow**: turned side-on like an archer with a great wind bow, he fires six big arrows, each aimed at whoever he faces. Five keep them stunned, the sixth knocks them back. | **Quartile Hasta**: four stars turn around his hand, then their beams converge into one great guard-breaking lance of starlight. | **Neverland**: Sylph appears over him and sounds a star horn, and a dome of wind with stars turning across it rises over everything within 28 studs. Time stops for everyone caught inside. While it stands (7s) they're slowed and weakened, Sylph's clones strike them every second, and Yuno hits harder inside it. |
+| R | **Conjunction**: a star goes down 22 studs the way he's moving (to the side or back for a dodge), or straight ahead when he's still. Press **R** again within 4s to be there in a flash of starlight. | (same) | (same) |
+| G | **Half-Crown**: Sylph circles in and merges into his left side. Green mana runs down his left arm, a wing of long wind feathers grows on that side, and half a crown of gold forms on his head. 45s. | **Full-Crown**: after dealing 45 damage in the Half-Crown, press **G** again. Both sides transform, he gets both wings, a full crown and a two-handed sword of wind, and the timer restarts at 30s. The awakening bar shows how close it is. | |
+
+Most moves have an air version: in the air he hangs while casting and aims down at an angle. His M1s are wind-wrapped strikes: the shared punch-and-kick string with a little more reach and gusts off every hit.
+
+#### Yuno numbers
+
+| Move | Damage | Cooldown | Notes |
+|---|---|---|---|
+| M1 string | 3.5 / 3.5 / 3.5 / 5 | | Fists, a little more reach than default |
+| Wind Blades Shower | 9.5 (5 × 1.4 + 2.5) | 11s | Swarm. Soft-locks on whoever he faces within 40 studs |
+| Swift White Hawk | 8 | 8s | Bolt. Homing (140° a second), 75 studs |
+| Heavenly Wind Ark | 7, air 8 | 12s | Zone. Launcher (uppercut physics); air version spikes |
+| Gale White Bow | 13 (5 × 2 + 3) | 15s | Bolt. Each arrow aims at whoever he faces |
+| Conjunction (R) | | 10s | Teleport to the star: dodge or gap close |
+| Half-Crown (G) | ×1.15 damage | ×0.85 cooldowns | +4 speed for 45s. Weaker than Black Form (×1.25, 55s), but it leads to the Full-Crown |
+| Spirit Storm | 11 (5 × 1.6 + 3) | 12s | Bolt beam, 50 studs |
+| Spirit's Hushed Dance | 8 | 14s | Counters every attack type, unblockable strike |
+| Quartile Scutum | 3 to melee | 16s | Front-only wall for 2.5s that stops everything |
+| Quartile Hasta | 14 | 14s | Guard-breaking beam, 60 studs, delayed 0.5s |
+| Full-Crown (G again) | ×1.3 damage | ×0.75 cooldowns | +8 speed for 30s. Needs 45 damage dealt in the Half-Crown |
+| Spirit of Notos | 6 burst, 7 reflected | 12s | Reflects spells for 0.8s |
+| Spirit of Boreas | 14, impact 5 | 13s | Guard break |
+| Spirit of Euros | 16 | 18s | Unblockable instant line, 120 studs, 0.8s draw |
+| Neverland | 4 + 2 a second | 35s | 28-stud dome for 7s: time stop (1.4s), they're slowed to 60% and deal 75%, he deals 115% |
+
+How he compares with Asta:
+
+- **Damage:** Yuno's base moves average about 9.5 damage on about 11.5s cooldowns, against Asta's 12 on 12s. He makes up for it with range, soft-lock aim and a 10s teleport.
+- **Ultimates:** the Half-Crown is weaker than Black Form, but reaching the Full-Crown takes Yuno past it for 30 seconds.
+- **Matchup:** Asta's Deflect and Conquering Eon punish careless spell spam, and Yuno's Scutum and Hushed Dance answer Asta's rushdown.
 
 ## Test dummies
 
