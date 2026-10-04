@@ -538,41 +538,70 @@ for i in range(1, 25):
     LAUNCHED.append((round(i * 0.25, 2), launched(6 if i % 2 else -6)))
 
 # ---------------- Black Form moves ----------------
-# Black Hurricane: four full spins with the blade held straight out, then a
-# final outward cut. The whole body turns on the root in 90 degree steps.
+# Black Hurricane: he coils up the other way first, then four full spins
+# with the blade held straight out (the whole body turning on the root in
+# 90 degree steps; the hits and crescents are timed to these), stepping
+# round as he goes and leaning in and out with the speed, then a final
+# outward cut that overshoots and settles.
+H_COIL = {'Torso': R(-16, 38), 'Head': R(8, -26), 'RightArm': L(70, 70), 'Sword': A(-0.75, -0.2, 0.62),
+          'LeftArm': L(40, -30), 'RightLeg': R(-26, 0, 6), 'LeftLeg': R(24, 0, -6)}
 def spin(step):
-    t = R(-8, -90 * step)
-    return {'Torso': t, 'Head': R(6), 'RightArm': L(88, -88), 'Sword': torso_dir(t, (0.98, -0.08, -0.18)),
-            'LeftArm': L(75, 85), 'RightLeg': R(-18), 'LeftLeg': R(16)}
+    lean = -8 - 5 * (step % 2)          # dipping into each half turn
+    t = R(lean, -90 * step)
+    stride = 7 if step % 2 == 0 else -7  # feet stepping round
+    return {'Torso': t, 'Head': R(6 + 2 * (step % 2)), 'RightArm': L(88 - 3 * (step % 2), -88),
+            'Sword': torso_dir(t, (0.98, -0.08, -0.18)),
+            'LeftArm': L(75 + 4 * (step % 2), 85), 'RightLeg': R(-18 + stride), 'LeftLeg': R(16 + stride)}
 H_FINISH = {'Torso': R(-12, 40), 'Head': R(4, -30), 'RightArm': L(84, 95), 'Sword': A(-0.85, -0.1, 0.5),
             'LeftArm': L(25, -40), 'RightLeg': R(-26), 'LeftLeg': R(24)}
-HURRICANE = [(0.0, UPPER), (0.1, spin(0))]
+H_FOLLOW = {'Torso': R(-16, 52), 'Head': R(6, -36), 'RightArm': L(80, 108), 'Sword': A(-0.8, -0.3, 0.52),
+            'LeftArm': L(18, -44), 'RightLeg': R(-30, 6), 'LeftLeg': R(26, 6)}
+H_SETTLE = {'Torso': R(-10, 34), 'Head': R(4, -24), 'RightArm': L(78, 84), 'Sword': A(-0.8, -0.32, 0.5),
+            'LeftArm': L(26, -36), 'RightLeg': R(-24), 'LeftLeg': R(22)}
+HURRICANE = [(0.0, UPPER), (0.06, H_COIL), (0.1, spin(0))]
 for i in range(1, 17):
     HURRICANE.append((round(0.1 + i * 0.05, 3), spin(i)))
-HURRICANE += [(1.0, H_FINISH), (1.25, H_FINISH)]
+HURRICANE += [(1.0, H_FINISH), (1.08, H_FOLLOW), (1.25, H_SETTLE)]
 
-# Black Slash: sword wound up high behind him, then a huge diagonal cut that
-# throws the wave.
+# Black Slash: a dip and a twist to gather himself, the sword wound up high
+# behind him, then a huge diagonal cut (it throws the wave at 0.21) that
+# carries on past the strike before he settles.
+BS_GATHER = {'Torso': R(-8, -18), 'Head': R(4, 14), 'RightArm': L(110, -30), 'Sword': A(0.55, 0.35, 0.76),
+             'LeftArm': L(45, -20), 'RightLeg': R(-14), 'LeftLeg': R(14)}
 BS_COCK = {'Torso': R(6, -40), 'Head': R(0, 30), 'RightArm': L(150, -35), 'Sword': A(0.55, 0.65, 0.5),
            'LeftArm': L(55, -20), 'RightLeg': R(-10), 'LeftLeg': R(12)}
+BS_THROUGH = {'Torso': R(-6, 4), 'Head': R(2, -4), 'RightArm': L(120, 10), 'Sword': A(-0.1, 0.55, -0.83),
+              'LeftArm': L(40, -25), 'RightLeg': R(-20), 'LeftLeg': R(20)}
 BS_STRIKE = {'Torso': R(-16, 42), 'Head': R(8, -30), 'RightArm': L(72, 62), 'Sword': A(-0.72, -0.4, -0.56),
              'LeftArm': L(20, -35), 'RightLeg': R(-30), 'LeftLeg': R(28)}
+BS_FOLLOW = {'Torso': R(-20, 50), 'Head': R(10, -34), 'RightArm': L(64, 74), 'Sword': A(-0.8, -0.36, -0.48),
+             'LeftArm': L(16, -38), 'RightLeg': R(-32), 'LeftLeg': R(30)}
 BS_SETTLE = {'Torso': R(-12, 36), 'Head': R(6, -26), 'RightArm': L(66, 56), 'Sword': A(-0.72, -0.38, -0.58),
              'LeftArm': L(24, -32), 'RightLeg': R(-24), 'LeftLeg': R(22)}
-BLACK_SLASH = [(0.0, UPPER), (0.13, BS_COCK), (0.21, BS_STRIKE), (0.55, BS_SETTLE)]
+BLACK_SLASH = [(0.0, UPPER), (0.06, BS_GATHER), (0.13, BS_COCK), (0.17, BS_THROUGH), (0.21, BS_STRIKE),
+               (0.3, BS_FOLLOW), (0.55, BS_SETTLE)]
 
-# Grand Divider: the sword raised straight to the sky, shaking as anti-magic
-# piles into it, then brought down in one crushing cleave.
+# Grand Divider: the sword raised straight to the sky, braced wide and
+# shaking as anti-magic piles into it; then he arches back to his full
+# height and brings it down in one crushing cleave (it bites the ground at
+# 0.1) that bounces him a touch off the impact before it settles.
 def raise_sword(tremble):
     return {'Torso': R(12 + tremble), 'Head': R(-16), 'RightArm': L(176, 4), 'Sword': A(0.02, 1, 0.05),
             'LeftArm': L(150, -18), 'RightLeg': R(-14, 0, 8), 'LeftLeg': R(14, 0, -8)}
+G_LIFT = {'Torso': R(4, -8), 'Head': R(-6, 6), 'RightArm': L(130, -10), 'Sword': A(0.2, 0.75, 0.62),
+          'LeftArm': L(110, -20), 'RightLeg': R(-12, 0, 6), 'LeftLeg': R(12, 0, -6)}
+G_ARCH = {'Torso': R(20), 'Head': R(-22), 'RightArm': L(178, 2), 'Sword': A(0, 0.92, 0.4),
+          'LeftArm': L(160, -14), 'RightLeg': R(-16, 0, 8), 'LeftLeg': R(16, 0, -8)}
 G_THROUGH = {'Torso': R(-6), 'Head': R(2), 'RightArm': L(115, 4), 'Sword': A(0, 0.35, -0.94),
              'LeftArm': L(100, -10), 'RightLeg': R(-20), 'LeftLeg': R(16)}
 G_STRIKE = {'Torso': R(-36, 4), 'Head': R(18), 'RightArm': L(60, 6), 'Sword': A(0, -0.45, -0.89),
             'LeftArm': L(35, -8), 'RightLeg': R(-46), 'LeftLeg': R(38)}
-GRAND_CHARGE = [(0.0, UPPER), (0.2, raise_sword(0)), (0.35, raise_sword(3)), (0.5, raise_sword(-1)),
+G_RECOIL = {'Torso': R(-30, 4), 'Head': R(14), 'RightArm': L(64, 6), 'Sword': A(0, -0.42, -0.9),
+            'LeftArm': L(40, -8), 'RightLeg': R(-42), 'LeftLeg': R(36)}
+GRAND_CHARGE = [(0.0, UPPER), (0.1, G_LIFT), (0.2, raise_sword(0)), (0.35, raise_sword(3)), (0.5, raise_sword(-1)),
                 (0.7, raise_sword(3))]
-GRAND_RELEASE = [(0.0, raise_sword(3)), (0.05, G_THROUGH), (0.1, G_STRIKE), (0.6, G_STRIKE)]
+GRAND_RELEASE = [(0.0, raise_sword(3)), (0.03, G_ARCH), (0.065, G_THROUGH), (0.1, G_STRIKE), (0.2, G_RECOIL),
+                 (0.6, G_STRIKE)]
 
 ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grabbed': GRABBED,
        'MoonThrow': MOON_THROW, 'MoonPerch': MOON_PERCH, 'MoonFlight': MOON_FLIGHT, 'Launched': LAUNCHED,
