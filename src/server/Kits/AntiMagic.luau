@@ -15,9 +15,18 @@
 	                        perfect Divider: huge damage, unblockable
 	  4 Anti-Magic Deflect  counters EVERY attack type. Melee attackers get slashed
 	                        aside, ranged attacks are sent back as a Black Slash
-	Black Form (G)
-	  1 Black Hurricane     spinning anti-magic charge that drags enemies along
-	  2 Black Slash         piercing anti-magic slash wave
+	Black Form (G). R swaps to another of his swords at random; moves 1 and 2
+	belong to the sword in his hand:
+	  Demon-Slayer Sword    1 Black Hurricane: spinning charge that drags enemies along
+	                        2 Slayer Recall: boomerang throw, press 2 again to call it back
+	  Demon-Dweller Sword   1 Black Slash: piercing anti-magic slash wave
+	                        2 Conquering Eon: absorbs spells and siphons mana, then
+	                          releases it all as one huge slash
+	  Demon-Destroyer Sword 1 Causality Break: planted blade breaks the magic (counters,
+	                          guard, stances) of the 4 closest enemies
+	                        2 Severance: dash-through draw cut that seals their moves
+	  Demon-Slasher Katana  1 Infinite Slash: unblockable cut along a straight line
+	                        2 Zetten: ki-reading iai stance, cuts down whoever moves
 	  3 Grand Divider       massive cleave plus a giant slash wave (guard break)
 	  4 Black Moon          cutscene grab: hurls them into the sky, hangs in front
 	                        of a giant moon, flies through them and cuts them down
@@ -224,9 +233,267 @@ local function buildSlayer(): Model
 	return assemble(model, handle, parts, { guard = -1.87, tip = 2.62, point = 3.07 })
 end
 
+local function ball(part: BasePart): BasePart
+	(part :: Part).Shape = Enum.PartType.Ball
+	return part
+end
+
+-- Where a point given in the handle's space sits along the blade (its local
+-- Y), for curved blades whose point isn't on the first piece's axis.
+local function alongBlade(blade: BasePart, point: Vector3): number
+	return blade.CFrame:PointToObjectSpace(point).Y
+end
+
+-- The Demon-Dweller Sword: a straight, narrow pointed blade, dirt-stained,
+-- black markings down the flat (they light up with whatever magic it has
+-- taken in), an ornate four-sided guard, a spiral-wrapped grip and a round
+-- pommel. About 4.2 studs.
+local function buildDweller(): Model
+	local model = Instance.new("Model")
+	model.Name = "KitWeapon"
+	local steel = Color3.fromRGB(50, 50, 55)
+	local hilt = Color3.fromRGB(65, 62, 58)
+	local dirt = Color3.fromRGB(100, 85, 65)
+	local mark = Color3.fromRGB(10, 10, 10)
+	local metal = Enum.Material.Metal
+
+	local handle = swordPart("Handle", Vector3.new(0.24, 0.95, 0.24), CFrame.new(), hilt, metal)
+	handle.Parent = model
+	model.PrimaryPart = handle
+	local parts = {
+		ball(swordPart("Pommel", Vector3.one * 0.32, CFrame.new(0, -0.62, 0), hilt, metal)),
+		-- The four-sided guard: two crossed bars (a + seen from the point),
+		-- each end knobbed.
+		swordPart("Guard", Vector3.new(0.16, 0.14, 0.9), CFrame.new(0, 0.55, 0), hilt, metal),
+		swordPart("GuardCross", Vector3.new(0.52, 0.14, 0.16), CFrame.new(0, 0.55, 0), hilt, metal),
+		-- The blade (0.62 to 3.52) and its point (to 3.97).
+		swordPart("Blade", Vector3.new(0.12, 2.9, 0.38), CFrame.new(0, 2.07, 0), steel, metal),
+		swordPart("TipA", Vector3.new(0.12, 0.45, 0.19), CFrame.new(0, 3.745, -0.095), steel, metal, "WedgePart"),
+		swordPart(
+			"TipB",
+			Vector3.new(0.12, 0.45, 0.19),
+			CFrame.new(0, 3.745, 0.095) * CFrame.Angles(0, math.pi, 0),
+			steel,
+			metal,
+			"WedgePart"
+		),
+		-- The markings (neon, black until it absorbs something).
+		swordPart("Mark0", Vector3.new(0.13, 2.3, 0.04), CFrame.new(0, 2.0, 0), mark, Enum.Material.Neon),
+		swordPart("DirtA", Vector3.new(0.125, 0.5, 0.16), CFrame.new(0, 1.5, 0.09), dirt, Enum.Material.Slate),
+		swordPart("DirtB", Vector3.new(0.125, 0.4, 0.14), CFrame.new(0, 2.9, -0.1), dirt, Enum.Material.Slate),
+	}
+	for i, offset in
+		{ Vector3.new(0, 0, 0.47), Vector3.new(0, 0, -0.47), Vector3.new(0.28, 0, 0), Vector3.new(-0.28, 0, 0) }
+	do
+		table.insert(
+			parts,
+			ball(
+				swordPart(
+					"GuardKnob" .. i,
+					Vector3.one * 0.16,
+					CFrame.new(Vector3.new(0, 0.55, 0) + offset),
+					hilt,
+					metal
+				)
+			)
+		)
+	end
+	for i, y in { -0.36, -0.12, 0.12, 0.36 } do
+		-- The spiral grip: wrap rings tipped one way, then the other.
+		local tilt = math.rad(if i % 2 == 0 then 14 else -14)
+		table.insert(
+			parts,
+			swordPart(
+				"Spiral" .. i,
+				Vector3.new(0.3, 0.05, 0.3),
+				CFrame.new(0, y, 0) * CFrame.Angles(tilt, 0, 0),
+				Color3.fromRGB(40, 38, 36),
+				metal
+			)
+		)
+	end
+	for i, y in { 1.2, 1.85, 2.5, 3.1 } do
+		table.insert(
+			parts,
+			swordPart(
+				"Mark" .. i,
+				Vector3.one * 0.13,
+				CFrame.new(0, y, 0) * CFrame.Angles(math.rad(45), 0, 0),
+				mark,
+				Enum.Material.Neon
+			)
+		)
+	end
+	return assemble(model, handle, parts, { guard = -1.45, tip = 1.68, point = 1.9 })
+end
+
+-- The Demon-Destroyer Sword: a single-edged blade that curves back and
+-- widens into a broad head with a white clover on its spine end; a short
+-- bar guard with a round plate that glows (Asta and Liebe united, as in
+-- Black Form). About 4 studs.
+local function buildDestroyer(): Model
+	local model = Instance.new("Model")
+	model.Name = "KitWeapon"
+	local black = Color3.fromRGB(22, 22, 25)
+	local edge = Color3.fromRGB(72, 72, 80)
+	local metal = Enum.Material.Metal
+
+	local handle = swordPart(
+		"Handle",
+		Vector3.new(0.26, 0.9, 0.26),
+		CFrame.new(),
+		Color3.fromRGB(45, 36, 30),
+		Enum.Material.Fabric
+	)
+	handle.Parent = model
+	model.PrimaryPart = handle
+	local plate = swordPart(
+		"GuardPlate",
+		Vector3.new(0.12, 0.5, 0.5),
+		CFrame.new(0, 0.55, 0),
+		Color3.fromRGB(120, 15, 25),
+		Enum.Material.Neon
+	);
+	(plate :: Part).Shape = Enum.PartType.Cylinder -- along X: the disc faces the flats
+	local parts = {
+		swordPart("Pommel", Vector3.new(0.3, 0.2, 0.3), CFrame.new(0, -0.55, 0), black, metal),
+		swordPart("Guard", Vector3.new(0.18, 0.16, 0.85), CFrame.new(0, 0.55, 0), black, metal),
+		plate,
+	}
+	-- Four pieces, each turned a little further back and a little wider,
+	-- the edge (front, -Z) running along their front faces.
+	local at = CFrame.new(0, 0.63, 0)
+	local blade: BasePart? = nil
+	for i, width in { 0.34, 0.42, 0.52, 0.62 } do
+		local piece = swordPart(
+			if i == 1 then "Blade" else "Blade" .. i,
+			Vector3.new(0.14, 0.68, width),
+			at * CFrame.new(0, 0.33, width / 2 - 0.17),
+			black,
+			metal
+		)
+		blade = blade or piece
+		table.insert(parts, piece)
+		table.insert(
+			parts,
+			swordPart("Edge" .. i, Vector3.new(0.1, 0.68, 0.06), at * CFrame.new(0, 0.33, -0.16), edge, metal)
+		)
+		at = at * CFrame.new(0, 0.66, 0) * CFrame.Angles(math.rad(5), 0, 0)
+	end
+	-- The broad head, its point at the edge side.
+	local head = at * CFrame.new(0, 0.3, 0.18)
+	table.insert(parts, swordPart("Head", Vector3.new(0.14, 0.6, 0.7), head, black, metal))
+	table.insert(parts, swordPart("HeadEdge", Vector3.new(0.1, 0.6, 0.06), head * CFrame.new(0, 0, -0.34), edge, metal))
+	local tipFrame = head * CFrame.new(0, 0.55, 0) * CFrame.Angles(0, math.pi, 0)
+	table.insert(parts, swordPart("HeadTip", Vector3.new(0.14, 0.5, 0.7), tipFrame, black, metal, "WedgePart"))
+	-- The clover, white on the spine end of the head.
+	local clover = head * CFrame.new(0, 0.05, 0.2)
+	for i, leaf in
+		{ Vector3.new(0, 0.09, 0), Vector3.new(0, -0.09, 0), Vector3.new(0, 0, 0.09), Vector3.new(0, 0, -0.09) }
+	do
+		table.insert(
+			parts,
+			ball(
+				swordPart(
+					"Clover" .. i,
+					Vector3.one * 0.16,
+					clover * CFrame.new(leaf),
+					Color3.fromRGB(230, 230, 230),
+					Enum.Material.SmoothPlastic
+				)
+			)
+		)
+	end
+	local bladePart = blade :: BasePart
+	local point = (head * CFrame.new(0, 0.8, -0.35)).Position
+	local pointY = alongBlade(bladePart, point)
+	return assemble(model, handle, parts, {
+		guard = alongBlade(bladePart, Vector3.new(0, 0.63, 0)),
+		tip = pointY - 0.2,
+		point = pointY,
+	})
+end
+
+-- The Demon-Slasher Katana: Yami's katana, blackened by anti-magic. A slim,
+-- gently curved single-edged blade with a pale edge line, a round guard, a
+-- brass collar and a black-wrapped grip with pale diamonds. About 3.4 studs.
+local function buildSlasher(): Model
+	local model = Instance.new("Model")
+	model.Name = "KitWeapon"
+	local steel = Color3.fromRGB(15, 15, 17)
+	local edge = Color3.fromRGB(90, 90, 96)
+	local fitting = Color3.fromRGB(55, 52, 48)
+	local metal = Enum.Material.Metal
+
+	local handle =
+		swordPart("Handle", Vector3.new(0.2, 0.9, 0.22), CFrame.new(), Color3.fromRGB(28, 28, 32), Enum.Material.Fabric)
+	handle.Parent = model
+	model.PrimaryPart = handle
+	local tsuba = swordPart(
+		"Tsuba",
+		Vector3.new(0.06, 0.52, 0.52),
+		CFrame.new(0, 0.5, 0) * CFrame.Angles(0, 0, math.rad(90)),
+		fitting,
+		metal
+	);
+	(tsuba :: Part).Shape = Enum.PartType.Cylinder -- turned to lie across the blade
+	local parts = {
+		swordPart("Kashira", Vector3.new(0.22, 0.08, 0.24), CFrame.new(0, -0.49, 0), fitting, metal),
+		tsuba,
+		swordPart("Habaki", Vector3.new(0.12, 0.12, 0.2), CFrame.new(0, 0.58, 0), Color3.fromRGB(150, 120, 60), metal),
+	}
+	for i, y in { -0.3, -0.05, 0.2 } do
+		table.insert(
+			parts,
+			swordPart(
+				"Diamond" .. i,
+				Vector3.new(0.21, 0.11, 0.11),
+				CFrame.new(0, y, 0) * CFrame.Angles(math.rad(45), 0, 0),
+				Color3.fromRGB(140, 140, 145),
+				Enum.Material.Fabric
+			)
+		)
+	end
+	-- Four pieces, each turned a touch further back (the curve), the pale
+	-- edge line along their front.
+	local at = CFrame.new(0, 0.64, 0)
+	local blade: BasePart? = nil
+	for i = 1, 4 do
+		local piece = swordPart(
+			if i == 1 then "Blade" else "Blade" .. i,
+			Vector3.new(0.09, 0.62, 0.19),
+			at * CFrame.new(0, 0.31, 0),
+			steel,
+			metal
+		)
+		blade = blade or piece
+		table.insert(parts, piece)
+		table.insert(
+			parts,
+			swordPart("Hamon" .. i, Vector3.new(0.095, 0.62, 0.04), at * CFrame.new(0, 0.31, -0.08), edge, metal)
+		)
+		at = at * CFrame.new(0, 0.62, 0) * CFrame.Angles(math.rad(3), 0, 0)
+	end
+	-- The point sweeps up from the edge to the spine side.
+	table.insert(
+		parts,
+		swordPart("Kissaki", Vector3.new(0.09, 0.3, 0.19), at * CFrame.new(0, 0.15, 0), steel, metal, "WedgePart")
+	)
+	local bladePart = blade :: BasePart
+	local pointY = alongBlade(bladePart, (at * CFrame.new(0, 0.3, 0.09)).Position)
+	return assemble(model, handle, parts, {
+		guard = alongBlade(bladePart, Vector3.new(0, 0.64, 0)),
+		tip = pointY - 0.15,
+		point = pointY,
+	})
+end
+
 -- Asta's swords (Black Form's R swaps between them at random).
 local SWORDS: { [string]: () -> Model } = {
 	Slayer = buildSlayer,
+	Dweller = buildDweller,
+	Destroyer = buildDestroyer,
+	Slasher = buildSlasher,
 }
 
 -- Puts a built sword in his right hand. A Motor6D rather than a Weld so
@@ -1311,12 +1578,469 @@ function Kit.Special(ctx)
 	end
 end
 
+---------------------------------------------------------------------------
+-- Sword moves (Black Form 1 and 2 follow the sword in his hand)
+---------------------------------------------------------------------------
+
+local SEAL_COLOR = Color3.fromRGB(200, 25, 35)
+
+local function rootOf(character: Model): BasePart?
+	return character:FindFirstChild("HumanoidRootPart") :: BasePart?
+end
+
+--[[
+	Slayer Recall (Demon-Slayer Sword 2): hurls the sword like a boomerang.
+	It cuts whoever it passes on the way out, hangs spinning where it stops,
+	and comes back when he presses 2 again (or on its own), cutting through
+	them a second time and dragging them back to him. Unarmed (no M1s) until
+	he catches it.
+]]
+local RECALL_RELEASE = 0.28 -- the RecallThrow animation lets go here
+local RECALL_RANGE = 34
+local RECALL_OUT = 0.42 -- seconds to fly out
+local RECALL_HANG = 1.2 -- longest it waits before coming back by itself
+local RECALL_SPEED = 95 -- studs per second on the way back
+local RECALL_RADIUS = 5
+
+local function slayerRecall(ctx)
+	local c, character = ctx.combat, ctx.character
+	local airborne = ctx.airborne
+	CombatState.SetCasting(character, 0.45)
+	if airborne then
+		c.ApplyVelocity(character, HOVER, 0.4)
+	end
+	fx(ctx, "SlayerRecall", "Wind", { airborne = airborne })
+	task.wait(RECALL_RELEASE)
+	if interrupted(ctx) then
+		fx(ctx, "SlayerRecall", "Cancel")
+		return
+	end
+	local forward = look(ctx)
+	local direction = if airborne then (forward + UP * -0.3).Unit else forward
+	local origin = ctx.root.Position + direction * 2 + UP * 0.5
+	local stop = origin + direction * math.min(waveRange(ctx, origin, direction, RECALL_RANGE), RECALL_RANGE)
+	local thrownAt = os.clock()
+	-- Starting another move snaps it straight back to his hand.
+	local token = c.MoveToken(character)
+	local function moved(): boolean
+		return c.MoveToken(character) ~= token
+	end
+	character:SetAttribute("SwordAway", true)
+	fx(ctx, "SlayerRecall", "Throw", { origin = origin, target = stop, out = RECALL_OUT })
+
+	local cut: { [Model]: boolean } = {}
+	local function sweep(position: Vector3, onHit: (Model) -> ())
+		for _, victim in c.Sphere(character, position, RECALL_RADIUS) do
+			if not cut[victim] then
+				cut[victim] = true
+				onHit(victim)
+			end
+		end
+	end
+
+	-- Out: fast at first, slowing to a stop.
+	while os.clock() - thrownAt < RECALL_OUT and not moved() do
+		local a = (os.clock() - thrownAt) / RECALL_OUT
+		sweep(origin:Lerp(stop, 1 - (1 - a) ^ 2), function(victim)
+			c.Hit(character, victim, {
+				damage = 8,
+				stun = 0.9,
+				attackType = "Bolt",
+				velocity = direction * 18 + UP * 6,
+				velocityTime = 0.15,
+			})
+		end)
+		task.wait()
+	end
+
+	-- Hanging there, spinning, until he calls it back.
+	while os.clock() - thrownAt < RECALL_OUT + RECALL_HANG do
+		if c.PressedSince(character, 2, thrownAt) or moved() or not CombatState.IsAlive(character) then
+			break
+		end
+		task.wait()
+	end
+
+	-- Back, straight at him wherever he's got to, through whoever's between.
+	table.clear(cut)
+	local position = stop
+	if not moved() then
+		fx(ctx, "SlayerRecall", "Return", { from = position, speed = RECALL_SPEED })
+	end
+	local started = os.clock()
+	local last = started
+	while CombatState.IsAlive(character) and not moved() and os.clock() - started < 1.5 do
+		task.wait()
+		local now = os.clock()
+		local offset = ctx.root.Position - position
+		local step = RECALL_SPEED * (now - last)
+		last = now
+		if offset.Magnitude <= math.max(step, 2.5) then
+			break
+		end
+		position += offset.Unit * step
+		sweep(position, function(victim)
+			local victimRoot = rootOf(victim)
+			local toward = if victimRoot then ctx.root.Position - victimRoot.Position else -direction
+			local pull = math.clamp((toward.Magnitude - 5) / 0.3, 0, 110)
+			c.Hit(character, victim, {
+				damage = 6,
+				stun = 1.1,
+				attackType = "Bolt",
+				heavy = true,
+				velocity = c.Flat(toward) * pull + UP * 8,
+				velocityTime = 0.3,
+			})
+		end)
+	end
+	character:SetAttribute("SwordAway", nil)
+	if CombatState.IsAlive(character) then
+		fx(ctx, "SlayerRecall", "Catch", { instant = moved() })
+	end
+end
+
+--[[
+	Conquering Eon (Demon-Dweller Sword 2): raises the Dweller and it drinks
+	in the magic around him. Spells that hit him are swallowed by the blade,
+	and the mana of everyone close by is siphoned off. Each charge (up to 4)
+	makes the slash he lets it all out in bigger; from 3 it breaks guards.
+]]
+local EON_CHARGE = 0.6
+local EON_RADIUS = 18
+local EON_MAX = 4
+local SPELLS = { Bolt = true, Explosion = true, Swarm = true, Zone = true }
+
+local function conqueringEon(ctx)
+	local c, character = ctx.combat, ctx.character
+	local airborne = ctx.airborne
+	local charges = 0
+	CombatState.SetCasting(character, EON_CHARGE + 0.5)
+	if airborne then
+		c.ApplyVelocity(character, HOVER, EON_CHARGE + 0.2)
+	end
+	fx(ctx, "ConqueringEon", "Raise", { airborne = airborne, duration = EON_CHARGE })
+	local raisedAt = os.clock()
+
+	local function absorb(attacker: Model)
+		charges = math.min(charges + 1, EON_MAX)
+		local attackerRoot = rootOf(attacker)
+		fx(ctx, "ConqueringEon", "Absorb", {
+			from = if attackerRoot then attackerRoot.Position else ctx.root.Position + look(ctx) * 10,
+			charges = charges,
+		})
+		local left = EON_CHARGE - (os.clock() - raisedAt)
+		if left > 0.02 then
+			c.SetCounter(character, left, SPELLS, absorb)
+		end
+	end
+	c.SetCounter(character, EON_CHARGE, SPELLS, absorb)
+
+	task.wait(0.2)
+	if interrupted(ctx) then
+		c.ClearCounter(character)
+		fx(ctx, "ConqueringEon", "Cancel")
+		return
+	end
+	local drained = {}
+	for _, victim in c.Sphere(character, ctx.root.Position, EON_RADIUS) do
+		if c.Hit(character, victim, { damage = 2, stun = 0.5, attackType = "Zone", unblockable = true }) == "Hit" then
+			table.insert(drained, victim)
+			charges = math.min(charges + 1, EON_MAX)
+		end
+	end
+	if #drained > 0 then
+		fx(ctx, "ConqueringEon", "Siphon", { targets = drained, charges = charges })
+	end
+	task.wait(EON_CHARGE - 0.2)
+	c.ClearCounter(character)
+	if interrupted(ctx) then
+		fx(ctx, "ConqueringEon", "Cancel")
+		return
+	end
+
+	local forward = look(ctx)
+	local direction = if airborne then (forward + UP * -0.5).Unit else forward
+	local origin = ctx.root.Position + direction * 3 + UP * 0.8
+	fx(ctx, "ConqueringEon", "Release", { airborne = airborne, charges = charges })
+	blackSlash(ctx, origin, direction, {
+		damage = 6 + 2 * charges,
+		size = Vector3.new(10 + 2.5 * charges, 5 + charges, 3),
+		speed = 105,
+		range = if airborne then waveRange(ctx, origin, direction, 70) else 70,
+		grand = charges >= 3,
+	})
+	c.ShakeArea(ctx.root.Position, 40 + 8 * charges, 0.3 + 0.1 * charges)
+	task.wait(0.3)
+	CombatState.SetCasting(character, 0.25)
+end
+
+--[[
+	Causality Break (Demon-Destroyer Sword 1): drives the Destroyer into the
+	ground and its curse-breaking anti-magic runs out through the earth to
+	the four closest enemies around him. It cuts them and wipes out whatever
+	they had going: a counter, their guard, a Zetten stance.
+]]
+local CAUSALITY_STAB = 0.42 -- the CausalityPlant animation's stab
+local CAUSALITY_RADIUS = 18
+local CAUSALITY_TARGETS = 4
+
+local function causalityBreak(ctx)
+	local c, character = ctx.combat, ctx.character
+	local airborne = ctx.airborne
+	CombatState.SetCasting(character, 1.0)
+	if airborne then
+		c.ApplyVelocity(character, HOVER, CAUSALITY_STAB + 0.35)
+	end
+	fx(ctx, "CausalityBreak", "Plant", { airborne = airborne })
+	task.wait(CAUSALITY_STAB)
+	if interrupted(ctx) then
+		fx(ctx, "CausalityBreak", "Cancel")
+		return
+	end
+
+	local center = ctx.root.Position
+	local nearby = c.Sphere(character, center, CAUSALITY_RADIUS)
+	local function distance(victim: Model): number
+		local victimRoot = rootOf(victim)
+		return if victimRoot then (victimRoot.Position - center).Magnitude else math.huge
+	end
+	table.sort(nearby, function(a, b)
+		return distance(a) < distance(b)
+	end)
+	local targets = {}
+	for i = 1, math.min(#nearby, CAUSALITY_TARGETS) do
+		table.insert(targets, nearby[i])
+	end
+	fx(ctx, "CausalityBreak", "Break", { targets = targets, airborne = airborne })
+	for _, victim in targets do
+		-- Their magic is broken first, so nothing they had up stops it.
+		c.ClearCounter(victim)
+		c.StopWatchingSkills(victim)
+		CombatState.SetBlocking(victim, false)
+		c.Hit(character, victim, {
+			damage = 8,
+			stun = 0.8,
+			attackType = "Zone",
+			unblockable = true,
+			heavy = true,
+			velocity = UP * 24,
+			velocityTime = 0.15,
+		})
+	end
+	c.ShakeArea(center, 45, 0.5)
+	task.wait(0.25)
+	if CombatState.IsAlive(character) then
+		fx(ctx, "CausalityBreak", "Pull")
+	end
+	CombatState.SetCasting(character, 0.3)
+end
+
+--[[
+	Severance (Demon-Destroyer Sword 2): one draw-cut as he dashes straight
+	through them. A beat later the cut lands, and whoever it cut is severed
+	from their magic: every move they have is sealed for a few seconds.
+]]
+local SEVER_DASH_AT = 0.12 -- the Severance animation's crouch
+local SEVER_DASH = 0.2
+local SEVER_SPEED = 95
+local SEVER_DELAY = 0.35
+local SEAL_TIME = 3
+
+local function severance(ctx)
+	local c, character = ctx.combat, ctx.character
+	CombatState.SetCasting(character, 0.75)
+	fx(ctx, "Severance", "Draw", { airborne = ctx.airborne })
+	task.wait(SEVER_DASH_AT)
+	if interrupted(ctx) then
+		fx(ctx, "Severance", "Cancel")
+		return
+	end
+	local forward = look(ctx)
+	local from = ctx.root.Position
+	CombatState.GiveIFrames(character, SEVER_DASH + 0.1)
+	c.ApplyVelocity(character, forward * SEVER_SPEED + (if ctx.airborne then HOVER else Vector3.zero), SEVER_DASH)
+	fx(ctx, "Severance", "Dash", { from = from, direction = forward })
+	local cut: { Model } = {}
+	local seen: { [Model]: boolean } = {}
+	local start = os.clock()
+	while os.clock() - start < SEVER_DASH + 0.03 do
+		for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -1), Vector3.new(6, 7, 7)) do
+			if not seen[victim] then
+				seen[victim] = true
+				table.insert(cut, victim)
+			end
+		end
+		task.wait()
+	end
+	c.ApplyVelocity(character, forward * 8, 0.1)
+	fx(ctx, "Severance", "Sheathe", { from = from, to = ctx.root.Position, targets = cut })
+	task.wait(SEVER_DELAY)
+	for _, victim in cut do
+		if
+			CombatState.IsAlive(victim)
+			and c.Hit(character, victim, {
+					damage = 10,
+					stun = 1.1,
+					attackType = "Melee",
+					heavy = true,
+					velocity = forward * 10 + UP * 8,
+					velocityTime = 0.15,
+				})
+				== "Hit"
+		then
+			for _, slot in { 1, 2, 3, 4, CombatState.SpecialSlot } do
+				if CombatState.Cooldown(victim, slot) < SEAL_TIME then
+					CombatState.StartCooldown(victim, slot, SEAL_TIME)
+				end
+			end
+			fx(ctx, "Severance", "Seal", { target = victim, duration = SEAL_TIME })
+			c.Notify(victim, "SEVERED: moves sealed", SEAL_COLOR)
+		end
+	end
+	CombatState.SetCasting(character, 0.2)
+end
+
+--[[
+	Infinite Slash (Demon-Slasher Katana 1): Yami's move. The katana raised
+	overhead comes down once, and a cut opens along everything in a straight
+	line ahead of him, as far as it goes. It cuts only what he means to cut:
+	nothing blocks it.
+]]
+local INFINITE_RAISE = 0.55
+local INFINITE_RANGE = 60
+
+local function infiniteSlash(ctx)
+	local c, character = ctx.combat, ctx.character
+	local airborne = ctx.airborne
+	CombatState.SetCasting(character, INFINITE_RAISE + 0.45)
+	if airborne then
+		c.ApplyVelocity(character, HOVER, INFINITE_RAISE + 0.25)
+	end
+	fx(ctx, "InfiniteSlash", "Raise", { airborne = airborne, duration = INFINITE_RAISE })
+	task.wait(INFINITE_RAISE)
+	if interrupted(ctx) then
+		fx(ctx, "InfiniteSlash", "Cancel")
+		return
+	end
+	local forward = look(ctx)
+	local direction = if airborne then (forward + UP * -0.35).Unit else forward
+	local origin = ctx.root.Position + direction * 1.5
+	local length = waveRange(ctx, origin, direction, INFINITE_RANGE)
+	fx(ctx, "InfiniteSlash", "Cut", { origin = origin, direction = direction, length = length })
+	local box = CFrame.lookAt(origin + direction * (length / 2), origin + direction * length)
+	for _, victim in c.Box(character, box, Vector3.new(3.5, 7, length)) do
+		c.Hit(character, victim, {
+			damage = 9,
+			stun = 1.1,
+			attackType = "Melee",
+			unblockable = true,
+			heavy = true,
+			ragdoll = 1.2,
+			velocity = direction * 25 + UP * 22,
+		})
+	end
+	c.ShakeArea(origin, 50, 0.45)
+	task.wait(0.3)
+	CombatState.SetCasting(character, 0.2)
+end
+
+--[[
+	Zetten (Demon-Slasher Katana 2): an iai stance, reading ki. The first
+	enemy close by to make a move (start a skill, or swing at him) is cut
+	down before it lands: he's past them in a flash. If nobody moves, the
+	stance ends in one quick cut ahead.
+]]
+local ZETTEN_STANCE = 1.0
+local ZETTEN_RADIUS = 20
+
+local function zetten(ctx)
+	local c, character = ctx.combat, ctx.character
+	local airborne = ctx.airborne
+	local done = false
+	CombatState.SetCasting(character, ZETTEN_STANCE + 0.1)
+	if airborne then
+		c.ApplyVelocity(character, HOVER, ZETTEN_STANCE)
+	end
+	fx(ctx, "Zetten", "Stance", { airborne = airborne, duration = ZETTEN_STANCE })
+
+	local function strike(target: Model)
+		local targetRoot = rootOf(target)
+		if done or interrupted(ctx) or not targetRoot or not CombatState.IsAlive(target) then
+			return
+		end
+		done = true
+		c.StopWatchingSkills(character)
+		c.ClearCounter(character)
+		local from = ctx.root.Position
+		local through = c.Flat(targetRoot.Position - from)
+		local to = targetRoot.Position + through * 4
+		-- Not through a wall.
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = { character, target }
+		local wall = workspace:Raycast(targetRoot.Position, through * 4, params)
+		if wall then
+			to = wall.Position - through * 1.5
+		end
+		CombatState.GiveIFrames(character, 0.5)
+		CombatState.SetCasting(character, 0.55)
+		ctx.root.CFrame = CFrame.lookAt(to, to + through)
+		c.ApplyVelocity(character, if airborne then HOVER else Vector3.zero, 0.3)
+		fx(ctx, "Zetten", "Strike", { from = from, to = to, target = target })
+		c.Hit(character, target, {
+			damage = 13,
+			stun = 1.3,
+			attackType = "Melee",
+			guardBreak = true,
+			heavy = true,
+			ragdoll = 1.3,
+			velocity = through * 30 + UP * 26,
+		})
+		c.ShakeArea(to, 50, 0.5)
+	end
+
+	c.WatchSkills(character, ZETTEN_RADIUS, ZETTEN_STANCE, strike)
+	c.SetCounter(character, ZETTEN_STANCE, { Melee = true }, strike)
+	local start = os.clock()
+	while not done and os.clock() - start < ZETTEN_STANCE do
+		if interrupted(ctx) then
+			done = true
+			c.StopWatchingSkills(character)
+			c.ClearCounter(character)
+			fx(ctx, "Zetten", "Cancel")
+			return
+		end
+		task.wait()
+	end
+	if done then
+		return
+	end
+	done = true
+	c.StopWatchingSkills(character)
+	c.ClearCounter(character)
+	-- Nobody moved: one quick cut ahead.
+	fx(ctx, "Zetten", "Cut", { airborne = airborne })
+	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -4.5), Vector3.new(9, 7, 9)) do
+		c.Hit(character, victim, {
+			damage = 6,
+			stun = 0.8,
+			attackType = "Melee",
+			heavy = true,
+			velocity = look(ctx) * 30 + UP * 10,
+		})
+	end
+	CombatState.SetCasting(character, 0.35)
+end
+
 Kit.Skills = { bullThrust, blackMeteorite, blackDivider, antiMagicDeflect }
 
 -- In Black Form, moves 1 and 2 belong to the sword in his hand (the
 -- "Sword" attribute; names and cooldowns in Shared/Kits swords).
 local SWORD_MOVES: { [string]: { (any) -> () } } = {
-	Slayer = { blackHurricane, blackSlashMove },
+	Slayer = { blackHurricane, slayerRecall },
+	Dweller = { blackSlashMove, conqueringEon },
+	Destroyer = { causalityBreak, severance },
+	Slasher = { infiniteSlash, zetten },
 }
 local function swordMove(slot: number): (any) -> ()
 	return function(ctx)
@@ -1334,6 +2058,9 @@ local SWAP_DRAW = 0.22
 function Kit.AwakenedSpecial(ctx)
 	local character = ctx.character
 	local current = character:GetAttribute("Sword")
+	if character:GetAttribute("SwordAway") then
+		return -- the Slayer's still out (Slayer Recall)
+	end
 	local choices = {}
 	for _, kind in SWORD_KINDS do
 		if kind ~= current and SWORDS[kind] then

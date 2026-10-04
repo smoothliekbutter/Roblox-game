@@ -147,7 +147,12 @@ local function tryM1()
 	if not character or not humanoid or not root then
 		return
 	end
-	if not CombatState.CanAct(character) or CombatState.IsBlocking(character) or CombatState.IsCasting(character) then
+	if
+		not CombatState.CanAct(character)
+		or CombatState.IsBlocking(character)
+		or CombatState.IsCasting(character)
+		or character:GetAttribute("SwordAway") == true -- thrown (Slayer Recall)
+	then
 		return
 	end
 	local t = os.clock()

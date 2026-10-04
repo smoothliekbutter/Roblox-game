@@ -615,6 +615,72 @@ SW_FLICK = {'Torso': R(-8, -26), 'Head': R(4, 20), 'RightArm': L(84, -70), 'Swor
             'LeftArm': L(35, -20), 'RightLeg': R(-16), 'LeftLeg': R(14)}
 SWORD_SWAP = [(0.0, UPPER), (0.1, SW_OFFER), (0.22, SW_OFFER), (0.3, SW_DRAW), (0.4, SW_FLICK), (0.6, UPPER)]
 
+# ---------------- Sword moves (Black Form moves 1 and 2, by sword) ----------------
+# Reaches (where each sword's point sits along the handle) for the checker.
+DWELLER_REACH, DESTROYER_REACH, SLASHER_REACH = 3.9, 4.0, 3.35
+
+# Demon-Slayer: Slayer Recall. Wound back over his shoulder, he hurls the
+# sword (it leaves his hand at 0.3), calls it back with his palm out, and
+# catches it swinging it up onto his shoulder.
+RT_WIND = {'Torso': R(8, -30), 'Head': R(-4, 22), 'RightArm': L(165, -25), 'Sword': A(0.3, 0.3, 0.9),
+           'LeftArm': L(70, -10), 'RightLeg': R(-16), 'LeftLeg': R(16)}
+RT_THROW = {'Torso': R(-18, 30), 'Head': R(10, -20), 'RightArm': L(100, 20), 'Sword': A(-0.2, 0.1, -0.97),
+            'LeftArm': L(-20, 0, -30), 'RightLeg': R(-34), 'LeftLeg': R(30)}
+RT_FOLLOW = {'Torso': R(-14, 24), 'Head': R(8, -16), 'RightArm': L(85, 10), 'Sword': A(-0.1, -0.1, -0.99),
+             'LeftArm': L(-10, 0, -30), 'RightLeg': R(-30), 'LeftLeg': R(26)}
+RC_CALL = {'Torso': R(-6, 10), 'Head': R(4, -6), 'RightArm': L(95, 0), 'Sword': A(0, 0.1, -0.99),
+           'LeftArm': L(30, -20), 'RightLeg': R(-14), 'LeftLeg': R(14)}
+RC_CATCH = {'Torso': R(-10, -14), 'Head': R(6, 10), 'RightArm': L(120, -20), 'Sword': A(0.4, 0.75, 0.52),
+            'LeftArm': L(40, -20), 'RightLeg': R(-18), 'LeftLeg': R(16)}
+RECALL_THROW = [(0.0, UPPER), (0.15, RT_WIND), (0.3, RT_THROW), (0.6, RT_FOLLOW)]
+RECALL_CALL = [(0.0, RT_FOLLOW), (0.15, RC_CALL), (2.0, RC_CALL)]
+RECALL_CATCH = [(0.0, RC_CALL), (0.08, RC_CATCH), (0.35, UPPER)]
+
+# Demon-Destroyer: Causality Break. Both hands lift the sword point-down,
+# then drive it into the ground in front of him (0.42); he yanks it out.
+CP_LIFT = {'Torso': R(10), 'Head': R(-8), 'RightArm': L(120, 0), 'Sword': A(0, -0.55, -0.83),
+           'LeftArm': L(118, -6), 'RightLeg': R(-12), 'LeftLeg': R(12)}
+CP_STAB = {'Torso': R(-22), 'Head': R(14), 'RightArm': L(78, 0), 'Sword': A(0, -0.82, -0.57),
+           'LeftArm': L(76, -6), 'RightLeg': R(-34), 'LeftLeg': R(28)}
+CP_YANK = {'Torso': R(4, -10), 'Head': R(-4, 8), 'RightArm': L(130, -15), 'Sword': A(0.2, 0.9, -0.3),
+           'LeftArm': L(40, -20), 'RightLeg': R(-14), 'LeftLeg': R(14)}
+CAUSALITY_PLANT = [(0.0, UPPER), (0.2, CP_LIFT), (0.42, CP_STAB), (0.8, CP_STAB)]
+CAUSALITY_PULL = [(0.0, CP_STAB), (0.12, CP_YANK), (0.4, UPPER)]
+
+# Demon-Destroyer: Severance. A low crouch with the blade drawn back, one
+# draw-cut as he dashes through them (0.2), and he stops past them with his
+# back turned, the blade held out low; the cut lands a beat later.
+SV_CROUCH = {'Torso': R(-26, -30), 'Head': R(16, 22), 'RightArm': L(-30, -15, 20), 'Sword': A(0.32, 0.12, 0.94),
+             'LeftArm': L(70, 10), 'RightLeg': R(-40), 'LeftLeg': R(36)}
+SV_CUT = {'Torso': R(-30, 40), 'Head': R(18, -30), 'RightArm': L(84, 80), 'Sword': A(-0.86, -0.04, -0.5),
+          'LeftArm': L(-20, 0, -35), 'RightLeg': R(-46), 'LeftLeg': R(40)}
+SV_AFTER = {'Torso': R(-12, 60), 'Head': R(6, -40), 'RightArm': L(70, 100), 'Sword': A(-0.8, -0.45, 0.4),
+            'LeftArm': L(15, -40), 'RightLeg': R(-24), 'LeftLeg': R(22)}
+SV_DRAW = {'Torso': R(-28, 0), 'Head': R(16, 0), 'RightArm': L(80, -60), 'Sword': A(0.9, 0.02, -0.42),
+           'LeftArm': L(20, 0, -30), 'RightLeg': R(-44), 'LeftLeg': R(38)}
+SEVERANCE = [(0.0, UPPER), (0.12, SV_CROUCH), (0.16, SV_DRAW), (0.2, SV_CUT), (0.32, SV_AFTER), (0.8, SV_AFTER)]
+
+# Demon-Slasher Katana: Infinite Slash. Yami's two-handed overhead raise,
+# trembling as the cut builds, then one straight chop (it opens at 0.05).
+IS_RAISE = {'Torso': R(10, -10), 'Head': R(-10, 8), 'RightArm': L(170, -6), 'Sword': A(0.1, 0.6, 0.8),
+            'LeftArm': L(165, 8), 'RightLeg': R(-16, 0, 6), 'LeftLeg': R(18, 0, -6)}
+IS_TREMBLE = IS_RAISE | {'Torso': R(12, -10), 'Head': R(-12, 8)}
+IS_CUT = {'Torso': R(-30), 'Head': R(16), 'RightArm': L(75, 2), 'Sword': A(0, -0.35, -0.94),
+          'LeftArm': L(72, -2), 'RightLeg': R(-42), 'LeftLeg': R(36)}
+INFINITE_RAISE = [(0.0, UPPER), (0.25, IS_RAISE), (0.4, IS_TREMBLE), (0.55, IS_RAISE)]
+INFINITE_CUT = [(0.0, IS_RAISE), (0.05, IS_CUT), (0.45, IS_CUT)]
+
+# Demon-Slasher Katana: Zetten. Crouched in an iai stance, the katana low
+# at his hip, head bowed and still; then one rising diagonal cut.
+Z_STANCE = {'Torso': R(-20, -35), 'Head': R(22, 25), 'RightArm': L(30, -20, 15), 'Sword': A(0.36, -0.05, 0.93),
+            'LeftArm': L(50, 30, -10), 'RightLeg': R(-34, 10), 'LeftLeg': R(30, 10)}
+Z_CUT = {'Torso': R(-16, 40), 'Head': R(10, -28), 'RightArm': L(130, 70), 'Sword': A(-0.6, 0.65, -0.45),
+         'LeftArm': L(-10, 0, -35), 'RightLeg': R(-36), 'LeftLeg': R(32)}
+Z_AFTER = {'Torso': R(-10, 34), 'Head': R(6, -24), 'RightArm': L(115, 60), 'Sword': A(-0.55, 0.6, -0.58),
+           'LeftArm': L(0, 0, -30), 'RightLeg': R(-26), 'LeftLeg': R(24)}
+ZETTEN_STANCE = [(0.0, UPPER), (0.12, Z_STANCE), (1.4, Z_STANCE)]
+ZETTEN_CUT = [(0.0, Z_STANCE), (0.05, Z_CUT), (0.35, Z_AFTER), (0.6, Z_AFTER)]
+
 ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grabbed': GRABBED,
        'MoonThrow': MOON_THROW, 'MoonPerch': MOON_PERCH, 'MoonFlight': MOON_FLIGHT, 'Launched': LAUNCHED,
        'Hurricane': HURRICANE, 'BlackSlash': BLACK_SLASH, 'GrandCharge': GRAND_CHARGE, 'GrandRelease': GRAND_RELEASE,
@@ -623,7 +689,11 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grab
        'AirPropel': AIR_PROPEL, 'AirMeteorLunge': AIR_METEOR_LUNGE, 'AirMeteorReach': AIR_METEOR_REACH,
        'AirSeize': AIR_SEIZE,
        'AirDeflectStance': AIR_DEFLECT_STANCE,
-       'MeteorLunge': METEOR_LUNGE, 'MeteorReach': METEOR_REACH, 'MeteorRise': METEOR_RISE, 'MeteorSpin': METEOR_SPIN, 'SwordSwap': SWORD_SWAP, 'MeteorDrill': METEOR_DRILL, 'MeteorLand': METEOR_LAND, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
+       'MeteorLunge': METEOR_LUNGE, 'MeteorReach': METEOR_REACH, 'MeteorRise': METEOR_RISE, 'MeteorSpin': METEOR_SPIN, 'SwordSwap': SWORD_SWAP,
+       'RecallThrow': RECALL_THROW, 'RecallCall': RECALL_CALL, 'RecallCatch': RECALL_CATCH,
+       'CausalityPlant': CAUSALITY_PLANT, 'CausalityPull': CAUSALITY_PULL, 'Severance': SEVERANCE,
+       'InfiniteRaise': INFINITE_RAISE, 'InfiniteCut': INFINITE_CUT, 'ZettenStance': ZETTEN_STANCE,
+       'ZettenCut': ZETTEN_CUT, 'MeteorDrill': METEOR_DRILL, 'MeteorLand': METEOR_LAND, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
        'DividerCharge': DIVIDER_CHARGE, 'DividerRelease': DIVIDER_RELEASE,
        'DeflectStance': DEFLECT_STANCE, 'DeflectCounter': DEFLECT_COUNTER, 'DeflectReflect': DEFLECT_REFLECT,
        'Awaken': AWAKEN,
@@ -660,7 +730,13 @@ if __name__ == '__main__':
              'MeteorLand': dict(floor=-10),
              'AirPropel': dict(floor=-10), 'AirMeteorLunge': dict(floor=-10), 'AirMeteorReach': dict(floor=-10),
              'AirSeize': dict(floor=-10),
-             'AirDeflectStance': dict(floor=-10)}
+             'AirDeflectStance': dict(floor=-10),
+             # The other swords are shorter than the Demon-Slayer.
+             'CausalityPlant': dict(floor=-4.0, reach=DESTROYER_REACH),  # driven into the ground
+             'CausalityPull': dict(floor=-4.0, reach=DESTROYER_REACH),
+             'Severance': dict(reach=DESTROYER_REACH),
+             'InfiniteRaise': dict(reach=SLASHER_REACH), 'InfiniteCut': dict(reach=SLASHER_REACH),
+             'ZettenStance': dict(reach=SLASHER_REACH), 'ZettenCut': dict(reach=SLASHER_REACH)}
     ok = True
     for name, keys in ALL.items():
         grounded = name not in AIRBORNE and name not in PLANT_UNTIL

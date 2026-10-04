@@ -97,8 +97,15 @@ def inside_box(p, M, half):
     local = np.linalg.inv(M) @ np.array([*p,1])
     return all(abs(local[i]) < half[i] for i in range(3))
 
-def check(pose_m, label, problems, floor=-2.85):
+# The rig's blade is the Demon-Slayer Sword's (0.86 to 5.65 along the
+# handle). Moves made for a shorter sword pass its `reach` (where its point
+# is along the handle) so they're checked with the blade they really hold.
+SLAYER_BASE, SLAYER_TIP = 0.86, 5.65
+
+def check(pose_m, label, problems, floor=-2.85, reach=None):
     r = solve(pose_m)
+    if reach is not None:
+        r['tip'] = r['base'] + (r['tip'] - r['base']) * ((reach - SLAYER_BASE) / (SLAYER_TIP - SLAYER_BASE))
     torso = r['torso']; arm = r['arm']
     head = r['head']
     for t in np.linspace(0.15, 1, 18):          # skip the handle/guard area at the hand
@@ -109,7 +116,7 @@ def check(pose_m, label, problems, floor=-2.85):
         if r[name][1] < floor: problems.append(f"{label}: {name} in ground (y={r[name][1]:.2f})")
     return r
 
-def verify(name, keys, floor=-2.85, hidden_until=-1.0, grounded=False):
+def verify(name, keys, floor=-2.85, hidden_until=-1.0, grounded=False, reach=None):
     """floor: lowest the blade may go (the ground is y=-3; lower it for moves
     that plant the blade on purpose). hidden_until: the sword is invisible
     before this time, so it isn't checked."""
@@ -118,11 +125,11 @@ def verify(name, keys, floor=-2.85, hidden_until=-1.0, grounded=False):
     for i, (k, pm) in enumerate(zip(keys, poses)):
         if i + 1 < len(keys) and keys[i+1][0] <= hidden_until:
             continue
-        check(pm, f"{name}@{k[0]:.2f}", problems, floor)
+        check(pm, f"{name}@{k[0]:.2f}", problems, floor, reach)
         if grounded: sole_check(pm, f"{name}@{k[0]:.2f}", problems)
         if i + 1 < len(keys):
             for t in (0.25, 0.5, 0.75):
-                check(lerp_pose(pm, poses[i+1], t), f"{name}@{k[0]:.2f}+{t}", problems, floor)
+                check(lerp_pose(pm, poses[i+1], t), f"{name}@{k[0]:.2f}+{t}", problems, floor, reach)
                 if grounded: sole_check(lerp_pose(pm, poses[i+1], t), f"{name}@{k[0]:.2f}+{t}", problems, 0.16)
     tips = [solve(pm)['tip'] for pm in poses]
     print(f"{name:12s} " + " ".join(fmt(t) for t in tips))

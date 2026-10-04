@@ -2649,6 +2649,574 @@ Animations.SwordSwap = {
 	},
 }
 
+-- Slayer Recall: wound back over the shoulder, then the sword hurled away.
+Animations.RecallThrow = {
+	fadeIn = 0.04,
+	fadeOut = 0.15,
+	delays = { Head = 0.02, LeftArm = 0.02 },
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.049, -6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.15,
+			{
+				Torso = body(0.074, 8, -30),
+				Head = rot(-4, 22),
+				RightArm = limb(165, -25),
+				Sword = aim(0.3, 0.3, 0.9),
+				LeftArm = limb(70, -10),
+				RightLeg = rot(-16),
+				LeftLeg = rot(16),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.3,
+			{
+				Torso = body(-0.089, -18, 30),
+				Head = rot(10, -20),
+				RightArm = limb(100, 20),
+				Sword = aim(-0.2, 0.1, -0.97),
+				LeftArm = limb(-20, 0, -30),
+				RightLeg = rot(-34),
+				LeftLeg = rot(30),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.6,
+			{
+				Torso = body(-0.028, -14, 24),
+				Head = rot(8, -16),
+				RightArm = limb(85, 10),
+				Sword = aim(-0.1, -0.1, -0.99),
+				LeftArm = limb(-10, 0, -30),
+				RightLeg = rot(-30),
+				LeftLeg = rot(26),
+			},
+			"Sine",
+			"Out",
+		},
+	},
+}
+
+-- Slayer Recall: palm out, calling the sword back.
+Animations.RecallCall = {
+	fadeIn = 0.08,
+	fadeOut = 0.1,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(-0.028, -14, 24),
+				Head = rot(8, -16),
+				RightArm = limb(85, 10),
+				Sword = aim(-0.1, -0.1, -0.99),
+				LeftArm = limb(-10, 0, -30),
+				RightLeg = rot(-30),
+				LeftLeg = rot(26),
+			},
+		},
+		{
+			0.15,
+			{
+				Torso = body(0.054, -6, 10),
+				Head = rot(4, -6),
+				RightArm = limb(95),
+				Sword = aim(0, 0.1, -0.99),
+				LeftArm = limb(30, -20),
+				RightLeg = rot(-14),
+				LeftLeg = rot(14),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			2,
+			{
+				Torso = body(0.054, -6, 10),
+				Head = rot(4, -6),
+				RightArm = limb(95),
+				Sword = aim(0, 0.1, -0.99),
+				LeftArm = limb(30, -20),
+				RightLeg = rot(-14),
+				LeftLeg = rot(14),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Slayer Recall: catching the sword and swinging it up onto the shoulder.
+Animations.RecallCatch = {
+	fadeIn = 0.02,
+	fadeOut = 0.2,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.054, -6, 10),
+				Head = rot(4, -6),
+				RightArm = limb(95),
+				Sword = aim(0, 0.1, -0.99),
+				LeftArm = limb(30, -20),
+				RightLeg = rot(-14),
+				LeftLeg = rot(14),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = body(0.047, -10, -14),
+				Head = rot(6, 10),
+				RightArm = limb(120, -20),
+				Sword = aim(0.4, 0.75, 0.52),
+				LeftArm = limb(40, -20),
+				RightLeg = rot(-18),
+				LeftLeg = rot(16),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.35,
+			{
+				Torso = body(0.049, -6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Causality Break: the Demon-Destroyer driven point-first into the ground.
+Animations.CausalityPlant = {
+	fadeIn = 0.04,
+	fadeOut = 0.05,
+	delays = { Head = 0.02 },
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.049, -6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.2,
+			{
+				Torso = body(0.026, 10),
+				Head = rot(-8),
+				RightArm = limb(120),
+				Sword = aim(0, -0.55, -0.83),
+				LeftArm = limb(118, -6),
+				RightLeg = rot(-12),
+				LeftLeg = rot(12),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.42,
+			{
+				Torso = body(-0.032, -22),
+				Head = rot(14),
+				RightArm = limb(78),
+				Sword = aim(0, -0.82, -0.57),
+				LeftArm = limb(76, -6),
+				RightLeg = rot(-34),
+				LeftLeg = rot(28),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.8,
+			{
+				Torso = body(-0.032, -22),
+				Head = rot(14),
+				RightArm = limb(78),
+				Sword = aim(0, -0.82, -0.57),
+				LeftArm = limb(76, -6),
+				RightLeg = rot(-34),
+				LeftLeg = rot(28),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Causality Break: the sword yanked back out.
+Animations.CausalityPull = {
+	fadeIn = 0.02,
+	fadeOut = 0.2,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(-0.032, -22),
+				Head = rot(14),
+				RightArm = limb(78),
+				Sword = aim(0, -0.82, -0.57),
+				LeftArm = limb(76, -6),
+				RightLeg = rot(-34),
+				LeftLeg = rot(28),
+			},
+		},
+		{
+			0.12,
+			{
+				Torso = body(0.06, 4, -10),
+				Head = rot(-4, 8),
+				RightArm = limb(130, -15),
+				Sword = aim(0.2, 0.9, -0.3),
+				LeftArm = limb(40, -20),
+				RightLeg = rot(-14),
+				LeftLeg = rot(14),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.4,
+			{
+				Torso = body(0.049, -6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Severance: one draw-cut through them, back turned as it lands.
+Animations.Severance = {
+	fadeIn = 0.03,
+	fadeOut = 0.25,
+	delays = { Sword = 0.015, Head = -0.01 },
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.049, -6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.12,
+			{
+				Torso = body(0.02, -26, -30),
+				Head = rot(16, 22),
+				RightArm = limb(-30, -15, 20),
+				Sword = aim(0.32, 0.12, 0.94),
+				LeftArm = limb(70, 10),
+				RightLeg = rot(-40),
+				LeftLeg = rot(36),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.16,
+			{
+				Torso = body(-0.061, -28),
+				Head = rot(16),
+				RightArm = limb(80, -60),
+				Sword = aim(0.9, 0.02, -0.42),
+				LeftArm = limb(20, 0, -30),
+				RightLeg = rot(-44),
+				LeftLeg = rot(38),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.2,
+			{
+				Torso = body(-0.344, -30, 40),
+				Head = rot(18, -30),
+				RightArm = limb(84, 80),
+				Sword = aim(-0.86, -0.04, -0.5),
+				LeftArm = limb(-20, 0, -35),
+				RightLeg = rot(-46),
+				LeftLeg = rot(40),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			0.32,
+			{
+				Torso = body(0.017, -12, 60),
+				Head = rot(6, -40),
+				RightArm = limb(70, 100),
+				Sword = aim(-0.8, -0.45, 0.4),
+				LeftArm = limb(15, -40),
+				RightLeg = rot(-24),
+				LeftLeg = rot(22),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.8,
+			{
+				Torso = body(0.017, -12, 60),
+				Head = rot(6, -40),
+				RightArm = limb(70, 100),
+				Sword = aim(-0.8, -0.45, 0.4),
+				LeftArm = limb(15, -40),
+				RightLeg = rot(-24),
+				LeftLeg = rot(22),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Infinite Slash: Yami's two-handed overhead raise, trembling.
+Animations.InfiniteRaise = {
+	fadeIn = 0.04,
+	fadeOut = 0.05,
+	delays = { Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.049, -6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.25,
+			{
+				Torso = body(0.088, 10, -10),
+				Head = rot(-10, 8),
+				RightArm = limb(170, -6),
+				Sword = aim(0.1, 0.6, 0.8),
+				LeftArm = limb(165, 8),
+				RightLeg = rot(-16, 0, 6),
+				LeftLeg = rot(18, 0, -6),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.4,
+			{
+				Torso = body(0.075, 12, -10),
+				Head = rot(-12, 8),
+				RightArm = limb(170, -6),
+				Sword = aim(0.1, 0.6, 0.8),
+				LeftArm = limb(165, 8),
+				RightLeg = rot(-16, 0, 6),
+				LeftLeg = rot(18, 0, -6),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.55,
+			{
+				Torso = body(0.088, 10, -10),
+				Head = rot(-10, 8),
+				RightArm = limb(170, -6),
+				Sword = aim(0.1, 0.6, 0.8),
+				LeftArm = limb(165, 8),
+				RightLeg = rot(-16, 0, 6),
+				LeftLeg = rot(18, 0, -6),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Infinite Slash: one straight chop that opens the cut.
+Animations.InfiniteCut = {
+	fadeIn = 0.01,
+	fadeOut = 0.3,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.088, 10, -10),
+				Head = rot(-10, 8),
+				RightArm = limb(170, -6),
+				Sword = aim(0.1, 0.6, 0.8),
+				LeftArm = limb(165, 8),
+				RightLeg = rot(-16, 0, 6),
+				LeftLeg = rot(18, 0, -6),
+			},
+		},
+		{
+			0.05,
+			{
+				Torso = body(-0.093, -30),
+				Head = rot(16),
+				RightArm = limb(75, 2),
+				Sword = aim(0, -0.35, -0.94),
+				LeftArm = limb(72, -2),
+				RightLeg = rot(-42),
+				LeftLeg = rot(36),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.45,
+			{
+				Torso = body(-0.093, -30),
+				Head = rot(16),
+				RightArm = limb(75, 2),
+				Sword = aim(0, -0.35, -0.94),
+				LeftArm = limb(72, -2),
+				RightLeg = rot(-42),
+				LeftLeg = rot(36),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Zetten: still in an iai stance, the katana low at the hip, head bowed.
+Animations.ZettenStance = {
+	fadeIn = 0.05,
+	fadeOut = 0.05,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.049, -6, -18),
+				Head = rot(5, 16),
+				RightArm = limb(85, 25, 10),
+				Sword = aim(-0.006, 0.483, 0.875),
+				LeftArm = limb(10, 0, -14),
+			},
+		},
+		{
+			0.12,
+			{
+				Torso = body(0.022, -20, -35),
+				Head = rot(22, 25),
+				RightArm = limb(30, -20, 15),
+				Sword = aim(0.36, -0.05, 0.93),
+				LeftArm = limb(50, 30, -10),
+				RightLeg = rot(-34, 10),
+				LeftLeg = rot(30, 10),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			1.4,
+			{
+				Torso = body(0.022, -20, -35),
+				Head = rot(22, 25),
+				RightArm = limb(30, -20, 15),
+				Sword = aim(0.36, -0.05, 0.93),
+				LeftArm = limb(50, 30, -10),
+				RightLeg = rot(-34, 10),
+				LeftLeg = rot(30, 10),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Zetten: one rising diagonal cut.
+Animations.ZettenCut = {
+	fadeIn = 0.01,
+	fadeOut = 0.25,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.022, -20, -35),
+				Head = rot(22, 25),
+				RightArm = limb(30, -20, 15),
+				Sword = aim(0.36, -0.05, 0.93),
+				LeftArm = limb(50, 30, -10),
+				RightLeg = rot(-34, 10),
+				LeftLeg = rot(30, 10),
+			},
+		},
+		{
+			0.05,
+			{
+				Torso = body(-0.108, -16, 40),
+				Head = rot(10, -28),
+				RightArm = limb(130, 70),
+				Sword = aim(-0.6, 0.65, -0.45),
+				LeftArm = limb(-10, 0, -35),
+				RightLeg = rot(-36),
+				LeftLeg = rot(32),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.35,
+			{
+				Torso = body(-0.013, -10, 34),
+				Head = rot(6, -24),
+				RightArm = limb(115, 60),
+				Sword = aim(-0.55, 0.6, -0.58),
+				LeftArm = limb(0, 0, -30),
+				RightLeg = rot(-26),
+				LeftLeg = rot(24),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.6,
+			{
+				Torso = body(-0.013, -10, 34),
+				Head = rot(6, -24),
+				RightArm = limb(115, 60),
+				Sword = aim(-0.55, 0.6, -0.58),
+				LeftArm = limb(0, 0, -30),
+				RightLeg = rot(-26),
+				LeftLeg = rot(24),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
 -- Black Meteorite: crashing down, sword driven into the ground.
 Animations.MeteorSlam = {
 	fadeIn = 0.02,

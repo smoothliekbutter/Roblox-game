@@ -5278,6 +5278,703 @@ function handlers.SwordSwap(data, character, root)
 	end)
 end
 
+---------------------------------------------------------------------------
+-- Sword moves (Black Form 1 and 2 follow the sword in his hand)
+---------------------------------------------------------------------------
+
+-- A straight cut through the air from `from` to `to`: a white-hot line with
+-- black either side of it in a red glow. It hangs for `hold`, then parts
+-- (the dark opens up) and fades.
+local function cutLine(from: Vector3, to: Vector3, width: number, hold: number)
+	local length = (to - from).Magnitude
+	if length < 0.1 then
+		return
+	end
+	local cframe = CFrame.lookAt(from:Lerp(to, 0.5), to)
+	local glow = U.newPart({
+		Size = Vector3.new(0.05, width * 2.6, length),
+		CFrame = cframe,
+		Color = RED,
+		Transparency = 0.45,
+	})
+	local dark = U.newPart({
+		Size = Vector3.new(0.08, width * 1.2, length),
+		CFrame = cframe,
+		Color = BLACK,
+		Material = Enum.Material.SmoothPlastic,
+	})
+	local core = U.newPart({ Size = Vector3.new(0.12, width * 0.4, length), CFrame = cframe, Color = WHITE_HOT })
+	task.delay(hold, function()
+		U.tween(glow, 0.35, { Size = Vector3.new(0.05, width * 5, length), Transparency = 1 })
+		U.tween(dark, 0.35, { Size = Vector3.new(0.08, width * 3, length), Transparency = 1 })
+		U.tween(core, 0.2, { Size = Vector3.new(0.12, 0.01, length), Transparency = 1 })
+	end)
+	task.delay(hold + 0.4, function()
+		glow:Destroy()
+		dark:Destroy()
+		core:Destroy()
+	end)
+end
+
+-- Hides his sword, returning a function that puts it back as it was.
+local function hideSword(character: Model): () -> ()
+	local sword = getSword(character)
+	local shown: { [BasePart]: number } = {}
+	if sword then
+		for _, part in sword:GetDescendants() do
+			if part:IsA("BasePart") then
+				shown[part] = part.Transparency
+				part.Transparency = 1
+			end
+		end
+	end
+	return function()
+		for part, transparency in shown do
+			part.Transparency = transparency
+		end
+	end
+end
+
+-- A copy of his sword loose in the world (Slayer Recall's throw): the
+-- handle anchored, everything else welded on, so it's posed by the handle.
+local function looseSword(character: Model): (Model?, BasePart?)
+	local sword = getSword(character)
+	if not sword or not sword:FindFirstChild("Handle") then
+		return nil, nil
+	end
+	local copy = sword:Clone()
+	for _, item in copy:GetDescendants() do
+		if item:IsA("JointInstance") then
+			local inside = item.Part0 ~= nil
+				and item.Part0:IsDescendantOf(copy)
+				and item.Part1 ~= nil
+				and item.Part1:IsDescendantOf(copy)
+			if not inside then
+				item:Destroy()
+			end
+		elseif item:IsA("BasePart") then
+			item.Anchored = item.Name == "Handle"
+			item.CanCollide = false
+			item.CanQuery = false
+			item.CanTouch = false
+			item.Massless = true
+		elseif item:IsA("Trail") then
+			item.Enabled = true
+		end
+	end
+	copy.Parent = U.folder
+	return copy, copy:FindFirstChild("Handle") :: BasePart?
+end
+
+-- Slayer Recall: the thrown sword, spinning flat like a boomerang about the
+-- middle of its blade, out to where the server stops it, hanging there,
+-- then flying back to his hand (black lightning pulling it in).
+type Recall = {
+	copy: Model,
+	handle: BasePart,
+	restore: () -> (),
+	origin: Vector3,
+	target: Vector3,
+	out: number,
+	position: Vector3,
+	phase: string, -- "out" | "hang" | "back" | "home"
+	speed: number,
+	born: number,
+}
+local recalls: { [Model]: Recall } = {}
+local RECALL_MIDDLE = 2.6 -- grip to the middle of the Slayer's blade
+
+local function endRecall(character: Model)
+	local recall = recalls[character]
+	if recall then
+		recalls[character] = nil
+		recall.copy:Destroy()
+		recall.restore()
+	end
+end
+
+local function driveRecall(character: Model, recall: Recall)
+	local spin = 0
+	local lastBolt = 0
+	local connection
+	connection = RunService.Heartbeat:Connect(function(dt)
+		if recalls[character] ~= recall then
+			connection:Disconnect()
+			return
+		end
+		local now = os.clock()
+		local age = now - recall.born
+		if age > 4 or not character.Parent then
+			connection:Disconnect()
+			endRecall(character)
+			return
+		end
+		spin += dt * (if recall.phase == "hang" then 20 else 32)
+		local root = U.getRoot(character)
+		if recall.phase == "out" then
+			local a = math.clamp(age / recall.out, 0, 1)
+			recall.position = recall.origin:Lerp(recall.target, 1 - (1 - a) ^ 2)
+			if a >= 1 then
+				recall.phase = "hang"
+			end
+		elseif recall.phase == "back" and root then
+			local offset = root.Position - recall.position
+			local step = recall.speed * dt
+			if offset.Magnitude <= math.max(step, 2.5) then
+				recall.position = root.Position
+				recall.phase = "home"
+			else
+				recall.position += offset.Unit * step
+			end
+			if now - lastBolt > 0.05 then
+				lastBolt = now
+				local arm = character:FindFirstChild("Left Arm") :: BasePart?
+				if arm then
+					U.lightning((arm.CFrame * CFrame.new(0, -1, 0)).Position, recall.position, BLACK, RED, 0.1, 0.08)
+				end
+			end
+		end
+		local bob = if recall.phase == "hang" then UP * math.sin(age * 7) * 0.3 else Vector3.zero
+		recall.handle.CFrame = CFrame.new(recall.position + bob)
+			* CFrame.Angles(0, spin, 0)
+			* CFrame.Angles(0, 0, math.pi / 2)
+			* CFrame.new(0, -RECALL_MIDDLE, 0)
+	end)
+end
+
+function handlers.SlayerRecall(data, character, root)
+	local phase = data.phase
+	if phase == "Wind" then
+		play(character, ANIMS.RecallThrow)
+		swordGlow(character, RED, 0.35, 0.3)
+		swordAura(character, 0.3, 40)
+		edgeGlow(character, 0.35, 0.8)
+		for i = 0, 4 do
+			task.delay(i * 0.05, function()
+				local point = bladePoint(character, 1)
+				if point then
+					inflow(point, 5)
+				end
+			end)
+		end
+	elseif phase == "Throw" then
+		endRecall(character)
+		local copy, handle = looseSword(character)
+		local restore = hideSword(character)
+		if not copy or not handle then
+			restore()
+			return
+		end
+		local origin: Vector3 = data.origin
+		local target: Vector3 = data.target
+		local blade = copy:FindFirstChild("Blade", true)
+		if blade and blade:IsA("BasePart") then
+			local glow = Instance.new("PointLight")
+			glow.Color = RED
+			glow.Range = 14
+			glow.Brightness = 3
+			glow.Parent = blade
+			partEmitter(blade, {
+				Texture = U.textures.Smoke,
+				Color = ColorSequence.new(BLACK),
+				Size = NumberSequence.new(1.4, 0),
+				Transparency = NumberSequence.new(0.35, 1),
+				Lifetime = NumberRange.new(0.25, 0.4),
+				Rate = 70,
+				Speed = NumberRange.new(0, 1),
+				LightEmission = 0,
+			}, 4)
+		end
+		local recall: Recall = {
+			copy = copy,
+			handle = handle,
+			restore = restore,
+			origin = origin,
+			target = target,
+			out = data.out or 0.42,
+			position = origin,
+			phase = "out",
+			speed = 95,
+			born = os.clock(),
+		}
+		recalls[character] = recall
+		driveRecall(character, recall)
+		local direction = if (target - origin).Magnitude > 0.1 then (target - origin).Unit else root.CFrame.LookVector
+		glowBurst(origin, 3, 0.25)
+		U.impactRing(origin, direction, RED, 1, 7, 0.25)
+		task.delay(0.04, U.impactRing, origin + direction * 2, direction, BLACK, 0.8, 6, 0.25)
+		U.burst(origin, {
+			color = RED,
+			count = 14,
+			size = 0.5,
+			speed = NumberRange.new(30, 55),
+			lifetime = NumberRange.new(0.15, 0.3),
+			streaks = true,
+			spread = 25,
+			direction = direction,
+		})
+		if U.isLocal(character) then
+			CameraShake.Add(0.12)
+			CameraShake.FovKick(5)
+		end
+	elseif phase == "Return" then
+		local recall = recalls[character]
+		if recall then
+			recall.phase = "back"
+			recall.speed = data.speed or recall.speed
+			glowBurst(recall.position, 3.5, 0.3)
+			blackLightning(recall.position, 3, 3, 0.2)
+		end
+		play(character, ANIMS.RecallCall)
+	elseif phase == "Catch" then
+		endRecall(character)
+		if data.instant then
+			return -- snapped back for another move: that move's animation plays
+		end
+		play(character, ANIMS.RecallCatch)
+		local point = bladePoint(character, 0.5) or root.Position
+		glowBurst(point, 3.5, 0.3)
+		edgeGlow(character, 0.4, 1)
+		redSparks(point, 12, 0.6)
+		blackSmoke(point, 6, 2.5, 6)
+		U.ringBurst(CFrame.new(root.Position), RED, 1, 6, 0.25, 0.2)
+		if U.isLocal(character) then
+			CameraShake.Add(0.12)
+		end
+	end
+end
+
+-- Conquering Eon: the Demon-Dweller's markings fill with what it drinks in.
+local MARK_DARK = Color3.fromRGB(10, 10, 10)
+local function lightMarks(character: Model, charges: number)
+	local sword = getSword(character)
+	if not sword then
+		return
+	end
+	for i = 0, 4 do
+		local mark = sword:FindFirstChild("Mark" .. i, true)
+		if mark and mark:IsA("BasePart") then
+			local on = charges > 0 and i <= charges
+			U.tween(mark, 0.15, { Color = if not on then MARK_DARK elseif i == 0 then RED else HOT })
+		end
+	end
+end
+
+function handlers.ConqueringEon(data, character, root)
+	local phase = data.phase
+	local air = data.airborne == true
+	if phase == "Raise" then
+		local token = bump(character)
+		local duration = data.duration or 0.6
+		play(character, if air then ANIMS.AirDividerCharge else ANIMS.GrandCharge)
+		lightMarks(character, 0)
+		edgeGlow(character, duration, 0.6)
+		swordAura(character, duration, 30)
+		-- Its pull: rings closing in from the edge of its reach, mana
+		-- streaming into the blade.
+		local feet = feetOf(character, root)
+		U.ringBurst(CFrame.new(feet + UP * 0.2), BLACK, 18, 2, duration, 0.4)
+		U.ringBurst(CFrame.new(feet + UP * 0.25), RED, 18, 2, duration * 0.85, 0.15)
+		task.spawn(function()
+			local start = os.clock()
+			while live(character, token) and os.clock() - start < duration do
+				local point = bladePoint(character, 1.2)
+				if point then
+					inflow(point, 9)
+					inflow(point, 5)
+				end
+				task.wait(0.05)
+			end
+		end)
+		if U.isLocal(character) then
+			CameraShake.Add(0.08)
+		end
+	elseif phase == "Absorb" then
+		local charges = data.charges or 1
+		lightMarks(character, charges)
+		local point = bladePoint(character, 1.2)
+		if point and typeof(data.from) == "Vector3" then
+			U.lightning(data.from, point, BLACK, RED, 0.24, 0.2, true)
+			U.lightning(data.from, point, RED, HOT, 0.08, 0.15)
+			glowBurst(point, 2.5 + charges * 0.6, 0.25)
+			U.burst(point, {
+				color = HOT,
+				count = 10,
+				size = 0.4,
+				speed = NumberRange.new(8, 20),
+				lifetime = NumberRange.new(0.15, 0.3),
+			})
+		end
+		if U.isLocal(character) then
+			CameraShake.Add(0.1)
+		end
+	elseif phase == "Siphon" then
+		lightMarks(character, data.charges or 1)
+		for _, target in data.targets do
+			local targetRoot = U.getRoot(target)
+			if targetRoot then
+				U.highlight(target, RED, 0.45, 0.35)
+				redSparks(targetRoot.Position, 8, 0.5)
+				blackSmoke(targetRoot.Position, 5, 2, 4)
+				for i = 0, 5 do
+					task.delay(i * 0.06, function()
+						local point = bladePoint(character, 1.2)
+						if point and targetRoot.Parent then
+							U.lightning(targetRoot.Position, point, BLACK, RED, 0.14, 0.1, i % 2 == 0)
+						end
+					end)
+				end
+			end
+		end
+	elseif phase == "Release" then
+		bump(character)
+		local charges = data.charges or 0
+		play(character, if air then ANIMS.AirDividerRelease else ANIMS.GrandRelease)
+		heavyTrail(character, 0.3)
+		crescent(character, {
+			center = CFrame.new(0, 0.6, 0),
+			radius = 7 + charges,
+			from = 100,
+			to = if air then -120 else -40,
+			tilt = 90,
+			width = 2 + 0.4 * charges,
+			sweep = 0.1,
+			fade = 0.35,
+			glow = 0.5 + 0.12 * charges,
+		})
+		local point = bladePoint(character, 2) or root.Position
+		glowBurst(point, 4 + 1.5 * charges, 0.35)
+		bloomPulse(root.Position, 0.4 + 0.2 * charges, 0.45)
+		edgeGlow(character, 0.4, 1)
+		U.shockwave(root.Position, RED, 2, 10 + 3 * charges, 0.35)
+		blackLightning(point, 3 + charges, 4 + charges)
+		task.delay(0.45, lightMarks, character, 0)
+		if U.isLocal(character) then
+			CameraShake.Add(0.15 + 0.06 * charges)
+			CameraShake.FovKick(6 + 2 * charges)
+			if charges >= 3 then
+				impactFrame(0.6)
+			end
+		end
+	elseif phase == "Cancel" then
+		bump(character)
+		lightMarks(character, 0)
+	end
+end
+
+-- Causality Break: the Demon-Destroyer's clover guard and plate flare up.
+local function destroyerFlare(character: Model, duration: number)
+	local sword = getSword(character)
+	if not sword then
+		return
+	end
+	for _, part in sword:GetDescendants() do
+		if part:IsA("BasePart") and (part.Name == "GuardPlate" or part.Name:sub(1, 6) == "Clover") then
+			local color = part.Color
+			U.tween(part, 0.1, { Color = WHITE_HOT })
+			task.delay(duration, function()
+				if part.Parent then
+					U.tween(part, 0.3, { Color = color })
+				end
+			end)
+		end
+	end
+end
+
+function handlers.CausalityBreak(data, character, root)
+	local phase = data.phase
+	if phase == "Plant" then
+		bump(character)
+		play(character, ANIMS.CausalityPlant)
+		edgeGlow(character, 0.5, 0.8)
+		swordAura(character, 0.45, 40)
+		destroyerFlare(character, 0.7)
+		task.delay(0.25, heavyTrail, character, 0.2)
+	elseif phase == "Break" then
+		local tip = bladePoint(character, 2.1) or root.Position + root.CFrame.LookVector * 3
+		local ground = U.groundBelow(tip + UP * 1.5, { character }, 6)
+		local point = if ground then ground.Position else tip
+		-- The blade bites in: a white-hot flash, the ground splits round it,
+		-- and a ring of broken causality spreads out to its reach.
+		glowBurst(point, 5, 0.35)
+		bloomPulse(point, 0.7, 0.5)
+		U.groundCracks(point, 9, 9, RED, 1.6)
+		U.groundRocks(point, 8, 5, 1.2)
+		U.debris(point, 10, 30, 0.8)
+		U.pillar(point, RED, 1.2, 16, 0.35)
+		U.ringBurst(CFrame.new(point + UP * 0.3), WHITE, 2, 18, 0.4, 0.25)
+		task.delay(0.05, U.ringBurst, CFrame.new(point + UP * 0.3), RED, 2, 18, 0.5, 0.45)
+		task.delay(0.1, U.ringBurst, CFrame.new(point + UP * 0.3), BLACK, 2, 16, 0.55, 0.6)
+		blackLightning(point, 6, 5)
+		-- It runs through the ground to each of them and breaks what they had.
+		for i, target in data.targets do
+			local targetRoot = U.getRoot(target)
+			if targetRoot then
+				task.delay(0.03 * i, function()
+					if not targetRoot.Parent then
+						return
+					end
+					local feet = targetRoot.Position - UP * 2.8
+					U.lightning(point, feet, BLACK, RED, 0.25, 0.25, true)
+					U.lightning(point + UP * 0.2, feet + UP * 0.2, RED, HOT, 0.08, 0.2)
+					U.ringBurst(CFrame.new(feet + UP * 0.2), WHITE, 4, 0.5, 0.3, 0.12)
+					U.shards(targetRoot.Position, WHITE, 8)
+					U.shards(targetRoot.Position, RED, 6)
+					glowBurst(targetRoot.Position, 3, 0.25)
+					U.highlight(target, WHITE, 0.25, 0.5)
+					U.popup(targetRoot.Position + UP * 3.5, "BROKEN", WHITE, 1)
+				end)
+			end
+		end
+		if U.isLocal(character) or #data.targets > 0 and involves({ target = data.targets[1] }, character) then
+			CameraShake.Add(0.3)
+			CameraShake.FovKick(8)
+			impactFrame(0.5)
+		end
+	elseif phase == "Pull" then
+		play(character, ANIMS.CausalityPull)
+		heavyTrail(character, 0.25)
+		local tip = bladePoint(character, 2.1)
+		if tip then
+			blackSmoke(tip, 8, 3, 6)
+			redSparks(tip, 10, 0.6, UP)
+		end
+	elseif phase == "Cancel" then
+		bump(character)
+	end
+end
+
+function handlers.Severance(data, character, root)
+	local phase = data.phase
+	if phase == "Draw" then
+		play(character, ANIMS.Severance)
+		swordGlow(character, RED, 0.3, 0.4)
+		edgeGlow(character, 0.55, 0.9)
+		destroyerFlare(character, 0.4)
+		local point = bladePoint(character, 1.5)
+		if point then
+			U.glint(point, 1.6, WHITE_HOT)
+		end
+	elseif phase == "Dash" then
+		local direction: Vector3 = data.direction
+		U.speedLines(root, direction, 0.25, RED)
+		U.bodyTrail(character, RED, 0.25)
+		heavyTrail(character, 0.2)
+		for i = 0, 3 do
+			task.delay(i * 0.05, U.afterimage, character, BLACK, 0.3)
+		end
+		glowBurst(data.from, 2.5, 0.2)
+		if U.isLocal(character) then
+			CameraShake.FovKick(10)
+		end
+	elseif phase == "Sheathe" then
+		local from: Vector3 = data.from
+		local to: Vector3 = data.to
+		-- The cut hangs in the air along his path, then lands all at once.
+		cutLine(from + UP * 0.6, to + UP * 0.6, 0.5, 0.35)
+		for _, target in data.targets do
+			local targetRoot = U.getRoot(target)
+			if targetRoot then
+				local direction = if (to - from).Magnitude > 0.1 then (to - from).Unit else root.CFrame.LookVector
+				slashMark(targetRoot.Position, markAngle(targetRoot.Position, direction), 6, 0.45)
+				task.delay(0.35, function()
+					if not targetRoot.Parent then
+						return
+					end
+					glowBurst(targetRoot.Position, 3.5, 0.3)
+					U.impactRing(targetRoot.Position, direction, RED, 1, 7, 0.3)
+					U.burst(targetRoot.Position, {
+						color = RED,
+						count = 18,
+						size = 0.6,
+						speed = NumberRange.new(30, 60),
+						lifetime = NumberRange.new(0.15, 0.35),
+						streaks = true,
+						spread = 40,
+						direction = direction,
+					})
+					blackLightning(targetRoot.Position, 4, 4)
+				end)
+			end
+		end
+		if #data.targets > 0 and (U.isLocal(character) or involves({ target = data.targets[1] }, character)) then
+			task.delay(0.35, function()
+				CameraShake.Add(0.25)
+				impactFrame(0.6)
+			end)
+		end
+	elseif phase == "Seal" then
+		-- Severed from their magic: red seal rings close round them.
+		local target = data.target
+		local targetRoot = U.getRoot(target)
+		if not targetRoot then
+			return
+		end
+		U.popup(targetRoot.Position + UP * 3.5, "SEALED", RED, 1.3)
+		U.highlight(target, RED, 0.5, 0.4)
+		local duration = data.duration or 3
+		for i = 0, math.floor(duration / 0.4) do
+			task.delay(i * 0.4, function()
+				if targetRoot.Parent then
+					local tilt = CFrame.Angles(math.rad(15 * math.sin(i)), 0, math.rad(15 * math.cos(i)))
+					U.ringBurst(CFrame.new(targetRoot.Position + UP * (i % 3 - 1) * 1.2) * tilt, RED, 3, 2.2, 0.35, 0.1)
+				end
+			end)
+		end
+	end
+end
+
+function handlers.InfiniteSlash(data, character, root)
+	local phase = data.phase
+	if phase == "Raise" then
+		local token = bump(character)
+		local duration = data.duration or 0.55
+		play(character, ANIMS.InfiniteRaise)
+		edgeGlow(character, duration, 0.7)
+		swordAura(character, duration, 35)
+		U.pillar(feetOf(character, root), BLACK, 2.5, 9, duration + 0.1, Enum.Material.ForceField, 0.2)
+		task.spawn(function()
+			local start = os.clock()
+			while live(character, token) and os.clock() - start < duration do
+				local point = bladePoint(character, 1.5)
+				if point then
+					inflow(point, 6)
+				end
+				task.wait(0.06)
+			end
+		end)
+		if U.isLocal(character) then
+			U.colorGrade({ Saturation = -0.5, Contrast = 0.25 }, 0.2, duration, 0.4)
+			CameraShake.Add(0.06)
+		end
+	elseif phase == "Cut" then
+		bump(character)
+		play(character, ANIMS.InfiniteCut)
+		local origin: Vector3 = data.origin
+		local direction: Vector3 = data.direction
+		local length: number = data.length
+		crescent(character, {
+			center = CFrame.new(0, 0.6, 0),
+			radius = 5,
+			from = 100,
+			to = -40,
+			tilt = 90,
+			width = 1.2,
+			sweep = 0.06,
+			fade = 0.25,
+			glow = 0.8,
+		})
+		-- One straight cut through everything ahead, opening a beat later.
+		local finish = origin + direction * length
+		cutLine(origin, finish, 0.7, 0.2)
+		glowBurst(origin, 3.5, 0.25)
+		bloomPulse(origin, 0.6, 0.45)
+		for along = 8, length, 8 do
+			local point = origin + direction * along
+			task.delay(along / 400, function()
+				local ground = U.groundBelow(point, { character }, 6)
+				if ground then
+					U.groundCracks(ground.Position, 2, 4, RED, 1)
+					U.debris(ground.Position, 3, 18, 0.5)
+				end
+				redSparks(point, 4, 0.4, direction)
+			end)
+		end
+		glowBurst(finish, 2.5, 0.25)
+		if U.isLocal(character) then
+			CameraShake.Add(0.25)
+			CameraShake.FovKick(9)
+			impactFrame(0.6)
+		end
+	elseif phase == "Cancel" then
+		bump(character)
+	end
+end
+
+function handlers.Zetten(data, character, root)
+	local phase = data.phase
+	if phase == "Stance" then
+		local token = bump(character)
+		local duration = data.duration or 1
+		play(character, ANIMS.ZettenStance)
+		edgeGlow(character, duration, 0.4)
+		-- Reading ki: faint rings washing out to the edge of what he senses.
+		task.spawn(function()
+			local start = os.clock()
+			while live(character, token) and os.clock() - start < duration do
+				U.ringBurst(CFrame.new(feetOf(character, root) + UP * 0.2), WHITE, 2, 20, 0.6, 0.06)
+				task.wait(0.33)
+			end
+		end)
+		if U.isLocal(character) then
+			U.colorGrade({ Saturation = -0.35 }, 0.15, duration, 0.3)
+		end
+	elseif phase == "Strike" then
+		bump(character)
+		play(character, ANIMS.ZettenCut)
+		local from: Vector3 = data.from
+		local to: Vector3 = data.to
+		local direction = if (to - from).Magnitude > 0.1 then (to - from).Unit else root.CFrame.LookVector
+		-- He's past them in a flash: an afterimage where he stood, the line he
+		-- took cut into the air, and the cut opening on them.
+		cutLine(from + UP * 0.5, to + UP * 0.5, 0.35, 0.25)
+		glowBurst(from, 2, 0.2)
+		crescent(character, {
+			center = CFrame.new(0, 0.4, 0),
+			radius = 5,
+			from = -110,
+			to = 70,
+			tilt = 55,
+			width = 1.4,
+			sweep = 0.07,
+			fade = 0.3,
+			glow = 0.9,
+		})
+		local targetRoot = U.getRoot(data.target)
+		if targetRoot then
+			glowBurst(targetRoot.Position, 4, 0.3)
+			slashMark(targetRoot.Position, markAngle(targetRoot.Position, (direction + UP * 0.8).Unit), 7, 0.4)
+			U.burst(targetRoot.Position, {
+				color = RED,
+				count = 20,
+				size = 0.6,
+				speed = NumberRange.new(30, 65),
+				lifetime = NumberRange.new(0.15, 0.35),
+				streaks = true,
+				spread = 40,
+				direction = direction,
+			})
+			blackLightning(targetRoot.Position, 5, 4)
+		end
+		bloomPulse(to, 0.6, 0.4)
+		if involves(data, character) then
+			CameraShake.Add(0.28)
+			CameraShake.FovKick(10)
+			impactFrame(0.8)
+		end
+	elseif phase == "Cut" then
+		bump(character)
+		play(character, ANIMS.ZettenCut)
+		heavyTrail(character, 0.2)
+		crescent(character, {
+			center = CFrame.new(0, 0.4, 0),
+			radius = 5,
+			from = -110,
+			to = 70,
+			tilt = 55,
+			width = 1.2,
+			sweep = 0.08,
+			fade = 0.3,
+			glow = 0.6,
+		})
+		if U.isLocal(character) then
+			CameraShake.Add(0.1)
+		end
+	elseif phase == "Cancel" then
+		bump(character)
+	end
+end
+
 function Kit.OnSkill(data)
 	local character = data.character
 	if typeof(character) ~= "Instance" or not character:IsA("Model") then

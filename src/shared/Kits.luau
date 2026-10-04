@@ -107,13 +107,34 @@ Kits.List = {
 		},
 		-- In Black Form R draws another of his swords from the grimoire, at
 		-- random; moves 1 and 2 come from the sword in his hand.
-		awakenedSpecial = { name = "Swap Sword", cooldown = 8, type = "Melee" },
+		awakenedSpecial = { name = "Swap Sword", cooldown = 10, type = "Melee" },
 		swords = {
 			Slayer = {
 				name = "Demon-Slayer Sword",
 				skills = {
 					{ name = "Black Hurricane", cooldown = 9, type = "Melee", airHold = true },
+					{ name = "Slayer Recall", cooldown = 12, type = "Bolt", airHold = true },
+				},
+			},
+			Dweller = {
+				name = "Demon-Dweller Sword",
+				skills = {
 					{ name = "Black Slash", cooldown = 7, type = "Bolt", airHold = true },
+					{ name = "Conquering Eon", cooldown = 15, type = "Counter", airHold = true },
+				},
+			},
+			Destroyer = {
+				name = "Demon-Destroyer Sword",
+				skills = {
+					{ name = "Causality Break", cooldown = 15, type = "Zone", airHold = true },
+					{ name = "Severance", cooldown = 12, type = "Melee", airHold = true },
+				},
+			},
+			Slasher = {
+				name = "Demon-Slasher Katana",
+				skills = {
+					{ name = "Infinite Slash", cooldown = 13, type = "Melee", airHold = true },
+					{ name = "Zetten", cooldown = 16, type = "Counter", airHold = true },
 				},
 			},
 		},

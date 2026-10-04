@@ -354,6 +354,36 @@ function CombatService.ClearCounter(character: Model)
 	end
 end
 
+-- Ki reading (Asta's Zetten): while watching, the first character within
+-- `radius` of `character` to start a skill or special calls onStart with
+-- them. Fires once, then stops.
+type SkillWatch = { radius: number, untilTime: number, onStart: (user: Model) -> () }
+local skillWatchers: { [Model]: SkillWatch } = {}
+
+function CombatService.WatchSkills(character: Model, radius: number, duration: number, onStart: (user: Model) -> ())
+	skillWatchers[character] = { radius = radius, untilTime = os.clock() + duration, onStart = onStart }
+end
+
+function CombatService.StopWatchingSkills(character: Model)
+	skillWatchers[character] = nil
+end
+
+local function notifySkillStart(user: Model)
+	local userRoot = getRoot(user)
+	if not userRoot then
+		return
+	end
+	for watcher, watch in skillWatchers do
+		local watcherRoot = getRoot(watcher)
+		if os.clock() > watch.untilTime or not watcherRoot then
+			skillWatchers[watcher] = nil
+		elseif watcher ~= user and (watcherRoot.Position - userRoot.Position).Magnitude <= watch.radius then
+			skillWatchers[watcher] = nil
+			task.spawn(watch.onStart, user)
+		end
+	end
+end
+
 -- True if `slot`'s key was pressed (while on cooldown) after `since`.
 -- Whether the last on-cooldown press of `slot` was made in the air.
 function CombatService.PressedAirborne(character: Model, slot: number): boolean
@@ -718,6 +748,7 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 		or not CombatState.CanAct(character)
 		or CombatState.IsBlocking(character)
 		or CombatState.IsCasting(character)
+		or character:GetAttribute("SwordAway") == true
 	then
 		return
 	end
@@ -925,6 +956,7 @@ function CombatService.UseSkill(character: Model, slot: number, clientAirborne: 
 	CombatState.StartCooldown(character, slot, info.cooldown * (if awakening then awakening.cooldownMultiplier else 1))
 	CombatState.SetBlocking(character, false)
 	ctx.data.moveToken += 1
+	notifySkillStart(character)
 	task.spawn(run, ctx)
 end
 
@@ -958,6 +990,7 @@ function CombatService.UseSpecial(character: Model, clientAirborne: boolean?)
 	CombatState.StartCooldown(character, slot, info.cooldown * (if awakening then awakening.cooldownMultiplier else 1))
 	CombatState.SetBlocking(character, false)
 	ctx.data.moveToken += 1
+	notifySkillStart(character)
 	task.spawn(run, ctx)
 end
 
