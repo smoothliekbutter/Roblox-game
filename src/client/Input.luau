@@ -44,6 +44,11 @@ local m1Held = false
 local blockHeld = false
 local lastBlockSent = 0
 local dashReadyAt = 0 -- front and back
+-- The front dash's push while it lasts: an M1 cuts it short.
+local frontDash: Instance? = nil
+-- Extra jumps in the air (Kits airJumps), used since leaving the ground.
+local airJumpsUsed = 0
+local jumpReleasedInAir = false
 local sideDashReadyAt = 0 -- left and right: their own, shorter cooldown
 
 -- Mirror of the server's combo counter so our animation plays instantly.
@@ -160,6 +165,13 @@ local function tryM1()
 	if t < nextM1 then
 		return
 	end
+	-- An M1 during a front dash cuts the dash short and swings out of it.
+	if frontDash then
+		if frontDash.Parent then
+			frontDash:Destroy()
+		end
+		frontDash = nil
+	end
 	if t - lastM1 > Config.M1.ResetTime then
 		predictedCombo = 0
 	end
@@ -207,6 +219,21 @@ local function tryM1()
 	Impulse.Apply(root, forward * Config.M1.LungeSpeed, Config.M1.LungeTime, "Lunge", 0.6)
 end
 
+-- Someone right in front, for a front dash to stop at.
+local function enemyAhead(character: Model, root: BasePart): boolean
+	local params = OverlapParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { character }
+	for _, part in workspace:GetPartBoundsInBox(root.CFrame * CFrame.new(0, 0, -3), Vector3.new(4.5, 5, 4), params) do
+		local model = part:FindFirstAncestorWhichIsA("Model")
+		local humanoid = model and model:FindFirstChildOfClass("Humanoid")
+		if humanoid and humanoid.Health > 0 and model ~= character then
+			return true
+		end
+	end
+	return false
+end
+
 local function performDash(direction: string)
 	local character, _, root = getCharacter()
 	if not character or not root then
@@ -220,6 +247,9 @@ local function performDash(direction: string)
 		then Config.Dash.SideDuration
 		else Config.Dash.Duration
 	local mover = Impulse.Apply(root, basis:VectorToWorldSpace(localVector) * speed, duration, "Dash")
+	if direction == "Front" then
+		frontDash = mover.Parent
+	end
 
 	-- Front dash steers with the camera, side and back dashes keep their line.
 	local start = os.clock()
@@ -231,6 +261,17 @@ local function performDash(direction: string)
 		end
 		if direction == "Front" then
 			basis = cameraBasis()
+			-- Every front dash goes into an M1: reaching someone, it stops
+			-- and swings at them.
+			if enemyAhead(character, root) then
+				connection:Disconnect()
+				if mover.Parent then
+					mover.Parent:Destroy()
+				end
+				frontDash = nil
+				tryM1()
+				return
+			end
 		end
 		local alpha = (os.clock() - start) / duration
 		mover.VectorVelocity = basis:VectorToWorldSpace(localVector) * speed * (1 - alpha * 0.4)
@@ -428,6 +469,15 @@ function Input.Start()
 			jumpNeedsRelease = false
 			uppercutPrimedUntil = 0
 		end
+		-- Air jumps come back on landing, and need a fresh press in the air.
+		if humanoid then
+			if humanoid.FloorMaterial ~= Enum.Material.Air then
+				airJumpsUsed = 0
+				jumpReleasedInAir = false
+			elseif not jumpHeld(humanoid) then
+				jumpReleasedInAir = true
+			end
+		end
 		if character and humanoid then
 			local canJump = os.clock() >= noJumpUntil
 				and not jumpNeedsRelease
@@ -494,6 +544,35 @@ function Input.Start()
 
 	UserInputService.JumpRequest:Connect(function()
 		lastJumpRequest = os.clock()
+		-- One more jump in the air for kits that ride the wind (Yuno).
+		local character, humanoid, root = getCharacter()
+		local kit = character and Kits.Of(character)
+		if
+			not character
+			or not humanoid
+			or not root
+			or not kit
+			or (kit.airJumps or 0) <= airJumpsUsed
+			or humanoid.FloorMaterial ~= Enum.Material.Air
+			or not jumpReleasedInAir
+			or not CombatState.CanAct(character)
+			or CombatState.IsCasting(character)
+			or CombatState.IsBlocking(character)
+			or character:GetAttribute("Rooted") == true
+		then
+			return
+		end
+		airJumpsUsed += 1
+		jumpReleasedInAir = false
+		local velocity = root.AssemblyLinearVelocity
+		Impulse.Apply(
+			root,
+			Vector3.new(velocity.X, Config.Movement.AirJumpSpeed, velocity.Z),
+			Config.Movement.AirJumpTime,
+			"AirJump"
+		)
+		VFX.Play("AirJump", { character = character })
+		Remotes.Action:FireServer("AirJump")
 	end)
 
 	localPlayer.CharacterAdded:Connect(onCharacterAdded)

@@ -51,6 +51,8 @@ export type KitInfo = {
 		cooldownMultiplier: number,
 		speedBonus: number,
 	}?,
+	-- Extra jumps in the air (Yuno rides the wind: one more).
+	airJumps: number?,
 	-- A second, stronger stage of the awakening (Yuno: Full-Crown): dealing
 	-- `charge` damage while awakened lets G be pressed again. Its own moves
 	-- and stats, and the awakening's timer restarts at `duration`.
@@ -169,6 +171,8 @@ Kits.List = {
 			-- Wind-wrapped strikes reach a little further than bare fists.
 			HitboxOffset = 3.5,
 		},
+		-- He rides the wind: one more jump in the air, for chasing air combos.
+		airJumps = 1,
 		-- Mid-range zoner (Asta's opposite): a rain of blades to pin people
 		-- down, a homing hawk, a launcher, a six-arrow volley. Less damage
 		-- per move than Asta's sword, but from where the sword can't reach.
@@ -207,7 +211,7 @@ Kits.List = {
 				{ name = "Spirit of Notos", cooldown = 12, type = "Counter" },
 				{ name = "Spirit of Boreas", cooldown = 13, type = "Melee", airHold = true },
 				{ name = "Spirit of Euros", cooldown = 18, type = "Bolt", airHold = true },
-				{ name = "Neverland", cooldown = 35, type = "Zone" },
+				{ name = "Neverland", cooldown = 30, type = "Melee" },
 			},
 		},
 	} :: KitInfo,

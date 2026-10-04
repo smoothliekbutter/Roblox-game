@@ -14,6 +14,10 @@ Config.Debug = {
 Config.Movement = {
 	WalkSpeed = 16,
 	JumpHeight = 4.5, -- studs (Roblox default is 7.2)
+	-- The air jump some kits get (Yuno, Kits airJumps): a small hop, about
+	-- 4 studs, to pair with air moves rather than replace the jump.
+	AirJumpSpeed = 24,
+	AirJumpTime = 0.1,
 	AttackingSpeed = 10,
 	BlockingSpeed = 7,
 	StunnedSpeed = 3,

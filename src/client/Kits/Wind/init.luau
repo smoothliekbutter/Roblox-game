@@ -9,9 +9,12 @@
 	look the same at any ping.
 ]]
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+local NeverlandPlan = require(ReplicatedStorage:WaitForChild("Shared").Neverland)
 local CameraShake = require(script.Parent.Parent.CameraShake)
+local Cinematic = require(script.Parent.Parent.Cinematic)
 local M1Animations = require(script.Parent.Parent.M1Animations)
 local PoseAnimator = require(script.Parent.Parent.PoseAnimator)
 local VFX = require(script.Parent.Parent.VFX)
@@ -525,6 +528,17 @@ end
 function handlers.HeavenlyWindArk(data, character, root)
 	if data.phase == "Cast" then
 		play(character, if data.airborne then ANIMS.AirArk else ANIMS.Ark)
+	elseif data.phase == "Carry" then
+		-- Up together on a spiral of wind.
+		for _, target in data.targets do
+			local targetRoot = U.getRoot(target)
+			if targetRoot then
+				U.spiral(targetRoot, WIND, 2.5, 6, data.rise, 3, 0.12, 0.3)
+				U.bodyTrail(target, WIND, 0.35)
+			end
+		end
+		U.spiral(root, WIND_WHITE, 2.5, 6, 0.4, 2, 0.1, 0.3)
+		U.bodyTrail(character, WIND, 0.35)
 	elseif data.phase == "Rise" then
 		local forward: Vector3 = data.direction
 		local right = forward:Cross(UP).Unit
@@ -1199,41 +1213,209 @@ function handlers.SpiritOfEuros(data, character, root)
 	end
 end
 
--- Neverland: Sylph appears over him and sounds a star horn; a dome of wind
--- rises over the whole area with stars turning across it and her small
--- clones darting about inside. Time stops for whoever is caught (a pale
--- frost of light on them); the clones strike whoever is still inside.
+-- Neverland: his hand shoots out; whoever it catches is caught in stopped
+-- time, a dome of pale light with the world drained of colour. Three stars
+-- stand round them joined by beams, a triangle that rises with them; he
+-- flashes from star to star punching them up through it, then hammers them
+-- down from above, through a great triangle of stars, into the ground.
+-- Afterwards the dome lingers over the crater, stars turning on its rim.
 local domes: { [Model]: { close: () -> () } } = {}
 
-function handlers.Neverland(data, character, root)
-	if data.phase == "Horn" then
-		play(character, ANIMS.Neverland)
-		local sylph = makeSprite(1.6)
-		local horn = U.newPart({ Size = Vector3.new(0.25, 0.25, 1.1), Color = STAR })
-		every(data.cast + 0.2, function(elapsed)
-			if not root.Parent then
-				return false
+local function triangleBeams(width: number): { BasePart }
+	local beams = {}
+	for _ = 1, 3 do
+		table.insert(beams, bar(Vector3.zero, UP, width, STAR_WHITE, 0.1))
+	end
+	return beams
+end
+
+local function poseTriangle(beams: { BasePart }, corners: { Vector3 })
+	for i, beam in beams do
+		local a, b = corners[i], corners[i % 3 + 1]
+		beam.Size = Vector3.new(beam.Size.X, beam.Size.Y, (b - a).Magnitude + 0.05)
+		beam.CFrame = CFrame.lookAt(a:Lerp(b, 0.5), b)
+	end
+end
+
+local function punchClip(index: number, variant: string): Animation?
+	return M1Animations.Clips[M1Animations.NameFor(index, variant)]
+end
+
+local function playNeverland(data, character: Model, root: BasePart)
+	local target: Model? = data.target
+	local targetRoot = target and U.getRoot(target)
+	local plan = NeverlandPlan.Plan(data.origin, data.start, data.floorY)
+	local times = NeverlandPlan.Times
+	local started = os.clock()
+	local mine = involves(data, character)
+	local near = (workspace.CurrentCamera.CFrame.Position - plan.start).Magnitude < 70
+
+	-- Time stops: a dome of pale light round them, the world drained.
+	local dome = U.newPart({
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.one * 2,
+		CFrame = CFrame.new(plan.start),
+		Color = TIME_STOP,
+		Material = Enum.Material.ForceField,
+		Transparency = 0.1,
+	})
+	U.tween(dome, 0.35, { Size = Vector3.one * 34 }, Enum.EasingStyle.Quart)
+	U.ringBurst(CFrame.new(plan.start), TIME_STOP, 1, 17, 0.35, 0.2)
+	if mine or near then
+		U.colorGrade({ Saturation = -0.75, Contrast = 0.15, TintColor = TIME_STOP }, 0.15, times.Land - 0.2, 0.5)
+	end
+
+	-- The triangle of stars and the light between them.
+	local stars = { makeStar(2.2), makeStar(2.2), makeStar(2.2) }
+	local beams = triangleBeams(0.22)
+	local bigStars: { Star } = {}
+	local bigBeams: { BasePart } = {}
+	local struck = 0
+	local hammered = false
+
+	-- Both of them on the paths, drawn here every frame for smoothness (the
+	-- server holds them there too).
+	local bind = "CloverNeverland" .. tostring(started)
+	local function finish()
+		pcall(function()
+			RunService:UnbindFromRenderStep(bind)
+		end)
+	end
+	RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
+		local t = os.clock() - started
+		if t > times.Length + 0.1 then
+			finish()
+			return
+		end
+		if root.Parent then
+			root.CFrame = NeverlandPlan.Attacker(plan, t)
+		end
+		if targetRoot and targetRoot.Parent and t <= times.Land then
+			targetRoot.CFrame = NeverlandPlan.Victim(plan, t)
+		end
+
+		local height = NeverlandPlan.Height(math.min(t, times.Apex)) - 0.5
+		local corners = {
+			NeverlandPlan.Corner(plan, 1, height),
+			NeverlandPlan.Corner(plan, 2, height),
+			NeverlandPlan.Corner(plan, 3, height),
+		}
+		if not hammered then
+			local grow = math.min(t / 0.4, 1)
+			for i, star in stars do
+				star.place(plan.start + UP * height + (corners[i] - (plan.start + UP * height)) * grow, t * 3 + i)
 			end
-			local position = root.Position + UP * (4 + math.sin(elapsed * 4) * 0.2)
-			sylph.place(CFrame.new(position) * CFrame.Angles(0, elapsed, 0), elapsed)
-			horn.CFrame = CFrame.new(position) * CFrame.Angles(0, elapsed, 0) * CFrame.new(0, 0, -0.9)
-			if elapsed > 0.4 and math.random() < 0.3 then
-				U.burst(horn.Position, {
+			poseTriangle(beams, corners)
+		end
+
+		-- Each punch: a flash of starlight where he appears, then the hit.
+		local strike = NeverlandPlan.StrikeAt(t)
+		if strike and strike > struck then
+			struck = strike
+			local at = times.Strikes[strike]
+			U.flash(corners[((strike - 1) % 3) + 1], STAR_WHITE, 4, 0.15)
+			task.delay(math.max(at - t, 0), function()
+				local clip = punchClip(((strike - 1) % 3) + 1, "Normal")
+				if clip then
+					play(character, clip)
+				end
+				local victim = plan.start + UP * NeverlandPlan.Height(at)
+				U.shockwave(victim, STAR, 1, 7, 0.2)
+				gust(victim, 4)
+				U.burst(victim, {
 					color = STAR,
-					count = 2,
-					size = 0.3,
-					speed = NumberRange.new(4, 10),
-					lifetime = NumberRange.new(0.4, 0.8),
+					count = 10,
+					size = 0.35,
+					speed = NumberRange.new(14, 30),
+					lifetime = NumberRange.new(0.15, 0.3),
+					streaks = true,
 					spread = 180,
 				})
+				if mine then
+					CameraShake.Add(0.12)
+				end
+			end)
+		end
+
+		-- The hammer, from above, and a great triangle halfway down for them
+		-- to fall through.
+		if not hammered and t >= times.Apex then
+			hammered = true
+			for _, star in stars do
+				star.fade(0.2)
 			end
-			return true
-		end, function()
-			sylph.fade(0.3)
-			fadeOut({ horn }, 0.3)
-		end)
-		U.ringBurst(CFrame.new(data.center + UP * 0.2), STAR, 2, data.radius, data.cast, 0.15)
-	elseif data.phase == "Open" then
+			fadeOut(beams, 0.2)
+			local clip = punchClip(4, "Downslam")
+			if clip then
+				play(character, clip)
+			end
+			local middle = plan.start + UP * (NeverlandPlan.Height(times.Slam) * 0.5)
+			local big = {}
+			for i = 1, 3 do
+				big[i] = middle + (NeverlandPlan.Corner(plan, i, 0) - plan.start) * 1.9
+				local star = makeStar(3.4)
+				star.place(big[i], i)
+				table.insert(bigStars, star)
+			end
+			bigBeams = triangleBeams(0.5)
+			poseTriangle(bigBeams, big)
+			U.flash(plan.start + UP * NeverlandPlan.Height(times.Slam), STAR_WHITE, 9, 0.2)
+			if mine then
+				CameraShake.Add(0.3)
+				CameraShake.FovKick(10)
+			end
+		end
+	end)
+	task.delay(times.Length + 0.5, function()
+		finish()
+		for _, star in bigStars do
+			star.fade(0.4)
+		end
+		fadeOut(bigBeams, 0.4)
+		U.tween(dome, 0.5, { Transparency = 1 })
+		task.delay(0.55, dome.Destroy, dome)
+	end)
+
+	-- The camera, for the two of them: round them as they rise, after them
+	-- on the way down.
+	if mine then
+		Cinematic.Camera(function(t)
+			local focus = NeverlandPlan.Victim(plan, math.min(t, times.Land)).Position
+			local right = plan.forward:Cross(UP)
+			local angle = 0.6 + t * 0.45
+			local offset = (right * math.cos(angle) - plan.forward * math.sin(angle)) * 17
+				+ UP * (3 + math.min(t, times.Apex) * 1.2)
+			return CFrame.lookAt(focus + offset, focus), if t > times.Apex then 80 else 70
+		end, times.Length + 0.3)
+	end
+end
+
+function handlers.Neverland(data, character, root)
+	local phase = data.phase
+	if phase == "Reach" then
+		play(character, ANIMS.Hawk)
+		local hand = handOf(character, "Right")
+		if hand then
+			gust(hand, 3, root.CFrame.LookVector)
+		end
+	elseif phase == "Whiff" then
+		gust(root.Position + root.CFrame.LookVector * 4, 2)
+	elseif phase == "Begin" then
+		playNeverland(data, character, root)
+	elseif phase == "Impact" then
+		local position: Vector3 = data.position
+		U.shockwave(position, STAR, 3, 30, 0.5)
+		U.ringBurst(CFrame.new(position + UP * 0.2), STAR_WHITE, 2, 18, 0.45, 0.4)
+		U.groundCracks(position, 10, 10, WIND, 1.5)
+		U.groundRocks(position, 10, 7, 1.6)
+		U.debris(position, 16, 40, 0.9)
+		U.pillar(position, STAR, 3, 24, 0.4, Enum.Material.ForceField, 0.2)
+		gust(position + UP, 9, UP)
+		U.light(position, STAR, 6, 40, 0.6)
+		if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 60 then
+			CameraShake.Add(0.4)
+		end
+	elseif phase == "Dome" then
 		local center: Vector3 = data.center
 		local radius: number = data.radius
 		local old = domes[character]
@@ -1242,20 +1424,16 @@ function handlers.Neverland(data, character, root)
 		end
 		local dome = U.newPart({
 			Shape = Enum.PartType.Ball,
-			Size = Vector3.one * 2,
+			Size = Vector3.one * radius * 2,
 			CFrame = CFrame.new(center),
 			Color = WIND,
 			Material = Enum.Material.ForceField,
-			Transparency = 0.2,
+			Transparency = 1,
 		})
-		U.tween(dome, 0.5, { Size = Vector3.one * radius * 2 }, Enum.EasingStyle.Quart)
-		local domeStars = {}
-		for i = 1, 16 do
-			table.insert(domeStars, { star = makeStar(1.6), ring = if i <= 10 then 1 else 2, index = i })
-		end
-		local clones = {}
-		for _ = 1, 6 do
-			table.insert(clones, { sprite = makeSprite(0.9), seed = math.random() * 10 })
+		U.tween(dome, 0.4, { Transparency = 0.25 })
+		local rim: { Star } = {}
+		for _ = 1, 10 do
+			table.insert(rim, makeStar(1.6))
 		end
 		local closed = false
 		local function close()
@@ -1264,90 +1442,31 @@ function handlers.Neverland(data, character, root)
 			end
 			closed = true
 			domes[character] = nil
-			U.tween(dome, 0.6, { Transparency = 1 })
-			task.delay(0.65, dome.Destroy, dome)
-			for _, entry in domeStars do
-				entry.star.fade(0.4)
-			end
-			for _, clone in clones do
-				clone.sprite.fade(0.3)
+			U.tween(dome, 0.5, { Transparency = 1 })
+			task.delay(0.55, dome.Destroy, dome)
+			for _, star in rim do
+				star.fade(0.4)
 			end
 		end
 		domes[character] = { close = close }
-		every(9, function(elapsed)
+		every(data.duration, function(elapsed)
 			if closed then
 				return false
 			end
-			for _, entry in domeStars do
-				local count = if entry.ring == 1 then 10 else 6
-				local slot = if entry.ring == 1 then entry.index else entry.index - 10
-				local latitude = if entry.ring == 1 then rad(18) else rad(48)
-				local angle = slot / count * math.pi * 2 + elapsed * (if entry.ring == 1 then 0.25 else -0.35)
-				local horizontal = math.cos(latitude) * radius
-				local position = center
-					+ Vector3.new(
-						math.cos(angle) * horizontal,
-						math.sin(latitude) * radius,
-						math.sin(angle) * horizontal
-					)
-				entry.star.place(position, elapsed * 2)
-			end
-			for i, clone in clones do
-				local s = clone.seed + elapsed * 0.9
-				local position = center
-					+ Vector3.new(
-						math.cos(s * 1.3 + i) * radius * 0.55,
-						4 + math.sin(s * 2.1) * 3,
-						math.sin(s * 1.7 + i) * radius * 0.55
-					)
-				clone.sprite.place(CFrame.new(position), elapsed + i)
+			for i, star in rim do
+				local angle = i / #rim * math.pi * 2 + elapsed * 0.4
+				star.place(
+					center
+						+ Vector3.new(
+							math.cos(angle) * radius,
+							1.5 + math.sin(elapsed * 2 + i) * 0.5,
+							math.sin(angle) * radius
+						),
+					elapsed * 2
+				)
 			end
 			return true
 		end, close)
-		U.ringBurst(CFrame.new(center + UP * 0.2), WIND_WHITE, 2, radius, 0.5, 0.4)
-		U.light(center + UP * 4, WIND, 4, radius * 1.5, 1)
-		if (workspace.CurrentCamera.CFrame.Position - center).Magnitude < radius + 10 then
-			U.colorGrade({ Saturation = 0.25, TintColor = Color3.fromRGB(225, 255, 235) }, 0.3, 6.5, 0.6)
-			CameraShake.Add(0.2)
-		end
-	elseif data.phase == "Freeze" then
-		for _, target in data.targets do
-			local targetRoot = U.getRoot(target)
-			if targetRoot then
-				U.highlight(target, TIME_STOP, data.duration, 0.45)
-				U.ringBurst(
-					CFrame.new(targetRoot.Position) * CFrame.Angles(rad(90), 0, 0),
-					TIME_STOP,
-					3,
-					2.6,
-					data.duration,
-					0.08
-				)
-				U.burst(targetRoot.Position, {
-					color = TIME_STOP,
-					count = 10,
-					size = 0.3,
-					speed = NumberRange.new(1, 3),
-					lifetime = NumberRange.new(0.8, 1.4),
-					spread = 180,
-				})
-			end
-		end
-	elseif data.phase == "Strike" then
-		for _, target in data.targets do
-			local targetRoot = U.getRoot(target)
-			if targetRoot then
-				local from = targetRoot.Position + U.randomUnit() * 8 + UP * 3
-				local streak = bar(from, targetRoot.Position, 0.2, WIND_WHITE, 0.1)
-				fadeOut({ streak }, 0.2)
-				gust(targetRoot.Position, 3)
-			end
-		end
-	elseif data.phase == "Close" then
-		local dome = domes[character]
-		if dome then
-			dome.close()
-		end
 	end
 end
 
@@ -1417,58 +1536,235 @@ function handlers.Ascend(data, character, root)
 	transformation(data, character, root, true)
 end
 
--- The look: green mana down one side (Half-Crown: his left, where Sylph
--- sits) or both (Full-Crown); a wing of long wind feathers on that side,
--- beating slowly; half a crown of gold spikes, or a full one; Full-Crown
--- also puts a two-handed sword of wind in his hand. Anchored parts posed
--- every frame round his torso, head and arms; they fade in.
-local FEATHERS = 4
+-- The look. Half-Crown: green mana coats his left side (where Sylph sits),
+-- a wing of wind grows from his left shoulder blade and half a crown of
+-- gold leaves forms over his left temple. Full-Crown: both sides, both
+-- wings, the whole crown, and a two-handed sword of wind. Either way his
+-- grimoire comes out and circles him, open, pages fluttering. Anchored
+-- parts posed every frame round his body; they fade in.
+local GRIMOIRE_COVER = Color3.fromRGB(28, 70, 58)
+local GRIMOIRE_PAPER = Color3.fromRGB(226, 234, 214)
+
+-- Feathers per wing: long primaries fanned high and wide (with a shimmer of
+-- wind over them) behind shorter coverts nearer the shoulder. Spread is
+-- degrees up from straight out; back is how far they sweep behind him.
+local WING_LAYERS = {
+	{ count = 5, from = 10, to = 82, length = 3.9, shrink = 0.3, width = 0.72, back = 0.62, shimmer = true },
+	{ count = 4, from = 4, to = 62, length = 2.1, shrink = 0.22, width = 0.56, back = 0.48, shimmer = false },
+}
+
+type Feather = {
+	vane: BasePart,
+	tip: BasePart,
+	core: BasePart,
+	shell: BasePart?,
+	layer: { [string]: any },
+	index: number,
+	length: number,
+}
+type Spike = { left: BasePart, right: BasePart, angle: number, height: number }
+type Page = { part: BasePart, offset: CFrame, side: number }
 
 local function buildLook(character: Model, full: boolean): () -> ()
 	local torso = character:FindFirstChild("Torso") :: BasePart?
 	local head = character:FindFirstChild("Head") :: BasePart?
-	if not torso or not head then
+	local root = U.getRoot(character)
+	if not torso or not head or not root then
 		return function() end
 	end
 	local look = { hideSword = 0 }
 	looks[character] = look
 	local entries: { { part: BasePart, base: number } } = {}
-	local function part(props: { [string]: any }, base: number): BasePart
-		props.Transparency = 1
-		local p = U.newPart(props)
+	local function part(props: { [string]: any }, base: number, wedge: boolean?): BasePart
+		local p: BasePart
+		if wedge then
+			p = Instance.new("WedgePart")
+			p.Anchored = true
+			p.CanCollide = false
+			p.CanQuery = false
+			p.CanTouch = false
+			p.CastShadow = false
+			p.Material = Enum.Material.Neon
+			for key, value in props do
+				(p :: any)[key] = value
+			end
+			p.Parent = U.folder
+		else
+			p = U.newPart(props)
+		end
+		p.Transparency = 1
 		table.insert(entries, { part = p, base = base })
 		return p
 	end
-
 	local sides = if full then { -1, 1 } else { -1 } -- -1: his left
-	local wings: { { side: number, feathers: { BasePart } } } = {}
+
+	-- Wings.
+	local wings: { { side: number, feathers: { Feather } } } = {}
+	local emitters: { ParticleEmitter } = {}
 	for _, side in sides do
-		local feathers = {}
-		for i = 1, FEATHERS do
-			table.insert(feathers, part({ Size = Vector3.new(0.08, 0.5, 3.3 - i * 0.4), Color = WIND }, 0.3))
+		local feathers: { Feather } = {}
+		for _, layer in WING_LAYERS do
+			for i = 1, layer.count do
+				local length = layer.length - (i - 1) * layer.shrink
+				local tip =
+					part({ Size = Vector3.new(0.07, layer.width * 0.72, layer.width * 0.72), Color = WIND }, 0.3)
+				table.insert(feathers, {
+					vane = part({ Size = Vector3.new(0.07, layer.width, length), Color = WIND }, 0.32),
+					tip = tip,
+					core = part({ Size = Vector3.new(0.09, 0.07, length), Color = WIND_WHITE }, 0.1),
+					shell = if layer.shimmer
+						then part({
+							Size = Vector3.new(0.18, layer.width * 1.35, length * 1.05),
+							Color = WIND,
+							Material = Enum.Material.ForceField,
+						}, 0)
+						else nil,
+					layer = layer,
+					index = i,
+					length = length,
+				})
+				-- Wisps of wind streaming off the longest feathers' tips.
+				if layer.shimmer and i <= 2 then
+					local wisp = Instance.new("ParticleEmitter")
+					wisp.Texture = U.textures.Smoke
+					wisp.Color = ColorSequence.new(WIND_WHITE, WIND)
+					wisp.LightEmission = 1
+					wisp.LightInfluence = 0
+					wisp.Size = NumberSequence.new(0.35, 0)
+					wisp.Transparency = NumberSequence.new(0.4, 1)
+					wisp.Lifetime = NumberRange.new(0.3, 0.5)
+					wisp.Rate = 14
+					wisp.Speed = NumberRange.new(0.5, 1)
+					wisp.Parent = tip
+					table.insert(emitters, wisp)
+				end
+			end
 		end
 		table.insert(wings, { side = side, feathers = feathers })
 	end
 
-	local spikes = {}
-	local spikeCount = if full then 9 else 5
+	-- Crown: a gold band and leaf-shaped spikes (two wedges back to back),
+	-- the tallest at the front (Full-Crown) or over his left temple (Half).
+	local spikes: { Spike } = {}
+	local spikeCount = if full then 10 else 5
 	for i = 1, spikeCount do
-		local tall = if i % 2 == 1 then 0.75 else 0.5
-		table.insert(spikes, { part = part({ Size = Vector3.new(0.12, tall, 0.12), Color = STAR }, 0.05), i = i })
+		local angle, height
+		if full then
+			angle = (i - 1) / spikeCount * math.pi * 2
+			height = if i == 1 then 1 elseif i % 2 == 1 then 0.72 else 0.48
+		else
+			local f = (i - 1) / (spikeCount - 1)
+			angle = -(0.1 + 0.8 * f) * math.pi
+			height = 0.45 + 0.5 * math.sin(f * math.pi)
+		end
+		table.insert(spikes, {
+			left = part({ Size = Vector3.new(0.06, height, 0.15), Color = STAR }, 0.02, true),
+			right = part({ Size = Vector3.new(0.06, height, 0.15), Color = STAR }, 0.02, true),
+			angle = angle,
+			height = height,
+		})
 	end
-	local band = part({ Size = Vector3.new(1.3, 0.12, 1.3), Color = STAR, Shape = Enum.PartType.Cylinder }, 0.2)
+	local bandCount = if full then 16 else 8
+	local band = {}
+	for _ = 1, bandCount do
+		table.insert(band, part({ Size = Vector3.new(0.09, 0.14, 0.3), Color = STAR }, 0.05))
+	end
+	local gem = part({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.22, Color = WIND }, 0)
 
-	local marks = {}
+	-- Green mana coating the marked side: a shimmering shell over the arm,
+	-- the leg and that half of the torso.
+	local shells: { { part: BasePart, limb: BasePart, offset: CFrame } } = {}
 	for _, side in sides do
+		for _, name in { if side < 0 then "Left Arm" else "Right Arm", if side < 0 then "Left Leg" else "Right Leg" } do
+			local limb = character:FindFirstChild(name) :: BasePart?
+			if limb then
+				table.insert(shells, {
+					part = part({
+						Size = limb.Size + Vector3.new(0.08, 0.08, 0.08),
+						Color = WIND,
+						Material = Enum.Material.ForceField,
+					}, 0),
+					limb = limb,
+					offset = CFrame.identity,
+				})
+			end
+		end
+		table.insert(shells, {
+			part = part({ Size = Vector3.new(1.06, 2.08, 1.08), Color = WIND, Material = Enum.Material.ForceField }, 0),
+			limb = torso,
+			offset = CFrame.new(side * 0.5, 0, 0),
+		})
 		local arm = character:FindFirstChild(if side < 0 then "Left Arm" else "Right Arm") :: BasePart?
 		if arm then
-			table.insert(
-				marks,
-				{ arm = arm, side = side, strip = part({ Size = Vector3.new(0.04, 1.7, 0.28), Color = WIND }, 0.15) }
-			)
+			local wisp = Instance.new("ParticleEmitter")
+			wisp.Texture = U.textures.Smoke
+			wisp.Color = ColorSequence.new(WIND)
+			wisp.LightEmission = 0.8
+			wisp.LightInfluence = 0
+			wisp.Size = NumberSequence.new(0.5, 0)
+			wisp.Transparency = NumberSequence.new(0.5, 1)
+			wisp.Lifetime = NumberRange.new(0.4, 0.7)
+			wisp.Rate = 18
+			wisp.Speed = NumberRange.new(0.5, 1.5)
+			wisp.Acceleration = Vector3.new(0, 3, 0)
+			wisp.Parent = arm
+			table.insert(emitters, wisp)
 		end
 	end
 
+	-- His grimoire: a dark green book with a four-leaf clover of light over
+	-- its open pages.
+	local book: { Page } = {}
+	local function page(props: { [string]: any }, base: number, offset: CFrame, side: number)
+		table.insert(book, { part = part(props, base), offset = offset, side = side })
+	end
+	page(
+		{ Size = Vector3.new(1.1, 1.45, 0.08), Color = GRIMOIRE_COVER, Material = Enum.Material.Fabric },
+		0,
+		CFrame.new(-0.55, 0, 0),
+		-1
+	)
+	page(
+		{ Size = Vector3.new(1.1, 1.45, 0.08), Color = GRIMOIRE_COVER, Material = Enum.Material.Fabric },
+		0,
+		CFrame.new(0.55, 0, 0),
+		1
+	)
+	page(
+		{ Size = Vector3.new(1, 1.35, 0.12), Color = GRIMOIRE_PAPER, Material = Enum.Material.SmoothPlastic },
+		0,
+		CFrame.new(-0.5, 0, -0.08),
+		-1
+	)
+	page(
+		{ Size = Vector3.new(1, 1.35, 0.12), Color = GRIMOIRE_PAPER, Material = Enum.Material.SmoothPlastic },
+		0,
+		CFrame.new(0.5, 0, -0.08),
+		1
+	)
+	page(
+		{ Size = Vector3.new(0.14, 1.45, 0.14), Color = GRIMOIRE_COVER, Material = Enum.Material.Fabric },
+		0,
+		CFrame.new(0, 0, 0.02),
+		0
+	)
+	for i = 1, 4 do
+		local angle = (i - 1) * math.pi / 2 + math.pi / 4
+		page(
+			{ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.3, Color = WIND },
+			0.05,
+			CFrame.new(math.cos(angle) * 0.17, 1.05 + math.sin(angle) * 0.17, -0.4),
+			0
+		)
+	end
+	page({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.14, Color = STAR }, 0, CFrame.new(0, 1.05, -0.4), 0)
+	local bookLight = Instance.new("PointLight")
+	bookLight.Color = WIND
+	bookLight.Range = 8
+	bookLight.Brightness = 1.5
+	bookLight.Parent = book[#book].part
+
+	-- The wind sword (Full-Crown), in the right hand.
 	local sword: { BasePart }? = nil
 	if full then
 		sword = {
@@ -1476,25 +1772,8 @@ local function buildLook(character: Model, full: boolean): () -> ()
 			part({ Size = Vector3.new(1.5, 0.18, 0.32), Color = STAR }, 0),
 			part({ Size = Vector3.new(0.2, 5.6, 0.85), Color = WIND }, 0.25),
 			part({ Size = Vector3.new(0.1, 5.4, 0.28), Color = WIND_WHITE }, 0),
+			part({ Size = Vector3.new(0.3, 5.9, 1.15), Color = WIND, Material = Enum.Material.ForceField }, 0),
 		}
-	end
-
-	-- Wisps of green mana off the marked arms.
-	local emitters = {}
-	for _, mark in marks do
-		local emitter = Instance.new("ParticleEmitter")
-		emitter.Texture = U.textures.Smoke
-		emitter.Color = ColorSequence.new(WIND)
-		emitter.LightEmission = 0.8
-		emitter.LightInfluence = 0
-		emitter.Size = NumberSequence.new(0.5, 0)
-		emitter.Transparency = NumberSequence.new(0.5, 1)
-		emitter.Lifetime = NumberRange.new(0.4, 0.7)
-		emitter.Rate = 18
-		emitter.Speed = NumberRange.new(0.5, 1.5)
-		emitter.Acceleration = Vector3.new(0, 3, 0)
-		emitter.Parent = mark.arm
-		table.insert(emitters, emitter)
 	end
 
 	local start = os.clock()
@@ -1515,7 +1794,7 @@ local function buildLook(character: Model, full: boolean): () -> ()
 		fadeOut(parts, 0.4)
 	end
 	connection = RunService.RenderStepped:Connect(function()
-		if not torso.Parent or not head.Parent then
+		if not torso.Parent or not head.Parent or not root.Parent then
 			-- He's gone (died, left): the look goes with him.
 			destroy()
 			return
@@ -1526,53 +1805,89 @@ local function buildLook(character: Model, full: boolean): () -> ()
 			entry.part.Transparency = 1 - (1 - entry.base) * alpha
 		end
 
-		-- Wings: long feathers fanned out and back from the shoulder blade,
-		-- beating slowly.
-		local flap = math.sin(t * 2.2) * 10
+		-- Wings: each feather fanned out from the shoulder blade, a slow
+		-- beat rippling out along the wing (the tips move most).
+		local back = -torso.CFrame.LookVector
 		for _, wing in wings do
-			local base = torso.CFrame * Vector3.new(wing.side * 0.55, 0.6, 0.55)
-			for i, feather in wing.feathers do
-				local spread = rad(8 + i * 17 + flap)
+			local base = torso.CFrame * Vector3.new(wing.side * 0.45, 0.55, 0.55)
+			for _, feather in wing.feathers do
+				local layer = feather.layer
+				local f = if layer.count > 1 then (feather.index - 1) / (layer.count - 1) else 0
+				local flap = math.sin(t * 2.1 - feather.index * 0.35) * (6 + f * 6)
+				local angle = rad(layer.from + (layer.to - layer.from) * f + flap)
 				local localDirection =
-					Vector3.new(wing.side * math.cos(spread), math.sin(spread) * 0.9 + 0.15, 0.6).Unit
+					Vector3.new(wing.side * math.cos(angle), math.sin(angle) * 0.95 + 0.05, layer.back).Unit
 				local direction = torso.CFrame:VectorToWorldSpace(localDirection)
-				local length = feather.Size.Z
-				feather.CFrame = CFrame.lookAt(base + direction * (length / 2), base + direction * length)
+				local across = direction:Cross(back)
+				local up = if across.Magnitude > 1e-3 then across.Unit else UP
+				local center = base + direction * (feather.length / 2)
+				local frame = CFrame.lookAt(center, center + direction, up)
+				feather.vane.CFrame = frame
+				feather.core.CFrame = frame
+				if feather.shell then
+					feather.shell.CFrame = frame
+				end
+				local tipAt = base + direction * feather.length
+				feather.tip.CFrame = CFrame.lookAt(tipAt, tipAt + direction, up) * CFrame.Angles(rad(45), 0, 0)
 			end
 		end
 
-		-- Crown: gold spikes round the top of his head (his left half only in Half-Crown).
-		local crown = head.CFrame * CFrame.new(0, 0.62, 0)
-		band.CFrame = crown * CFrame.Angles(0, 0, rad(90))
+		-- Crown.
+		local crown = head.CFrame * CFrame.new(0, 0.3, 0)
+		local function around(a: number): Vector3
+			return Vector3.new(math.sin(a), 0, -math.cos(a))
+		end
+		local function along(a: number): Vector3
+			return crown:VectorToWorldSpace(Vector3.new(math.cos(a), 0, math.sin(a)))
+		end
+		for i, segment in band do
+			local a = if full then (i - 0.5) / bandCount * math.pi * 2 else -((i - 0.5) / bandCount) * math.pi
+			local position = crown * (around(a) * 0.66)
+			segment.CFrame = CFrame.lookAt(position, position + along(a), crown.UpVector)
+		end
 		for _, spike in spikes do
-			local angle = if full
-				then (spike.i - 1) / spikeCount * math.pi * 2
-				else math.pi * 0.5 + (spike.i - 1) / (spikeCount - 1) * math.pi
-			local around = Vector3.new(math.cos(angle), 0, math.sin(angle)) * 0.62
-			spike.part.CFrame = crown
-				* CFrame.new(around + Vector3.new(0, spike.part.Size.Y / 2, 0))
-				* CFrame.Angles(around.Z * rad(-25), 0, around.X * rad(25))
+			local center = crown * (around(spike.angle) * 0.66) + crown.UpVector * (spike.height / 2 + 0.05)
+			local frame = CFrame.lookAt(center, center + along(spike.angle), crown.UpVector)
+			local half = spike.left.Size.Z / 2
+			spike.left.CFrame = frame * CFrame.new(0, 0, -half)
+			spike.right.CFrame = frame * CFrame.new(0, 0, half) * CFrame.Angles(0, math.pi, 0)
 		end
+		gem.CFrame =
+			CFrame.new(crown * ((if full then around(0) else around(-math.pi / 2)) * 0.7 + Vector3.new(0, 0.12, 0)))
 
-		-- Mana markings down the outside of each marked arm.
-		for _, mark in marks do
-			if mark.arm.Parent then
-				mark.strip.CFrame = mark.arm.CFrame * CFrame.new(mark.side * 0.51, 0, 0)
+		-- Mana.
+		for _, shell in shells do
+			if shell.limb.Parent then
+				shell.part.CFrame = shell.limb.CFrame * shell.offset
 			end
 		end
 
-		-- The wind sword, in the right hand.
+		-- Grimoire: circling him, turned to keep its pages towards him.
+		local orbit = t * 1.15
+		local position = root.Position
+			+ Vector3.new(math.cos(orbit) * 3, 1.3 + math.sin(t * 2.1) * 0.3, math.sin(orbit) * 3)
+		local bookFrame = CFrame.lookAt(position, root.Position + UP * 1.3) * CFrame.Angles(rad(-15), 0, 0)
+		local open = rad((62 + math.sin(t * 6) * 6) * alpha)
+		for _, p in book do
+			local hinge = CFrame.Angles(0, -p.side * open, 0)
+			local spin = if p.side == 0 and p.offset.Y > 0.5
+				then CFrame.new(0, 1.05, -0.4) * CFrame.Angles(0, 0, t * 1.5) * CFrame.new(0, -1.05, 0.4)
+				else CFrame.identity
+			p.part.CFrame = bookFrame * hinge * spin * p.offset
+		end
+
+		-- Sword.
 		if sword then
 			local arm = character:FindFirstChild("Right Arm") :: BasePart?
-			local hidden = os.clock() < look.hideSword
 			if arm then
 				local grip = arm.CFrame * CFrame.new(0, -1.1, 0) * CFrame.Angles(rad(-90), 0, 0)
 				sword[1].CFrame = grip
 				sword[2].CFrame = grip * CFrame.new(0, 0.6, 0)
 				sword[3].CFrame = grip * CFrame.new(0, 3.5, 0)
 				sword[4].CFrame = grip * CFrame.new(0, 3.5, 0)
+				sword[5].CFrame = grip * CFrame.new(0, 3.55, 0)
 			end
-			if hidden then
+			if os.clock() < look.hideSword then
 				for _, p in sword do
 					p.Transparency = 1
 				end
@@ -1618,6 +1933,71 @@ function Kit.SetAwakened(character: Model, on: boolean)
 		end
 	end)
 end
+
+---------------------------------------------------------------------------
+-- Movement: a green dash on the wind, and the gust under his air jump
+---------------------------------------------------------------------------
+
+local DASH_VECTORS = {
+	Front = Vector3.new(0, 0, -1),
+	Back = Vector3.new(0, 0, 1),
+	Left = Vector3.new(-1, 0, 0),
+	Right = Vector3.new(1, 0, 0),
+}
+
+VFX.RegisterKitEffect("Wind", "Dash", function(data)
+	local character: Model? = data.character
+	local root = U.getRoot(character)
+	if not character or not root then
+		return
+	end
+	local direction = if type(data.direction) == "string" then data.direction else "Front"
+	U.afterimage(character, WIND, 0.3)
+	for i = 1, 3 do
+		task.delay(i * 0.05, function()
+			if character.Parent then
+				U.afterimage(character, if i == 3 then WIND_WHITE else WIND, 0.25)
+			end
+		end)
+	end
+	U.bodyTrail(character, WIND, 0.28)
+	local ground = U.groundBelow(root.Position, { character })
+	local feet = if ground then ground.Position else root.Position - UP * 3
+	U.ringBurst(CFrame.new(feet + UP * 0.1), WIND, 0.6, 3.8, 0.25, 0.14)
+	local away = -(root.CFrame:VectorToWorldSpace(DASH_VECTORS[direction] or DASH_VECTORS.Front))
+	U.burst(root.Position - UP * 0.5, {
+		color = WIND_WHITE,
+		count = 10,
+		size = 0.35,
+		speed = NumberRange.new(16, 30),
+		lifetime = NumberRange.new(0.12, 0.25),
+		streaks = true,
+		spread = 35,
+		direction = away,
+	})
+	U.light(root.Position, WIND, 2, 10, 0.25)
+end)
+
+VFX.RegisterKitEffect("Wind", "AirJump", function(data)
+	local character: Model? = data.character
+	local root = U.getRoot(character)
+	if not character or not root then
+		return
+	end
+	local feet = root.Position - UP * 3
+	U.ringBurst(CFrame.new(feet), WIND, 0.8, 4.2, 0.3, 0.16)
+	U.burst(feet, {
+		color = WIND_WHITE,
+		count = 12,
+		size = 0.4,
+		speed = NumberRange.new(12, 26),
+		lifetime = NumberRange.new(0.15, 0.3),
+		streaks = true,
+		spread = 50,
+		direction = -UP,
+	})
+	U.afterimage(character, WIND, 0.2)
+end)
 
 function Kit.OnSkill(data)
 	local character = data.character

@@ -1292,6 +1292,8 @@ function CombatService.Register(character: Model)
 	end
 end
 
+local lastAirJump: { [Model]: number } = setmetatable({}, { __mode = "k" }) :: any
+
 local function onAction(player: Player, action: unknown, payload: unknown, extra: unknown)
 	-- Moves that have an air version say whether the player was in the air.
 	-- nil when the client didn't say (the server's raycast decides then).
@@ -1329,6 +1331,19 @@ local function onAction(player: Player, action: unknown, payload: unknown, extra
 			for _, other in Players:GetPlayers() do
 				if other ~= player then
 					Remotes.VFX:FireClient(other, "Dash", { character = character, direction = payload })
+				end
+			end
+		end
+	elseif action == "AirJump" then
+		-- The jump itself is the player's own movement; everyone else just
+		-- sees the gust. Only kits that can (Kits airJumps), not too often.
+		local kit = Kits.Of(character)
+		local now = os.clock()
+		if kit and kit.airJumps and CombatState.IsAlive(character) and now - (lastAirJump[character] or 0) > 0.2 then
+			lastAirJump[character] = now
+			for _, other in Players:GetPlayers() do
+				if other ~= player then
+					Remotes.VFX:FireClient(other, "AirJump", { character = character })
 				end
 			end
 		end

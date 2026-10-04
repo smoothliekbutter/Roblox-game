@@ -13,8 +13,9 @@
 	  2 Swift White Hawk     a hawk of wind that flies at them, curving after
 	                         them, and blows them away
 	  3 Heavenly Wind Ark    a crescent of wind rises out of the ground ahead and
-	                         launches them; he rides the updraft after them
-	                         (air: it sweeps down and spikes them)
+	                         carries them and him up together, held there for an
+	                         air string that ends in the downslam (air: it sweeps
+	                         down and spikes them)
 	  4 Gale White Bow       a great bow of wind; six big arrows, aimed at whoever
 	                         he faces
 	  R Conjunction          a star goes down where he's moving (ahead if he's
@@ -33,9 +34,12 @@
 	                         brings the axe down, guard break
 	  3 Spirit of Euros      a recurve bow of wind; one arrow, too fast to see,
 	                         through everything in a line (unblockable)
-	  4 Neverland            he and Sylph raise a dome of turning stars: time stops
-	                         for everyone inside, then they're weaker and slower
-	                         while Sylph's clones strike them and he hits harder
+	  4 Neverland            cutscene grab: in the stopped time of the star dome he
+	                         warps round a triangle of stars punching them up,
+	                         hammers them down, and the dome lingers over them
+	Air combos: he can jump again in the air (Kits airJumps), and from the air
+	the hawk holds them up and pulls him in, the blades and arrows keep them
+	up there (the last spikes them down), the dance's strike takes him up too.
 
 	All visuals are in StarterPlayerScripts.Client.Kits.Wind, which gets
 	("Skill", {skill, phase, ...}) events from here.
@@ -44,6 +48,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
+local NeverlandPlan = require(ReplicatedStorage:WaitForChild("Shared").Neverland)
 local Projectile = require(script.Parent.Parent.Projectile)
 
 local KIT_ID = "Wind"
@@ -201,13 +206,16 @@ local function windBladesShower(ctx)
 			local victimRoot = rootOf(victim)
 			local offset = if victimRoot then victimRoot.Position - center else Vector3.zero
 			if victimRoot and Vector3.new(offset.X, 0, offset.Z).Magnitude <= SHOWER_RADIUS then
+				-- Someone in the air is held up there by the blades, and the
+				-- last wave throws them higher: a juggle.
+				local aloft = c.IsAirborne(victim)
 				c.Hit(character, victim, {
 					damage = if last then 2.5 else 1.4,
 					stun = if last then 0.8 else 0.5,
 					attackType = "Swarm",
 					heavy = last,
-					velocity = if last then UP * 26 else nil,
-					velocityTime = 0.15,
+					velocity = if last then UP * (if aloft then 40 else 26) elseif aloft then HOVER else nil,
+					velocityTime = if last then 0.15 else 0.2,
 				})
 			end
 		end
@@ -224,6 +232,7 @@ local HAWK_TURN = math.rad(140) -- per second
 
 local function swiftWhiteHawk(ctx)
 	local c, character = ctx.combat, ctx.character
+	local airborne = ctx.airborne
 	CombatState.SetCasting(character, HAWK_CAST + 0.2)
 	if ctx.airborne then
 		c.ApplyVelocity(character, HOVER, HAWK_CAST + 0.2)
@@ -270,15 +279,26 @@ local function swiftWhiteHawk(ctx)
 		travelled += step
 		local victims = c.Sphere(character, position, 3.5)
 		if #victims > 0 then
+			-- Thrown from the air it holds them up there and pulls him in after
+			-- them, for an air string; from the ground it blows them away.
 			for _, victim in victims do
 				c.Hit(character, victim, {
 					damage = 8,
-					stun = 0.9,
+					stun = if airborne then 1.2 else 0.9,
 					attackType = "Bolt",
 					heavy = true,
-					velocity = c.Flat(direction) * 38 + UP * 14,
-					velocityTime = 0.2,
+					velocity = if airborne then HOVER else c.Flat(direction) * 38 + UP * 14,
+					velocityTime = if airborne then 1 else 0.2,
 				})
+			end
+			local offset = position - ctx.root.Position
+			if airborne and offset.Magnitude > 5 and not interrupted(ctx) then
+				c.ApplyVelocity(character, offset.Unit * math.min((offset.Magnitude - 3) / 0.25, 90), 0.25)
+				task.delay(0.25, function()
+					if CombatState.IsAlive(character) then
+						c.ApplyVelocity(character, HOVER, 0.6)
+					end
+				end)
 			end
 			fx(ctx, "SwiftWhiteHawk", "Burst", { position = position })
 			return
@@ -288,10 +308,14 @@ local function swiftWhiteHawk(ctx)
 end
 
 -- Heavenly Wind Ark: a great crescent of wind rises out of the ground in
--- front of him and launches whoever it catches; he rides the updraft up
--- after them for air M1s. In the air the ark sweeps down beneath him
--- instead and spikes them into the ground.
+-- front of him and carries whoever it catches up into the air, and him
+-- right behind them; both hang there for an air string (M1s in the air
+-- keep them both up, the 4th slams them down). In the air the ark sweeps
+-- down beneath him instead and spikes them into the ground.
 local ARK_CAST = 0.18
+local ARK_RISE = 46 -- studs a second, for ARK_RISE_TIME: about 14 studs up
+local ARK_RISE_TIME = 0.3
+local ARK_HANG = 0.9
 
 local function heavenlyWindArk(ctx)
 	local c, character = ctx.combat, ctx.character
@@ -321,24 +345,28 @@ local function heavenlyWindArk(ctx)
 		c.ApplyVelocity(character, UP * 18, 0.12)
 		return
 	end
-	local launched = false
+	local launched = {}
 	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 1, -5.5), Vector3.new(11, 9, 11)) do
-		-- The M1 uppercut's launch: limp, up and straight back down, and
-		-- still hittable on the way.
-		if
-			c.Hit(character, victim, {
-				damage = 7,
-				stun = 1.2,
-				attackType = "Zone",
-				heavy = true,
-				variant = "Uppercut",
-			}) == "Hit"
-		then
-			launched = true
+		if c.Hit(character, victim, { damage = 7, stun = 1.6, attackType = "Zone", heavy = true }) == "Hit" then
+			table.insert(launched, victim)
 		end
 	end
-	if launched then
-		c.ApplyVelocity(character, UP * 50 + forward * 6, 0.25)
+	if #launched == 0 then
+		return
+	end
+	fx(ctx, "HeavenlyWindArk", "Carry", { targets = launched, rise = ARK_RISE_TIME + ARK_HANG })
+	for _, victim in launched do
+		c.ApplyVelocity(victim, UP * ARK_RISE, ARK_RISE_TIME)
+	end
+	c.ApplyVelocity(character, UP * ARK_RISE + forward * 3, ARK_RISE_TIME)
+	task.wait(ARK_RISE_TIME)
+	for _, victim in launched do
+		if CombatState.IsAlive(victim) then
+			c.ApplyVelocity(victim, HOVER, ARK_HANG)
+		end
+	end
+	if CombatState.IsAlive(character) and not interrupted(ctx) then
+		c.ApplyVelocity(character, HOVER, ARK_HANG)
 	end
 end
 
@@ -381,13 +409,21 @@ local function galeWhiteBow(ctx)
 			range = 90,
 			size = Vector3.new(2.5, 2.5, 5),
 			onHit = function(victim)
+				-- In the air the arrows pin them there; the last spikes them down.
+				local aloft = c.IsAirborne(victim)
+				local push = if last and aloft
+					then c.Flat(direction) * 12 + UP * -60
+					elseif last then c.Flat(direction) * 40 + UP * 15
+					elseif aloft then HOVER
+					else c.Flat(direction) * 6
 				c.Hit(character, victim, {
 					damage = if last then 3 else 2,
 					stun = if last then 0.9 else 0.55,
 					attackType = "Bolt",
 					heavy = last,
-					velocity = if last then c.Flat(direction) * 40 + UP * 15 else c.Flat(direction) * 6,
-					velocityTime = 0.15,
+					ragdoll = if last and aloft then 1.2 else nil,
+					velocity = push,
+					velocityTime = if aloft and not last then 0.25 else 0.15,
 				})
 			end,
 		})
@@ -524,6 +560,13 @@ local function hushedDance(ctx)
 					velocity = c.Flat(attackerRoot.Position - ctx.root.Position) * 25 + UP * 30,
 					velocityTime = 0.2,
 				})
+				-- And up after them, for an air string.
+				c.ApplyVelocity(character, UP * 32, 0.3)
+				task.delay(0.3, function()
+					if CombatState.IsAlive(character) then
+						c.ApplyVelocity(character, HOVER, 0.6)
+					end
+				end)
 			end
 		else
 			local side = ctx.root.CFrame.RightVector * (if math.random() < 0.5 then -9 else 9)
@@ -793,88 +836,114 @@ local function spiritOfEuros(ctx)
 	c.ShakeArea(origin, 40, 0.35)
 end
 
--- Neverland: he and Sylph raise a dome of turning stars over everything
--- around him. Time stops for everyone caught inside; then, for as long as
--- it stands, they're weaker and slower while Sylph's clones strike them,
--- and he hits harder inside it.
-local NEVERLAND_CAST = 1.0
-local NEVERLAND_TIME = 7
-local NEVERLAND_RADIUS = 28
+--[[
+	Neverland (Full-Crown 4): a cutscene grab. His hand shoots out; whoever
+	it catches is caught in the stopped time of the star dome. Three stars
+	stand round them and he warps from star to star punching them up through
+	the triangle, then hammers them down from above into the ground. The
+	timeline is Shared/Neverland, the camera work and effects client side.
+	Then the dome lingers over the crater for a few seconds: inside it,
+	enemies are slower and weaker and he hits harder.
+]]
+local NEVERLAND_REACH = 0.15
+local NEVERLAND_LINGER = 4
+local NEVERLAND_RADIUS = 20
 
 local function neverland(ctx)
 	local c, character = ctx.combat, ctx.character
-	CombatState.SetCasting(character, NEVERLAND_CAST + 0.2)
-	CombatState.GiveIFrames(character, NEVERLAND_CAST + 0.1)
+	CombatState.SetCasting(character, NEVERLAND_REACH + 0.5)
 	if ctx.airborne then
-		c.ApplyVelocity(character, HOVER, NEVERLAND_CAST)
-	else
-		character:SetAttribute("Rooted", true)
+		c.ApplyVelocity(character, HOVER, NEVERLAND_REACH + 0.3)
 	end
-	local center = floorUnder(ctx, ctx.root.Position)
-	fx(ctx, "Neverland", "Horn", {
-		center = center,
-		radius = NEVERLAND_RADIUS,
-		cast = NEVERLAND_CAST,
-		duration = NEVERLAND_TIME,
-	})
-	task.wait(NEVERLAND_CAST)
-	character:SetAttribute("Rooted", false)
-	if not CombatState.IsAlive(character) then
-		fx(ctx, "Neverland", "Close", { center = center })
+	fx(ctx, "Neverland", "Reach")
+	task.wait(NEVERLAND_REACH)
+	if interrupted(ctx) then
 		return
 	end
-	fx(ctx, "Neverland", "Open", { center = center, radius = NEVERLAND_RADIUS })
-	local frozen = {}
-	for _, victim in c.Sphere(character, center, NEVERLAND_RADIUS) do
-		if
-			c.Hit(
-				character,
-				victim,
-				{ damage = 4, stun = 1.5, attackType = "Zone", unblockable = true, noShake = true }
-			) == "Hit"
-		then
-			c.ApplyVelocity(victim, Vector3.zero, 1.4)
-			table.insert(frozen, victim)
+	local target: Model? = nil
+	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -3.5), Vector3.new(6, 7, 7)) do
+		if not CombatState.HasIFrames(victim) and not CombatState.IsRagdolled(victim) then
+			target = victim
+			break
 		end
 	end
-	if #frozen > 0 then
-		fx(ctx, "Neverland", "Freeze", { targets = frozen, duration = 1.4 })
+	local targetRoot = target and rootOf(target)
+	if
+		not target
+		or not targetRoot
+		or c.Hit(
+				character,
+				target,
+				{ damage = 2, stun = 4, attackType = "Melee", unblockable = true, noShake = true }
+			)
+			~= "Hit"
+	then
+		fx(ctx, "Neverland", "Whiff")
+		CombatState.SetCasting(character, 0.55)
+		return
 	end
+
+	local plan = NeverlandPlan.Plan(ctx.root.CFrame, targetRoot.Position, floorUnder(ctx, targetRoot.Position).Y)
+	local times = NeverlandPlan.Times
+	CombatState.SetCasting(character, times.Length + 0.3)
+	CombatState.GiveIFrames(character, times.Length + 0.2)
+	CombatState.Stun(target, times.Length + 0.6)
+	fx(ctx, "Neverland", "Begin", { target = target, origin = plan.origin, start = plan.start, floorY = plan.floorY })
+	local stopHim = c.Cutscene({
+		[character] = function(t)
+			return NeverlandPlan.Attacker(plan, t)
+		end,
+	}, times.Length)
+	local stopThem = c.Cutscene({
+		[target] = function(t)
+			return NeverlandPlan.Victim(plan, t)
+		end,
+	}, times.Land)
+	local started = os.clock()
+	local function waitUntil(at: number)
+		task.wait(math.max(at - (os.clock() - started), 0))
+	end
+	for _, at in times.Strikes do
+		waitUntil(at)
+		if CombatState.IsAlive(target) then
+			c.Hit(character, target, { damage = 2, stun = 3, attackType = "Melee", unblockable = true, noShake = true })
+		end
+	end
+
+	-- They hit the ground.
+	waitUntil(times.Land)
+	stopThem()
+	local center = Vector3.new(plan.start.X, plan.floorY, plan.start.Z)
+	if CombatState.IsAlive(target) then
+		c.Hit(character, target, {
+			damage = 14,
+			stun = 1.4,
+			attackType = "Melee",
+			unblockable = true,
+			heavy = true,
+			ragdoll = 2.2,
+			velocity = UP * -20 + plan.forward * 4,
+		})
+	end
+	fx(ctx, "Neverland", "Impact", { position = center })
+	c.ShakeArea(center, 80, 0.7)
+	waitUntil(times.Length)
+	stopHim()
+
+	-- The dome lingers over them.
+	fx(ctx, "Neverland", "Dome", { center = center, radius = NEVERLAND_RADIUS, duration = NEVERLAND_LINGER })
 	local opened = os.clock()
-	local nextStrike = opened + 1.5
-	while os.clock() - opened < NEVERLAND_TIME and character.Parent do
+	while os.clock() - opened < NEVERLAND_LINGER and character.Parent do
 		local now = os.clock()
-		local inside = c.Sphere(character, center, NEVERLAND_RADIUS)
-		for _, victim in inside do
+		for _, victim in c.Sphere(character, center, NEVERLAND_RADIUS) do
 			victim:SetAttribute("WeakUntil", now + 0.4)
 			victim:SetAttribute("SlowUntil", now + 0.4)
 		end
 		if (ctx.root.Position - center).Magnitude <= NEVERLAND_RADIUS then
 			character:SetAttribute("PowerUntil", now + 0.4)
 		end
-		if now >= nextStrike then
-			nextStrike += 1
-			local struck = {}
-			for _, victim in inside do
-				if
-					c.Hit(character, victim, {
-						damage = 2,
-						stun = 0.35,
-						attackType = "Zone",
-						unblockable = true,
-						noShake = true,
-					}) == "Hit"
-				then
-					table.insert(struck, victim)
-				end
-			end
-			if #struck > 0 then
-				fx(ctx, "Neverland", "Strike", { targets = struck })
-			end
-		end
 		task.wait(0.2)
 	end
-	fx(ctx, "Neverland", "Close", { center = center })
 end
 
 ---------------------------------------------------------------------------
