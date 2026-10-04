@@ -245,8 +245,10 @@ local function light(position: Vector3, color: Color3, brightness: number, range
 	Debris:AddItem(holder, duration + 0.05)
 end
 
--- Body glow on hit.
-local function highlight(character: Model?, color: Color3, duration: number)
+-- Body glow on hit: a near-solid flash. `fill` (the fill's transparency)
+-- lightens it, for a coat on someone's own character that should leave
+-- their avatar showing through.
+local function highlight(character: Model?, color: Color3, duration: number, fill: number?)
 	if not character then
 		return
 	end
@@ -254,7 +256,7 @@ local function highlight(character: Model?, color: Color3, duration: number)
 	h.Adornee = character
 	h.FillColor = color
 	h.OutlineColor = color
-	h.FillTransparency = 0.15
+	h.FillTransparency = fill or 0.15
 	h.OutlineTransparency = 0
 	h.DepthMode = Enum.HighlightDepthMode.Occluded
 	h.Parent = fxFolder

@@ -453,28 +453,48 @@ THROW_FOLLOW = {'Torso': R(12, -6), 'Head': R(-40), 'RightArm': L(-6, -10, 30), 
                 'LeftArm': L(150, -4), 'RightLeg': R(-20), 'LeftLeg': R(18)}
 MOON_THROW = [(0.0, SEIZE_LIFT), (0.09, THROW_DIP), (0.18, THROW_HEAVE), (0.6, THROW_WATCH), (1.0, THROW_FOLLOW)]
 
-# Perched in the sky in front of the moon: turned side-on, the sword held
-# out low to his right, one knee up, glaring at them. Breathes while he waits.
+# Perched in the sky in front of the moon: turned side-on, the sword hanging
+# low out at his right side, one knee up, glaring at them. Breathes while he
+# waits.
 def perch(lean, arm):
-    return {'Torso': R(lean, -30), 'Head': R(-10, 24), 'RightArm': L(arm, 70), 'Sword': A(0.75, -0.55, 0.35),
+    return {'Torso': R(lean, -30), 'Head': R(-10, 24), 'RightArm': L(arm, -5, 26), 'Sword': A(0.62, -0.75, 0.1),
             'LeftArm': L(22, 0, -28), 'RightLeg': R(-14), 'LeftLeg': R(44)}
 # Then he levels the sword at them: a challenge across the sky.
 def point(lean):
     return {'Torso': R(lean, 6), 'Head': R(-8, -4), 'RightArm': L(98, 8), 'Sword': A(0.05, 0.22, -0.97),
             'LeftArm': L(18, 0, -30), 'RightLeg': R(-14), 'LeftLeg': R(40)}
-MOON_PERCH = [(0.0, LEAP_LAUNCH), (0.15, perch(-6, 50)), (0.5, perch(-8, 46)), (0.85, perch(-6, 50)),
-              (1.2, perch(-8, 46)), (1.5, point(-4)), (1.95, point(-6)), (2.35, point(-4))]
+MOON_PERCH = [(0.0, LEAP_LAUNCH), (0.15, perch(-6, 38)), (0.5, perch(-8, 34)), (0.85, perch(-6, 38)),
+              (1.2, perch(-8, 34)), (1.5, point(-4)), (1.95, point(-6)), (2.35, point(-4))]
 
-# The flight: body flat out, sword cocked back, then the cut through them
-# and the finish: past them, back turned, blade held out behind.
-FLIGHT_COCK = {'Torso': R(-50, 35), 'Head': R(30, -30), 'RightArm': L(-20, 20, 40), 'Sword': A(0.6, -0.2, 0.77),
-               'LeftArm': L(110, -10), 'RightLeg': R(-35), 'LeftLeg': R(-10)}
-FLIGHT_CUT = {'Torso': R(-40, -10), 'Head': R(20, 8), 'RightArm': L(85, -5), 'Sword': A(0.1, -0.1, -0.99),
-              'LeftArm': L(30, 0, -40), 'RightLeg': R(-30), 'LeftLeg': R(-5)}
-FLIGHT_AFTER = {'Torso': R(-10, -50), 'Head': R(0, 34), 'RightArm': L(80, 100), 'Sword': A(-0.7, -0.5, 0.5),
-                'LeftArm': L(20, 0, -35), 'RightLeg': R(-20), 'LeftLeg': R(25)}
-MOON_FLIGHT = [(0.0, point(-4)), (0.06, FLIGHT_COCK), (0.14, FLIGHT_CUT), (0.22, FLIGHT_AFTER),
-               (1.15, FLIGHT_AFTER)]
+# The flight: flat out, the sword drawn across to his left, then one
+# backhand cut through them that carries on round to his right. He stops
+# past them with his back to them: sword arm out at his side, the blade
+# flicked down and back, glancing back over his shoulder at them. A beat
+# after the cut lands he swings the sword up and back onto his shoulder.
+# Timed against Shared/BlackMoon: the clip starts at Times.Fly, he passes
+# through them at Times.Cut (0.15s in), and the client holds the clip still
+# for 0.1s right there, so the cut lands (Times.Land) 1.05s into it. Keep
+# MOON_CUT_AT and MOON_LANDS in step with those times.
+MOON_CUT_AT = 0.14
+MOON_LANDS = 1.05
+FLIGHT_COCK = {'Torso': R(-46, 32), 'Head': R(28, -26), 'RightArm': L(80, 80), 'Sword': A(-0.72, 0.12, 0.68),
+               'LeftArm': L(-25, 0, -35), 'RightLeg': R(-35), 'LeftLeg': R(-10)}
+FLIGHT_CUT = {'Torso': R(-36, -8), 'Head': R(18, 6), 'RightArm': L(88, -18), 'Sword': A(0.32, -0.08, -0.94),
+              'LeftArm': L(-20, 0, -40), 'RightLeg': R(-30), 'LeftLeg': R(-6)}
+FLIGHT_FOLLOW = {'Torso': R(-20, -28), 'Head': R(8, 16), 'RightArm': L(86, -76), 'Sword': A(0.95, -0.22, 0.2),
+                 'LeftArm': L(0, 0, -35), 'RightLeg': R(-26), 'LeftLeg': R(8)}
+# The finish (zanshin): upright, turned a little to his right, the arm level
+# out at his side and the blade angled down and back, clear of his legs and
+# under the wing. `settle` lets it sink a touch while he holds it.
+def zanshin(settle):
+    return {'Torso': R(-6 + settle, -14, 4), 'Head': R(-8, -55 - settle), 'RightArm': L(80 - settle, -62),
+            'Sword': A(0.38, -0.78, 0.5), 'LeftArm': L(14, 8, -20), 'RightLeg': R(-22, 0, 4), 'LeftLeg': R(12, 0, -4)}
+# Raising the blade up his right side on the way back to the shoulder.
+FLIGHT_LIFT = {'Torso': R(-2, -10), 'Head': R(-4, -20), 'RightArm': L(150, -45), 'Sword': A(0.4, 0.88, 0.25),
+               'LeftArm': L(20, 0, -30), 'RightLeg': R(10), 'LeftLeg': R(-4)}
+MOON_FLIGHT = [(0.0, point(-4)), (MOON_CUT_AT - 0.08, FLIGHT_COCK), (MOON_CUT_AT, FLIGHT_CUT),
+               (MOON_CUT_AT + 0.06, FLIGHT_FOLLOW), (MOON_CUT_AT + 0.16, zanshin(0)),
+               (MOON_LANDS + 0.3, zanshin(3)), (MOON_LANDS + 0.45, FLIGHT_LIFT), (MOON_LANDS + 0.67, AIR[0][1])]
 
 # Victim thrown into the sky: flailing, held long (the cutscene ends it).
 def launched(flail):

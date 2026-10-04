@@ -1533,8 +1533,8 @@ function handlers.BlackMeteorite(data, character, root)
 		local air = data.airborne == true
 		play(character, if air then ANIMS.AirMeteorLunge else ANIMS.MeteorLunge)
 		swordTrail(character, 0.35)
-		-- Anti-magic coats him for the lunge.
-		U.highlight(character, BLACK, 0.35)
+		-- Anti-magic coats him for the lunge (lightly: he stays visible).
+		U.highlight(character, BLACK, 0.35, 0.7)
 		local back = root.Position - direction * 1.2
 		U.flash(back, BLACK, 5, 0.16)
 		U.impactRing(back, direction, BLACK, 0.6, 4.5, 0.22)
@@ -3565,7 +3565,7 @@ local function awakenBurst(character: Model, root: BasePart)
 	end
 	redSparks(center, 40, 1.6)
 	U.light(center, RED, 18, 60, 0.9)
-	U.highlight(character, BLACK, 0.6)
+	U.highlight(character, BLACK, 0.6, 0.65)
 	U.popup(center + UP * 6, "BLACK FORM", RED, 2.4)
 	lingerSmoke(feet, 2, 10)
 
@@ -4378,14 +4378,15 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		end
 	end)
 
-	-- Perched in front of the moon: a black silhouette with a red rim.
+	-- Perched in front of the moon: shadowed, with a red rim (his avatar
+	-- still shows through).
 	local silhouette: Highlight? = nil
 	at(T.Perch, function()
 		play(character, ANIMS.MoonPerch)
 		local outline = Instance.new("Highlight")
 		outline.Adornee = character
 		outline.FillColor = BLACK
-		outline.FillTransparency = 0
+		outline.FillTransparency = 0.72
 		outline.OutlineColor = RED
 		outline.OutlineTransparency = 0.1
 		outline.DepthMode = Enum.HighlightDepthMode.Occluded
@@ -4411,6 +4412,16 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		end
 		blackSmoke(root.Position, 14, 3.5, 7)
 		redSparks(root.Position, 14, 0.8)
+		-- Each wing beat sheds smoke and embers and pulses the aura.
+		for beat = 0, 4 do
+			at(T.Perch + 0.15 + beat * 0.42, function()
+				local back = root.Position - root.CFrame.LookVector * 1.5 + UP
+				blackSmoke(back, 6, 3, 10)
+				redSparks(back, 8, 0.6, -UP)
+				U.ringBurst(CFrame.new(root.Position) * CFrame.Angles(rad(90), 0, 0), BLACK, 2, 8, 0.4, 0.4)
+				U.light(root.Position, RED, 4, 12, 0.3)
+			end)
+		end
 		partEmitter(root, {
 			Texture = U.textures.Smoke,
 			Color = ColorSequence.new(BLACK),
@@ -4445,8 +4456,10 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		swordAura(character, T.Fly - T.Point, 40)
 		local tip = bladePoint(character, 2.1)
 		if tip then
-			blackLightning(tip, 5, 3.5)
+			blackLightning(tip, 7, 4.5)
 			U.light(tip, RED, 8, 16, 0.4)
+			U.impactRing(tip, workspace.CurrentCamera.CFrame.Position - tip, RED, 0.5, 6, 0.35)
+			U.flash(tip, RED, 4, 0.15)
 		end
 		U.ringBurst(CFrame.new(root.Position) * CFrame.Angles(rad(90), 0, 0), BLACK, 1, 9, 0.45, 0.3)
 		blackSmoke(root.Position, 16, 4, 10)
@@ -4491,6 +4504,13 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		U.flash(plan.perch, BLACK, 10, 0.2)
 		U.impactRing(plan.perch, plan.through, RED, 1, 7, 0.25)
 		blackSmoke(plan.perch, 14, 3.5, 16)
+		for i = 1, 5 do
+			task.delay(i * 0.025, function()
+				local along = plan.perch:Lerp(plan.beyond, i / 6)
+				U.impactRing(along, plan.through, if i % 2 == 0 then RED else BLACK, 0.6, 6 + i, 0.3)
+			end)
+		end
+		U.flash(plan.perch, RED, 6, 0.15)
 		for i = 0, 6 do
 			task.delay(i * 0.03, function()
 				if character.Parent then
@@ -4522,6 +4542,10 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 			direction = plan.through,
 		})
 		U.light(cutAt, RED, 12, 24, 0.3)
+		redSparks(cutAt, 30, 1.1, plan.through)
+		blackLightning(cutAt, 6, 5, 0.25)
+		U.impactRing(cutAt, plan.through, WHITE, 0.4, 9, 0.25)
+		task.delay(0.03, U.impactRing, cutAt, plan.through, RED, 0.5, 13, 0.3)
 		if mine then
 			impactFrame(1.4)
 			CameraShake.Add(0.4)
@@ -4531,6 +4555,20 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 	-- Past them, back turned. Everything goes still.
 	at(T.Arrive, function()
 		swordAura(character, T.Land - T.Arrive, 20)
+		local hang = U.newPart({ Size = Vector3.new(3, 4, 3), Transparency = 1, CFrame = CFrame.new(cutAt) })
+		partEmitter(hang, {
+			Texture = U.textures.Spark,
+			Color = ColorSequence.new(RED, DARK_RED),
+			LightEmission = 1,
+			Size = NumberSequence.new(0.3, 0),
+			Lifetime = NumberRange.new(0.6, 1.1),
+			Rate = 30,
+			Speed = NumberRange.new(0.5, 2),
+			Acceleration = Vector3.new(0, 1.5, 0),
+			SpreadAngle = Vector2.new(180, 180),
+		}, T.Land - T.Arrive)
+		U.light(cutAt, RED, 3, 10, T.Land - T.Arrive)
+		task.delay(T.Land - T.Arrive + 1.5, hang.Destroy, hang)
 		local visual = awakenedVisuals[character]
 		if visual and visual.setPose then
 			visual.setPose("spread") -- flared open as he stops
@@ -4557,6 +4595,19 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		redSparks(cutAt, 40, 1.6)
 		U.light(cutAt, RED, 16, 60, 0.7)
 		U.popup(cutAt + UP * 5, "BLACK MOON", RED, 2.6)
+		task.delay(0.08, U.shockwave, cutAt, WHITE, 2, 30, 0.45, Enum.Material.Glass, 0.6)
+		U.pillar(cutAt - UP * 6, BLACK, 2.4, 22, 0.5, Enum.Material.SmoothPlastic, 0.2)
+		U.pillar(cutAt - UP * 6, RED, 1.2, 26, 0.45)
+		U.burst(cutAt, {
+			color = RED,
+			count = 30,
+			size = 0.6,
+			speed = NumberRange.new(30, 60),
+			lifetime = NumberRange.new(0.3, 0.6),
+			streaks = true,
+			spread = 180,
+		})
+		lingerSmoke(cutAt, 2.5, 14)
 		if mine then
 			impactFrame(1.5)
 			U.screenFlash(RED, 0.5)

@@ -138,9 +138,11 @@ SPEC = {
                       fadeIn=0.05, fadeOut=0.05,
                       delays={'Sword': 0.04, 'Head': 0.03},
                       doc="Black Moon: hovering in front of the moon, sword held out low, glaring; then levels the sword at them."),
-    'MoonFlight': dict(keys=MOON_FLIGHT, ease=[None, QUART_OUT, QUAD_IN, QUART_OUT, LINEAR], fadeIn=0.01,
-                       fadeOut=0.35, delays={'Sword': 0.01},
-                       doc="Black Moon: flying at them, the cut, and the finish with his back turned."),
+    # The cut carries straight on through the follow-through, then slows
+    # into the finish; it ends in the Air pose, so the fade out is seamless.
+    'MoonFlight': dict(keys=MOON_FLIGHT, ease=[None, QUART_OUT, QUAD_IN, LINEAR, QUART_OUT, SINE_IO, SINE_IO, SINE_IO],
+                       fadeIn=0.01, fadeOut=0.3, delays={'Sword': 0.01},
+                       doc="Black Moon: flying at them, one backhand cut through them, the finish with his back turned and the sword out at his side, then back onto his shoulder."),
     'Launched': dict(keys=LAUNCHED, ease=[None] + [SINE_IO] * (len(LAUNCHED) - 1), fadeIn=0.1, fadeOut=0.2,
                      doc="Thrown into the sky (Black Moon): flailing. The cutscene ends it."),
     'Hurricane': dict(keys=HURRICANE, ease=[None, QUART_OUT] + [LINEAR] * 16 + [QUART_OUT, LINEAR], fadeIn=0.03,
