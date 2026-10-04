@@ -47,7 +47,7 @@ Config.M1 = {
 
 	KnockbackForce = 65,
 	KnockbackLift = 18,
-	UppercutForce = 48,
+	UppercutForce = 40, -- with the short push below: about 8 studs up, in reach of a jump
 	DownslamForce = 75,
 }
 

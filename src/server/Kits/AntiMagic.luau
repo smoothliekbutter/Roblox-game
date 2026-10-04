@@ -577,9 +577,7 @@ local function blackDivider(ctx)
 			c.Hit(character, victim, {
 				damage = if perfect then 12 else 7,
 				stun = if perfect then 1.2 else 1,
-				attackType = "Melee",
-				unblockable = perfect,
-				guardBreak = not perfect,
+				attackType = "Melee", -- the air version can be blocked
 				heavy = true,
 				ragdoll = if perfect then 1.6 else 1.3,
 				velocity = forward * 18 + UP * -85,
