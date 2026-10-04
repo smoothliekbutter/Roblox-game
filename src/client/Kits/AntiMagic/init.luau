@@ -417,309 +417,6 @@ end
 local handlers: { [string]: (data: any, character: Model, root: BasePart) -> () } = {}
 
 ---------------------------------------------------------------------------
--- Bull Thrust: propel, catch, barrage, push
----------------------------------------------------------------------------
-
--- Attaches a short-lived particle emitter to a part (a continuous trail).
-local function trailEmitter(part: BasePart, props: { [string]: any }, duration: number)
-	local attachment = Instance.new("Attachment")
-	attachment.Parent = part
-	local emitter = Instance.new("ParticleEmitter")
-	for key, value in props do
-		(emitter :: any)[key] = value
-	end
-	emitter.Parent = attachment
-	task.delay(duration, function()
-		emitter.Enabled = false
-		task.wait(1)
-		attachment:Destroy()
-	end)
-end
-
--- A slash mark drawn on the target: black blade core with a red glow,
--- slicing in fast and thinning out. Faces the camera.
-local function slashMark(position: Vector3, angle: number, length: number, duration: number)
-	local camera = workspace.CurrentCamera
-	local base = CFrame.lookAt(position, camera.CFrame.Position) * CFrame.Angles(0, 0, angle)
-	local glow = U.newPart({ Size = Vector3.new(0.1, 0.32, 0.03), CFrame = base, Color = RED, Transparency = 0.2 })
-	local core = U.newPart({
-		Size = Vector3.new(0.1, 0.14, 0.03),
-		CFrame = base * CFrame.new(0, 0, 0.02),
-		Color = BLACK,
-		Material = Enum.Material.SmoothPlastic,
-	})
-	U.tween(glow, duration * 0.35, { Size = Vector3.new(length * 1.08, 0.32, 0.03) })
-	U.tween(core, duration * 0.35, { Size = Vector3.new(length, 0.14, 0.03) })
-	task.delay(duration * 0.35, function()
-		U.tween(glow, duration * 0.65, { Size = Vector3.new(length * 1.1, 0.02, 0.02), Transparency = 1 })
-		U.tween(core, duration * 0.65, { Size = Vector3.new(length, 0.01, 0.01), Transparency = 1 })
-	end)
-	task.delay(duration + 0.05, function()
-		glow:Destroy()
-		core:Destroy()
-	end)
-end
-
-local function feetOf(character: Model, root: BasePart): Vector3
-	local ground = U.groundBelow(root.Position, { character })
-	return if ground then ground.Position else root.Position - UP * 3
-end
-
-local barrageAngles = { 0.35, -0.5, 1.2, -1.25, 0.05, 2.6, -0.9, 0.7 }
-
--- The black meteor tail and air rings while diving (Meteorite slam, Plunge).
-local function meteorTail(root: BasePart, duration: number)
-	trailEmitter(root, {
-		Texture = U.textures.Smoke,
-		Color = ColorSequence.new(BLACK),
-		LightEmission = 0,
-		Size = NumberSequence.new(1.8, 4),
-		Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0.2),
-			NumberSequenceKeypoint.new(1, 1),
-		}),
-		Lifetime = NumberRange.new(0.3, 0.55),
-		Rate = 140,
-		Speed = NumberRange.new(4, 10),
-		EmissionDirection = Enum.NormalId.Top,
-		SpreadAngle = Vector2.new(30, 30),
-		Drag = 3,
-	}, duration)
-	trailEmitter(root, {
-		Texture = U.textures.Spark,
-		Color = ColorSequence.new(RED, DARK_RED),
-		LightEmission = 1,
-		Size = NumberSequence.new(0.4, 0),
-		Lifetime = NumberRange.new(0.15, 0.3),
-		Rate = 70,
-		Speed = NumberRange.new(14, 24),
-		EmissionDirection = Enum.NormalId.Top,
-		SpreadAngle = Vector2.new(25, 25),
-		Orientation = Enum.ParticleOrientation.VelocityParallel,
-		Squash = NumberSequence.new(1.6),
-	}, duration)
-	for i = 0, math.floor(duration / 0.06) do
-		task.delay(i * 0.06, function()
-			if root.Parent then
-				U.ringBurst(
-					CFrame.new(root.Position - UP * 3.4),
-					if i % 2 == 0 then BLACK else RED,
-					1.2,
-					3.8,
-					0.18,
-					0.15
-				)
-			end
-		end)
-	end
-end
-
-function handlers.BullThrust(data, character, root)
-	local phase = data.phase
-	if phase == "Propel" then
-		local direction: Vector3 = if typeof(data.direction) == "Vector3"
-			then data.direction
-			else root.CFrame.LookVector
-		-- The server says how long the (steerable) propel lasts.
-		local duration = if type(data.duration) == "number" then data.duration else 0.55
-		local air = data.airborne == true
-		play(character, if air then ANIMS.AirPropel else ANIMS.Propel)
-		swordTrail(character, duration + 0.05)
-
-		-- Ignition: an anti-magic blast behind him.
-		local back = root.Position - direction * 1.5
-		U.flash(back, BLACK, 6, 0.18)
-		U.impactRing(back, direction, BLACK, 0.8, 5.5, 0.25)
-		task.delay(0.05, U.impactRing, back, direction, RED, 0.6, 4, 0.22)
-		blackSmoke(back, 14, 3.2, 16)
-		U.burst(back, {
-			color = RED,
-			count = 14,
-			size = 0.5,
-			speed = NumberRange.new(25, 45),
-			lifetime = NumberRange.new(0.15, 0.35),
-			streaks = true,
-			spread = 35,
-			direction = -direction,
-		})
-		U.light(back, RED, 6, 14, 0.3)
-		U.flash(back, RED, 3.5, 0.12)
-		blackLightning(back, 3, 3, 0.2)
-		task.delay(0.08, U.impactRing, back, direction, BLACK, 0.5, 6.5, 0.28)
-		if air then
-			-- Diving out of the sky like a meteor; the ground takes the hit
-			-- when he comes down (seen from each screen, no server delay).
-			meteorTail(root, duration)
-			task.spawn(function()
-				local started = os.clock()
-				while character.Parent and os.clock() - started < duration + 0.3 do
-					local ground = U.groundBelow(root.Position, { character })
-					if ground and root.Position.Y - ground.Position.Y < 3.6 then
-						local spot = ground.Position
-						U.flash(spot + UP, BLACK, 7, 0.2)
-						U.ringBurst(CFrame.new(spot + UP * 0.15), BLACK, 1, 10, 0.35, 0.45)
-						task.delay(0.04, U.ringBurst, CFrame.new(spot + UP * 0.2), RED, 0.8, 7, 0.3, 0.2)
-						U.shockwave(spot, RED, 2, 12, 0.3)
-						U.groundCracks(spot, 6, 5, RED, 1.6)
-						U.groundRocks(spot, 8, 3, 1.6)
-						U.debris(spot, 6, 30, 0.8)
-						blackSmoke(spot + UP * 0.4, 12, 3, 14)
-						if U.isLocal(character) then
-							CameraShake.Add(0.25)
-						end
-						break
-					end
-					task.wait()
-				end
-			end)
-		else
-			U.ringBurst(CFrame.new(feetOf(character, root) + UP * 0.1), BLACK, 0.8, 5, 0.3, 0.2)
-			task.delay(0.05, U.ringBurst, CFrame.new(feetOf(character, root) + UP * 0.15), RED, 0.6, 4, 0.25, 0.15)
-		end
-
-		-- The jet: smoke and embers streaming off his back, afterimages,
-		-- speed lines, dust kicked up along the ground.
-		trailEmitter(root, {
-			Texture = U.textures.Smoke,
-			Color = ColorSequence.new(BLACK),
-			LightEmission = 0,
-			Size = NumberSequence.new(1.4, 3.2),
-			Transparency = NumberSequence.new({
-				NumberSequenceKeypoint.new(0, 0.25),
-				NumberSequenceKeypoint.new(1, 1),
-			}),
-			Lifetime = NumberRange.new(0.35, 0.6),
-			Rate = 110,
-			Speed = NumberRange.new(2, 6),
-			EmissionDirection = Enum.NormalId.Back,
-			SpreadAngle = Vector2.new(25, 25),
-			Drag = 3,
-		}, duration)
-		trailEmitter(root, {
-			Texture = U.textures.Spark,
-			Color = ColorSequence.new(RED, DARK_RED),
-			LightEmission = 1,
-			Size = NumberSequence.new(0.35, 0),
-			Lifetime = NumberRange.new(0.15, 0.3),
-			Rate = 60,
-			Speed = NumberRange.new(10, 18),
-			EmissionDirection = Enum.NormalId.Back,
-			SpreadAngle = Vector2.new(30, 30),
-			Orientation = Enum.ParticleOrientation.VelocityParallel,
-			Squash = NumberSequence.new(1.5),
-		}, duration)
-		U.bodyTrail(character, BLACK, duration + 0.05)
-		U.speedLines(root, if air then direction else nil, duration)
-		for i = 0, math.floor(duration / 0.06) do
-			task.delay(i * 0.06, function()
-				if character.Parent then
-					U.afterimage(character, if i % 2 == 0 then BLACK else DARK_RED, 0.28)
-					if i % 3 == 1 then
-						blackLightning(root.Position, 1, 2.2, 0.12) -- anti-magic crackling off him
-					end
-					if not air then
-						blackSmoke(feetOf(character, root) + UP * 0.3, 2, 1.6, 4)
-					end
-				end
-			end)
-		end
-		if U.isLocal(character) then
-			CameraShake.FovKick(10)
-			CameraShake.Add(0.15)
-		end
-	elseif phase == "Catch" then
-		local position: Vector3 = data.position
-		local direction = root.CFrame.LookVector
-		U.flash(position, BLACK, 5, 0.15)
-		U.flash(position, WHITE, 3, 0.08)
-		U.impactRing(position, direction, RED, 0.6, 4.5, 0.22)
-		redSparks(position, 16, 0.8, direction)
-		blackLightning(position, 4, 3.2)
-		U.light(position, RED, 8, 14, 0.25)
-		task.delay(0.04, U.impactRing, position, direction, BLACK, 0.5, 5.5, 0.24)
-		U.highlight(data.target, RED, 0.15)
-		if U.isLocal(character) or U.isLocal(data.target) then
-			CameraShake.Add(0.25)
-		end
-	elseif phase == "Barrage" then
-		play(character, ANIMS.Barrage)
-		swordTrail(character, 0.95)
-		local target = data.target
-		for i = 0, 7 do
-			task.delay(i * 0.11, function()
-				if character.Parent then
-					blackSmoke(feetOf(character, root) + UP * 0.2, 2, 1.4, 3)
-					if typeof(target) == "Instance" and target:IsA("Model") then
-						local targetRoot = U.getRoot(target)
-						if targetRoot then
-							blackSmoke(feetOf(target, targetRoot) + UP * 0.2, 2, 1.4, 3)
-						end
-					end
-				end
-			end)
-		end
-	elseif phase == "BarrageHit" then
-		local targetRoot = U.getRoot(data.target)
-		if not targetRoot then
-			return
-		end
-		local index = data.index or 1
-		local center = targetRoot.Position + UP * 0.6
-		local jitter = U.randomUnit() * Vector3.new(0.8, 0.9, 0.8)
-		local angle = barrageAngles[((index - 1) % #barrageAngles) + 1]
-		-- Two crossing phantom slashes on the target, then sparks.
-		slashMark(center + jitter, angle, 5, 0.16)
-		task.delay(0.03, slashMark, center - jitter * 0.5, angle + 1.4, 4, 0.14)
-		redSparks(center, 8, 0.6)
-		if index % 2 == 0 then
-			U.flash(center, BLACK, 3, 0.1)
-		end
-		U.burst(center, {
-			color = WHITE,
-			count = 4,
-			size = 0.4,
-			speed = NumberRange.new(25, 40),
-			lifetime = NumberRange.new(0.08, 0.16),
-			streaks = true,
-		})
-		U.light(center, RED, 4, 9, 0.1)
-		if index % 2 == 0 then
-			U.afterimage(character, DARK_RED, 0.15)
-		end
-		if U.isLocal(character) or U.isLocal(data.target) then
-			CameraShake.Add(0.08)
-		end
-	elseif phase == "Push" then
-		local direction = root.CFrame.LookVector
-		local front = root.Position + direction * 3
-		U.flash(front, WHITE, 4, 0.1)
-		U.flash(front, BLACK, 7, 0.2)
-		U.impactRing(front, direction, WHITE, 0.8, 6, 0.25)
-		task.delay(0.05, U.impactRing, front + direction, direction, RED, 0.6, 5, 0.25)
-		blackSmoke(front, 12, 3, 18)
-		U.burst(front, {
-			color = RED,
-			count = 16,
-			size = 0.6,
-			speed = NumberRange.new(30, 55),
-			lifetime = NumberRange.new(0.15, 0.35),
-			streaks = true,
-			spread = 30,
-			direction = direction,
-		})
-		blackLightning(front, 5, 4.5)
-		U.light(front, RED, 10, 18, 0.3)
-		U.flash(front, RED, 5, 0.15)
-		task.delay(0.08, U.impactRing, front + direction * 2, direction, BLACK, 0.5, 7, 0.3)
-		U.bodyTrail(data.target, WHITE, 0.3)
-		if U.isLocal(character) or U.isLocal(data.target) then
-			CameraShake.Add(0.3)
-			CameraShake.FovKick(5)
-		end
-	end
-end
-
----------------------------------------------------------------------------
 -- Shared skill effects
 ---------------------------------------------------------------------------
 
@@ -1044,6 +741,502 @@ local function lingerSmoke(position: Vector3, duration: number, size: number)
 		EmissionDirection = Enum.NormalId.Top,
 	}, duration)
 	task.delay(duration + 1.8, holder.Destroy, holder)
+end
+
+---------------------------------------------------------------------------
+-- Bull Thrust: propel, catch, then a five-hit sword combo
+---------------------------------------------------------------------------
+
+-- Attaches a short-lived particle emitter to a part (a continuous trail).
+local function trailEmitter(part: BasePart, props: { [string]: any }, duration: number)
+	local attachment = Instance.new("Attachment")
+	attachment.Parent = part
+	local emitter = Instance.new("ParticleEmitter")
+	for key, value in props do
+		(emitter :: any)[key] = value
+	end
+	emitter.Parent = attachment
+	task.delay(duration, function()
+		emitter.Enabled = false
+		task.wait(1)
+		attachment:Destroy()
+	end)
+end
+
+-- A slash mark drawn on the target: black blade core with a red glow,
+-- slicing in fast and thinning out. Faces the camera.
+local function slashMark(position: Vector3, angle: number, length: number, duration: number)
+	local camera = workspace.CurrentCamera
+	local base = CFrame.lookAt(position, camera.CFrame.Position) * CFrame.Angles(0, 0, angle)
+	local glow = U.newPart({ Size = Vector3.new(0.1, 0.32, 0.03), CFrame = base, Color = RED, Transparency = 0.2 })
+	local core = U.newPart({
+		Size = Vector3.new(0.1, 0.14, 0.03),
+		CFrame = base * CFrame.new(0, 0, 0.02),
+		Color = BLACK,
+		Material = Enum.Material.SmoothPlastic,
+	})
+	U.tween(glow, duration * 0.35, { Size = Vector3.new(length * 1.08, 0.32, 0.03) })
+	U.tween(core, duration * 0.35, { Size = Vector3.new(length, 0.14, 0.03) })
+	task.delay(duration * 0.35, function()
+		U.tween(glow, duration * 0.65, { Size = Vector3.new(length * 1.1, 0.02, 0.02), Transparency = 1 })
+		U.tween(core, duration * 0.65, { Size = Vector3.new(length, 0.01, 0.01), Transparency = 1 })
+	end)
+	task.delay(duration + 0.05, function()
+		glow:Destroy()
+		core:Destroy()
+	end)
+end
+
+-- The slashMark angle that lines the mark up with `direction` (world space)
+-- as this camera sees it.
+local function markAngle(position: Vector3, direction: Vector3): number
+	local facing = CFrame.lookAt(position, workspace.CurrentCamera.CFrame.Position)
+	local along = facing:VectorToObjectSpace(direction)
+	return math.atan2(along.Y, along.X)
+end
+
+local function feetOf(character: Model, root: BasePart): Vector3
+	local ground = U.groundBelow(root.Position, { character })
+	return if ground then ground.Position else root.Position - UP * 3
+end
+
+-- The black meteor tail and air rings while diving (Meteorite slam, Plunge).
+local function meteorTail(root: BasePart, duration: number)
+	trailEmitter(root, {
+		Texture = U.textures.Smoke,
+		Color = ColorSequence.new(BLACK),
+		LightEmission = 0,
+		Size = NumberSequence.new(1.8, 4),
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.2),
+			NumberSequenceKeypoint.new(1, 1),
+		}),
+		Lifetime = NumberRange.new(0.3, 0.55),
+		Rate = 140,
+		Speed = NumberRange.new(4, 10),
+		EmissionDirection = Enum.NormalId.Top,
+		SpreadAngle = Vector2.new(30, 30),
+		Drag = 3,
+	}, duration)
+	trailEmitter(root, {
+		Texture = U.textures.Spark,
+		Color = ColorSequence.new(RED, DARK_RED),
+		LightEmission = 1,
+		Size = NumberSequence.new(0.4, 0),
+		Lifetime = NumberRange.new(0.15, 0.3),
+		Rate = 70,
+		Speed = NumberRange.new(14, 24),
+		EmissionDirection = Enum.NormalId.Top,
+		SpreadAngle = Vector2.new(25, 25),
+		Orientation = Enum.ParticleOrientation.VelocityParallel,
+		Squash = NumberSequence.new(1.6),
+	}, duration)
+	for i = 0, math.floor(duration / 0.06) do
+		task.delay(i * 0.06, function()
+			if root.Parent then
+				U.ringBurst(
+					CFrame.new(root.Position - UP * 3.4),
+					if i % 2 == 0 then BLACK else RED,
+					1.2,
+					3.8,
+					0.18,
+					0.15
+				)
+			end
+		end)
+	end
+end
+
+--[[
+	The combo's four cuts, started by the BullCombo animation's events so
+	they keep time with the blade. Each crescent follows that swing's actual
+	path (fitted to the blade tip in tools/anim): centred on his sword
+	shoulder (on him for the turn), tilted and swept the way the blade goes.
+]]
+local COMBO_SWINGS: { [string]: CrescentOptions } = {
+	-- From low behind him on the right, up through them to high on his left.
+	Rising = {
+		center = CFrame.new(1, 0.5, 0) * CFrame.Angles(rad(5), 0, 0),
+		radius = 5.2,
+		from = 130,
+		to = -80,
+		tilt = -41,
+		width = 1.7,
+		sweep = 0.06,
+		fade = 0.24,
+	},
+	-- Back across the waist, left to right.
+	Sweep = {
+		center = CFrame.new(1, 0.5, 0) * CFrame.Angles(rad(-5), 0, 0),
+		radius = 5,
+		from = -100,
+		to = 122,
+		tilt = -2,
+		width = 1.7,
+		sweep = 0.06,
+		fade = 0.24,
+	},
+	-- The turn: round behind him, then on through them, dipping in front.
+	Spin = {
+		center = CFrame.new(0, 0.5, 0) * CFrame.Angles(rad(-12), 0, 0),
+		radius = 5.9,
+		from = 160,
+		to = 425,
+		tilt = 3,
+		width = 2.1,
+		sweep = 0.16,
+		fade = 0.3,
+	},
+	-- Up over his head and straight down through them.
+	Chop = {
+		center = CFrame.new(0.4, 0.8, 0) * CFrame.Angles(0, rad(5), 0),
+		radius = 5,
+		from = 135,
+		to = -28,
+		tilt = 90,
+		width = 2.3,
+		sweep = 0.06,
+		fade = 0.3,
+	},
+}
+
+-- How each hit lands: the way the blade travels through them (in his
+-- space: X right, Y up, -Z forward) and how big the hit is.
+local COMBO_CUTS: { [string]: { cut: Vector3, size: number } } = {
+	Rising = { cut = Vector3.new(-0.75, 0.65, 0), size = 1 },
+	Sweep = { cut = Vector3.new(1, 0, 0), size = 1 },
+	Spin = { cut = Vector3.new(1, 0.05, 0), size = 1.25 },
+	Chop = { cut = Vector3.new(0, -1, 0.25), size = 1.5 },
+}
+
+-- Flat direction from him to them (his facing if they're on top of him).
+local function towardTarget(root: BasePart, targetRoot: BasePart): Vector3
+	local offset = targetRoot.Position - root.Position
+	local flat = Vector3.new(offset.X, 0, offset.Z)
+	return if flat.Magnitude > 0.1 then flat.Unit else root.CFrame.LookVector
+end
+
+-- One beat of the combo animation: a swing starting, the coil, the thrust.
+local function comboSwing(character: Model, root: BasePart, event: string)
+	local swing = COMBO_SWINGS[event]
+	if swing then
+		heavyTrail(character, (swing.sweep or 0.06) + 0.06)
+		crescent(character, swing)
+		-- His footwork scuffs up a little anti-magic.
+		blackSmoke(feetOf(character, root) + UP * 0.3, 3, 1.6, 5)
+		if event == "Spin" then
+			-- The turn throws a ring of wind off him.
+			U.ringBurst(CFrame.new(root.Position + UP * 0.2), BLACK, 1.5, 7, 0.28, 0.22)
+			task.delay(0.06, U.ringBurst, CFrame.new(root.Position + UP * 0.3), DARK_RED, 1.2, 5.5, 0.24, 0.14)
+			task.delay(0.08, function()
+				if character.Parent then
+					U.afterimage(character, DARK_RED, 0.18)
+				end
+			end)
+		elseif event == "Chop" then
+			-- The blade catches the light at the top of the swing.
+			local tip = bladePoint(character, 2.1)
+			if tip then
+				U.glint(tip, 1.2, RED)
+			end
+		end
+	elseif event == "Coil" then
+		-- Drawn back for the thrust: anti-magic floods the blade and the air
+		-- pulls in around him.
+		swordGlow(character, RED, 0.18, 0.35)
+		swordAura(character, 0.16, 40)
+		U.ringBurst(CFrame.new(feetOf(character, root) + UP * 0.1), BLACK, 5, 1.2, 0.16, 0.2)
+		local blade = bladeOf(character)
+		if blade then
+			for _ = 1, 5 do
+				inflow(blade.Position, 3.5)
+			end
+			crackle(blade, 0.14, 0.04, 2)
+		end
+		task.delay(0.06, function()
+			local tip = bladePoint(character, 2.1)
+			if tip and character.Parent then
+				U.glint(tip, 1.6, RED)
+				task.delay(0.03, U.glint, tip, 1, WHITE)
+			end
+		end)
+		if U.isLocal(character) then
+			CameraShake.FovKick(-4)
+		end
+	elseif event == "Thrust" then
+		heavyTrail(character, 0.14)
+		U.afterimage(character, BLACK, 0.2)
+		local feet = feetOf(character, root)
+		blackSmoke(feet + UP * 0.3, 6, 2.2, 10)
+		U.ringBurst(CFrame.new(feet + UP * 0.1), BLACK, 0.8, 5, 0.25, 0.2)
+	end
+end
+
+-- One of the four cuts landing: its slash across them along the swing,
+-- sparks thrown the way the blade travels, a flash and a ring sized to it.
+local function comboImpact(data, character: Model, root: BasePart)
+	local target = data.target
+	local targetRoot = U.getRoot(target)
+	local how = COMBO_CUTS[data.kind] or COMBO_CUTS.Sweep
+	if not targetRoot then
+		return
+	end
+	local k = how.size
+	local center = targetRoot.Position + UP * 0.4
+	local cut = root.CFrame:VectorToWorldSpace(how.cut).Unit
+	local toward = towardTarget(root, targetRoot)
+	slashMark(center, markAngle(center, cut), 4 + 1.6 * k, 0.2 + 0.05 * k)
+	U.flash(center, WHITE, 1.6 * k, 0.07)
+	U.flash(center, BLACK, 3 * k, 0.16)
+	redSparks(center, math.floor(8 * k), 0.45 + 0.15 * k, cut)
+	U.impactRing(center, toward, RED, 0.4 * k, 3.2 * k, 0.2)
+	task.delay(0.03, U.impactRing, center, toward, BLACK, 0.3 * k, 2.6 * k, 0.2)
+	blackLightning(center, if k > 1 then 3 else 2, 2 + k, 0.15)
+	U.light(center, RED, 4 * k, 8 + 4 * k, 0.15)
+	if data.kind == "Chop" then
+		-- Driven down through them into the ground at their feet.
+		local feet = feetOf(target, targetRoot)
+		U.groundCracks(feet, 5, 4, RED, 1.2)
+		U.groundRocks(feet, 6, 2.2, 1)
+		U.ringBurst(CFrame.new(feet + UP * 0.1), BLACK, 0.8, 6, 0.3, 0.25)
+		blackSmoke(feet + UP * 0.3, 6, 2.4, 10)
+	elseif data.kind == "Spin" then
+		-- The turn's wind rings out around them.
+		U.ringBurst(CFrame.new(center), WHITE, 0.6, 4.5, 0.2, 0.08)
+	end
+	if involves(data, character) then
+		CameraShake.Add(0.05 + 0.05 * k)
+	end
+end
+
+-- The point punching out through their back: a black spike in a red glow
+-- that shoots out and thins away.
+local function pierce(from: Vector3, direction: Vector3, length: number)
+	local frame = CFrame.lookAt(from, from + direction)
+	local out = frame * CFrame.new(0, 0, -length / 2)
+	local glow = U.newPart({ Size = Vector3.new(0.5, 0.5, 0.4), CFrame = frame, Color = RED, Transparency = 0.15 })
+	local core = U.newPart({
+		Size = Vector3.new(0.22, 0.22, 0.4),
+		CFrame = frame,
+		Color = BLACK,
+		Material = Enum.Material.SmoothPlastic,
+	})
+	U.tween(glow, 0.08, { Size = Vector3.new(0.45, 0.45, length), CFrame = out })
+	U.tween(core, 0.08, { Size = Vector3.new(0.2, 0.2, length * 0.95), CFrame = out })
+	task.delay(0.08, function()
+		U.tween(glow, 0.24, { Size = Vector3.new(0.02, 0.02, length * 1.1), Transparency = 1 })
+		U.tween(core, 0.24, { Size = Vector3.new(0.01, 0.01, length), Transparency = 1 })
+	end)
+	task.delay(0.35, function()
+		glow:Destroy()
+		core:Destroy()
+	end)
+end
+
+-- The finisher: the thrust goes clean through them and blows them back.
+local function comboFinisher(data, character: Model, root: BasePart)
+	local target = data.target
+	local targetRoot = U.getRoot(target)
+	if not targetRoot then
+		return
+	end
+	local toward = towardTarget(root, targetRoot)
+	local center = targetRoot.Position + UP * 0.2
+	pierce(center - toward * 1.2, toward, 8)
+	U.flash(center, WHITE, 5, 0.1)
+	U.flash(center, BLACK, 9, 0.24)
+	U.flash(center, RED, 6, 0.18)
+	U.shockwave(center, RED, 1.5, 9, 0.3)
+	U.impactRing(center, toward, WHITE, 0.8, 7, 0.25)
+	task.delay(0.04, U.impactRing, center + toward * 1.5, toward, RED, 0.6, 6, 0.28)
+	task.delay(0.08, U.impactRing, center + toward * 3, toward, BLACK, 0.5, 8, 0.32)
+	blackSmoke(center + toward * 1.5, 16, 3.2, 22)
+	U.burst(center, {
+		color = RED,
+		count = 24,
+		size = 0.7,
+		speed = NumberRange.new(35, 60),
+		lifetime = NumberRange.new(0.15, 0.35),
+		streaks = true,
+		spread = 25,
+		direction = toward,
+	})
+	blackLightning(center, 6, 5.5, 0.25)
+	U.light(center, RED, 12, 22, 0.35)
+	U.highlight(target, RED, 0.25)
+	U.bodyTrail(target, DARK_RED, 0.35)
+	-- They skid back across the ground.
+	local feet = feetOf(target, targetRoot)
+	U.ringBurst(CFrame.new(feet + UP * 0.1), BLACK, 1, 8, 0.3, 0.3)
+	U.burst(feet, {
+		texture = U.textures.Smoke,
+		color = Color3.fromRGB(150, 140, 130),
+		count = 8,
+		size = 3,
+		speed = NumberRange.new(8, 16),
+		lifetime = NumberRange.new(0.4, 0.8),
+		lightEmission = 0,
+		transparency = 0.45,
+		drag = 3,
+		spread = 50,
+		direction = (toward + UP).Unit,
+	})
+	if involves(data, character) then
+		impactFrame()
+		CameraShake.Add(0.3)
+		CameraShake.FovKick(8)
+	end
+end
+
+function handlers.BullThrust(data, character, root)
+	local phase = data.phase
+	if phase == "Propel" then
+		local direction: Vector3 = if typeof(data.direction) == "Vector3"
+			then data.direction
+			else root.CFrame.LookVector
+		-- The server says how long the (steerable) propel lasts.
+		local duration = if type(data.duration) == "number" then data.duration else 0.55
+		local air = data.airborne == true
+		play(character, if air then ANIMS.AirPropel else ANIMS.Propel)
+		swordTrail(character, duration + 0.05)
+
+		-- Ignition: an anti-magic blast behind him.
+		local back = root.Position - direction * 1.5
+		U.flash(back, BLACK, 6, 0.18)
+		U.impactRing(back, direction, BLACK, 0.8, 5.5, 0.25)
+		task.delay(0.05, U.impactRing, back, direction, RED, 0.6, 4, 0.22)
+		blackSmoke(back, 14, 3.2, 16)
+		U.burst(back, {
+			color = RED,
+			count = 14,
+			size = 0.5,
+			speed = NumberRange.new(25, 45),
+			lifetime = NumberRange.new(0.15, 0.35),
+			streaks = true,
+			spread = 35,
+			direction = -direction,
+		})
+		U.light(back, RED, 6, 14, 0.3)
+		U.flash(back, RED, 3.5, 0.12)
+		blackLightning(back, 3, 3, 0.2)
+		task.delay(0.08, U.impactRing, back, direction, BLACK, 0.5, 6.5, 0.28)
+		if air then
+			-- Diving out of the sky like a meteor; the ground takes the hit
+			-- when he comes down (seen from each screen, no server delay).
+			meteorTail(root, duration)
+			task.spawn(function()
+				local started = os.clock()
+				while character.Parent and os.clock() - started < duration + 0.3 do
+					local ground = U.groundBelow(root.Position, { character })
+					if ground and root.Position.Y - ground.Position.Y < 3.6 then
+						local spot = ground.Position
+						U.flash(spot + UP, BLACK, 7, 0.2)
+						U.ringBurst(CFrame.new(spot + UP * 0.15), BLACK, 1, 10, 0.35, 0.45)
+						task.delay(0.04, U.ringBurst, CFrame.new(spot + UP * 0.2), RED, 0.8, 7, 0.3, 0.2)
+						U.shockwave(spot, RED, 2, 12, 0.3)
+						U.groundCracks(spot, 6, 5, RED, 1.6)
+						U.groundRocks(spot, 8, 3, 1.6)
+						U.debris(spot, 6, 30, 0.8)
+						blackSmoke(spot + UP * 0.4, 12, 3, 14)
+						if U.isLocal(character) then
+							CameraShake.Add(0.25)
+						end
+						break
+					end
+					task.wait()
+				end
+			end)
+		else
+			U.ringBurst(CFrame.new(feetOf(character, root) + UP * 0.1), BLACK, 0.8, 5, 0.3, 0.2)
+			task.delay(0.05, U.ringBurst, CFrame.new(feetOf(character, root) + UP * 0.15), RED, 0.6, 4, 0.25, 0.15)
+		end
+
+		-- The jet: smoke and embers streaming off his back, afterimages,
+		-- speed lines, dust kicked up along the ground.
+		trailEmitter(root, {
+			Texture = U.textures.Smoke,
+			Color = ColorSequence.new(BLACK),
+			LightEmission = 0,
+			Size = NumberSequence.new(1.4, 3.2),
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.25),
+				NumberSequenceKeypoint.new(1, 1),
+			}),
+			Lifetime = NumberRange.new(0.35, 0.6),
+			Rate = 110,
+			Speed = NumberRange.new(2, 6),
+			EmissionDirection = Enum.NormalId.Back,
+			SpreadAngle = Vector2.new(25, 25),
+			Drag = 3,
+		}, duration)
+		trailEmitter(root, {
+			Texture = U.textures.Spark,
+			Color = ColorSequence.new(RED, DARK_RED),
+			LightEmission = 1,
+			Size = NumberSequence.new(0.35, 0),
+			Lifetime = NumberRange.new(0.15, 0.3),
+			Rate = 60,
+			Speed = NumberRange.new(10, 18),
+			EmissionDirection = Enum.NormalId.Back,
+			SpreadAngle = Vector2.new(30, 30),
+			Orientation = Enum.ParticleOrientation.VelocityParallel,
+			Squash = NumberSequence.new(1.5),
+		}, duration)
+		U.bodyTrail(character, BLACK, duration + 0.05)
+		U.speedLines(root, if air then direction else nil, duration)
+		for i = 0, math.floor(duration / 0.06) do
+			task.delay(i * 0.06, function()
+				if character.Parent then
+					U.afterimage(character, if i % 2 == 0 then BLACK else DARK_RED, 0.28)
+					if i % 3 == 1 then
+						blackLightning(root.Position, 1, 2.2, 0.12) -- anti-magic crackling off him
+					end
+					if not air then
+						blackSmoke(feetOf(character, root) + UP * 0.3, 2, 1.6, 4)
+					end
+				end
+			end)
+		end
+		if U.isLocal(character) then
+			CameraShake.FovKick(10)
+			CameraShake.Add(0.15)
+		end
+	elseif phase == "Catch" then
+		local position: Vector3 = data.position
+		local direction = root.CFrame.LookVector
+		U.flash(position, BLACK, 5, 0.15)
+		U.flash(position, WHITE, 3, 0.08)
+		U.impactRing(position, direction, RED, 0.6, 4.5, 0.22)
+		redSparks(position, 16, 0.8, direction)
+		blackLightning(position, 4, 3.2)
+		U.light(position, RED, 8, 14, 0.25)
+		task.delay(0.04, U.impactRing, position, direction, BLACK, 0.5, 5.5, 0.24)
+		U.highlight(data.target, RED, 0.15)
+		if U.isLocal(character) or U.isLocal(data.target) then
+			CameraShake.Add(0.25)
+		end
+	elseif phase == "Combo" then
+		-- The cuts follow the animation's beats, so they keep time with the blade.
+		local token = bump(character)
+		play(character, ANIMS.BullCombo, function(event)
+			if live(character, token) then
+				comboSwing(character, root, event)
+			end
+		end)
+		swordTrail(character, 1.2)
+	elseif phase == "Strike" then
+		if data.kind == "Thrust" then
+			comboFinisher(data, character, root)
+		else
+			comboImpact(data, character, root)
+		end
+	elseif phase == "Interrupted" then
+		-- Cut short (he got hit, or they broke out): no more swings.
+		bump(character)
+		if PoseAnimator.Current(character) == ANIMS.BullCombo then
+			PoseAnimator.FadeOut(character, 0.2)
+		end
+	end
 end
 
 ---------------------------------------------------------------------------

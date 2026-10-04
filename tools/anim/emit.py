@@ -61,9 +61,16 @@ SPEC = {
                     doc="Guard broken or parried: thrown off balance."),
     'Propel': dict(keys=PROPEL, ease=[None, QUART_OUT, SINE_OUT], fadeIn=0.03, fadeOut=0.1,
                    delays={'Sword': 0.02}, doc="Bull Thrust: propelling forward, sword thrust ahead."),
-    'Barrage': dict(keys=BARRAGE, ease=[None] + [('Quad', 'InOut')] * len(BARRAGE_STEPS) + [QUART_OUT, LINEAR],
-                    fadeIn=0.03, fadeOut=0.2, additive=['RightLeg', 'LeftLeg'], delays={'Sword': 0.015, 'Head': -0.01},
-                    doc="Bull Thrust: rapid slash flurry ending in a pushing thrust."),
+    # Each swing eases into its wind-up, speeds up into the strike key (where
+    # the server lands the hit) and slows through the follow-through; the
+    # turn runs at a steady speed. No lag on the sword: at this speed it
+    # drags the point into the floor and throws the thrust off line.
+    'BullCombo': dict(keys=BULL_COMBO,
+                      ease=[None, QUAD_OUT, QUAD_IN, QUART_OUT, SINE_IO, QUAD_IN, QUART_OUT,
+                            QUAD_IN, LINEAR, LINEAR, QUART_OUT, SINE_IO, QUAD_IN, QUART_OUT,
+                            SINE_IO, SINE_IO, QUAD_IN, QUART_OUT, SINE_IO],
+                      fadeIn=0.03, fadeOut=0.25, delays={'Head': -0.01, 'LeftArm': 0.02}, events=COMBO_EVENTS,
+                      doc="Bull Thrust: five hits, a rising cut, a backhand, a spinning backhand, an overhead chop and a coiled thrust."),
     'AirPropel': dict(keys=AIR_PROPEL, ease=[None, QUART_OUT, SINE_OUT], fadeIn=0.03, fadeOut=0.1,
                       delays={'Sword': 0.02}, doc="Air Bull Thrust: diving like a spear, blade out in front."),
     'AirMeteorLunge': dict(keys=AIR_METEOR_LUNGE, ease=[None, QUART_OUT, SINE_OUT], fadeIn=0.03, fadeOut=0.1,

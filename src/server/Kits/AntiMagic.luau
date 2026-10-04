@@ -6,8 +6,8 @@
 	Awakening swaps to a whole new move set like Sukuna / Rampage Mode.
 
 	Base
-	  1 Bull Thrust         charge in sword-first; on contact, slash flurry into a launcher
-	                        (in the air: dives diagonally down)
+	  1 Bull Thrust         charge in sword-first; on contact, a five-hit sword combo
+	                        ending in a thrust (in the air: dives diagonally down)
 	  2 Black Meteorite     anti-magic lunge grab, carry them up, slam into a crater (unblockable)
 	  3 Black Divider       charged cleave. Press 3 again on the red flash for a
 	                        perfect Divider: huge damage, unblockable
@@ -350,14 +350,46 @@ end
 ---------------------------------------------------------------------------
 
 -- Bull Thrust: propels himself forward on a burst of anti-magic, catches
--- the first person in the way and unloads a slash barrage, finishing with
--- a push that leaves them stunned in range so he can M1 straight into a
--- string (a combo starter, like Vessel's Cursed Strikes).
-local BARRAGE_HITS = 8
-local BARRAGE_STEP = 0.1 -- matches the Barrage animation (tools/anim)
+-- the first person in the way and cuts them up in a five-hit combo, the
+-- last a thrust that leaves them stunned in range so he can M1 straight
+-- into a string (a combo starter, like Vessel's Cursed Strikes).
 local PROPEL_SPEED = 85
 local PROPEL_TIME = 0.55 -- the Propel animation holds for this long
 local PROPEL_STEER = 200 -- degrees per second: up to a ~110 degree curve
+
+-- The combo. Each hit lands on its strike key in the BullCombo animation
+-- (COMBO_STRIKES in tools/anim/asta_anims.py), so keep `at` in step with
+-- it. Until the next hit they're held `reach` studs in front of him while
+-- he steps on at `drift` studs per second.
+local COMBO = {
+	{ kind = "Rising", at = 0.14, damage = 1.5, reach = 3.8, drift = 5 },
+	{ kind = "Sweep", at = 0.3, damage = 1.5, reach = 3.8, drift = 3 },
+	{ kind = "Spin", at = 0.54, damage = 1.5, reach = 3.8, drift = 3 },
+	-- Knocked back a step, clear of the point while he coils for the thrust.
+	{ kind = "Chop", at = 0.76, damage = 2, reach = 4.6, drift = 0 },
+	-- The finisher: nothing holds them after it (see THRUST_PUSH).
+	{ kind = "Thrust", at = 1.1, damage = 3, reach = 0, drift = 0 },
+}
+-- The thrust drives them back about 2.5 studs, still stunned: an M1 still
+-- reaches them.
+local THRUST_PUSH = 17
+local MAX_PULL = 30 -- fastest (studs per second) they're eased back in front of him
+
+-- How fast to move someone so that `time` from now they're `reach` studs in
+-- front of him, while he steps on at `drift`. Flat, so gravity still works.
+local function holdInFront(ctx, target: Model, forward: Vector3, reach: number, drift: number, time: number): Vector3
+	local velocity = forward * drift
+	local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if targetRoot then
+		local offset = ctx.root.Position + forward * reach - targetRoot.Position
+		local pull = Vector3.new(offset.X, 0, offset.Z) / time
+		if pull.Magnitude > MAX_PULL then
+			pull = pull.Unit * MAX_PULL
+		end
+		velocity += pull
+	end
+	return velocity
+end
 
 local function bullThrust(ctx)
 	local c, character = ctx.combat, ctx.character
@@ -386,40 +418,49 @@ local function bullThrust(ctx)
 	end
 	fx(ctx, "BullThrust", "Catch", { target = target, position = contact })
 
-	-- The barrage: rapid slashes that keep them pinned in front of him.
-	CombatState.SetCasting(character, BARRAGE_HITS * BARRAGE_STEP + 0.2)
-	fx(ctx, "BullThrust", "Barrage", { target = target })
-	for index = 1, BARRAGE_HITS do
-		task.wait(BARRAGE_STEP)
+	-- The combo: five hits, each on its own swing, with them held in front
+	-- of him the whole way.
+	CombatState.SetCasting(character, COMBO[#COMBO].at + 0.2)
+	fx(ctx, "BullThrust", "Combo", { target = target })
+	local first = COMBO[1]
+	c.ApplyVelocity(target, holdInFront(ctx, target, forward, first.reach, 0, first.at), first.at)
+	c.ApplyVelocity(character, Vector3.zero, first.at)
+	local start = os.clock()
+	for index, cut in COMBO do
+		-- Timed from the start so the waits don't add up and fall behind the animation.
+		local remaining = cut.at - (os.clock() - start)
+		if remaining > 0 then
+			task.wait(remaining)
+		end
 		if interrupted(ctx) or not CombatState.IsAlive(target) then
 			fx(ctx, "BullThrust", "Interrupted")
+			CombatState.SetCasting(character, 0.3)
 			return
 		end
-		c.Hit(character, target, {
-			damage = 0.75,
-			stun = 1,
-			attackType = "Melee",
-			velocity = forward * 6,
-			velocityTime = BARRAGE_STEP,
-		})
-		c.ApplyVelocity(character, forward * 6, BARRAGE_STEP)
-		fx(ctx, "BullThrust", "BarrageHit", { target = target, index = index })
+		local nextCut = COMBO[index + 1]
+		local hit: { [string]: any } = { damage = cut.damage, stun = 1, attackType = "Melee" }
+		if nextCut then
+			hit.velocity = holdInFront(ctx, target, forward, cut.reach, cut.drift, nextCut.at - cut.at)
+			hit.velocityTime = nextCut.at - cut.at
+		else
+			-- The thrust: drives them back, still stunned, so an M1 string
+			-- connects right after.
+			hit.stun = 1.1
+			hit.heavy = true
+			hit.velocity = forward * THRUST_PUSH + UP * 4
+			hit.velocityTime = 0.15
+		end
+		if c.Hit(character, target, hit) ~= "Hit" then
+			-- They broke out (Evasive) or can't be hit any more.
+			fx(ctx, "BullThrust", "Interrupted")
+			CombatState.SetCasting(character, 0.3)
+			return
+		end
+		fx(ctx, "BullThrust", "Strike", { target = target, index = index, kind = cut.kind })
+		if nextCut then
+			c.ApplyVelocity(character, forward * cut.drift, nextCut.at - cut.at)
+		end
 	end
-
-	-- Pushing thrust: shoves them back a few studs, still stunned, so an M1
-	-- string connects right after.
-	task.wait(0.12)
-	if interrupted(ctx) then
-		return
-	end
-	fx(ctx, "BullThrust", "Push", { target = target })
-	c.Hit(character, target, {
-		damage = 3,
-		stun = 1.1,
-		attackType = "Melee",
-		velocity = forward * 22 + UP * 4,
-		velocityTime = 0.15,
-	})
 	CombatState.ClearCasting(character)
 	-- Start a fresh M1 string.
 	ctx.data.combo = 0

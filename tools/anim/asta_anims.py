@@ -217,26 +217,72 @@ PROPEL_POSE = {'Torso': R(-30, 10), 'Head': R(22, -8), 'RightArm': L(60, 5), 'Sw
                'LeftArm': L(-35, 0, -25), 'RightLeg': R(-52), 'LeftLeg': R(42)}
 PROPEL = [(0.0, UPPER), (0.07, PROPEL_POSE), (0.62, PROPEL_POSE)]
 
-# Barrage: a rapid flurry, side to side with an overhead chop thrown in,
-# finishing with a straight thrust that pushes them away.
-B_RIGHT = {'Torso': R(-6, -25), 'Head': R(6, 18), 'RightArm': L(82, -70), 'Sword': A(0.85, 0.05, -0.5),
-           'LeftArm': L(40, -25), 'RightLeg': R(0, 22), 'LeftLeg': R(0, 22)}
-B_LEFT = {'Torso': R(-6, 25), 'Head': R(6, -18), 'RightArm': L(82, 70), 'Sword': A(-0.85, 0.05, -0.5),
-          'LeftArm': L(35, -30), 'RightLeg': R(0, -22), 'LeftLeg': R(0, -22)}
-B_UP = {'Torso': R(4, 0), 'Head': R(-4, 0), 'RightArm': L(150, 10), 'Sword': A(0, 0.85, -0.52),
-        'LeftArm': L(45, -25), 'RightLeg': R(0, 0), 'LeftLeg': R(0, 0)}
-B_DOWN = {'Torso': R(-14, 0), 'Head': R(10, 0), 'RightArm': L(55, 5), 'Sword': A(0, -0.3, -0.95),
-          'LeftArm': L(40, -25), 'RightLeg': R(0, 0), 'LeftLeg': R(0, 0)}
-B_PUSH = {'Torso': R(-16, 6), 'Head': R(12, -4), 'RightArm': L(85, 0), 'Sword': A(0, 0, -1),
-          'LeftArm': L(-20, 0, -30), 'RightLeg': R(0, 0), 'LeftLeg': R(0, 0)}
-BARRAGE_STEPS = [B_RIGHT, B_LEFT, B_RIGHT, B_UP, B_DOWN, B_LEFT, B_RIGHT, B_LEFT]
-BARRAGE_STEP = 0.1
-BARRAGE = [(0.0, PROPEL_POSE | {'RightLeg': R(0), 'LeftLeg': R(0)})]
-for i, pose in enumerate(BARRAGE_STEPS):
-    BARRAGE.append((round((i + 1) * BARRAGE_STEP, 3), pose))
-BARRAGE_END = len(BARRAGE_STEPS) * BARRAGE_STEP
-BARRAGE.append((round(BARRAGE_END + 0.12, 3), B_PUSH))
-BARRAGE.append((round(BARRAGE_END + 0.32, 3), B_PUSH))
+# The combo once he's caught someone: five hits, each its own swing with a
+# wind-up and a follow-through. A rising cut from low right to high left, a
+# backhand across the waist, a full turn that brings the blade round through
+# them, a two-handed overhead chop, then a beat coiled with the sword drawn
+# back at his hip before the thrust that drives them away.
+# The server lands each hit on its strike key: keep COMBO_STRIKES in step
+# with COMBO in Server/Kits/AntiMagic.
+COMBO_STRIKES = (0.14, 0.30, 0.54, 0.76, 1.10)
+S1, S2, S3, S4, S5 = COMBO_STRIKES
+
+# 1: the blade dropped low behind him on the right, then up through them.
+B_RISE_WIND = {'Torso': R(-24, -40), 'Head': R(14, 32), 'RightArm': L(30, -62, 8), 'Sword': A(0.62, -0.28, 0.73),
+               'LeftArm': L(70, -15), 'RightLeg': R(-46, 30), 'LeftLeg': R(38, 30)}
+B_RISE = {'Torso': R(-8, 16), 'Head': R(6, -12), 'RightArm': L(105, 20), 'Sword': A(-0.42, 0.5, -0.76),
+          'LeftArm': L(30, -25), 'RightLeg': R(-32, -14), 'LeftLeg': R(28, -14)}
+B_RISE_FOLLOW = {'Torso': R(2, 30), 'Head': R(-2, -22), 'RightArm': L(148, 32), 'Sword': A(-0.55, 0.8, 0.1),
+                 'LeftArm': L(25, -30), 'RightLeg': R(-28, -24), 'LeftLeg': R(26, -24)}
+# 2: down to his left at the waist, then a backhand across to the right.
+B_SWEEP_WIND = {'Torso': R(-8, 42), 'Head': R(2, -32), 'RightArm': L(84, 80), 'Sword': A(-0.85, 0.08, 0.52),
+                'LeftArm': L(-15, 0, -35), 'RightLeg': R(-26, -38), 'LeftLeg': R(28, -38)}
+B_SWEEP = {'Torso': R(-12, -14), 'Head': R(6, 10), 'RightArm': L(86, -36), 'Sword': A(0.5, -0.06, -0.86),
+           'LeftArm': L(30, 0, -45), 'RightLeg': R(-28, 14), 'LeftLeg': R(28, 14)}
+B_SWEEP_FOLLOW = {'Torso': R(-12, -62), 'Head': R(6, 45), 'RightArm': L(86, -88), 'Sword': A(0.95, -0.1, 0.25),
+                  'LeftArm': L(40, 0, -40), 'RightLeg': R(-24, 50), 'LeftLeg': R(24, 50)}
+# 3: the backhand carries on into a full turn to the right, blade held out,
+# and comes round through them side-on. Keyed in steps under 180 degrees so
+# it turns the long way round.
+def b_spin(yaw):
+    t = R(-12, yaw)
+    return {'Torso': t, 'Head': R(6), 'RightArm': L(84, -92), 'Sword': torso_dir(t, (0.96, -0.14, -0.22)),
+            'LeftArm': L(30, 0, -20), 'RightLeg': R(-14), 'LeftLeg': R(14)}
+B_SPIN = {'Torso': R(-14, 90), 'Head': R(6, -60), 'RightArm': L(86, -108), 'Sword': A(0.4, -0.12, -0.91),
+          'LeftArm': L(60, 0, -60), 'RightLeg': R(-26), 'LeftLeg': R(24)}
+B_SPIN_FOLLOW = {'Torso': R(-12, 40), 'Head': R(6, -30), 'RightArm': L(84, -110), 'Sword': A(0.9, -0.15, -0.4),
+                 'LeftArm': L(50, 0, -60), 'RightLeg': R(-26, -30), 'LeftLeg': R(24, -30)}
+# 4: both hands up, the blade laid back over his head, then straight down
+# through them and on toward the ground.
+B_CHOP_WIND = {'Torso': R(16, 6), 'Head': R(-10, -4), 'RightArm': L(172, 10, 14), 'Sword': A(-0.05, 0.5, 0.86),
+               'LeftArm': L(168, -10, -14), 'RightLeg': R(-14, -6), 'LeftLeg': R(18, -6)}
+B_CHOP = {'Torso': R(-12, 8), 'Head': R(12, -6), 'RightArm': L(100, 30, 6), 'Sword': A(-0.12, -0.28, -0.95),
+          'LeftArm': L(104, -16, -6), 'RightLeg': R(-30, -8), 'LeftLeg': R(28, -8)}
+B_CHOP_FOLLOW = {'Torso': R(-28, 8), 'Head': R(16, -6), 'RightArm': L(56, 30, 6), 'Sword': A(-0.15, -0.25, -0.96),
+                 'LeftArm': L(60, -16, -6), 'RightLeg': R(-36, -8), 'LeftLeg': R(32, -8)}
+# 5: sword drawn back at the hip, point level, free hand sighting along it;
+# he sinks into it for a beat, then everything goes behind the point.
+B_COIL = {'Torso': R(-12, -20), 'Head': R(10, 16), 'RightArm': L(-15, -20), 'Sword': A(0.03, 0.06, -1),
+          'LeftArm': L(88, 10), 'RightLeg': R(-34, 20), 'LeftLeg': R(32, 20)}
+B_HOLD = {'Torso': R(-14, -22), 'Head': R(12, 18), 'RightArm': L(-20, -20), 'Sword': A(0.03, 0.06, -1),
+          'LeftArm': L(90, 10), 'RightLeg': R(-36, 22), 'LeftLeg': R(34, 22)}
+B_THRUST = {'Torso': R(-22, 16), 'Head': R(16, -12), 'RightArm': L(88, 6), 'Sword': A(-0.08, -0.03, -1),
+            'LeftArm': L(-30, 0, -30), 'RightLeg': R(-52), 'LeftLeg': R(40)}
+B_THRUST_FOLLOW = {'Torso': R(-24, 18), 'Head': R(18, -12), 'RightArm': L(86, 8), 'Sword': A(-0.08, -0.05, -1),
+                   'LeftArm': L(-34, 0, -32), 'RightLeg': R(-54), 'LeftLeg': R(42)}
+B_SETTLE = {'Torso': R(-14, 4), 'Head': R(10, -2), 'RightArm': L(68, 5), 'Sword': A(0.12, -0.32, -0.94),
+            'LeftArm': L(15, 0, -25), 'RightLeg': R(-36), 'LeftLeg': R(30)}
+BULL_COMBO = [(0.0, PROPEL_POSE),
+              (S1 - 0.06, B_RISE_WIND), (S1, B_RISE), (S1 + 0.04, B_RISE_FOLLOW),
+              (S2 - 0.06, B_SWEEP_WIND), (S2, B_SWEEP), (S2 + 0.05, B_SWEEP_FOLLOW),
+              (S3 - 0.10, b_spin(-145)), (S3 - 0.05, b_spin(-220)), (S3, B_SPIN), (S3 + 0.06, B_SPIN_FOLLOW),
+              (S4 - 0.07, B_CHOP_WIND), (S4, B_CHOP), (S4 + 0.06, B_CHOP_FOLLOW),
+              (S5 - 0.18, B_COIL), (S5 - 0.06, B_HOLD), (S5, B_THRUST), (S5 + 0.09, B_THRUST_FOLLOW),
+              (S5 + 0.38, B_SETTLE)]
+# When each swing gets going (the client traces its crescent from here),
+# the coil, and the thrust leaving the hip.
+COMBO_EVENTS = [(S1 - 0.04, 'Rising'), (S2 - 0.04, 'Sweep'), (S3 - 0.14, 'Spin'), (S4 - 0.05, 'Chop'),
+                (S5 - 0.16, 'Coil'), (S5 - 0.05, 'Thrust')]
 
 # ---------------- Black Meteorite (grab, rise, slam) ----------------
 M_LUNGE = {'Torso': R(-28, -8), 'Head': R(22, 6), 'RightArm': L(-15, -10, 30), 'Sword': A(0.3, 0.15, 0.94),
@@ -456,7 +502,7 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grab
        'MoonThrow': MOON_THROW, 'MoonPerch': MOON_PERCH, 'MoonFlight': MOON_FLIGHT, 'Launched': LAUNCHED,
        'Hurricane': HURRICANE, 'BlackSlash': BLACK_SLASH, 'GrandCharge': GRAND_CHARGE, 'GrandRelease': GRAND_RELEASE,
        'Leap': LEAP, 'Plunge': PLUNGE, 'PlungeImpact': PLUNGE_IMPACT,
-       'AirDividerCharge': AIR_DIVIDER_CHARGE, 'AirDividerRelease': AIR_DIVIDER_RELEASE, 'Propel': PROPEL, 'Barrage': BARRAGE,
+       'AirDividerCharge': AIR_DIVIDER_CHARGE, 'AirDividerRelease': AIR_DIVIDER_RELEASE, 'Propel': PROPEL, 'BullCombo': BULL_COMBO,
        'AirPropel': AIR_PROPEL, 'AirMeteorLunge': AIR_METEOR_LUNGE, 'AirSeize': AIR_SEIZE,
        'AirDeflectStance': AIR_DEFLECT_STANCE,
        'MeteorLunge': METEOR_LUNGE, 'MeteorRise': METEOR_RISE, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
