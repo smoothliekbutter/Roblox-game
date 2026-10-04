@@ -44,6 +44,11 @@ export type CharData = {
 	-- When each skill key was last pressed while already on cooldown. Lets a
 	-- running skill read follow-up presses (timing inputs like Black Divider).
 	skillInputs: { [number]: number },
+	-- Whether that press was made in the air (the player's own client says).
+	skillInputAir: { [number]: boolean },
+	-- Bumped whenever a skill, special or awakening starts, so a move that
+	-- listens for follow-ups (Anti-Magic Leap) knows another move took over.
+	moveToken: number,
 	grabbedBy: Model?,
 }
 
@@ -169,11 +174,13 @@ end
 -- Moves a character, routing to whoever owns its physics.
 -- `options.steer` (degrees per second) lets a player curve the push with
 -- their camera / movement keys while it lasts (e.g. Bull Thrust).
+-- `options.landStop`: a downward push (a dive) turns into a skid once the
+-- player touches down, keeping `landKeep` of its speed.
 function CombatService.ApplyVelocity(
 	character: Model,
 	velocity: Vector3,
 	duration: number,
-	options: { steer: number? }?
+	options: { steer: number?, landStop: boolean?, landKeep: number? }?
 )
 	local root = getRoot(character)
 	if not root then
@@ -238,11 +245,14 @@ function CombatService.IsAirborne(character: Model): boolean
 	return workspace:Raycast(root.Position, Vector3.new(0, -3.6, 0), params) == nil
 end
 
--- In the air, going by the player's own client when it says so (their
--- physics are theirs, and the server sees them a ping late: a jump is over
--- before the server notices it), or else by the server's raycast.
+-- In the air: for players, exactly what their own client says (their
+-- physics are theirs; the server sees them a ping late both taking off and
+-- landing). The server's raycast only decides for NPCs, which send nothing.
 local function inAir(character: Model, clientSaysAirborne: boolean?): boolean
-	return clientSaysAirborne == true or CombatService.IsAirborne(character)
+	if clientSaysAirborne ~= nil then
+		return clientSaysAirborne
+	end
+	return CombatService.IsAirborne(character)
 end
 
 function CombatService.Ragdoll(character: Model, duration: number)
@@ -290,6 +300,18 @@ function CombatService.ClearCounter(character: Model)
 end
 
 -- True if `slot`'s key was pressed (while on cooldown) after `since`.
+-- Whether the last on-cooldown press of `slot` was made in the air.
+function CombatService.PressedAirborne(character: Model, slot: number): boolean
+	local data = registry[character]
+	return data ~= nil and data.skillInputAir[slot] == true
+end
+
+-- Changes whenever another skill, special or awakening starts.
+function CombatService.MoveToken(character: Model): number
+	local data = registry[character]
+	return if data then data.moveToken else -1
+end
+
 function CombatService.PressedSince(character: Model, slot: number, since: number): boolean
 	local data = registry[character]
 	local pressed = data and data.skillInputs[slot]
@@ -644,10 +666,12 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 	if finisher then
 		data.combo = 0
 		data.nextM1 = t + Config.M1.EndLag
-		if jump then
-			variant = "Uppercut"
-		elseif airborne then
+		-- In the air the finisher is always the downslam (holding Space from
+		-- the jump shouldn't turn it into an uppercut).
+		if airborne then
 			variant = "Downslam"
+		elseif jump then
+			variant = "Uppercut"
 		else
 			variant = "Knockback"
 		end
@@ -802,6 +826,7 @@ function CombatService.UseSkill(character: Model, slot: number, clientAirborne: 
 		-- Pressing a key that's on cooldown can still matter to the skill
 		-- that's running (e.g. timing the Black Divider).
 		ctx.data.skillInputs[slot] = os.clock()
+		ctx.data.skillInputAir[slot] = ctx.airborne
 		return
 	end
 	if not CombatState.CanAct(character) or CombatState.IsCasting(character) then
@@ -812,6 +837,7 @@ function CombatService.UseSkill(character: Model, slot: number, clientAirborne: 
 	local awakening = awakeningOf(character)
 	CombatState.StartCooldown(character, slot, info.cooldown * (if awakening then awakening.cooldownMultiplier else 1))
 	CombatState.SetBlocking(character, false)
+	ctx.data.moveToken += 1
 	task.spawn(run, ctx)
 end
 
@@ -831,6 +857,7 @@ function CombatService.UseSpecial(character: Model, clientAirborne: boolean?)
 	local slot = CombatState.SpecialSlot
 	if CombatState.Cooldown(character, slot) > 0.1 then
 		ctx.data.skillInputs[slot] = os.clock()
+		ctx.data.skillInputAir[slot] = ctx.airborne
 		return
 	end
 	if not CombatState.CanAct(character) or CombatState.IsCasting(character) then
@@ -840,6 +867,7 @@ function CombatService.UseSpecial(character: Model, clientAirborne: boolean?)
 	local awakening = awakeningOf(character)
 	CombatState.StartCooldown(character, slot, info.cooldown * (if awakening then awakening.cooldownMultiplier else 1))
 	CombatState.SetBlocking(character, false)
+	ctx.data.moveToken += 1
 	task.spawn(serverKit.Special, ctx)
 end
 
@@ -883,6 +911,7 @@ function CombatService.Awaken(character: Model)
 	character:SetAttribute("Awakened", true)
 	CombatState.ResetCooldowns(character) -- fresh awakened move set
 	ctx.awakened = true
+	data.moveToken += 1
 	task.spawn(serverKit.Awaken, ctx)
 
 	-- The meter drains over the awakening's duration.
@@ -995,6 +1024,8 @@ function CombatService.Register(character: Model)
 		lastCombat = 0,
 		counter = nil,
 		skillInputs = {},
+		skillInputAir = {},
+		moveToken = 0,
 		grabbedBy = nil,
 	}
 	registry[character] = data
@@ -1037,8 +1068,12 @@ end
 
 local function onAction(player: Player, action: unknown, payload: unknown, extra: unknown)
 	-- Moves that have an air version say whether the player was in the air.
-	local function saysAirborne(value: unknown): boolean
-		return type(value) == "table" and (value :: any).airborne == true
+	-- nil when the client didn't say (the server's raycast decides then).
+	local function saysAirborne(value: unknown): boolean?
+		if type(value) ~= "table" or type((value :: any).airborne) ~= "boolean" then
+			return nil
+		end
+		return (value :: any).airborne
 	end
 	local character = player.Character
 	if type(action) ~= "string" then

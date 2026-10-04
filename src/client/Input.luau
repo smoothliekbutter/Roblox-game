@@ -87,16 +87,52 @@ local function dashDirection(humanoid: Humanoid): string
 	return if relative.Z > 0 then "Back" else "Front"
 end
 
--- Our own physics, so this is exact; the server sees us a ping late.
-local function airborne(): boolean
-	local _, humanoid = getCharacter()
-	return humanoid ~= nil and humanoid.FloorMaterial == Enum.Material.Air
-end
-
 local function jumpHeld(humanoid: Humanoid): boolean
 	return UserInputService:IsKeyDown(Enum.KeyCode.Space)
 		or UserInputService:IsGamepadButtonDown(Enum.UserInputType.Gamepad1, Enum.KeyCode.ButtonA)
 		or humanoid.Jump
+end
+
+local lastJumpRequest = 0
+
+-- In the air, from our own physics (exact; the server sees us a ping
+-- late). A jump pressed this very frame counts too: it only lifts off on
+-- the next physics step.
+local function airborne(): boolean
+	local _, humanoid = getCharacter()
+	if not humanoid then
+		return false
+	end
+	if humanoid.FloorMaterial == Enum.Material.Air then
+		return true
+	end
+	local state = humanoid:GetState()
+	if state == Enum.HumanoidStateType.Jumping or state == Enum.HumanoidStateType.Freefall then
+		return true
+	end
+	return jumpEnabled and humanoid.JumpHeight > 0 and os.clock() - lastJumpRequest < 0.06
+end
+
+-- The server's hover or dive for an air move reaches us a round trip late,
+-- and a jump only lasts ~0.4s, so hold still where the key was pressed
+-- until it arrives. Same "Knockback" name as Remotes.Impulse, so the real
+-- impulse replaces it. Only for moves that are ready (a rejected press or a
+-- follow-up tap, like timing Black Divider, never freezes you).
+local AIR_HOLD = Vector3.new(0, 0.05, 0)
+local AIR_HOLD_TIME = 0.4
+
+local function holdInAir(slot: number, airHold: boolean?)
+	local character, _, root = getCharacter()
+	if not character or not root or not airHold then
+		return
+	end
+	if not CombatState.CanAct(character) or CombatState.IsCasting(character) then
+		return
+	end
+	if CombatState.Cooldown(character, slot) > 0.1 then
+		return
+	end
+	Impulse.Apply(root, AIR_HOLD, AIR_HOLD_TIME, "Knockback")
 end
 
 local function tryM1()
@@ -118,16 +154,18 @@ local function tryM1()
 	lastM1 = t
 
 	local index = predictedCombo
-	local jump = jumpHeld(humanoid)
+	local inAir = humanoid.FloorMaterial == Enum.Material.Air
+	-- Jump only means uppercut on the ground; in the air it's the downslam.
+	local jump = not inAir and jumpHeld(humanoid)
 	local variant = "Normal"
 	if index >= Config.M1.ComboLength then
 		predictedCombo = 0
 		nextM1 = t + Config.M1.EndLag
 		noJumpUntil = t + Config.M1.FinisherBusy
-		if jump then
-			variant = "Uppercut"
-		elseif humanoid.FloorMaterial == Enum.Material.Air then
+		if inAir then
 			variant = "Downslam"
+		elseif jump then
+			variant = "Uppercut"
 		else
 			variant = "Knockback"
 		end
@@ -136,7 +174,7 @@ local function tryM1()
 		noJumpUntil = t + Config.M1.Busy
 	end
 
-	Remotes.Action:FireServer("M1", { jump = jump, airborne = humanoid.FloorMaterial == Enum.Material.Air })
+	Remotes.Action:FireServer("M1", { jump = jump, airborne = inAir })
 	Moves.PlayM1(character, index, variant)
 
 	-- Step into the swing a little so strings stay connected.
@@ -314,7 +352,12 @@ function Input.Start()
 		local action = "CloverSkill" .. slot
 		ContextActionService:BindAction(action, function(_, state)
 			if state == Enum.UserInputState.Begin and getCharacter() then
-				Remotes.Action:FireServer("Skill", slot, { airborne = airborne() })
+				local inAir = airborne()
+				if inAir then
+					local info = Kits.SkillsOf(localPlayer.Character :: Model)[slot]
+					holdInAir(slot, info and info.airHold)
+				end
+				Remotes.Action:FireServer("Skill", slot, { airborne = inAir })
 			end
 			return Enum.ContextActionResult.Sink
 		end, true, key)
@@ -322,7 +365,12 @@ function Input.Start()
 	end
 	ContextActionService:BindAction("CloverSpecial", function(_, state)
 		if state == Enum.UserInputState.Begin and getCharacter() then
-			Remotes.Action:FireServer("Special", { airborne = airborne() })
+			local inAir = airborne()
+			if inAir then
+				local kit = Kits.Of(localPlayer.Character :: Model)
+				holdInAir(CombatState.SpecialSlot, kit and kit.special and kit.special.airHold)
+			end
+			Remotes.Action:FireServer("Special", { airborne = inAir })
 		end
 		return Enum.ContextActionResult.Sink
 	end, true, Enum.KeyCode.R, Enum.KeyCode.ButtonY)
@@ -351,6 +399,15 @@ function Input.Start()
 				jumpEnabled = canJump
 				humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, canJump)
 			end
+			-- The server gives the jump back a ping late after a move ends;
+			-- don't eat a jump pressed in between.
+			if
+				canJump
+				and humanoid.JumpHeight < Config.Movement.JumpHeight
+				and character:GetAttribute("Rooted") ~= true
+			then
+				humanoid.JumpHeight = Config.Movement.JumpHeight
+			end
 		end
 
 		-- Holding F through a swing or stun: block as soon as it's allowed.
@@ -368,9 +425,31 @@ function Input.Start()
 			return
 		end
 		local mover = Impulse.Apply(root, velocity, math.clamp(duration, 0, 1), "Knockback")
+		-- Dives (air Bull Thrust, air Meteorite, Plunge): once we touch down,
+		-- stop pushing into the floor and carry on as a skid.
+		if type(options) == "table" and options.landStop == true and velocity.Y < 0 then
+			local connection
+			connection = RunService.Heartbeat:Connect(function()
+				if not mover.Parent or not root.Parent then
+					connection:Disconnect()
+					return
+				end
+				if humanoid.FloorMaterial ~= Enum.Material.Air then
+					connection:Disconnect()
+					local v = mover.VectorVelocity
+					local keep = if type(options.landKeep) == "number" then options.landKeep else 1
+					mover.VectorVelocity = Vector3.new(v.X, 0, v.Z) * keep
+					mover.MaxAxesForce = Vector3.new(1e6, 0, 1e6)
+				end
+			end)
+		end
 		if type(options) == "table" and type(options.steer) == "number" then
 			steerImpulse(mover, character, humanoid, root, options.steer)
 		end
+	end)
+
+	UserInputService.JumpRequest:Connect(function()
+		lastJumpRequest = os.clock()
 	end)
 
 	localPlayer.CharacterAdded:Connect(onCharacterAdded)

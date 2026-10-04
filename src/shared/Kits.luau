@@ -14,6 +14,9 @@ export type SkillInfo = {
 	name: string,
 	cooldown: number,
 	type: string,
+	-- Has an air version that holds the player up: the client keeps them in
+	-- the air from the moment of the press (see Input.holdInAir).
+	airHold: boolean?,
 }
 
 export type KitInfo = {
@@ -77,17 +80,17 @@ Kits.List = {
 		-- Close-range rushdown, built like Vessel (JJS) / Hero Hunter (TSB):
 		-- rush combo, grab, timing-crit heavy, counter.
 		skills = {
-			{ name = "Bull Thrust", cooldown = 8, type = "Melee" },
-			{ name = "Black Meteorite", cooldown = 13, type = "Melee" },
-			{ name = "Black Divider", cooldown = 11, type = "Melee" },
-			{ name = "Anti-Magic Deflect", cooldown = 14, type = "Counter" },
+			{ name = "Bull Thrust", cooldown = 8, type = "Melee", airHold = true },
+			{ name = "Black Meteorite", cooldown = 13, type = "Melee", airHold = true },
+			{ name = "Black Divider", cooldown = 11, type = "Melee", airHold = true },
+			{ name = "Anti-Magic Deflect", cooldown = 14, type = "Counter", airHold = true },
 		},
 		-- Leap off a blast of anti-magic; R again in the air to plunge.
-		special = { name = "Anti-Magic Leap", cooldown = 10, type = "Melee" },
+		special = { name = "Anti-Magic Leap", cooldown = 10, type = "Melee", airHold = true },
 		awakenedSkills = {
-			{ name = "Black Hurricane", cooldown = 9, type = "Melee" },
-			{ name = "Black Slash", cooldown = 7, type = "Bolt" },
-			{ name = "Grand Divider", cooldown = 13, type = "Explosion" },
+			{ name = "Black Hurricane", cooldown = 9, type = "Melee", airHold = true },
+			{ name = "Black Slash", cooldown = 7, type = "Bolt", airHold = true },
+			{ name = "Grand Divider", cooldown = 13, type = "Explosion", airHold = true },
 			{ name = "Black Moon", cooldown = 25, type = "Melee" },
 		},
 		awakening = {

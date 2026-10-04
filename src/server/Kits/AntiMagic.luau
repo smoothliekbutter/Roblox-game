@@ -248,8 +248,13 @@ end
 -- Charges forward for `duration`, returning the first character caught.
 -- With `steer` (degrees per second) the player can curve it as it goes; the
 -- hitbox follows their root, so it catches whatever they curve into.
+-- A downward lunge (an air version) skids along the ground once it lands
+-- instead of pushing into it (the player's client handles that: landStop).
 local function lunge(ctx, velocity: Vector3, duration: number, reach: Vector3, steer: number?): Model?
-	ctx.combat.ApplyVelocity(ctx.character, velocity, duration, if steer then { steer = steer } else nil)
+	local options = if steer or velocity.Y < 0
+		then { steer = steer, landStop = velocity.Y < 0, landKeep = 0.7 }
+		else nil
+	ctx.combat.ApplyVelocity(ctx.character, velocity, duration, options)
 	local start = os.clock()
 	while os.clock() - start < duration + 0.05 do
 		if interrupted(ctx) then
@@ -263,6 +268,19 @@ local function lunge(ctx, velocity: Vector3, duration: number, reach: Vector3, s
 		task.wait()
 	end
 	return nil
+end
+
+-- The server sees a player's own movement about a ping late: wait (with a
+-- limit) until it has seen them leave the ground before treating "not
+-- airborne" as having landed.
+local function waitForTakeoff(ctx, timeout: number)
+	local start = os.clock()
+	while not ctx.combat.IsAirborne(ctx.character) and os.clock() - start < timeout do
+		if interrupted(ctx) then
+			return
+		end
+		task.wait()
+	end
 end
 
 local function waitForGround(ctx, timeout: number)
@@ -351,10 +369,7 @@ local function bullThrust(ctx)
 	fx(ctx, "BullThrust", "Propel", { airborne = airborne, direction = direction, duration = PROPEL_TIME })
 	local target = lunge(ctx, direction * PROPEL_SPEED, PROPEL_TIME, Vector3.new(6, 6, 7), PROPEL_STEER)
 	if not target then
-		if airborne then
-			waitForGround(ctx, 0.5)
-			fx(ctx, "BullThrust", "Land", { position = groundBelow(ctx) })
-		end
+		-- (The air version's touchdown is drawn by the clients as it happens.)
 		fx(ctx, "BullThrust", "Whiff")
 		-- Whiffing it leaves him open.
 		CombatState.SetCasting(character, 0.45)
@@ -432,7 +447,7 @@ local function lungeGrab(
 ): (Model?, (() -> ())?, ((CFrame) -> ())?)
 	local c, character = ctx.combat, ctx.character
 	CombatState.SetCasting(character, 0.55)
-	fx(ctx, skill, "Lunge")
+	fx(ctx, skill, "Lunge", { airborne = ctx.airborne })
 	local target = lunge(ctx, velocity or look(ctx) * 72, 0.3, Vector3.new(5.5, 6.5, 6))
 	if not target then
 		CombatState.SetCasting(character, 0.5)
@@ -467,10 +482,11 @@ local function blackMeteorite(ctx)
 	end
 	forward = look(ctx)
 
-	-- The seize: he plants (or hangs in the air) and hoists them up.
+	-- The seize: he plants and hoists them up. In the air he rises a little
+	-- with them, so the spike has somewhere to fall from.
 	fx(ctx, "BlackMeteorite", "Seize", { target = target, airborne = airborne })
 	local seize = if airborne then 0.3 else SEIZE_TIME
-	c.ApplyVelocity(character, if airborne then HOVER else Vector3.zero, seize)
+	c.ApplyVelocity(character, if airborne then UP * 10 else Vector3.zero, seize)
 	task.wait(SURGE_AT)
 	if interrupted(ctx) then
 		release()
@@ -491,9 +507,18 @@ local function blackMeteorite(ctx)
 	end
 
 	hold(HOLD_SLAM)
-	fx(ctx, "BlackMeteorite", "Slam", { target = target })
-	c.ApplyVelocity(character, UP * -125 + forward * 8, 0.4)
+	fx(ctx, "BlackMeteorite", "Slam", { target = target, airborne = airborne })
+	c.ApplyVelocity(character, UP * -125 + forward * 8, 0.4, { landStop = true, landKeep = 0 })
+	local slamStart = os.clock()
+	waitForTakeoff(ctx, 0.3)
 	waitForGround(ctx, 0.6)
+	-- A short drop lands a frame after the Slam: let the swing reach its
+	-- strike (0.12s into MeteorSlam) before the crater replaces it.
+	local early = 0.13 - (os.clock() - slamStart)
+	if early > 0 then
+		task.wait(early)
+	end
+	c.ApplyVelocity(character, Vector3.zero, 0.05)
 	release()
 
 	-- The client draws its own (much bigger) crater for this one.
@@ -651,27 +676,31 @@ end
 -- Black Form moves
 ---------------------------------------------------------------------------
 
+-- Black Hurricane. In the air he drills down on them, spinning.
 local function blackHurricane(ctx)
 	local c, character = ctx.combat, ctx.character
 	local forward = look(ctx)
+	local airborne = ctx.airborne
+	local push = if airborne then forward * 40 + UP * -35 else forward * 55
 	CombatState.SetCasting(character, 1.15)
-	fx(ctx, "BlackHurricane", "Spin", { duration = 0.9 })
-	c.ApplyVelocity(character, forward * 55, 0.9)
+	fx(ctx, "BlackHurricane", "Spin", { duration = 0.9, airborne = airborne })
+	c.ApplyVelocity(character, push, 0.9, if airborne then { landStop = true, landKeep = 0.8 } else nil)
 
 	local caught: { [Model]: boolean } = {}
 	for _ = 1, 9 do
 		task.wait(0.1)
 		if interrupted(ctx) then
+			fx(ctx, "BlackHurricane", "Stop")
 			return
 		end
 		for _, victim in c.Sphere(character, ctx.root.Position, 7) do
-			-- Dragged along at the same speed as the spin.
+			-- Dragged along with the spin.
 			if
 				c.Hit(character, victim, {
 					damage = 1,
 					stun = 0.6,
 					attackType = "Melee",
-					velocity = forward * 55 + UP * 2,
+					velocity = Vector3.new(push.X, math.max(push.Y, 0), push.Z) + UP * 2,
 					velocityTime = 0.12,
 				}) == "Hit"
 			then
@@ -680,7 +709,7 @@ local function blackHurricane(ctx)
 		end
 	end
 
-	fx(ctx, "BlackHurricane", "Finish")
+	fx(ctx, "BlackHurricane", "Finish", { airborne = airborne })
 	for victim in caught do
 		if CombatState.IsAlive(victim) then
 			c.Hit(character, victim, {
@@ -689,29 +718,56 @@ local function blackHurricane(ctx)
 				attackType = "Melee",
 				heavy = true,
 				ragdoll = 1.4,
-				velocity = forward * 45 + UP * 45,
+				-- In the air they're driven into the ground instead of thrown up.
+				velocity = if airborne then forward * 30 + UP * -60 else forward * 45 + UP * 45,
 			})
 		end
 	end
 	CombatState.SetCasting(character, 0.3)
 end
 
+-- How far a wave can fly along `direction` before it hits the ground (a wave
+-- thrown down out of the air stops there instead of tunnelling on).
+local function waveRange(ctx, origin: Vector3, direction: Vector3, maxRange: number): number
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { ctx.character }
+	local hit = workspace:Raycast(origin, direction * maxRange, params)
+	return if hit then math.max((hit.Position - origin).Magnitude + 2, 8) else maxRange
+end
+
+-- Black Slash. In the air he hangs for the throw and hurls it down ahead.
 local function blackSlashMove(ctx)
-	local character = ctx.character
+	local c, character = ctx.combat, ctx.character
+	local airborne = ctx.airborne
 	CombatState.SetCasting(character, 0.5)
-	fx(ctx, "BlackSlash", "Windup")
+	if airborne then
+		c.ApplyVelocity(character, HOVER, 0.4)
+	end
+	fx(ctx, "BlackSlash", "Windup", { airborne = airborne })
 	task.wait(0.22)
 	if interrupted(ctx) then
 		return
 	end
 	local forward = look(ctx)
-	blackSlash(ctx, ctx.root.Position + forward * 2 + UP * 0.5, forward, { damage = 9 })
+	local direction = if airborne then (forward + UP * -0.45).Unit else forward
+	local origin = ctx.root.Position + direction * 2 + UP * 0.5
+	blackSlash(ctx, origin, direction, {
+		damage = 9,
+		range = if airborne then waveRange(ctx, origin, direction, 90) else nil,
+	})
 end
 
+-- Grand Divider. In the air he hangs while it charges, then brings it down
+-- on whatever is below and in front, and the wave is driven into the ground.
 local function grandDivider(ctx)
 	local c, character = ctx.combat, ctx.character
+	local airborne = ctx.airborne
 	CombatState.SetCasting(character, 1.3)
-	fx(ctx, "GrandDivider", "Charge")
+	if airborne then
+		c.ApplyVelocity(character, HOVER, 0.75)
+	end
+	fx(ctx, "GrandDivider", "Charge", { airborne = airborne })
 	task.wait(0.7)
 	if interrupted(ctx) then
 		fx(ctx, "GrandDivider", "Cancel")
@@ -719,9 +775,11 @@ local function grandDivider(ctx)
 	end
 
 	local forward = look(ctx)
-	fx(ctx, "GrandDivider", "Release")
+	fx(ctx, "GrandDivider", "Release", { airborne = airborne })
 	local struck: { [Model]: boolean } = {}
-	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -5), Vector3.new(12, 9, 10)) do
+	local box = if airborne then ctx.root.CFrame * CFrame.new(0, -3, -4) else ctx.root.CFrame * CFrame.new(0, 0, -5)
+	local size = if airborne then Vector3.new(14, 12, 12) else Vector3.new(12, 9, 10)
+	for _, victim in c.Box(character, box, size) do
 		struck[victim] = true
 		c.Hit(character, victim, {
 			damage = 10,
@@ -730,17 +788,22 @@ local function grandDivider(ctx)
 			guardBreak = true,
 			heavy = true,
 			ragdoll = 1.6,
-			velocity = forward * 70 + UP * 25,
+			velocity = if airborne then forward * 20 + UP * -95 else forward * 70 + UP * 25,
 		})
 	end
-	blackSlash(ctx, ctx.root.Position + forward * 4 + UP * 1, forward, {
+	local direction = if airborne then (forward + UP * -0.6).Unit else forward
+	local origin = ctx.root.Position + direction * 4 + UP * 1
+	blackSlash(ctx, origin, direction, {
 		damage = 9,
 		size = Vector3.new(18, 8, 3),
 		speed = 95,
-		range = 55,
+		range = if airborne then waveRange(ctx, origin, direction, 55) else 55,
 		grand = true,
 		skip = struck,
 	})
+	if airborne then
+		c.ApplyVelocity(character, UP * 22 + forward * 6, 0.12)
+	end
 	c.ShakeArea(ctx.root.Position, 70, 0.7)
 	task.wait(0.3)
 	CombatState.SetCasting(character, 0.3)
@@ -853,7 +916,8 @@ local function plunge(ctx)
 		return
 	end
 	fx(ctx, "Special", "Dive")
-	c.ApplyVelocity(character, look(ctx) * 40 + UP * -140, 1, { steer = 140 })
+	c.ApplyVelocity(character, look(ctx) * 40 + UP * -140, 1, { steer = 140, landStop = true, landKeep = 0 })
+	waitForTakeoff(ctx, 0.5)
 	waitForGround(ctx, 1)
 	if interrupted(ctx) or c.IsAirborne(character) then
 		CombatState.SetCasting(character, 0.2)
@@ -880,28 +944,38 @@ local function plunge(ctx)
 end
 
 -- Anti-Magic Leap: blasts off the ground toward where he's heading
--- (steerable). Press R again in the air to turn it into the plunge.
+-- (steerable). Press R again in the air to turn it into the plunge. Stops
+-- listening as soon as another move starts or he's back on the ground.
 local function leap(ctx)
 	local c, character = ctx.combat, ctx.character
+	local token = c.MoveToken(character)
 	local start = os.clock()
 	CombatState.SetCasting(character, 0.25)
 	fx(ctx, "Special", "Leap")
 	c.ApplyVelocity(character, look(ctx) * 60 + UP * 62, LEAP_TIME, { steer = 200 })
 	task.wait(0.15)
+	local since = start + 0.1
+	local seenAir = false
 	while os.clock() - start < 1.6 do
-		if interrupted(ctx) then
+		if interrupted(ctx) or c.MoveToken(character) ~= token then
 			return
 		end
-		if c.PressedSince(character, SPECIAL, start + 0.1) then
-			-- Early in the leap he's certainly airborne, even if the server
-			-- (a ping behind) still sees him near the ground.
-			if os.clock() - start < 0.6 or c.IsAirborne(character) then
+		local up = c.IsAirborne(character)
+		seenAir = seenAir or up
+		if c.PressedSince(character, SPECIAL, since) then
+			-- The press says whether he was in the air (his own client knows).
+			if c.PressedAirborne(character, SPECIAL) then
 				plunge(ctx)
+				return
 			end
+			since = os.clock()
+		end
+		-- Landed, once the server (a ping behind) has seen him go up.
+		if seenAir and not up then
 			return
 		end
-		if os.clock() - start > 0.35 and not c.IsAirborne(character) then
-			return -- landed without plunging
+		if not seenAir and os.clock() - start > 1 then
+			return
 		end
 		task.wait()
 	end
