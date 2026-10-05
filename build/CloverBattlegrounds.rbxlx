@@ -24061,6 +24061,41 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 	outline(character, WIND_WHITE, times.Length)
 	outline(target, STAR, times.Land)
 
+	-- For whoever's watching close up: a bloom so the wind and starlight
+	-- glow, and (for the two of them) depth of field on him.
+	local bloom: BloomEffect? = nil
+	local depth: DepthOfFieldEffect? = nil
+	if mine or near then
+		local effect = Instance.new("BloomEffect")
+		effect.Intensity = 0
+		effect.Size = 28
+		effect.Threshold = 0.9
+		effect.Parent = workspace.CurrentCamera
+		U.tween(effect, 0.4, { Intensity = 0.55 })
+		bloom = effect
+	end
+	if mine then
+		local effect = Instance.new("DepthOfFieldEffect")
+		effect.FarIntensity = 0.3
+		effect.NearIntensity = 0.1
+		effect.InFocusRadius = 14
+		effect.FocusDistance = 20
+		effect.Parent = workspace.CurrentCamera
+		depth = effect
+	end
+	task.delay(times.Length + 0.2, function()
+		for _, effect in { bloom, depth } :: { PostEffect? } do
+			if effect then
+				U.tween(
+					effect,
+					0.4,
+					if effect:IsA("BloomEffect") then { Intensity = 0 } else { FarIntensity = 0, NearIntensity = 0 }
+				)
+				task.delay(0.45, effect.Destroy, effect)
+			end
+		end
+	end)
+
 	-- The star that binds them, two rings of starlight turning round them,
 	-- and soft wind swirling round them while they hang there.
 	local seal = softStar(3)
@@ -24233,7 +24268,18 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 		U.shockwave(plan.center, WIND, 2, SaintPlan.Ring * 2.4, 0.5)
 		U.light(plan.center, STAR, 6, 70, times.Burst - times.Lift)
 		for i, at in plan.stars do
-			task.delay(i * 0.025 + 0.15, U.glint, at, 1.5, STAR_WHITE)
+			task.delay(i * 0.025 + 0.15, function()
+				U.glint(at, 1.5, STAR_WHITE)
+				-- Starlight pours from each star into them.
+				local from, into = worldAnchor(at), worldAnchor(plan.center)
+				local ray = softBeam(from, into, {
+					color = ColorSequence.new(STAR_WHITE, STAR),
+					width0 = 0.9,
+					width1 = 0.15,
+					transparency = NumberSequence.new({ key(0, 0.3), key(1, 0.8) }),
+				})
+				fadeBeams({ ray }, 0.4, { from, into })
+			end)
 		end
 	end)
 
@@ -24327,6 +24373,47 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 		end)
 		task.delay(times.Strike - times.Rise + 1, gather.Destroy, gather)
 		U.light(plan.top, STAR, 6, 60, times.Strike - times.Rise + 0.2)
+		-- The heavens open over him: a shaft of wind up into the sky.
+		local low, high = worldAnchor(plan.top, UP), worldAnchor(plan.top + UP * 220, UP)
+		local shaft = {
+			softBeam(low, high, {
+				color = ColorSequence.new(WIND_WHITE, WIND),
+				width0 = 7,
+				width1 = 20,
+				transparency = NumberSequence.new({ key(0, 0.6), key(1, 1) }),
+				texture = SMOKE,
+				speed = 5,
+				length = 30,
+			}),
+			softBeam(low, high, {
+				color = ColorSequence.new(STAR_WHITE),
+				width0 = 1.2,
+				width1 = 3,
+				transparency = NumberSequence.new({ key(0, 0.3), key(1, 1) }),
+			}),
+		}
+		task.delay(times.Strike - times.Rise, fadeBeams, shaft, 0.3, { low, high })
+		-- Sylph circles him, then dives into the blade.
+		local sylph = makeSprite(1.4)
+		local into = times.Strike - 0.18
+		every(into - (times.Rise - 0.1) + 0.1, function(elapsed)
+			local t = elapsed + (times.Rise - 0.1)
+			local head = root.Position + UP * 2.5
+			if t < into then
+				local angle = elapsed * 7
+				local at = head + Vector3.new(math.cos(angle) * 3.5, math.sin(elapsed * 5) * 1.2, math.sin(angle) * 3.5)
+				sylph.place(CFrame.lookAt(at, at + Vector3.new(-math.sin(angle), 0, math.cos(angle))), elapsed)
+			else
+				local a = math.clamp((t - into) / 0.1, 0, 1)
+				local tipAt = head + UP * SAINT_BLADE
+				sylph.place(CFrame.new(head:Lerp(tipAt, a)), elapsed)
+			end
+			return true
+		end, function()
+			sylph.fade(0.1)
+			U.flash(root.Position + UP * (SAINT_BLADE + 2.5), STAR_WHITE, 6, 0.2)
+			windPuff(root.Position + UP * (SAINT_BLADE + 2.5), 4)
+		end)
 		if mine then
 			CameraShake.Add(0.15)
 		end
@@ -24354,6 +24441,15 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 			spread = 180,
 		})
 		U.light(plan.center, STAR_WHITE, 8, 90, 0.45)
+		-- Hit-stop: both of them frozen for a beat.
+		PoseAnimator.Freeze(character, 0.12)
+		if target then
+			PoseAnimator.Freeze(target, 0.12)
+		end
+		if bloom then
+			bloom.Intensity = 1.4
+			U.tween(bloom, 0.5, { Intensity = 0.55 })
+		end
 		if mine or near then
 			-- An impact frame: a flash of stark black and white.
 			U.colorGrade({ Brightness = 0.25, Contrast = 0.85, Saturation = -1 }, 0, 0.07, 0.22)
@@ -24439,52 +24535,219 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 	end)
 	task.delay(times.Length + 0.3, finish)
 
-	-- The camera keeps him in shot: over his shoulder as the star strikes;
-	-- from the ground as the column carries them both up; wide as the
-	-- constellation opens; round and round them through the cuts (he's at
-	-- the stars, never far out of frame); in front for the X; from below up
-	-- at him and the blade; wide across the strike; side-on as they fall
-	-- with him already down on the ground; then low beyond the crater,
-	-- looking back at him.
+	-- The camera: every shot moving, with a little handheld sway, a tilt
+	-- where it hurts and quick whips between some of them, and him always in
+	-- shot. Pushing in over his shoulder as the star strikes; craning up the
+	-- column with them; pulling back as the constellation opens; orbiting
+	-- them, banked, through the first cuts; then riding his shoulder from
+	-- star to star; the X head-on; circling slowly in from below at him and
+	-- the blade; whipping out wide for the strike; falling with them; and
+	-- round the crater to his face, his back to it.
 	if mine then
-		Cinematic.Camera(function(t)
-			local victim = SaintPlan.Victim(plan, math.min(t, times.Land)).Position
-			if t < 0.25 then
-				local eye = plan.origin.Position - forward * 7 + right * 3 + UP * 3
-				return CFrame.lookAt(eye, plan.start + UP), 70
-			elseif t < times.Lift + 0.15 then
-				local eye = plan.start + forward * 12 + right * 9 + UP * 1.5
-				return CFrame.lookAt(eye, victim:Lerp(SaintPlan.Attacker(plan, t).Position, 0.4)), 80
-			elseif t < times.Cuts[1] then
-				local eye = plan.center - forward * 30 + right * 12 + UP * 6
-				return CFrame.lookAt(eye, plan.center), 72
-			elseif t < times.Cross - 0.1 then
-				local u = t - times.Cuts[1]
-				local angle = 1 + u * 1.6 + u * u * 1.4
-				local radius = 26 - u * 4
-				local eye = plan.center
-					+ (forward * math.cos(angle) + right * math.sin(angle)) * radius
-					+ UP * (4 + math.sin(u * 3) * 2)
-				return CFrame.lookAt(eye, plan.center), 78 + u * 6
-			elseif t < times.Rise - 0.1 then
-				local eye = plan.center - forward * 13 + right * 3 + UP
-				return CFrame.lookAt(eye, plan.center), 72
-			elseif t < times.Strike - 0.05 then
-				local u = (t - (times.Rise - 0.1)) / (times.Strike - times.Rise + 0.05)
-				local eye = (plan.center - UP * 9 + right * 12 - forward * 5):Lerp(plan.center - UP * 6 + right * 9, u)
-				return CFrame.lookAt(eye, plan.top), 66
-			elseif t < times.Burst + 0.05 then
-				local eye = plan.center + right * 48 + UP * 2
-				return CFrame.lookAt(eye, plan.center - UP * 8), 74
-			elseif t < times.Land + 0.1 then
-				local between = victim:Lerp(plan.ground, 0.5)
-				local eye = between + right * 30 - forward * 4 + UP * 2
-				return CFrame.lookAt(eye, between), 78
+		local cuts = times.Cuts
+		local origin, center, start, ground, top = plan.origin.Position, plan.center, plan.start, plan.ground, plan.top
+		local function ease(u: number): number
+			u = math.clamp(u, 0, 1)
+			return u * u * (3 - 2 * u)
+		end
+		local function easeOut(u: number): number
+			return 1 - (1 - math.clamp(u, 0, 1)) ^ 3
+		end
+		local function him(t: number): Vector3
+			return SaintPlan.Attacker(plan, t).Position
+		end
+		local function them(t: number): Vector3
+			return SaintPlan.Victim(plan, math.min(t, times.Land)).Position
+		end
+		local function cutIndex(t: number): number
+			local index = 1
+			for i, at in cuts do
+				if t >= at - SaintPlan.Appear then
+					index = i
+				end
 			end
-			local u = t - times.Land
-			local angle = u * 0.25
-			local eye = plan.start + (forward * math.cos(angle) + right * math.sin(angle)) * 15 + right * 3 + UP * 2.5
-			return CFrame.lookAt(eye, plan.ground + UP * 1.5), 70
+			return index
+		end
+		-- Just behind him where he appears at star i, looking at them.
+		local function behindStar(i: number): Vector3
+			local star = plan.stars[i]
+			local out = (star - center).Unit
+			local side = out:Cross(UP)
+			side = if side.Magnitude > 1e-3 then side.Unit else right
+			return star + out * 7 + UP * 2.5 + side * 1.8
+		end
+		type Shot = {
+			from: number,
+			to: number,
+			blend: number, -- whip in from the last shot over this long (0: a cut)
+			-- eye, focus, roll (degrees), field of view, handheld sway (degrees)
+			get: (number, number) -> (Vector3, Vector3, number, number, number),
+		}
+		local shots: { Shot } = {
+			{
+				from = 0,
+				to = 0.3,
+				blend = 0,
+				get = function(u, t)
+					local e = ease(u)
+					local eye = (origin - forward * 6 + right * 2.5 + UP * 2.8):Lerp(
+						origin - forward * 3 + right * 1.8 + UP * 2.2,
+						e
+					)
+					return eye, them(t) + UP * 0.5, -4 * e, 72 - 10 * e, 0.3
+				end,
+			},
+			{
+				from = 0.3,
+				to = times.Lift + 0.15,
+				blend = 0.08,
+				get = function(u, t)
+					local e = ease(u)
+					local victim = them(t)
+					local angle = rad(-20 + 70 * e)
+					local around = forward * math.sin(angle) + right * math.cos(angle)
+					local eye = Vector3.new(start.X, start.Y + 1.5 + (victim.Y - start.Y) * 0.8, start.Z) + around * 12
+					return eye, victim:Lerp(him(t), 0.35) + UP, 6, 84 - 8 * e, 0.4
+				end,
+			},
+			{
+				from = times.Lift + 0.15,
+				to = cuts[1],
+				blend = 0,
+				get = function(u, _)
+					local e = easeOut(u)
+					local eye = (center - forward * 8 + right * 3 + UP):Lerp(
+						center - forward * 34 + right * 14 + UP * 9,
+						e
+					)
+					return eye, center, -3 + 3 * e, 60 + 20 * e, 0.2
+				end,
+			},
+			{
+				from = cuts[1],
+				to = 2.3,
+				blend = 0.06,
+				get = function(u, t)
+					local angle = 0.6 + u * u * rad(260) + u * rad(40)
+					local eye = center
+						+ (forward * math.cos(angle) + right * math.sin(angle)) * (24 - 6 * u)
+						+ UP * (3 + math.sin(t * 4) * 2)
+					return eye, center:Lerp(him(t), 0.3), -8, 78 + 6 * u, 0.5
+				end,
+			},
+			{
+				from = 2.3,
+				to = times.Cross - 0.1,
+				blend = 0,
+				get = function(u, t)
+					local i = cutIndex(t)
+					local spot = behindStar(i)
+					if i > 1 then
+						spot = behindStar(i - 1):Lerp(spot, easeOut((t - (cuts[i] - SaintPlan.Appear)) / 0.07))
+					end
+					return spot, center, if i % 2 == 0 then 6 else -6, 72 + 18 * u, 0.8
+				end,
+			},
+			{
+				from = times.Cross - 0.1,
+				to = times.Rise - 0.1,
+				blend = 0,
+				get = function(u, _)
+					local e = ease(u)
+					return (center - forward * 12 + UP * 0.5):Lerp(center - forward * 9 + UP * 0.5, e),
+						center,
+						8 * e,
+						66 - 8 * e,
+						0.4
+				end,
+			},
+			{
+				from = times.Rise - 0.1,
+				to = times.Strike - 0.08,
+				blend = 0.1,
+				get = function(u, _)
+					local e = ease(u)
+					local angle = rad(-30 + 60 * e)
+					local around = right * math.cos(angle) - forward * math.sin(angle)
+					local eye = center - UP * (10 - 3 * e) + around * (13 - 4 * e)
+					return eye, top + UP * 4, -10 + 6 * e, 70 - 18 * e, 0.3
+				end,
+			},
+			{
+				from = times.Strike - 0.08,
+				to = times.Burst + 0.05,
+				blend = 0.08,
+				get = function(u, _)
+					return center + right * (48 + 6 * u) + UP * (2 + u),
+						center - UP * 8,
+						0,
+						72 + 8 * u,
+						1.2 * (1 - u) + 0.2
+				end,
+			},
+			{
+				from = times.Burst + 0.05,
+				to = times.Land + 0.1,
+				blend = 0.06,
+				get = function(_, t)
+					local victim = them(t)
+					return victim + right * 16 + UP * 10 - forward * 6, victim:Lerp(ground, 0.4), 10, 82, 1
+				end,
+			},
+			{
+				from = times.Land + 0.1,
+				to = times.Length + 0.3,
+				blend = 0.1,
+				get = function(u, _)
+					local e = ease(u)
+					local angle = rad(160 * e)
+					local around = forward * math.cos(angle) + right * math.sin(angle)
+					return ground + around * (20 - 12 * e) + UP * (2 - 0.4 * e),
+						ground + UP * (1.5 + 0.3 * e),
+						0,
+						70 - 12 * e,
+						0.2
+				end,
+			},
+		}
+		local current = 0
+		local last: CFrame? = nil
+		local lastFov = 70
+		local whipFrom: CFrame? = nil
+		local whipFov = 70
+		Cinematic.Camera(function(t)
+			local index = #shots
+			for i, shot in shots do
+				if t < shot.to then
+					index = i
+					break
+				end
+			end
+			local shot = shots[index]
+			if index ~= current then
+				current = index
+				whipFrom, whipFov = last, lastFov
+			end
+			local u = math.clamp((t - shot.from) / math.max(shot.to - shot.from, 1e-3), 0, 1)
+			local eye, focus, roll, fov, sway = shot.get(u, t)
+			local a = rad(sway)
+			local cframe = CFrame.lookAt(eye, focus)
+				* CFrame.Angles(
+					math.sin(t * 13.7) * a * 0.6,
+					math.sin(t * 9.1 + 1.3) * a,
+					math.sin(t * 6.3 + 2.1) * a * 0.5
+				)
+				* CFrame.Angles(0, 0, rad(roll))
+			if shot.blend > 0 and whipFrom and t - shot.from < shot.blend then
+				local b = easeOut((t - shot.from) / shot.blend)
+				cframe = whipFrom:Lerp(cframe, b)
+				fov = whipFov + (fov - whipFov) * b
+			end
+			last, lastFov = cframe, fov
+			if depth then
+				depth.FocusDistance = (cframe.Position - him(t)).Magnitude
+			end
+			return cframe, fov
 		end, times.Length + 0.3)
 	end
 end
