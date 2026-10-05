@@ -42,7 +42,7 @@ With live sync, every code change shows up in Studio instantly, without re-downl
 | **1 2 3 4** | Character skills. Most have an air version: use them mid-jump. |
 | **R** | Character special (each character has their own). Its cooldown is the small gold bar under your health, beside the cyan Evasive bar: bright when it's ready |
 | **G** | Awaken when the red meter is full. It fills as you fight: about 90 damage dealt. |
-| **Q** + WASD | Dash. Front and back dashes share a 2s cooldown. Side dashes (A / D) are a smaller, quicker hop, about 10 studs to the front dash's 19, on their own 1.5s cooldown, so you can side-dash right after a front dash. Every front and side dash ends in an M1. A front dash that reaches someone stops and swings at them, and clicking mid-dash cuts it short into the swing. Back dashes don't swing, so you can still get away |
+| **Q** + WASD | Dash. Front and back dashes share a 2s cooldown. Side dashes (A / D) are a smaller, quicker hop, about 10 studs to the front dash's 19, on their own 1.5s cooldown, so you can side-dash right after a front dash. Every front dash ends in an M1. If it reaches someone it stops and swings at them, clicking mid-dash cuts it short into the swing, and otherwise it swings at the end. Side and back dashes don't swing |
 | Hold **F** | Block. Only works facing the attacker. |
 | Tap **F** right before a hit | Perfect block: stuns the attacker |
 | **Q** while stunned or ragdolled | Evasive breakout (needs a full cyan bar) |
