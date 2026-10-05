@@ -1513,6 +1513,10 @@ function handlers.BullThrust(data, character, root)
 		bump(character)
 		play(character, ANIMS.PlungeImpact)
 		bullSlam(data, character)
+		if data.stuck then
+			-- It hit nobody: the sword sticks in the ground a moment (end lag).
+			task.delay(0.05, PoseAnimator.Freeze, character, data.stuck)
+		end
 	elseif phase == "Interrupted" then
 		-- Cut short (he got hit, or they broke out): no more swings.
 		bump(character)

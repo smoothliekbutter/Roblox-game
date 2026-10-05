@@ -4023,11 +4023,18 @@ local COMBO = {
 local THRUST_PUSH = 17
 local MAX_PULL = 30 -- fastest (studs per second) they're eased back in front of him
 
--- The air version, when the dive catches no one: he drives the sword into
--- the ground where he lands and the blast breaks guards all around him.
+-- The air version (the dive) is for real height only: during Anti-Magic
+-- Leap (R), or from well above the floor. A plain jump does the ground
+-- version. The dive breaks guards; when it catches no one, he drives the
+-- sword into the ground where he lands and the blast breaks guards all
+-- around him, and if that hits nobody either the sword sticks (end lag).
+local DIVE_HEIGHT = 9 -- root to floor; a jump peaks at about 7.5 (3 + Config JumpHeight)
+local DIVE_AFTER_LEAP = 2.5 -- the leap (R) allows it this long, until he lands
+local leapedAt: { [Model]: number } = setmetatable({}, { __mode = "k" }) :: any
 local SLAM_RADIUS = 11
 local SLAM_DAMAGE = 6
 local SLAM_RECOVERY = 0.45 -- the PlungeImpact stab he lands in
+local SLAM_WHIFF_RECOVERY = 1.1 -- the sword sticks when the slam hits nobody
 -- Still falling when the propel runs out (dove from high up): how long he
 -- has to reach the ground for the slam to happen.
 local LAND_WINDOW = 0.5
@@ -4046,6 +4053,26 @@ local function holdInFront(ctx, target: Model, forward: Vector3, reach: number, 
 		velocity += pull
 	end
 	return velocity
+end
+
+-- How far his root is above the floor (characters under him don't count).
+local function heightAboveFloor(ctx): number
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local ignore: { Instance } = { ctx.character }
+	for _ = 1, 4 do
+		params.FilterDescendantsInstances = ignore
+		local hit = workspace:Raycast(ctx.root.Position, UP * -80, params)
+		if not hit then
+			return math.huge
+		end
+		local model = hit.Instance:FindFirstAncestorWhichIsA("Model")
+		if not (model and model:FindFirstChildOfClass("Humanoid")) then
+			return ctx.root.Position.Y - hit.Position.Y
+		end
+		table.insert(ignore, model)
+	end
+	return math.huge
 end
 
 -- True once he's on the ground, within `timeout`.
@@ -4072,7 +4099,12 @@ local function bullSlam(ctx)
 	-- Where the blade bites, just in front of his feet.
 	local impact = groundBelow(ctx) + forward * 1.5
 	local victims = c.Sphere(character, impact + UP * 2, SLAM_RADIUS)
-	fx(ctx, "BullThrust", "Land", { position = impact, targets = victims })
+	local whiff = #victims == 0
+	fx(ctx, "BullThrust", "Land", {
+		position = impact,
+		targets = victims,
+		stuck = if whiff then SLAM_WHIFF_RECOVERY - SLAM_RECOVERY else nil,
+	})
 	c.ShakeArea(impact, 45, 0.55)
 	for _, victim in victims do
 		local victimRoot = victim:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -4086,17 +4118,20 @@ local function bullSlam(ctx)
 				guardBreak = true,
 				heavy = true,
 				ragdoll = 1,
-				velocity = out * 40 + UP * 38,
+				velocity = out * 62 + UP * 46,
 			})
 		end
 	end
-	CombatState.SetCasting(character, SLAM_RECOVERY)
+	CombatState.SetCasting(character, if whiff then SLAM_WHIFF_RECOVERY else SLAM_RECOVERY)
 end
 
 local function bullThrust(ctx)
 	local c, character = ctx.combat, ctx.character
 	local forward = look(ctx)
+	local leaped = leapedAt[character]
+	leapedAt[character] = nil
 	local airborne = ctx.airborne
+		and ((leaped ~= nil and os.clock() - leaped < DIVE_AFTER_LEAP) or heightAboveFloor(ctx) > DIVE_HEIGHT)
 	local direction = if airborne then (forward + UP * -0.6).Unit else forward
 
 	CombatState.SetCasting(character, PROPEL_TIME + 0.25)
@@ -4115,8 +4150,8 @@ local function bullThrust(ctx)
 			return
 		end
 		fx(ctx, "BullThrust", "Whiff")
-		-- Whiffing it leaves him open.
-		CombatState.SetCasting(character, 0.45)
+		-- Whiffing it leaves him open (the dive more so).
+		CombatState.SetCasting(character, if airborne then 0.9 else 0.45)
 		return
 	end
 
@@ -4124,7 +4159,9 @@ local function bullThrust(ctx)
 	forward = look(ctx)
 	local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
 	local contact = if targetRoot then targetRoot.Position else ctx.root.Position + forward * 3
-	if c.Hit(character, target, { damage = 2, stun = 1.6, attackType = "Melee" }) ~= "Hit" then
+	-- The dive breaks guards and carries straight on into the combo.
+	local caught = c.Hit(character, target, { damage = 2, stun = 1.6, attackType = "Melee", guardBreak = airborne })
+	if caught ~= "Hit" and caught ~= "GuardBreak" then
 		CombatState.SetCasting(character, 0.4)
 		return
 	end
@@ -4288,6 +4325,12 @@ end
 -- does the same from where he is, with a shorter climb.
 local SEIZE_TIME = 0.4 -- the Seize animation's hoist
 local SURGE_AT = 0.2
+-- Damage: most of it in the vortex, so the slam (which also hits whoever
+-- is round the crater) is the smaller part.
+local METEOR_TICK = 1.5
+local METEOR_SLAM = 4.5
+local METEOR_AIR_SLAM = 2.5
+local METEOR_SPLASH = 9
 
 local function blackMeteorite(ctx)
 	local c, character = ctx.combat, ctx.character
@@ -4359,7 +4402,11 @@ local function blackMeteorite(ctx)
 		if not waitUntil(MeteorVortex.Length * tick / 3) then
 			return
 		end
-		c.Hit(character, target, { damage = 1, stun = 1.5, attackType = "Melee", unblockable = true, noShake = true })
+		c.Hit(
+			character,
+			target,
+			{ damage = METEOR_TICK, stun = 1.5, attackType = "Melee", unblockable = true, noShake = true }
+		)
 	end
 
 	-- Over the top and down, head-first, spinning.
@@ -4380,8 +4427,9 @@ local function blackMeteorite(ctx)
 	local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
 	local away = if targetRoot then c.Flat(targetRoot.Position - ctx.root.Position) else Vector3.zero
 	away = if away.Magnitude > 0.1 then away.Unit else forward
+	local slam = if airborne then METEOR_AIR_SLAM else METEOR_SLAM
 	c.Hit(character, target, {
-		damage = if airborne then 4 else 6, -- plus the seize and the vortex's three
+		damage = slam, -- plus the seize, the surge and the vortex's three
 		stun = 1,
 		attackType = "Melee",
 		unblockable = true,
@@ -4390,6 +4438,22 @@ local function blackMeteorite(ctx)
 		ragdoll = 1.6,
 		velocity = away * 25 + UP * 35,
 	})
+	-- The crater catches whoever else is round them (blockable).
+	for _, victim in c.Sphere(character, impact + UP * 2, METEOR_SPLASH) do
+		local victimRoot = victim:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if victim ~= target and victimRoot then
+			local out = victimRoot.Position - impact
+			out = if Vector3.new(out.X, 0, out.Z).Magnitude > 0.5 then c.Flat(out) else forward
+			c.Hit(character, victim, {
+				damage = slam,
+				stun = 0.9,
+				attackType = "Melee",
+				heavy = true,
+				ragdoll = 1,
+				velocity = out * 45 + UP * 30,
+			})
+		end
+	end
 	-- He rolls back onto his feet (the rest of the path), then he's free.
 	waitUntil(plan.length)
 	CombatState.SetCasting(character, 0.2)
@@ -4815,6 +4879,7 @@ local function leap(ctx)
 	local c, character = ctx.combat, ctx.character
 	local token = c.MoveToken(character)
 	local start = os.clock()
+	leapedAt[character] = start -- Bull Thrust dives from here
 	CombatState.SetCasting(character, 0.25)
 	fx(ctx, "Special", "Leap")
 	c.ApplyVelocity(character, look(ctx) * 60 + UP * 62, LEAP_TIME, { steer = 200 })
@@ -4830,6 +4895,7 @@ local function leap(ctx)
 		if c.PressedSince(character, SPECIAL, since) then
 			-- The press says whether he was in the air (his own client knows).
 			if c.PressedAirborne(character, SPECIAL) then
+				leapedAt[character] = nil
 				plunge(ctx)
 				return
 			end
@@ -4837,6 +4903,7 @@ local function leap(ctx)
 		end
 		-- Landed, once the server (a ping behind) has seen him go up.
 		if seenAir and not up then
+			leapedAt[character] = nil
 			return
 		end
 		if not seenAir and os.clock() - start > 1 then
@@ -10009,6 +10076,10 @@ function handlers.BullThrust(data, character, root)
 		bump(character)
 		play(character, ANIMS.PlungeImpact)
 		bullSlam(data, character)
+		if data.stuck then
+			-- It hit nobody: the sword sticks in the ground a moment (end lag).
+			task.delay(0.05, PoseAnimator.Freeze, character, data.stuck)
+		end
 	elseif phase == "Interrupted" then
 		-- Cut short (he got hit, or they broke out): no more swings.
 		bump(character)
