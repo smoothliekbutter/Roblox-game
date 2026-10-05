@@ -5938,7 +5938,8 @@ end
 -- other, each aimed at whoever he faces at that moment. The first five keep
 -- them stunned, the sixth knocks them back. Held on the ground instead, he
 -- keeps drawing: one great arrow that goes through everyone in its path,
--- harder the longer he draws.
+-- breaks guards and leaves them slowed for a moment. Light on damage
+-- (a little more the longer he draws).
 local BOW_SLOT = 4
 local BOW_DRAW = 0.5
 local BOW_ARROWS = 6
@@ -5947,6 +5948,7 @@ local GREAT_MIN = 0.2 -- the great arrow draws at least this much longer
 local GREAT_MAX = 0.6 -- and at most this much (fully drawn)
 local GREAT_SPEED = 160
 local GREAT_RANGE = 110
+local GREAT_SLOW = 2.5 -- seconds of SlowUntil from the hit (about half of it after the ragdoll)
 
 local function greatArrow(ctx)
 	local c, character = ctx.combat, ctx.character
@@ -5981,14 +5983,20 @@ local function greatArrow(ctx)
 		size = Vector3.new(4, 4, 7),
 		pierce = true,
 		onHit = function(victim)
-			c.Hit(character, victim, {
-				damage = 9 + 3 * drawn,
+			local result = c.Hit(character, victim, {
+				damage = 6 + 2 * drawn,
 				stun = 1.1,
 				attackType = "Bolt",
+				guardBreak = true,
 				heavy = true,
 				ragdoll = 1,
 				velocity = c.Flat(direction) * 60 + UP * 22,
 			})
+			-- Slowed for a moment after it (a broken guard too).
+			if result == "Hit" or result == "GuardBreak" then
+				local slowUntil = math.max(tonumber(victim:GetAttribute("SlowUntil")) or 0, os.clock() + GREAT_SLOW)
+				victim:SetAttribute("SlowUntil", slowUntil)
+			end
 		end,
 	})
 	-- The bow kicks him back a step.
