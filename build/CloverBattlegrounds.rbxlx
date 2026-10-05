@@ -29288,10 +29288,10 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			blend = 0.35,
 			get = function(u, t)
 				local angle = rad(-35) + u * rad(110)
-				local radius = 30 - 4 * u
+				local radius = 23 - 3 * u
 				local around = -forward * math.cos(angle) + right * math.sin(angle)
-				local eye = center + around * radius + UP * (6 + 3 * math.sin(u * math.pi))
-				return eye, center:Lerp(follow(t), 0.18), -3 + 2 * u, 72 + 6 * u
+				local eye = center + around * radius + UP * (5 + 3 * math.sin(u * math.pi))
+				return eye, center:Lerp(follow(t), 0.18), -3 + 2 * u, 66 + 6 * u
 			end,
 		},
 		{
@@ -29314,10 +29314,13 @@ local function play(data, character: Model, root: BasePart, context: Context)
 				local e = smooth(u)
 				local angle = rad(-30 + 50 * e)
 				local around = right * math.cos(angle) + forward * math.sin(angle)
-				-- From below them: them hanging close, him high above them with
-				-- the blade.
-				local eye = center - UP * 4 + around * (25 - 3 * e)
-				return eye, center:Lerp(top + UP * 6, 0.44), -5 + 3 * e, 80 - 5 * e
+				-- From below them: them hanging close and him high above them,
+				-- then tilting up and pulling back as the blade grows, until
+				-- it's all in shot, him at the foot of it.
+				local reveal = smooth((u - 0.15) / 0.6)
+				local eye = center - UP * 4 + around * (24 + 10 * reveal)
+				local focus = center:Lerp(top + UP * 6, 0.44):Lerp(top + UP * 19, reveal)
+				return eye, focus, -5 + 3 * e, 78 - 4 * e
 			end,
 		},
 		{
@@ -29325,7 +29328,7 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			to = times.Burst + 0.05,
 			blend = 0,
 			get = function(u, _)
-				return center + right * (56 + 6 * u) + UP * (1 + u), center - UP * 4, 0, 76 + 4 * u
+				return center + right * (48 + 6 * u) + UP * (1 + u), center - UP * 4, 0, 80 + 3 * u
 			end,
 		},
 		{
