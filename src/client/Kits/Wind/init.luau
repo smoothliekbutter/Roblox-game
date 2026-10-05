@@ -829,8 +829,16 @@ local function flyingArrow(
 end
 
 -- The bow keeps an arrow nocked between shots (each one loosed is the arrow
--- that was on the string).
-type Bow = { stop: () -> (), nocked: Arrow? }
+-- that was on the string). Held on the ground, the arrow on the string
+-- becomes a great one and the bow grows as he keeps drawing.
+type Bow = {
+	stop: () -> (),
+	nocked: Arrow?,
+	scale: number, -- of the nocked arrow
+	ends: number, -- os.clock() when the bow goes
+	charging: number?, -- os.clock() the great arrow started drawing
+	glow: BasePart?,
+}
 local bows: { [Model]: Bow } = {}
 
 function handlers.GaleWhiteBow(data, character, root)
@@ -845,7 +853,12 @@ function handlers.GaleWhiteBow(data, character, root)
 		local all = table.clone(limbs)
 		table.move(core, 1, #core, #all + 1, all)
 		table.move(strings, 1, 2, #all + 1, all)
-		local bow: Bow = { stop = function() end, nocked = makeArrow(1) }
+		local bow: Bow = {
+			stop = function() end,
+			nocked = makeArrow(1),
+			scale = 1,
+			ends = os.clock() + length,
+		}
 		function bow.stop()
 			bows[character] = nil
 			fadeOut(all, 0.2)
@@ -853,19 +866,26 @@ function handlers.GaleWhiteBow(data, character, root)
 				bow.nocked.destroy(0.15)
 				bow.nocked = nil
 			end
+			if bow.glow then
+				fadeOut({ bow.glow }, 0.1)
+				bow.glow = nil
+			end
 		end
 		bows[character] = bow
-		every(length, function(elapsed)
+		every(length + 2, function(elapsed)
 			local hand = handOf(character, "Left")
 			local pull = handOf(character, "Right")
-			if not live(character, token) or not hand or not pull or not root.Parent then
+			if not live(character, token) or not hand or not pull or not root.Parent or os.clock() > bow.ends then
 				return false
 			end
 			local forward = root.CFrame.LookVector
 			local right = forward:Cross(UP).Unit
 			local grow = math.min(elapsed / 0.2, 1)
-			local center = hand - forward * 1.2
-			local points = arcPoints(center, forward, UP, 3.4 * grow + 0.1, -1.1, 1.1, segments)
+			local charge = if bow.charging then math.min((os.clock() - bow.charging) / 0.6, 1) else 0
+			-- The grip stays put in his hand as the bow grows.
+			local radius = (3.4 + 1.4 * charge) * grow + 0.1
+			local center = hand + forward * (2.2 - radius)
+			local points = arcPoints(center, forward, UP, radius, -1.1, 1.1, segments)
 			poseArc(limbs, points)
 			poseArc(core, points)
 			local nock = pull + right * 0.1
@@ -874,7 +894,15 @@ function handlers.GaleWhiteBow(data, character, root)
 			strings[2].Size = Vector3.new(0.05, 0.05, (points[#points] - nock).Magnitude)
 			strings[2].CFrame = CFrame.lookAt(points[#points]:Lerp(nock, 0.5), nock)
 			if bow.nocked then
-				bow.nocked.place(CFrame.lookAt(nock, nock + forward) * CFrame.new(0, 0, -1.6))
+				local frame = CFrame.lookAt(nock, nock + forward) * CFrame.new(0, 0, -1.6 * bow.scale)
+				bow.nocked.place(frame * CFrame.Angles(0, 0, charge * elapsed * 6))
+				if bow.glow then
+					-- Wind spirals into the head as it draws.
+					local head = (frame * CFrame.new(0, 0, -2.3 * bow.scale)).Position
+					bow.glow.Size = Vector3.one * (0.8 + 2.6 * charge) * (1 + 0.1 * math.sin(elapsed * 30))
+					bow.glow.CFrame = CFrame.new(head)
+					inflow(head, 5 + 2 * charge)
+				end
 			end
 			return true
 		end, function()
@@ -905,6 +933,52 @@ function handlers.GaleWhiteBow(data, character, root)
 		if U.isLocal(character) then
 			CameraShake.FovKick(if data.last then 5 else 2)
 		end
+	elseif data.phase == "Charge" then
+		-- Held on the ground: the arrow on the string becomes a great one.
+		local bow = bows[character]
+		if bow then
+			if bow.nocked then
+				bow.nocked.destroy(0.05)
+			end
+			bow.nocked = makeArrow(1.8)
+			bow.scale = 1.8
+			bow.charging = os.clock()
+			bow.ends = os.clock() + data.max + 0.6
+			bow.glow = U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one, Color = WIND, Transparency = 0.55 })
+		end
+		local pull = handOf(character, "Right")
+		if pull then
+			gust(pull, 3)
+		end
+		if U.isLocal(character) then
+			CameraShake.Add(0.05)
+		end
+	elseif data.phase == "Great" then
+		local origin: Vector3 = data.origin
+		local direction: Vector3 = data.direction
+		local bow = bows[character]
+		local drawn = if bow then bow.nocked else nil
+		if bow then
+			bow.nocked = nil
+			bow.stop()
+		end
+		flyingArrow(origin, direction, data.speed, data.range, 1.8, drawn)
+		U.flash(origin, WIND_WHITE, 7, 0.18)
+		gust(origin, 7, direction)
+		U.shockwave(origin, WIND, 2, 12, 0.3)
+		for i = 0, 3 do
+			task.delay(i * 0.03, U.impactRing, origin + direction * i * 3, direction, WIND_WHITE, 1, 7 - i, 0.28)
+		end
+		U.light(origin, WIND, 6, 28, 0.35)
+		if U.isLocal(character) then
+			CameraShake.Add(0.2)
+			CameraShake.FovKick(9)
+		end
+		task.delay(0.2, function()
+			if PoseAnimator.Current(character) == ANIMS.Bow then
+				PoseAnimator.FadeOut(character, 0.25)
+			end
+		end)
 	elseif data.phase == "Cancel" then
 		bump(character)
 		local bow = bows[character]

@@ -15,9 +15,10 @@
 	  3 Heavenly Wind Ark    a crescent of wind rises out of the ground ahead and
 	                         carries them and him up together, held there for an
 	                         air string that ends in the downslam (air: it sweeps
-	                         down and spikes them); breaks guards
+	                         down and spikes them); breaks guards, hits people
+	                         who are down
 	  4 Gale White Bow       a great bow of wind; six big arrows, aimed at whoever
-	                         he faces
+	                         he faces (held on the ground: one great arrow)
 	  R Conjunction          a star goes down where he's moving (ahead if he's
 	                         still); R again within 4s and he's there
 	Half-Crown Spirit of Zephyr (G): Sylph on his left side
@@ -317,7 +318,8 @@ end
 -- right behind them; both hang there for an air string (M1s in the air
 -- keep them both up, the 4th slams them down). In the air the ark sweeps
 -- down beneath him instead and spikes them into the ground. Either way it
--- breaks guards (a broken guard isn't carried up, just left open).
+-- breaks guards (a broken guard isn't carried up, just left open) and hits
+-- people who are down.
 local ARK_CAST = 0.18
 local ARK_RISE = 46 -- studs a second, for ARK_RISE_TIME: about 14 studs up
 local ARK_RISE_TIME = 0.3
@@ -344,6 +346,7 @@ local function heavenlyWindArk(ctx)
 				stun = 1,
 				attackType = "Zone",
 				guardBreak = true,
+				hitsDowned = true,
 				heavy = true,
 				ragdoll = 1.2,
 				velocity = forward * 10 + UP * -70,
@@ -359,6 +362,7 @@ local function heavenlyWindArk(ctx)
 			stun = 1.6,
 			attackType = "Zone",
 			guardBreak = true,
+			hitsDowned = true, -- scoops people up off the floor too
 			heavy = true,
 		})
 		if result == "Hit" then
@@ -386,10 +390,65 @@ end
 
 -- Gale White Bow: a great bow of wind and six big arrows, one after the
 -- other, each aimed at whoever he faces at that moment. The first five keep
--- them stunned, the sixth knocks them back.
+-- them stunned, the sixth knocks them back. Held on the ground instead, he
+-- keeps drawing: one great arrow that goes through everyone in its path,
+-- harder the longer he draws.
+local BOW_SLOT = 4
 local BOW_DRAW = 0.5
 local BOW_ARROWS = 6
 local BOW_GAP = 0.12
+local GREAT_MIN = 0.2 -- the great arrow draws at least this much longer
+local GREAT_MAX = 0.6 -- and at most this much (fully drawn)
+local GREAT_SPEED = 160
+local GREAT_RANGE = 110
+
+local function greatArrow(ctx)
+	local c, character = ctx.combat, ctx.character
+	local started = os.clock()
+	fx(ctx, "GaleWhiteBow", "Charge", { max = GREAT_MAX })
+	while os.clock() - started < GREAT_MAX do
+		if interrupted(ctx) then
+			fx(ctx, "GaleWhiteBow", "Cancel")
+			return
+		end
+		if os.clock() - started >= GREAT_MIN and not c.IsHeld(character, BOW_SLOT) then
+			break
+		end
+		CombatState.SetCasting(character, 0.4)
+		task.wait()
+	end
+	local drawn = math.clamp((os.clock() - started) / GREAT_MAX, 0, 1)
+	local origin = ctx.root.Position + look(ctx) * 2 + UP * 0.8
+	local direction = aimFrom(ctx, origin, softTarget(ctx, GREAT_RANGE, 25), 0.3)
+	fx(ctx, "GaleWhiteBow", "Great", {
+		origin = origin,
+		direction = direction,
+		speed = GREAT_SPEED,
+		range = GREAT_RANGE,
+	})
+	Projectile.Fire({
+		owner = character,
+		origin = origin,
+		direction = direction,
+		speed = GREAT_SPEED,
+		range = GREAT_RANGE,
+		size = Vector3.new(4, 4, 7),
+		pierce = true,
+		onHit = function(victim)
+			c.Hit(character, victim, {
+				damage = 9 + 3 * drawn,
+				stun = 1.1,
+				attackType = "Bolt",
+				heavy = true,
+				ragdoll = 1,
+				velocity = c.Flat(direction) * 60 + UP * 22,
+			})
+		end,
+	})
+	-- The bow kicks him back a step.
+	c.ApplyVelocity(character, -look(ctx) * 18, 0.12)
+	CombatState.SetCasting(character, 0.35)
+end
 
 local function galeWhiteBow(ctx)
 	local c, character = ctx.combat, ctx.character
@@ -400,6 +459,10 @@ local function galeWhiteBow(ctx)
 	end
 	fx(ctx, "GaleWhiteBow", "Draw", { airborne = ctx.airborne, draw = BOW_DRAW, arrows = BOW_ARROWS, gap = BOW_GAP })
 	task.wait(BOW_DRAW)
+	if not ctx.airborne and not interrupted(ctx) and c.IsHeld(character, BOW_SLOT) then
+		greatArrow(ctx)
+		return
+	end
 	for i = 1, BOW_ARROWS do
 		if interrupted(ctx) then
 			fx(ctx, "GaleWhiteBow", "Cancel")
