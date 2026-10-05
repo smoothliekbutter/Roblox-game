@@ -74,8 +74,8 @@ In Black Form, **R** scrolls through Asta's three swords in order (no cooldown),
 | Sword | Move 1 | Move 2 |
 | --- | --- | --- |
 | **Demon-Slayer Sword**: his first, huge greatsword | **Black Hurricane**: four full spins with the blade out, wrapped in a black tornado, dragging enemies along and finishing with an outward blast. **Air:** drills down out of the sky and spikes them into the ground. | **Slayer Recall**: hurls the sword like a boomerang. It spins out about 34 studs, cutting whoever it passes, and hangs there. Press **2** again (or wait 1.2s) and it flies back to his hand through whoever's in the way, dragging them to him, with black lightning pulling it in. No M1s until he catches it. Starting another move snaps it straight back. |
-| **Demon-Destroyer Sword**: a curved blade with a clover on the guard | **Causality Break**: drives the Destroyer point-first into the ground. Curse-breaking anti-magic runs through the earth to the 4 closest enemies within 18 studs. It cuts them (unblockable) and breaks whatever they had up: counters, guard and Zetten-style stances. | **Black Comet** (short grab cutscene, about 1.3s): his free hand seizes whoever is in front of him (unblockable). His wings throw him forward low over the ground with them, black smoke and torn-up earth trailing behind. He hammers them into the ground three times as they streak along (cracks, flying rocks), then plants and heaves them away. Walls cut the flight short. |
-| **Demon-Slasher Katana**: Yami's katana, turned anti-magic | **Black Ascent**: a rising cut that launches whoever is in front of him (blockable). He springs up after them, cuts them from one side and then the other in the air, and cuts them back down into the ground. A short air combo with its own camera. | **Zetten**: a still iai stance, reading ki for 1s. The first enemy within 20 studs to start a move (or swing at him) gets cut down before it lands: he flashes past them with a guard-breaking cut. If nobody moves, it ends in one quick cut ahead. |
+| **Demon-Destroyer Sword**: a curved blade with a clover on the guard | **Causality Break**: drives the Destroyer point-first into the ground. Curse-breaking anti-magic runs through the earth to the 4 closest enemies within 18 studs. It cuts them (unblockable) and breaks whatever they had up: counters, guard and Zetten-style stances. | **Black Comet** (short grab cutscene, about 1.4s): his free hand seizes whoever is in front of him (unblockable). Both wings beat him forward low over the ground, dragging them along on their back at his side (they hang from his hand with real weight, so they swing and scrape). Three times he lifts them and hammers them flat into the ground, harder each time: a glowing trench, dirt and sparks behind them, a bigger crater with every slam. He lands skidding, hauls them round and heaves them away as a black comet. Walls cut the flight short. |
+| **Demon-Slasher Katana**: Yami's katana, turned anti-magic | **Black Ascent**: a rising cut that launches whoever is in front of him (blockable). He springs up after them, glides across in front of them cutting right to left, sweeps back up the other way, comes over the top and cuts them straight down into a crater, landing beside it. The two air cuts hang in the air as an X that bursts on the last cut. A short air combo with its own camera, every move eased (no jumps between sides). | **Zetten**: a still iai stance, reading ki for 1s. The first enemy within 20 studs to start a move (or swing at him) gets cut down before it lands: he flashes past them with a guard-breaking cut. If nobody moves, it ends in one quick cut ahead. |
 
 More grimoires are listed as "coming soon" in the picker.
 
@@ -96,7 +96,7 @@ Everyone has 100 HP.
 | Black Hurricane (Slayer) | up to 9 + 5 | 9s | |
 | Slayer Recall (Slayer) | 8 out, 6 back | 12s | The return drags them to him |
 | Causality Break (Destroyer) | 10 | 15s | Unblockable; 4 closest within 18 studs; clears their counters and guard |
-| Black Comet (Destroyer) | 12 (1 + 3 × 2 + 5) | 14s | Unblockable grab cutscene, untouchable while it plays; about 1.3s |
+| Black Comet (Destroyer) | 12 (1 + 3 × 2 + 5) | 14s | Unblockable grab cutscene, untouchable while it plays; about 1.4s |
 | Black Ascent (Slasher) | 10 (2 + 2 + 2 + 4) | 12s | Blockable launcher; once it lands, the air combo can't be escaped |
 | Zetten (Slasher) | 15 (7 if nobody moves) | 16s | Counter stance: reacts to skills within 20 studs and melee hits |
 | Grand Divider | 10 + 9 wave | 13s | Guard-breaks. The wave skips whoever the slash hit. |
@@ -181,10 +181,10 @@ src/
   shared/   ReplicatedStorage.Shared: Config, Kits (roster), CombatState, Remotes, Impulse
   server/   ServerScriptService.Server: CombatService, Hitbox, Projectile, Ragdoll, Dummies, CharacterLoader
     Kits/   one module per character: skills, awakening, weapon model
-  client/   StarterPlayerScripts.Client: Input, Moves, PoseAnimator, M1Animations, VFX, CameraShake,
-            HUD, TopBar, ShiftLock
-    Kits/   one module per character: animations and VFX (Wind/Soft: Yuno's soft wind and
-            starlight toolkit; Wind/Saint: his Full-Crown ultimate)
+  client/   StarterPlayerScripts.Client: Input, Moves, PoseAnimator, M1Animations, VFX, Soft (the
+            soft-light toolkit both kits draw with), CameraShake, HUD, TopBar, ShiftLock
+    Kits/   one module per character: animations and VFX (Wind/Saint: Yuno's Full-Crown
+            ultimate; AntiMagic/Comet and AntiMagic/Ascent: Asta's Black Form cutscenes)
 ```
 
 - **Adding a character:** add an entry to `src/shared/Kits.luau`, a server module in `src/server/Kits/` (`Skills`, `AwakenedSkills`, `Awaken`, `Equip`) and a client module in `src/client/Kits/` (`PlayM1`, `OnSkill`, `SetAwakened`), all named after the kit id.
