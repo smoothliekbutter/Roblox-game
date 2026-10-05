@@ -89,7 +89,9 @@ AIR = [(0.0, pose(R(-6), R(4), L(40, 0, 30), L(40, 0, -30), R(30), R(-12)))]
 # brought down and forward to send them (0.35).
 SHOWER_RAISE = pose(R(4, 18), R(16, -12), L(172, -6, 8), L(40, -10, -30), R(-12, 0, 8), R(14, 0, -8))
 SHOWER_SEND = pose(R(-10, -8), R(4, 6), L(112, 4, 6), L(30, -10, -26), R(-16, 0, 8), R(18, 0, -8))
-SHOWER = [(0.0, STANCE), (0.2, SHOWER_RAISE), (0.35, SHOWER_SEND), (0.7, SHOWER_SEND)]
+# Held up a moment longer, reaching higher, as the blades gather (the wind-up).
+SHOWER_GATHER = pose(R(6, 20), R(18, -14), L(178, -4, 10), L(44, -10, -32), R(-12, 0, 8), R(14, 0, -8))
+SHOWER = [(0.0, STANCE), (0.2, SHOWER_RAISE), (0.5, SHOWER_GATHER), (0.6, SHOWER_SEND), (0.95, SHOWER_SEND)]
 
 # Swift White Hawk: wound back (0.12), then the palm thrust out as the hawk leaves (0.22).
 HAWK_WIND = pose(R(-4, 30), R(6, -26), L(30, -10, 30), L(60, -20, -10), R(-14, 0, 6), R(16, 0, -6))
@@ -109,7 +111,7 @@ AIR_ARK = [(0.0, AIR[0][1]), (0.1, AIR_ARK_HIGH), (0.18, AIR_ARK_LOW), (0.5, AIR
 # them, the right drawing the string to his chin; held through the volley.
 BOW_AIM = pose(R(-4, -68), R(4, 62), L(92, 70, 0), L(90, 64, 0), R(-16, 20, 8), R(16, 20, -6))
 BOW_FULL = pose(R(-6, -72), R(4, 66), L(90, 50, -2), L(90, 70, 0), R(-18, 22, 8), R(18, 22, -6))
-BOW = [(0.0, STANCE), (0.2, BOW_AIM), (0.35, BOW_FULL), (1.2, BOW_FULL)]
+BOW = [(0.0, STANCE), (0.25, BOW_AIM), (0.5, BOW_FULL), (1.35, BOW_FULL)]
 
 # Conjunction: points where the star goes (0.12); arrives low and poised.
 POINT = pose(R(-4, -10), R(6, 10), L(104, 14, 4), L(20, 0, -18), R(-10, 0, 6), R(12, 0, -6))
@@ -203,7 +205,7 @@ SPEC = {
     'Walk': dict(keys=WALK, ease=[None] + [LINEAR] * (len(WALK) - 1), loop=True, delays={'Head': 0.03, 'RightArm': 0.03, 'LeftArm': 0.03},
                  doc="Moving slowly (casting, blocking): an easy walk, same phase as the run."),
     'Air': dict(keys=AIR, ease=[None], loop=True, doc="Jumping or falling: arms out on the wind, one knee up."),
-    'Shower': dict(keys=SHOWER, ease=snap(4), fadeOut=0.25, doc="Wind Blades Shower: hand to the sky, then down to send the blades."),
+    'Shower': dict(keys=SHOWER, ease=[None, SINE_OUT, SINE_IO, QUART_OUT, SINE_IO], fadeOut=0.25, doc="Wind Blades Shower: hand to the sky, then down to send the blades."),
     'Hawk': dict(keys=HAWK, ease=snap(4), fadeOut=0.25, doc="Swift White Hawk: wound back, then the palm thrust out."),
     'Ark': dict(keys=ARK, ease=snap(4), fadeOut=0.3, doc="Heavenly Wind Ark: low and wide, then both arms sweep up."),
     'AirArk': dict(keys=AIR_ARK, ease=snap(4), fadeOut=0.3, doc="Heavenly Wind Ark in the air: both arms sweep down."),

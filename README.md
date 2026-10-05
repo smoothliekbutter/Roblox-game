@@ -137,10 +137,10 @@ Wind, spirit and star magic, built as Asta's opposite: a mid-range zoner who pin
 | Move | Damage | Cooldown | Notes |
 |---|---|---|---|
 | M1 string | 3.5 / 3.5 / 3.5 / 5 | | Fists, a little more reach than default |
-| Wind Blades Shower | 9.5 (5 × 1.4 + 2.5) | 11s | Swarm. Soft-locks on whoever he faces within 40 studs |
+| Wind Blades Shower | 9.5 (5 × 1.4 + 2.5) | 11s | Swarm. Soft-locks on whoever he faces within 40 studs. 0.6s wind-up (hand raised, wind streaming into it) before the first wave |
 | Swift White Hawk | 8 | 8s | Bolt. Homing (140° a second), 75 studs |
 | Heavenly Wind Ark | 7, air 8 | 12s | Zone. Breaks guards (ground and air). Carries both up and holds you there 0.9s for an air string; the air version spikes |
-| Gale White Bow | 13 (5 × 2 + 3) | 15s | Bolt. Each arrow aims at whoever he faces |
+| Gale White Bow | 13 (5 × 2 + 3) | 15s | Bolt. Each arrow aims at whoever he faces. 0.5s draw before the first arrow |
 | Conjunction (R) | | 10s | Teleport to the star: dodge or gap close |
 | Half-Crown (G) | ×1.15 damage | ×0.85 cooldowns | +4 speed for 45s. Weaker than Black Form (×1.25, 55s), but it leads to the Full-Crown |
 | Spirit Storm | 11 (5 × 1.6 + 3) | 12s | Bolt beam, 50 studs |

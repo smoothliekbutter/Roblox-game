@@ -521,7 +521,20 @@ Animations.Shower = {
 			"Out",
 		},
 		{
-			0.35,
+			0.5,
+			{
+				Torso = body(0.12, 6, 20),
+				Head = rot(18, -14),
+				RightArm = limb(178, -4, 10),
+				LeftArm = limb(44, -10, -32),
+				RightLeg = rot(-12, 0, 8),
+				LeftLeg = rot(14, 0, -8),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.6,
 			{
 				Torso = body(0.103, -10, -8),
 				Head = rot(4, 6),
@@ -534,7 +547,7 @@ Animations.Shower = {
 			"Out",
 		},
 		{
-			0.7,
+			0.95,
 			{
 				Torso = body(0.103, -10, -8),
 				Head = rot(4, 6),
@@ -736,7 +749,7 @@ Animations.Bow = {
 			},
 		},
 		{
-			0.2,
+			0.25,
 			{
 				Torso = body(0.099, -4, -68),
 				Head = rot(4, 62),
@@ -749,7 +762,7 @@ Animations.Bow = {
 			"Out",
 		},
 		{
-			0.35,
+			0.5,
 			{
 				Torso = body(0.098, -6, -72),
 				Head = rot(4, 66),
@@ -762,7 +775,7 @@ Animations.Bow = {
 			"InOut",
 		},
 		{
-			1.2,
+			1.35,
 			{
 				Torso = body(0.098, -6, -72),
 				Head = rot(4, 66),

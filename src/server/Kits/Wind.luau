@@ -178,7 +178,7 @@ end
 -- Wind Blades Shower: blades of wind form in the sky over whoever he faces
 -- (or a way ahead) and rain down in waves. The waves pin them in place; the
 -- last one pops them up. The blades keep falling even if he's hit.
-local SHOWER_CAST = 0.35
+local SHOWER_CAST = 0.6 -- the wind-up: blades gather overhead before the first wave
 local SHOWER_WAVES = 6
 local SHOWER_GAP = 0.15
 local SHOWER_RADIUS = 9
@@ -387,7 +387,7 @@ end
 -- Gale White Bow: a great bow of wind and six big arrows, one after the
 -- other, each aimed at whoever he faces at that moment. The first five keep
 -- them stunned, the sixth knocks them back.
-local BOW_DRAW = 0.35
+local BOW_DRAW = 0.5
 local BOW_ARROWS = 6
 local BOW_GAP = 0.12
 

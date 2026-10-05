@@ -382,7 +382,7 @@ end
 -- Wind Blades Shower: a ring of wind forms over the spot and blades fill
 -- the sky in it (white blades with pointed tips in a green glow), then fall
 -- in waves streaking wind behind them, each bursting where it lands.
-local function fallingBlade(target: Vector3, formDelay: number, fallAt: number)
+local function fallingBlade(target: Vector3, formDelay: number, fallAt: number, alive: () -> boolean)
 	local start = target + Vector3.new(math.random(-30, 30) / 10, 20 + math.random() * 6, math.random(-30, 30) / 10)
 	local cframe = CFrame.lookAt(start, target) * CFrame.Angles(0, 0, math.random() * math.pi)
 	local blade = U.newPart({ Size = Vector3.new(0.08, 0.5, 2.4), Color = WIND_WHITE, Transparency = 1 })
@@ -424,6 +424,12 @@ local function fallingBlade(target: Vector3, formDelay: number, fallAt: number)
 		end
 	end)
 	task.delay(fallAt, function()
+		if not alive() then
+			-- Cancelled during the wind-up: the blade just fades.
+			trail.Enabled = false
+			fadeOut(parts, 0.15)
+			return
+		end
 		local drop = target - start
 		for _, part in parts do
 			U.tween(part, 0.14, { CFrame = part.CFrame + drop }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
@@ -447,9 +453,18 @@ local function fallingBlade(target: Vector3, formDelay: number, fallAt: number)
 	end)
 end
 
+-- Per cast, so only the Shower's own Cancel (not his next move) stops its
+-- blades.
+local showers: { [Model]: number } = setmetatable({}, { __mode = "k" }) :: any
+
 function handlers.WindBladesShower(data, character, root)
 	if data.phase == "Cast" then
 		play(character, ANIMS.Shower)
+		local id = (showers[character] or 0) + 1
+		showers[character] = id
+		local function alive(): boolean
+			return showers[character] == id and character.Parent ~= nil
+		end
 		local center: Vector3 = data.center
 		local radius: number = data.radius
 		local delay: number = data.delay
@@ -460,21 +475,35 @@ function handlers.WindBladesShower(data, character, root)
 		if hand then
 			gust(hand, 3, UP)
 		end
+		-- The wind-up: wind streams into his raised hand as the blades gather.
+		every(delay, function()
+			local palm = handOf(character, "Right")
+			if not alive() or not palm then
+				return false
+			end
+			inflow(palm, 5)
+			return true
+		end)
 		for wave = 1, data.waves do
 			for _ = 1, 3 do
 				local angle = math.random() * math.pi * 2
 				local spot = center
 					+ Vector3.new(math.cos(angle), 0, math.sin(angle)) * radius * math.sqrt(math.random())
-				fallingBlade(spot, math.random() * delay * 0.6, delay + (wave - 1) * data.gap)
+				fallingBlade(spot, math.random() * delay * 0.6, delay + (wave - 1) * data.gap, alive)
 			end
 		end
 		task.delay(delay + data.waves * data.gap, function()
+			if not alive() then
+				return
+			end
 			gust(center + UP, 6, UP)
 			U.groundCracks(center, 6, radius * 0.7, WIND, 1)
 			if (workspace.CurrentCamera.CFrame.Position - center).Magnitude < 40 then
 				CameraShake.Add(0.12)
 			end
 		end)
+	elseif data.phase == "Cancel" then
+		showers[character] = (showers[character] or 0) + 1
 	end
 end
 

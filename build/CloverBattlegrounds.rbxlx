@@ -5656,7 +5656,7 @@ end
 -- Wind Blades Shower: blades of wind form in the sky over whoever he faces
 -- (or a way ahead) and rain down in waves. The waves pin them in place; the
 -- last one pops them up. The blades keep falling even if he's hit.
-local SHOWER_CAST = 0.35
+local SHOWER_CAST = 0.6 -- the wind-up: blades gather overhead before the first wave
 local SHOWER_WAVES = 6
 local SHOWER_GAP = 0.15
 local SHOWER_RADIUS = 9
@@ -5865,7 +5865,7 @@ end
 -- Gale White Bow: a great bow of wind and six big arrows, one after the
 -- other, each aimed at whoever he faces at that moment. The first five keep
 -- them stunned, the sixth knocks them back.
-local BOW_DRAW = 0.35
+local BOW_DRAW = 0.5
 local BOW_ARROWS = 6
 local BOW_GAP = 0.12
 
@@ -20950,7 +20950,7 @@ end
 -- Wind Blades Shower: a ring of wind forms over the spot and blades fill
 -- the sky in it (white blades with pointed tips in a green glow), then fall
 -- in waves streaking wind behind them, each bursting where it lands.
-local function fallingBlade(target: Vector3, formDelay: number, fallAt: number)
+local function fallingBlade(target: Vector3, formDelay: number, fallAt: number, alive: () -> boolean)
 	local start = target + Vector3.new(math.random(-30, 30) / 10, 20 + math.random() * 6, math.random(-30, 30) / 10)
 	local cframe = CFrame.lookAt(start, target) * CFrame.Angles(0, 0, math.random() * math.pi)
 	local blade = U.newPart({ Size = Vector3.new(0.08, 0.5, 2.4), Color = WIND_WHITE, Transparency = 1 })
@@ -20992,6 +20992,12 @@ local function fallingBlade(target: Vector3, formDelay: number, fallAt: number)
 		end
 	end)
 	task.delay(fallAt, function()
+		if not alive() then
+			-- Cancelled during the wind-up: the blade just fades.
+			trail.Enabled = false
+			fadeOut(parts, 0.15)
+			return
+		end
 		local drop = target - start
 		for _, part in parts do
 			U.tween(part, 0.14, { CFrame = part.CFrame + drop }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
@@ -21015,9 +21021,18 @@ local function fallingBlade(target: Vector3, formDelay: number, fallAt: number)
 	end)
 end
 
+-- Per cast, so only the Shower's own Cancel (not his next move) stops its
+-- blades.
+local showers: { [Model]: number } = setmetatable({}, { __mode = "k" }) :: any
+
 function handlers.WindBladesShower(data, character, root)
 	if data.phase == "Cast" then
 		play(character, ANIMS.Shower)
+		local id = (showers[character] or 0) + 1
+		showers[character] = id
+		local function alive(): boolean
+			return showers[character] == id and character.Parent ~= nil
+		end
 		local center: Vector3 = data.center
 		local radius: number = data.radius
 		local delay: number = data.delay
@@ -21028,21 +21043,35 @@ function handlers.WindBladesShower(data, character, root)
 		if hand then
 			gust(hand, 3, UP)
 		end
+		-- The wind-up: wind streams into his raised hand as the blades gather.
+		every(delay, function()
+			local palm = handOf(character, "Right")
+			if not alive() or not palm then
+				return false
+			end
+			inflow(palm, 5)
+			return true
+		end)
 		for wave = 1, data.waves do
 			for _ = 1, 3 do
 				local angle = math.random() * math.pi * 2
 				local spot = center
 					+ Vector3.new(math.cos(angle), 0, math.sin(angle)) * radius * math.sqrt(math.random())
-				fallingBlade(spot, math.random() * delay * 0.6, delay + (wave - 1) * data.gap)
+				fallingBlade(spot, math.random() * delay * 0.6, delay + (wave - 1) * data.gap, alive)
 			end
 		end
 		task.delay(delay + data.waves * data.gap, function()
+			if not alive() then
+				return
+			end
 			gust(center + UP, 6, UP)
 			U.groundCracks(center, 6, radius * 0.7, WIND, 1)
 			if (workspace.CurrentCamera.CFrame.Position - center).Magnitude < 40 then
 				CameraShake.Add(0.12)
 			end
 		end)
+	elseif data.phase == "Cancel" then
+		showers[character] = (showers[character] or 0) + 1
 	end
 end
 
@@ -24422,7 +24451,20 @@ Animations.Shower = {
 			"Out",
 		},
 		{
-			0.35,
+			0.5,
+			{
+				Torso = body(0.12, 6, 20),
+				Head = rot(18, -14),
+				RightArm = limb(178, -4, 10),
+				LeftArm = limb(44, -10, -32),
+				RightLeg = rot(-12, 0, 8),
+				LeftLeg = rot(14, 0, -8),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.6,
 			{
 				Torso = body(0.103, -10, -8),
 				Head = rot(4, 6),
@@ -24435,7 +24477,7 @@ Animations.Shower = {
 			"Out",
 		},
 		{
-			0.7,
+			0.95,
 			{
 				Torso = body(0.103, -10, -8),
 				Head = rot(4, 6),
@@ -24637,7 +24679,7 @@ Animations.Bow = {
 			},
 		},
 		{
-			0.2,
+			0.25,
 			{
 				Torso = body(0.099, -4, -68),
 				Head = rot(4, 62),
@@ -24650,7 +24692,7 @@ Animations.Bow = {
 			"Out",
 		},
 		{
-			0.35,
+			0.5,
 			{
 				Torso = body(0.098, -6, -72),
 				Head = rot(4, 66),
@@ -24663,7 +24705,7 @@ Animations.Bow = {
 			"InOut",
 		},
 		{
-			1.2,
+			1.35,
 			{
 				Torso = body(0.098, -6, -72),
 				Head = rot(4, 66),
