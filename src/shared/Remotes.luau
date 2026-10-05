@@ -2,7 +2,7 @@
 	Remotes
 	The server creates every RemoteEvent; clients wait for them.
 
-	Action       client -> server   ("M1", {jump, airborne}) | ("Block", bool) | ("Dash", dir) | ("Evasive") | ("AirJump")
+	Action       client -> server   ("M1", {jump, airborne}) | ("Block", bool) | ("Dash", dir) | ("Evasive") | ("AirJump") | ("SkillRelease", slot)
 	                                | ("Skill", slot, {airborne}) | ("Special", {airborne}) | ("Awaken")
 	                                | ("SelectKit", kitId)
 	VFX          server -> clients  (effectName, data)

@@ -434,6 +434,9 @@ function Input.Start()
 					holdInAir(slot, info and info.airHold)
 				end
 				Remotes.Action:FireServer("Skill", slot, { airborne = inAir })
+			elseif state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
+				-- Some moves do something else when the key is held.
+				Remotes.Action:FireServer("SkillRelease", slot)
 			end
 			return Enum.ContextActionResult.Sink
 		end, true, key)

@@ -50,6 +50,9 @@ export type CharData = {
 	skillInputs: { [number]: number },
 	-- Whether that press was made in the air (the player's own client says).
 	skillInputAir: { [number]: boolean },
+	-- Skill keys being held down right now (press to release), for moves
+	-- that do something different when held (Yuno's Quartile Hasta).
+	skillHeld: { [number]: boolean },
 	-- Bumped whenever a skill, special or awakening starts, so a move that
 	-- listens for follow-ups (Anti-Magic Leap) knows another move took over.
 	moveToken: number,
@@ -433,6 +436,13 @@ end
 function CombatService.MoveToken(character: Model): number
 	local data = registry[character]
 	return if data then data.moveToken else -1
+end
+
+-- Whether a skill key is still held down (released keys are reported by
+-- the client, see Input).
+function CombatService.IsHeld(character: Model, slot: number): boolean
+	local data = registry[character]
+	return data ~= nil and data.skillHeld[slot] == true
 end
 
 function CombatService.PressedSince(character: Model, slot: number, since: number): boolean
@@ -1261,6 +1271,7 @@ function CombatService.Register(character: Model)
 		counter = nil,
 		skillInputs = {},
 		skillInputAir = {},
+		skillHeld = {},
 		moveToken = 0,
 		grabbedBy = nil,
 	}
@@ -1361,7 +1372,12 @@ local function onAction(player: Player, action: unknown, payload: unknown, extra
 		CombatService.Evasive(character)
 	elseif action == "Skill" then
 		if type(payload) == "number" and payload >= 1 and payload <= CombatState.SkillSlots then
+			registry[character].skillHeld[math.floor(payload)] = true
 			CombatService.UseSkill(character, math.floor(payload), saysAirborne(extra))
+		end
+	elseif action == "SkillRelease" then
+		if type(payload) == "number" and payload >= 1 and payload <= CombatState.SkillSlots then
+			registry[character].skillHeld[math.floor(payload)] = nil
 		end
 	elseif action == "Special" then
 		CombatService.UseSpecial(character, saysAirborne(payload))

@@ -133,7 +133,13 @@ SCUTUM = [(0.0, STANCE), (0.15, SCUTUM_HOLD), (2.5, SCUTUM_HOLD)]
 # the way (0.2 to 0.5); the beam goes and he rocks back.
 HASTA_AIM = pose(R(-4, -12), R(6, 10), L(92, 10, 0), L(150, -10, -22), R(-16, 0, 8), R(16, 0, -8))
 HASTA_KICK = pose(R(6, -8), R(10, 6), L(100, 8, 0), L(140, -10, -26), R(-18, 0, 8), R(18, 0, -8))
-HASTA_STARS = [(0.0, STANCE), (0.2, HASTA_AIM), (0.5, HASTA_AIM)]
+HASTA_STARS = [(0.0, STANCE), (0.2, HASTA_AIM), (1.0, HASTA_AIM)]  # held through a tapped barrage
+# Held: leaning into the beam he keeps on them.
+HASTA_PUSH = pose(R(-8, -12), R(8, 10), L(94, 8, 0), L(140, -10, -26), R(-20, 0, 8), R(20, 0, -8))
+HASTA_BEAM = [(0.0, HASTA_AIM), (0.1, HASTA_PUSH), (2.0, HASTA_PUSH)]
+# In the air: both hands down at the ground, calling the star-fire down on it.
+HASTA_CALL = pose(R(-10), R(-14), L(40, 10, 20), L(40, -10, -20), R(14), R(-8))
+HASTA_RAIN = [(0.0, AIR[0][1]), (0.15, HASTA_CALL), (1.2, HASTA_CALL)]
 HASTA_FIRE = [(0.0, HASTA_AIM), (0.05, HASTA_KICK), (0.45, HASTA_KICK)]
 
 # ---------------- Full-Crown Spirit of Zephyr ----------------
@@ -208,6 +214,8 @@ SPEC = {
     'StormFire': dict(keys=STORM_FIRE, ease=[None, QUART_OUT, LINEAR], fadeIn=0.02, fadeOut=0.3, doc="Spirit Storm: leaning into the beam."),
     'Scutum': dict(keys=SCUTUM, ease=[None, SINE_OUT, LINEAR], fadeOut=0.2, doc="Quartile Scutum: hands out, holding the barrier."),
     'HastaStars': dict(keys=HASTA_STARS, ease=[None, SINE_OUT, LINEAR], fadeOut=0.05, doc="Quartile Hasta: conducting the four stars."),
+    'HastaBeam': dict(keys=HASTA_BEAM, ease=[None, QUART_OUT, LINEAR], fadeIn=0.03, fadeOut=0.3, doc="Quartile Hasta held: leaning into the beam."),
+    'HastaRain': dict(keys=HASTA_RAIN, ease=[None, SINE_OUT, LINEAR], fadeOut=0.25, doc="Quartile Hasta in the air: hands down, calling the star-fire down."),
     'HastaFire': dict(keys=HASTA_FIRE, ease=[None, QUART_OUT, SINE_OUT], fadeIn=0.02, fadeOut=0.3, doc="Quartile Hasta: the lance goes, he rocks back."),
     'Notos': dict(keys=NOTOS, ease=snap(4), fadeOut=0.3, doc="Spirit of Notos: arms crossed, then flung wide."),
     'BoreasForm': dict(keys=BOREAS_FORM, ease=[None, SINE_OUT, LINEAR], fadeOut=0.05, doc="Tempest Dive: both hands raised over them at the top."),
@@ -222,7 +230,7 @@ SPEC = {
 }
 
 # Played in the air (not planted, feet not checked); the run sets its own height.
-AIRBORNE = {'Air', 'AirArk', 'TempestDrag'}
+AIRBORNE = {'Air', 'AirArk', 'TempestDrag', 'HastaRain'}
 OWN_HEIGHT = {'Run'}
 ALL = {name: spec['keys'] if name in AIRBORNE or name in OWN_HEIGHT else plant(spec['keys']) for name, spec in SPEC.items()}
 

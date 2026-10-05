@@ -28,7 +28,9 @@
 	                         Landing it twice is what unlocks the Full-Crown
 	  3 Quartile Scutum      four stars and the light between them: a wall in
 	                         front that stops everything, melee thrown back off it
-	  4 Quartile Hasta       four star beams converge into one: guard-breaking
+	  4 Quartile Hasta       four stars round his hand: tapped, a barrage of star
+	                         bolts; held, a beam he keeps on them; in the air,
+	                         star-fire raining on the ground below
 	Full-Crown Spirit of Zephyr (G again, once Tempest Dive has landed twice)
 	  1 Spirit of Notos      the south wind bursts out of him, and blows spells
 	                         thrown at him back where they came from
@@ -700,41 +702,169 @@ local function quartileScutum(ctx)
 	fx(ctx, "QuartileScutum", "Drop")
 end
 
--- Quartile Hasta: four stars around his outstretched hand, their beams
--- converging into one far bigger: a single, guard-breaking lance of light.
-local HASTA_CHARGE = 0.5
+--[[
+	Quartile Hasta (Half-Crown 4): four stars open round his outstretched
+	hand, and then, depending on the key:
+	  tapped    a mini barrage: the stars fire star bolts at whoever he
+	            faces, one after another;
+	  held      their light converges into a beam he keeps on them for as
+	            long as the key is down (up to 1.6s, turning with him),
+	            ending in a blast that breaks guards;
+	  in the air  star-fire rains down on the ground below him.
+]]
+local HASTA_SLOT = 4
+local HASTA_CHARGE = 0.25 -- the stars open; still held after this, it's the beam
 local HASTA_LENGTH = 60
+local HASTA_BOLTS = 5
+local HASTA_BOLT_GAP = 0.09
+local HASTA_BEAM_MAX = 1.6
+local HASTA_BEAM_TICK = 0.12
+local HASTA_RAIN = 12
+local HASTA_RAIN_RADIUS = 11
+local HASTA_RAIN_TIME = 1
+
+local function hastaBarrage(ctx)
+	local c, character = ctx.combat, ctx.character
+	CombatState.SetCasting(character, HASTA_BOLTS * HASTA_BOLT_GAP + 0.25)
+	for i = 1, HASTA_BOLTS do
+		if interrupted(ctx) then
+			return
+		end
+		local last = i == HASTA_BOLTS
+		local origin = ctx.root.Position + look(ctx) * 3 + UP * 0.8
+		local direction = aimFrom(ctx, origin, softTarget(ctx, HASTA_LENGTH, 30), 0.3)
+		fx(
+			ctx,
+			"QuartileHasta",
+			"Bolt",
+			{ index = (i - 1) % 4 + 1, direction = direction, speed = 190, range = 70, last = last }
+		)
+		Projectile.Fire({
+			owner = character,
+			origin = origin,
+			direction = direction,
+			speed = 190,
+			range = 70,
+			size = Vector3.new(2, 2, 3),
+			onHit = function(victim)
+				c.Hit(character, victim, {
+					damage = if last then 3 else 2,
+					stun = if last then 0.9 else 0.5,
+					attackType = "Bolt",
+					heavy = last,
+					velocity = if last then c.Flat(direction) * 40 + UP * 12 else c.Flat(direction) * 5,
+					velocityTime = 0.15,
+				})
+			end,
+		})
+		task.wait(HASTA_BOLT_GAP)
+	end
+end
+
+local function hastaBeam(ctx)
+	local c, character = ctx.combat, ctx.character
+	local started = os.clock()
+	character:SetAttribute("Rooted", true)
+	local origin, direction, length = ctx.root.Position, look(ctx), HASTA_LENGTH
+	while os.clock() - started < HASTA_BEAM_MAX and not interrupted(ctx) do
+		if not c.IsHeld(character, HASTA_SLOT) and os.clock() - started > 0.4 then
+			break
+		end
+		CombatState.SetCasting(character, HASTA_BEAM_TICK + 0.3)
+		origin = ctx.root.Position + look(ctx) * 3 + UP * 0.8
+		direction = aimFrom(ctx, origin, softTarget(ctx, HASTA_LENGTH, 25), 0.4)
+		length = reach(ctx, origin, direction, HASTA_LENGTH)
+		fx(ctx, "QuartileHasta", "Beam", { origin = origin, direction = direction, length = length })
+		for _, victim in lineVictims(ctx, origin, direction, length, 5) do
+			c.Hit(character, victim, {
+				damage = 1.1,
+				stun = 0.45,
+				attackType = "Bolt",
+				noShake = true,
+				velocity = c.Flat(direction) * 8,
+				velocityTime = 0.12,
+			})
+		end
+		task.wait(HASTA_BEAM_TICK)
+	end
+	character:SetAttribute("Rooted", false)
+	if interrupted(ctx) then
+		return
+	end
+	-- One last burst along it, breaking guards.
+	fx(ctx, "QuartileHasta", "BeamEnd", { origin = origin, direction = direction, length = length })
+	for _, victim in lineVictims(ctx, origin, direction, length, 6) do
+		c.Hit(character, victim, {
+			damage = 4,
+			stun = 1,
+			attackType = "Bolt",
+			guardBreak = true,
+			heavy = true,
+			ragdoll = 1,
+			velocity = c.Flat(direction) * 45 + UP * 15,
+		})
+	end
+	c.ShakeArea(origin, 45, 0.4)
+end
+
+local function hastaRain(ctx)
+	local c, character = ctx.combat, ctx.character
+	CombatState.SetCasting(character, HASTA_RAIN_TIME + 0.3)
+	c.ApplyVelocity(character, HOVER, HASTA_RAIN_TIME + 0.2)
+	local center = floorUnder(ctx, ctx.root.Position + look(ctx) * 6)
+	fx(ctx, "QuartileHasta", "Rain", { center = center, radius = HASTA_RAIN_RADIUS, duration = HASTA_RAIN_TIME })
+	for _ = 1, HASTA_RAIN do
+		if interrupted(ctx) then
+			return
+		end
+		-- Half of them at whoever is in it, the rest anywhere in the circle.
+		local spot
+		local victims = c.Sphere(character, center + UP * 3, HASTA_RAIN_RADIUS)
+		local victimRoot = if #victims > 0 and math.random() < 0.5
+			then rootOf(victims[math.random(1, #victims)])
+			else nil
+		if victimRoot then
+			spot = floorUnder(
+				ctx,
+				victimRoot.Position + Vector3.new(math.random(-15, 15) / 10, 0, math.random(-15, 15) / 10)
+			)
+		else
+			local angle = math.random() * math.pi * 2
+			spot = center
+				+ Vector3.new(math.cos(angle), 0, math.sin(angle)) * HASTA_RAIN_RADIUS * math.sqrt(math.random())
+		end
+		local from = ctx.root.Position + Vector3.new(math.random(-20, 20) / 10, 1, math.random(-20, 20) / 10)
+		fx(ctx, "QuartileHasta", "Fall", { from = from, spot = spot })
+		task.delay(0.18, function()
+			for _, victim in c.Sphere(character, spot + UP * 2, 4) do
+				c.Hit(character, victim, { damage = 1.8, stun = 0.5, attackType = "Explosion", noShake = true })
+			end
+		end)
+		task.wait(HASTA_RAIN_TIME / HASTA_RAIN)
+	end
+end
 
 local function quartileHasta(ctx)
 	local c, character = ctx.combat, ctx.character
 	local airborne = ctx.airborne
-	CombatState.SetCasting(character, HASTA_CHARGE + 0.45)
+	CombatState.SetCasting(character, HASTA_CHARGE + 0.3)
 	if airborne then
-		c.ApplyVelocity(character, HOVER, HASTA_CHARGE + 0.3)
+		c.ApplyVelocity(character, HOVER, HASTA_CHARGE + 0.2)
 	end
-	fx(ctx, "QuartileHasta", "Stars", { airborne = airborne, duration = HASTA_CHARGE })
+	fx(ctx, "QuartileHasta", "Stars", { airborne = airborne })
 	task.wait(HASTA_CHARGE)
 	if interrupted(ctx) then
-		fx(ctx, "QuartileHasta", "Cancel")
+		fx(ctx, "QuartileHasta", "Done")
 		return
 	end
-	local origin = ctx.root.Position + look(ctx) * 3 + UP * 0.8
-	local direction = aimFrom(ctx, origin, softTarget(ctx, HASTA_LENGTH, 25), 0.4)
-	local length = reach(ctx, origin, direction, HASTA_LENGTH)
-	fx(ctx, "QuartileHasta", "Fire", { origin = origin, direction = direction, length = length })
-	for _, victim in lineVictims(ctx, origin, direction, length, 6) do
-		c.Hit(character, victim, {
-			damage = 14,
-			stun = 1.2,
-			attackType = "Bolt",
-			guardBreak = true,
-			heavy = true,
-			ragdoll = 1.3,
-			velocity = c.Flat(direction) * 55 + UP * 18,
-		})
+	if airborne then
+		hastaRain(ctx)
+	elseif c.IsHeld(character, HASTA_SLOT) then
+		hastaBeam(ctx)
+	else
+		hastaBarrage(ctx)
 	end
-	c.ShakeArea(origin, 45, 0.4)
-	task.wait(0.3)
+	fx(ctx, "QuartileHasta", "Done")
 	CombatState.SetCasting(character, 0.2)
 end
 

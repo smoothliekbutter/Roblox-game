@@ -1014,7 +1014,7 @@ Animations.HastaStars = {
 			"Out",
 		},
 		{
-			0.5,
+			1,
 			{
 				Torso = body(0.118, -4, -12),
 				Head = rot(6, 10),
@@ -1022,6 +1022,95 @@ Animations.HastaStars = {
 				LeftArm = limb(150, -10, -22),
 				RightLeg = rot(-16, 0, 8),
 				LeftLeg = rot(16, 0, -8),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Quartile Hasta held: leaning into the beam.
+Animations.HastaBeam = {
+	fadeIn = 0.03,
+	fadeOut = 0.3,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.118, -4, -12),
+				Head = rot(6, 10),
+				RightArm = limb(92, 10),
+				LeftArm = limb(150, -10, -22),
+				RightLeg = rot(-16, 0, 8),
+				LeftLeg = rot(16, 0, -8),
+			},
+		},
+		{
+			0.1,
+			{
+				Torso = body(0.122, -8, -12),
+				Head = rot(8, 10),
+				RightArm = limb(94, 8),
+				LeftArm = limb(140, -10, -26),
+				RightLeg = rot(-20, 0, 8),
+				LeftLeg = rot(20, 0, -8),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			2,
+			{
+				Torso = body(0.122, -8, -12),
+				Head = rot(8, 10),
+				RightArm = limb(94, 8),
+				LeftArm = limb(140, -10, -26),
+				RightLeg = rot(-20, 0, 8),
+				LeftLeg = rot(20, 0, -8),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Quartile Hasta in the air: hands down, calling the star-fire down.
+Animations.HastaRain = {
+	fadeOut = 0.25,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6),
+				Head = rot(4),
+				RightArm = limb(40, 0, 30),
+				LeftArm = limb(40, 0, -30),
+				RightLeg = rot(30),
+				LeftLeg = rot(-12),
+			},
+		},
+		{
+			0.15,
+			{
+				Torso = rot(-10),
+				Head = rot(-14),
+				RightArm = limb(40, 10, 20),
+				LeftArm = limb(40, -10, -20),
+				RightLeg = rot(14),
+				LeftLeg = rot(-8),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			1.2,
+			{
+				Torso = rot(-10),
+				Head = rot(-14),
+				RightArm = limb(40, 10, 20),
+				LeftArm = limb(40, -10, -20),
+				RightLeg = rot(14),
+				LeftLeg = rot(-8),
 			},
 			"Linear",
 			"Out",

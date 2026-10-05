@@ -203,6 +203,28 @@ local function tube(from: Vector3, to: Vector3, width: number, color: Color3, tr
 	})
 end
 
+-- Re-poses a bar (from `bar`) to run between two points.
+local function stretch(line: BasePart, from: Vector3, to: Vector3)
+	line.Size = Vector3.new(line.Size.X, line.Size.Y, (to - from).Magnitude + 0.05)
+	line.CFrame = CFrame.lookAt(from:Lerp(to, 0.5), to)
+end
+
+-- A neon wedge (U.newPart for wedges), for pointed shapes.
+local function newWedge(props: { [string]: any }): WedgePart
+	local wedge = Instance.new("WedgePart")
+	wedge.Anchored = true
+	wedge.CanCollide = false
+	wedge.CanQuery = false
+	wedge.CanTouch = false
+	wedge.CastShadow = false
+	wedge.Material = Enum.Material.Neon
+	for key, value in props do
+		(wedge :: any)[key] = value
+	end
+	wedge.Parent = U.folder
+	return wedge
+end
+
 -- Wind streaming into a point from all round it.
 local function inflow(target: Vector3, radius: number, color: Color3?)
 	local from = target + U.randomUnit() * radius
@@ -358,24 +380,58 @@ end
 ---------------------------------------------------------------------------
 
 -- Wind Blades Shower: a ring of wind forms over the spot and blades fill
--- the sky in it, then fall in waves, each bursting where it lands.
+-- the sky in it (white blades with pointed tips in a green glow), then fall
+-- in waves streaking wind behind them, each bursting where it lands.
 local function fallingBlade(target: Vector3, formDelay: number, fallAt: number)
 	local start = target + Vector3.new(math.random(-30, 30) / 10, 20 + math.random() * 6, math.random(-30, 30) / 10)
 	local cframe = CFrame.lookAt(start, target) * CFrame.Angles(0, 0, math.random() * math.pi)
-	local blade =
-		U.newPart({ Size = Vector3.new(0.1, 0.65, 3.2), CFrame = cframe, Color = WIND_WHITE, Transparency = 1 })
-	local glow = U.newPart({ Size = Vector3.new(0.05, 1.5, 3.8), CFrame = cframe, Color = WIND, Transparency = 1 })
+	local blade = U.newPart({ Size = Vector3.new(0.08, 0.5, 2.4), Color = WIND_WHITE, Transparency = 1 })
+	local parts: { BasePart } = {
+		blade,
+		newWedge({ Size = Vector3.new(0.08, 0.25, 1.1), Color = WIND_WHITE, Transparency = 1 }),
+		newWedge({ Size = Vector3.new(0.08, 0.25, 1.1), Color = WIND_WHITE, Transparency = 1 }),
+		U.newPart({ Size = Vector3.new(0.04, 1.3, 4), Color = WIND, Transparency = 1 }),
+	}
+	local offsets = {
+		CFrame.identity,
+		CFrame.new(0, 0.125, -1.75),
+		CFrame.new(0, -0.125, -1.75) * CFrame.Angles(0, 0, math.pi),
+		CFrame.new(0, 0, -0.3),
+	}
+	local shown = { 0.05, 0.05, 0.05, 0.6 }
+	for i, part in parts do
+		part.CFrame = cframe * offsets[i]
+	end
+	local tail0 = Instance.new("Attachment")
+	tail0.Position = Vector3.new(0, 0.25, 1.2)
+	tail0.Parent = blade
+	local tail1 = Instance.new("Attachment")
+	tail1.Position = Vector3.new(0, -0.25, 1.2)
+	tail1.Parent = blade
+	local trail = Instance.new("Trail")
+	trail.Attachment0 = tail0
+	trail.Attachment1 = tail1
+	trail.Color = ColorSequence.new(WIND_WHITE, WIND)
+	trail.Transparency = NumberSequence.new(0.2, 1)
+	trail.Lifetime = 0.12
+	trail.LightEmission = 1
+	trail.LightInfluence = 0
+	trail.FaceCamera = true
+	trail.Parent = blade
 	task.delay(formDelay, function()
-		U.tween(blade, 0.2, { Transparency = 0.1 })
-		U.tween(glow, 0.2, { Transparency = 0.6 })
+		for i, part in parts do
+			U.tween(part, 0.2, { Transparency = shown[i] })
+		end
 	end)
 	task.delay(fallAt, function()
 		local drop = target - start
-		U.tween(blade, 0.14, { CFrame = cframe + drop }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-		U.tween(glow, 0.14, { CFrame = cframe + drop }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		for _, part in parts do
+			U.tween(part, 0.14, { CFrame = part.CFrame + drop }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		end
 		task.delay(0.14, function()
-			blade:Destroy()
-			glow:Destroy()
+			for _, part in parts do
+				part:Destroy()
+			end
 			U.burst(target, {
 				color = WIND_WHITE,
 				count = 5,
@@ -386,6 +442,7 @@ local function fallingBlade(target: Vector3, formDelay: number, fallAt: number)
 				spread = 70,
 			})
 			U.ringBurst(CFrame.new(target + UP * 0.1), WIND, 0.4, 2.4, 0.22, 0.08)
+			U.flash(target + UP * 0.3, WIND_WHITE, 1.6, 0.1)
 		end)
 	end)
 end
@@ -599,36 +656,153 @@ function handlers.HeavenlyWindArk(data, character, root)
 end
 
 -- Gale White Bow: a great bow of wind in his left hand, the string drawn to
--- his chin, held through the volley; each arrow streaks out as a long bolt
--- of wind with a white core.
-local function flyingArrow(origin: Vector3, direction: Vector3, speed: number, range: number, scale: number)
-	local core = U.newPart({ Size = Vector3.new(0.3, 0.3, 4) * scale, Color = WIND_WHITE })
-	local glow = U.newPart({ Size = Vector3.new(1.1, 1.1, 5) * scale, Color = WIND, Transparency = 0.55 })
+-- his chin, held through the volley; each arrow streaks out spinning (the
+-- wind arrow below, shared by every arrow move).
+
+-- A wind arrow: a white-hot shaft in a shimmer of wind, a four-bladed head
+-- of light (one pair of blades white, the other gold), three fins of green
+-- wind for fletching, a glow at the head and a ribbon of wind streaming off
+-- the tail. Posed by its middle; -Z is where it points.
+type Arrow = { place: (CFrame) -> (), destroy: (number) -> () }
+
+local function makeArrow(scale: number): Arrow
+	local s = scale
+	local parts: { BasePart } = {}
+	local offsets: { CFrame } = {}
+	local function add(part: BasePart, offset: CFrame)
+		table.insert(parts, part)
+		table.insert(offsets, offset)
+	end
+	add(U.newPart({ Size = Vector3.new(0.12, 0.12, 3.4) * s, Color = WIND_WHITE }), CFrame.identity)
+	add(
+		U.newPart({
+			Shape = Enum.PartType.Cylinder,
+			Size = Vector3.new(3.6, 0.5, 0.5) * s,
+			Color = WIND,
+			Material = Enum.Material.ForceField,
+		}),
+		CFrame.Angles(0, rad(90), 0)
+	)
+	for blade = 0, 1 do
+		local turn = CFrame.Angles(0, 0, blade * math.pi / 2)
+		local color = if blade == 0 then WIND_WHITE else STAR
+		add(
+			newWedge({ Size = Vector3.new(0.06, 0.28, 0.9) * s, Color = color }),
+			turn * CFrame.new(0, 0.14 * s, -2.15 * s)
+		)
+		add(
+			newWedge({ Size = Vector3.new(0.06, 0.28, 0.9) * s, Color = color }),
+			turn * CFrame.new(0, -0.14 * s, -2.15 * s) * CFrame.Angles(0, 0, math.pi)
+		)
+	end
+	for fin = 0, 2 do
+		add(
+			newWedge({ Size = Vector3.new(0.04, 0.36, 0.8) * s, Color = WIND, Transparency = 0.15 }),
+			CFrame.Angles(0, 0, fin * math.pi * 2 / 3) * CFrame.new(0, 0.22 * s, 1.35 * s)
+		)
+	end
+	local glow =
+		U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.7 * s, Color = STAR, Transparency = 0.45 })
+	add(glow, CFrame.new(0, 0, -1.75 * s))
+	local light = Instance.new("PointLight")
+	light.Color = WIND
+	light.Range = 8 * s
+	light.Brightness = 2
+	light.Parent = glow
+	local tail0 = Instance.new("Attachment")
+	tail0.Position = Vector3.new(0, 0.18 * s, 1.6 * s)
+	tail0.Parent = parts[1]
+	local tail1 = Instance.new("Attachment")
+	tail1.Position = Vector3.new(0, -0.18 * s, 1.6 * s)
+	tail1.Parent = parts[1]
+	local trail = Instance.new("Trail")
+	trail.Attachment0 = tail0
+	trail.Attachment1 = tail1
+	trail.Color = ColorSequence.new(WIND_WHITE, WIND)
+	trail.Transparency = NumberSequence.new(0.15, 1)
+	trail.Lifetime = 0.2
+	trail.LightEmission = 1
+	trail.LightInfluence = 0
+	trail.FaceCamera = true
+	trail.Parent = parts[1]
+	local arrow = {}
+	function arrow.place(frame: CFrame)
+		for i, part in parts do
+			part.CFrame = frame * offsets[i]
+		end
+	end
+	function arrow.destroy(duration: number)
+		trail.Enabled = false
+		light.Enabled = false
+		fadeOut(parts, duration)
+	end
+	return arrow
+end
+
+-- Where an arrow strikes: a ring and a burst of wind and a white flash.
+local function arrowStrike(position: Vector3, direction: Vector3, scale: number)
+	U.flash(position, WIND_WHITE, 2 * scale, 0.12)
+	U.impactRing(position, direction, WIND_WHITE, 0.4, 2.6 * scale, 0.22)
+	gust(position, 2 + 2 * scale, -direction)
+end
+
+-- Moves a missile from `origin` along `direction` until it hits a wall or
+-- the ground or runs out of range (people don't stop it here: the server
+-- decides hits). `place(position, elapsed)` poses it every frame, `strike`
+-- gets where it hit a wall, then `done` cleans it up.
+local function fly(
+	origin: Vector3,
+	direction: Vector3,
+	speed: number,
+	range: number,
+	place: (Vector3, number) -> (),
+	strike: (Vector3) -> (),
+	done: () -> ()
+)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = { U.folder }
 	local position = origin
 	local travelled = 0
-	every(range / speed + 0.1, function(_, dt)
+	place(position, 0)
+	every(range / speed + 0.1, function(elapsed, dt)
 		local step = speed * dt
 		local wall = workspace:Raycast(position, direction * step, params)
 		local model = wall and wall.Instance:FindFirstAncestorWhichIsA("Model")
 		if wall and not (model and model:FindFirstChildOfClass("Humanoid")) then
-			gust(wall.Position, 3)
+			strike(wall.Position)
 			return false
 		end
 		position += direction * step
 		travelled += step
-		local frame = CFrame.lookAt(position, position + direction)
-		core.CFrame = frame
-		glow.CFrame = frame
+		place(position, elapsed)
 		return travelled < range
+	end, done)
+end
+
+-- A wind arrow in flight, spinning (a new one, or one already drawn).
+local function flyingArrow(
+	origin: Vector3,
+	direction: Vector3,
+	speed: number,
+	range: number,
+	scale: number,
+	drawn: Arrow?
+)
+	local arrow = drawn or makeArrow(scale)
+	fly(origin, direction, speed, range, function(position, elapsed)
+		arrow.place(CFrame.lookAt(position, position + direction) * CFrame.Angles(0, 0, elapsed * 14))
+	end, function(position)
+		arrowStrike(position, direction, scale)
 	end, function()
-		fadeOut({ core, glow }, 0.1)
+		arrow.destroy(0.12)
 	end)
 end
 
-local bows: { [Model]: { stop: () -> () } } = {}
+-- The bow keeps an arrow nocked between shots (each one loosed is the arrow
+-- that was on the string).
+type Bow = { stop: () -> (), nocked: Arrow? }
+local bows: { [Model]: Bow } = {}
 
 function handlers.GaleWhiteBow(data, character, root)
 	if data.phase == "Draw" then
@@ -642,11 +816,16 @@ function handlers.GaleWhiteBow(data, character, root)
 		local all = table.clone(limbs)
 		table.move(core, 1, #core, #all + 1, all)
 		table.move(strings, 1, 2, #all + 1, all)
-		local function stop()
+		local bow: Bow = { stop = function() end, nocked = makeArrow(1) }
+		function bow.stop()
 			bows[character] = nil
 			fadeOut(all, 0.2)
+			if bow.nocked then
+				bow.nocked.destroy(0.15)
+				bow.nocked = nil
+			end
 		end
-		bows[character] = { stop = stop }
+		bows[character] = bow
 		every(length, function(elapsed)
 			local hand = handOf(character, "Left")
 			local pull = handOf(character, "Right")
@@ -665,17 +844,35 @@ function handlers.GaleWhiteBow(data, character, root)
 			strings[1].CFrame = CFrame.lookAt(points[1]:Lerp(nock, 0.5), nock)
 			strings[2].Size = Vector3.new(0.05, 0.05, (points[#points] - nock).Magnitude)
 			strings[2].CFrame = CFrame.lookAt(points[#points]:Lerp(nock, 0.5), nock)
+			if bow.nocked then
+				bow.nocked.place(CFrame.lookAt(nock, nock + forward) * CFrame.new(0, 0, -1.6))
+			end
 			return true
 		end, function()
-			if bows[character] then
-				stop()
+			if bows[character] == bow then
+				bow.stop()
 			end
 		end)
 	elseif data.phase == "Arrow" then
 		local origin: Vector3 = data.origin
 		local direction: Vector3 = data.direction
-		flyingArrow(origin, direction, data.speed, data.range, if data.last then 1.4 else 1)
+		local bow = bows[character]
+		local nocked = if bow and not data.last then bow.nocked else nil
+		if bow and nocked then
+			-- The arrow on the string flies; the next one forms there.
+			bow.nocked = nil
+			task.delay(0.06, function()
+				if bows[character] == bow and not bow.nocked then
+					bow.nocked = makeArrow(1)
+				end
+			end)
+		elseif bow and bow.nocked then
+			bow.nocked.destroy(0.05)
+			bow.nocked = nil
+		end
+		flyingArrow(origin, direction, data.speed, data.range, if data.last then 1.4 else 1, nocked)
 		gust(origin, if data.last then 4 else 2, direction)
+		U.impactRing(origin, direction, WIND_WHITE, 0.4, if data.last then 4 else 2.4, 0.18)
 		if U.isLocal(character) then
 			CameraShake.FovKick(if data.last then 5 else 2)
 		end
@@ -1379,204 +1576,460 @@ function handlers.QuartileScutum(data, character, root)
 	end
 end
 
--- Quartile Hasta. The aim: a sigil of starlight opens in front of his hand,
--- a gold ring and a counter-turning outer ring, four stars at the corners
--- of a square of light inside it (the quartile) with a cross between them,
--- starlight drawn in, brighter and brighter. The lance: each star fires into
--- the point ahead where they meet (a flash and a cross of light there), then
--- one great lance (a white-hot core, a gold glow, a shimmering sheath, four
--- strands of starlight twisting round it, rings bursting off along it,
--- stars twinkling along it) bursts into a star where it ends, then thins
--- and fades.
+-- Quartile Hasta. Four stars open round his outstretched hand: a gold ring
+-- and a counter-turning outer ring, the stars at the corners of a square of
+-- light with a cross between them, starlight drawn in (in the air the sigil
+-- opens bigger, face-down under his feet). Then:
+--   tapped      the stars loose star bolts one after another, comets of
+--               starlight that burst into stars where they strike;
+--   held        their light pours into one lance he keeps on them (a
+--               white-hot core, a gold glow, a shimmering sheath, four
+--               strands of starlight twisting round it, rings bursting off
+--               along it, a star flaring where it strikes), ending in a
+--               blast;
+--   in the air  a circle of gold opens on the ground below and star-fire
+--               rains into it, each bolt bursting into flames where it lands.
 local HASTA_STRANDS = 4
 local HASTA_SEGMENTS = 14
-local hastaSigils: { [Model]: { Star } } = {}
+local STAR_FIRE = Color3.fromRGB(255, 140, 40)
+type Sigil = { stars: { Star }, center: Vector3, aim: Vector3? }
+type Lance = { set: (Vector3, Vector3, number) -> (), stop: () -> () }
+local hastaSigils: { [Model]: Sigil } = {}
+local hastaLances: { [Model]: Lance } = {}
 
-function handlers.QuartileHasta(data, character, root)
-	if data.phase == "Stars" then
-		play(character, ANIMS.HastaStars)
-		local token = bump(character)
-		local stars: { Star } = {}
-		for _ = 1, 4 do
-			table.insert(stars, makeStar(1.3))
+local function stopLance(character: Model)
+	local lance = hastaLances[character]
+	if lance then
+		hastaLances[character] = nil
+		lance.stop()
+	end
+end
+
+-- A cross of light flaring across `direction` at `position`.
+local function crossGlint(position: Vector3, direction: Vector3, size: number)
+	local right = direction:Cross(UP)
+	right = if right.Magnitude > 1e-3 then right.Unit else Vector3.xAxis
+	for _, axis in { right, right:Cross(direction).Unit } do
+		local line = bar(position - axis * size, position + axis * size, 0.22, STAR_WHITE, 0)
+		U.tween(line, 0.35, { Size = Vector3.new(0.02, 0.02, size * 2.8), Transparency = 1 })
+		task.delay(0.36, line.Destroy, line)
+	end
+end
+
+-- The sigil, held until the cast ends.
+local function openSigil(character: Model, root: BasePart, down: boolean)
+	local token = bump(character)
+	stopLance(character)
+	local size = if down then 1.5 else 1
+	local stars: { Star } = {}
+	for _ = 1, 4 do
+		table.insert(stars, makeStar(1.3 * size))
+	end
+	local inner = arcParts(arcPoints(Vector3.zero, Vector3.xAxis, UP, 1, 0, math.pi * 2, 16), 0.12, STAR, 0.1)
+	local outer = arcParts(arcPoints(Vector3.zero, Vector3.xAxis, UP, 1, 0, math.pi * 2, 20), 0.08, STAR_WHITE, 0.3)
+	local square, cross = {}, {}
+	for _ = 1, 4 do
+		table.insert(square, bar(Vector3.zero, UP, 0.12, STAR_WHITE, 0.05))
+	end
+	for _ = 1, 2 do
+		table.insert(cross, bar(Vector3.zero, UP, 0.06, STAR, 0.4))
+	end
+	local core = U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.5, Color = STAR, Transparency = 0.45 })
+	local light = Instance.new("PointLight")
+	light.Color = STAR
+	light.Range = 12 * size
+	light.Parent = core
+	local parts = table.clone(inner)
+	for _, list in { outer, square, cross } do
+		table.move(list, 1, #list, #parts + 1, parts)
+	end
+	table.insert(parts, core)
+	local sigil: Sigil = { stars = stars, center = root.Position }
+	hastaSigils[character] = sigil
+	every(3.5, function(elapsed)
+		local hand = handOf(character, "Right")
+		if not live(character, token) or not hand or not root.Parent then
+			return false
 		end
-		local inner = arcParts(arcPoints(Vector3.zero, Vector3.xAxis, UP, 1, 0, math.pi * 2, 16), 0.12, STAR, 0.1)
-		local outer = arcParts(arcPoints(Vector3.zero, Vector3.xAxis, UP, 1, 0, math.pi * 2, 20), 0.08, STAR_WHITE, 0.3)
-		local square, cross = {}, {}
-		for _ = 1, 4 do
-			table.insert(square, bar(Vector3.zero, UP, 0.12, STAR_WHITE, 0.05))
+		local center, frame
+		if down then
+			center = root.Position - UP * 3.4
+			frame = CFrame.lookAt(center, center - UP, root.CFrame.LookVector)
+		else
+			local forward = sigil.aim or root.CFrame.LookVector
+			center = hand + forward * 1.2
+			frame = CFrame.lookAt(center, center + forward)
 		end
-		for _ = 1, 2 do
-			table.insert(cross, bar(Vector3.zero, UP, 0.06, STAR, 0.4))
-		end
-		local core =
-			U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.5, Color = STAR, Transparency = 0.45 })
-		local light = Instance.new("PointLight")
-		light.Color = STAR
-		light.Range = 12
-		light.Parent = core
-		local parts = table.clone(inner)
-		for _, list in { outer, square, cross } do
-			table.move(list, 1, #list, #parts + 1, parts)
-		end
-		table.insert(parts, core)
-		hastaSigils[character] = stars
-		every(data.duration + 0.15, function(elapsed)
-			local hand = handOf(character, "Right")
-			if not live(character, token) or not hand then
-				return false
-			end
-			local grow = math.min(elapsed / 0.25, 1)
-			local forward = root.CFrame.LookVector
-			local center = hand + forward * 1.2
-			local frame = CFrame.lookAt(center, center + forward)
-			local spin = elapsed * 2.5
-			poseArc(
-				inner,
-				arcPoints(center, frame.RightVector, frame.UpVector, 2.2 * grow + 0.05, spin, spin + math.pi * 2, 16)
+		sigil.center = center
+		local grow = math.min(elapsed / 0.2, 1)
+		local radius = 2.2 * size * grow + 0.05
+		-- It spins up while the lance pours out of it.
+		local spin = elapsed * (if sigil.aim then 6 else 2.5)
+		poseArc(inner, arcPoints(center, frame.RightVector, frame.UpVector, radius, spin, spin + math.pi * 2, 16))
+		poseArc(
+			outer,
+			arcPoints(
+				center,
+				frame.RightVector,
+				frame.UpVector,
+				radius * 1.36,
+				-spin * 0.7,
+				-spin * 0.7 + math.pi * 2,
+				20
 			)
-			poseArc(
-				outer,
-				arcPoints(
-					center,
-					frame.RightVector,
-					frame.UpVector,
-					3 * grow + 0.05,
-					-spin * 0.7,
-					-spin * 0.7 + math.pi * 2,
-					20
-				)
-			)
-			local corners = {}
-			for i = 1, 4 do
-				local angle = (i - 1) * math.pi / 2 + spin
-				corners[i] = center
-					+ (frame.RightVector * math.cos(angle) + frame.UpVector * math.sin(angle)) * 2.2 * grow
-				stars[i].place(corners[i], elapsed * 4 + i)
-			end
-			local function span(line: BasePart, a: Vector3, b: Vector3)
-				line.Size = Vector3.new(line.Size.X, line.Size.Y, (b - a).Magnitude + 0.05)
-				line.CFrame = CFrame.lookAt(a:Lerp(b, 0.5), b)
-			end
-			for i, edge in square do
-				span(edge, corners[i], corners[i % 4 + 1])
-			end
-			span(cross[1], corners[1], corners[3])
-			span(cross[2], corners[2], corners[4])
-			core.Size = Vector3.one * (0.5 + 1.5 * grow * (1 + 0.15 * math.sin(elapsed * 30)))
-			core.CFrame = CFrame.new(center)
-			light.Brightness = 1 + 4 * math.min(elapsed / data.duration, 1)
-			inflow(center, 5, STAR)
-			return true
-		end, function()
-			if hastaSigils[character] == stars then
-				hastaSigils[character] = nil
-			end
-			for _, star in stars do
-				star.fade(0.15)
-			end
-			fadeOut(parts, 0.15)
+		)
+		local corners = {}
+		for i = 1, 4 do
+			local angle = (i - 1) * math.pi / 2 + spin
+			corners[i] = center + (frame.RightVector * math.cos(angle) + frame.UpVector * math.sin(angle)) * radius
+			stars[i].place(corners[i], elapsed * 4 + i)
+		end
+		for i, edge in square do
+			stretch(edge, corners[i], corners[i % 4 + 1])
+		end
+		stretch(cross[1], corners[1], corners[3])
+		stretch(cross[2], corners[2], corners[4])
+		core.Size = Vector3.one * (0.5 + 1.5 * size * grow * (1 + 0.15 * math.sin(elapsed * 30)))
+		core.CFrame = CFrame.new(center)
+		light.Brightness = 1 + 4 * math.min(elapsed / 0.4, 1)
+		inflow(center, 5 * size, STAR)
+		return true
+	end, function()
+		if hastaSigils[character] == sigil then
+			hastaSigils[character] = nil
+		end
+		for _, star in stars do
+			star.fade(0.2)
+		end
+		fadeOut(parts, 0.2)
+	end)
+end
+
+-- Where a star bolt strikes: it bursts into a star.
+local function starBurst(position: Vector3, direction: Vector3, scale: number)
+	local star = makeStar(2.4 * scale)
+	star.place(position, math.random() * 6)
+	task.delay(0.06, star.fade, 0.22)
+	U.impactRing(position, direction, STAR_WHITE, 0.5, 3.5 * scale, 0.22)
+	U.burst(position, {
+		color = STAR,
+		count = math.floor(10 * scale),
+		size = 0.4,
+		speed = NumberRange.new(16, 36),
+		lifetime = NumberRange.new(0.15, 0.32),
+		streaks = true,
+		spread = 70,
+		direction = -direction,
+	})
+	U.light(position, STAR, 4, 14 * scale, 0.25)
+end
+
+-- A star bolt: a comet of starlight, a star for a head, a white-hot streak
+-- and a tail burning from gold to orange.
+local function starBolt(origin: Vector3, direction: Vector3, speed: number, range: number, scale: number)
+	local head = makeStar(1.1 * scale)
+	local streak = bar(origin, origin + direction, 0.24 * scale, STAR_WHITE, 0)
+	local glow = bar(origin, origin + direction, 0.9 * scale, STAR, 0.55)
+	local tail0 = Instance.new("Attachment")
+	tail0.Position = Vector3.new(0.4 * scale, 0, 0)
+	tail0.Parent = streak
+	local tail1 = Instance.new("Attachment")
+	tail1.Position = Vector3.new(-0.4 * scale, 0, 0)
+	tail1.Parent = streak
+	local trail = Instance.new("Trail")
+	trail.Attachment0 = tail0
+	trail.Attachment1 = tail1
+	trail.Color = ColorSequence.new(STAR_WHITE, STAR_FIRE)
+	trail.Transparency = NumberSequence.new(0.1, 1)
+	trail.WidthScale = NumberSequence.new(1, 0)
+	trail.Lifetime = 0.15
+	trail.LightEmission = 1
+	trail.LightInfluence = 0
+	trail.FaceCamera = true
+	trail.Parent = streak
+	local length = 3 * scale
+	fly(origin, direction, speed, range, function(position, elapsed)
+		head.place(position, elapsed * 12)
+		stretch(streak, position - direction * length, position)
+		stretch(glow, position - direction * length * 1.5, position)
+	end, function(position)
+		starBurst(position, direction, scale)
+	end, function()
+		trail.Enabled = false
+		head.fade(0.1)
+		fadeOut({ streak, glow }, 0.12)
+	end)
+end
+
+-- Star-fire: a bolt of burning starlight falls onto `spot` and bursts into
+-- flames there.
+local function starFire(from: Vector3, spot: Vector3)
+	local fall = 0.18
+	local head = U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.9, Color = STAR_WHITE })
+	local glow =
+		U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * 2.2, Color = STAR_FIRE, Transparency = 0.45 })
+	local streak = bar(from, from + UP, 0.35, STAR_WHITE, 0.1)
+	local flare = bar(from, from + UP, 1.1, STAR_FIRE, 0.5)
+	every(fall, function(elapsed)
+		local a = elapsed / fall
+		local position = from:Lerp(spot, a * a)
+		head.CFrame = CFrame.new(position)
+		glow.CFrame = CFrame.new(position)
+		stretch(streak, from:Lerp(position, 0.5), position)
+		stretch(flare, from:Lerp(position, 0.3), position)
+		return true
+	end, function()
+		fadeOut({ head, glow, streak, flare }, 0.06)
+		local holder = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.new(spot + UP * 0.6) })
+		local fire = Instance.new("Fire")
+		fire.Color = STAR
+		fire.SecondaryColor = STAR_FIRE
+		fire.Size = 4
+		fire.Heat = 9
+		fire.Parent = holder
+		task.delay(1.1, function()
+			fire.Enabled = false
 		end)
-		if U.isLocal(character) then
-			CameraShake.Add(0.05)
+		task.delay(2.6, holder.Destroy, holder)
+		U.flash(spot + UP * 0.5, STAR_WHITE, 5, 0.18)
+		U.burst(spot + UP * 0.3, {
+			color = STAR_FIRE,
+			count = 14,
+			size = 0.45,
+			speed = NumberRange.new(14, 34),
+			lifetime = NumberRange.new(0.2, 0.5),
+			spread = 50,
+			direction = UP,
+			acceleration = Vector3.new(0, 10, 0),
+		})
+		U.ringBurst(CFrame.new(spot + UP * 0.12), STAR, 0.5, 4, 0.3, 0.15)
+		U.groundCracks(spot, 4, 2.6, STAR_FIRE, 1.2)
+		U.light(spot + UP, STAR_FIRE, 5, 14, 0.5)
+		if (workspace.CurrentCamera.CFrame.Position - spot).Magnitude < 30 then
+			CameraShake.Add(0.03)
 		end
-	elseif data.phase == "Fire" then
-		play(character, ANIMS.HastaFire)
-		local origin: Vector3 = data.origin
-		local direction: Vector3 = data.direction
-		local length: number = data.length
-		local finish = origin + direction * length
-		local meet = origin + direction * 3
+	end)
+end
+
+-- The held lance, poured out of the sigil; `set` (each server tick) moves
+-- where it strikes, smoothed here.
+local function startLance(character: Model, root: BasePart): Lance
+	local token = castTokens[character] or 0
+	local at = root.Position
+	local core = tube(at, at + UP, 1.6, STAR_WHITE, 0)
+	local glow = tube(at, at + UP, 4.5, STAR, 0.55)
+	local sheath = tube(at, at + UP, 7.5, STAR, 0)
+	sheath.Material = Enum.Material.ForceField
+	local mouth = U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one, Color = STAR_WHITE, Transparency = 0.2 })
+	local light = Instance.new("PointLight")
+	light.Color = STAR
+	light.Range = 30
+	light.Brightness = 5
+	light.Parent = core
+	local tip = makeStar(3.2)
+	local rays: { BasePart } = {}
+	for _ = 1, 4 do
+		table.insert(rays, bar(at, at + UP, 0.18, STAR_WHITE, 0.15))
+	end
+	local strands: { { BasePart } } = {}
+	for k = 1, HASTA_STRANDS do
+		local strand = {}
+		for _ = 1, HASTA_SEGMENTS do
+			table.insert(
+				strand,
+				bar(at, at + UP, if k % 2 == 1 then 0.24 else 0.16, if k % 2 == 1 then STAR_WHITE else STAR, 0.1)
+			)
+		end
+		table.insert(strands, strand)
+	end
+	local origin, target = at, at + root.CFrame.LookVector * 10
+	local finish: Vector3? = nil
+	local lastSet = os.clock()
+	local stopped = false
+	local nextRing, nextSpark = 0, 0
+	local lance = {}
+	function lance.set(newOrigin: Vector3, direction: Vector3, length: number)
+		origin = newOrigin
+		target = newOrigin + direction * length
+		lastSet = os.clock()
+	end
+	function lance.stop()
+		stopped = true
+	end
+	every(4, function(elapsed, dt)
+		if stopped or not live(character, token) or os.clock() - lastSet > 0.5 or not root.Parent then
+			return false
+		end
+		local sigil = hastaSigils[character]
+		local start = if sigil then sigil.center else origin
+		local now = if finish then finish:Lerp(target, 1 - math.exp(-dt * 14)) else target
+		finish = now
+		local along = now - start
+		local length = along.Magnitude
+		if length < 1 then
+			return true
+		end
+		local direction = along.Unit
+		if sigil then
+			sigil.aim = direction
+		end
 		local right = direction:Cross(UP)
 		right = if right.Magnitude > 1e-3 then right.Unit else Vector3.xAxis
 		local up = right:Cross(direction).Unit
-
-		-- Each star fires into the point where they meet.
-		local stars = hastaSigils[character]
-		if stars then
-			for _, star in stars do
-				local from = star.parts[1].Position
-				fadeOut({ bar(from, meet, 0.3, STAR_WHITE, 0), bar(from, meet, 0.9, STAR, 0.5) }, 0.25)
+		local grow = math.min(elapsed / 0.12, 1)
+		local pulse = grow * (1 + 0.12 * math.sin(elapsed * 40))
+		local middle = CFrame.lookAt(start:Lerp(now, 0.5), now) * CFrame.Angles(0, rad(90), 0)
+		core.Size = Vector3.new(length, 1.6 * pulse, 1.6 * pulse)
+		core.CFrame = middle
+		glow.Size = Vector3.new(length, 4.5 * grow, 4.5 * grow)
+		glow.CFrame = middle
+		sheath.Size = Vector3.new(length, 7.5 * pulse, 7.5 * pulse)
+		sheath.CFrame = middle * CFrame.Angles(elapsed * 10, 0, 0)
+		mouth.Size = Vector3.one * 3.4 * pulse
+		mouth.CFrame = CFrame.new(start)
+		tip.place(now, elapsed * 5)
+		local spin = elapsed * 16
+		for k, strand in strands do
+			local phase = k * (math.pi * 2 / HASTA_STRANDS) + spin
+			local previous = start
+			for i, segment in strand do
+				local s = i / #strand * length
+				local angle = phase + s * 0.3
+				local point = start
+					+ direction * s
+					+ (right * math.cos(angle) + up * math.sin(angle)) * 3 * math.min(s / 4, 1)
+				stretch(segment, previous, point)
+				previous = point
 			end
 		end
-		bump(character)
-		U.flash(meet, STAR_WHITE, 12, 0.25)
-		for _, axis in { right, up } do
-			local glint = bar(meet - axis * 7, meet + axis * 7, 0.22, STAR_WHITE, 0)
-			U.tween(glint, 0.35, { Size = Vector3.new(0.02, 0.02, 20), Transparency = 1 })
-			task.delay(0.36, glint.Destroy, glint)
+		-- The stars pour their light into it.
+		for i, ray in rays do
+			local star = sigil and sigil.stars[i]
+			if star then
+				stretch(ray, star.parts[1].Position, start)
+			end
 		end
+		if elapsed >= nextRing then
+			nextRing = elapsed + 0.05
+			U.impactRing(start + direction * (math.random() * length), direction, STAR_WHITE, 2, 5.5, 0.2)
+		end
+		if elapsed >= nextSpark then
+			nextSpark = elapsed + 0.08
+			U.burst(now, {
+				color = STAR,
+				count = 6,
+				size = 0.45,
+				speed = NumberRange.new(18, 40),
+				lifetime = NumberRange.new(0.12, 0.3),
+				streaks = true,
+				spread = 75,
+				direction = -direction,
+			})
+			U.impactRing(now, direction, STAR, 1, 4.5, 0.18)
+		end
+		return true
+	end, function()
+		stopped = true
+		if hastaLances[character] == lance then
+			hastaLances[character] = nil
+		end
+		light.Enabled = false
+		tip.fade(0.2)
+		U.tween(core, 0.25, { Size = Vector3.new(core.Size.X, 0.05, 0.05) })
+		U.tween(glow, 0.25, { Size = Vector3.new(glow.Size.X, 0.4, 0.4) })
+		fadeOut({ core, glow, sheath, mouth }, 0.28)
+		fadeOut(rays, 0.15)
+		for _, strand in strands do
+			fadeOut(strand, 0.2)
+		end
+	end)
+	return lance
+end
 
-		-- The lance.
-		local core = tube(meet, finish, 2, STAR_WHITE, 0)
-		local glow = tube(meet, finish, 6, STAR, 0.55)
-		local sheath = tube(meet, finish, 9, STAR, 0)
+function handlers.QuartileHasta(data, character, root)
+	local phase = data.phase
+	if phase == "Stars" then
+		play(character, if data.airborne then ANIMS.HastaRain else ANIMS.HastaStars)
+		openSigil(character, root, data.airborne == true)
+		if U.isLocal(character) then
+			CameraShake.Add(0.05)
+		end
+	elseif phase == "Bolt" then
+		-- Loosed from one of the stars, bent to meet the server's line 20
+		-- studs out.
+		local sigil = hastaSigils[character]
+		local star = sigil and sigil.stars[data.index]
+		local muzzle = root.Position + root.CFrame.LookVector * 3 + UP * 0.8
+		local from = if star then star.parts[1].Position else muzzle
+		local direction = (muzzle + data.direction * 20 - from).Unit
+		local scale = if data.last then 1.5 else 1
+		U.flash(from, STAR_WHITE, 3 * scale, 0.12)
+		U.impactRing(from, direction, STAR, 0.4, 2.2 * scale, 0.16)
+		starBolt(from, direction, data.speed, data.range, scale)
+		if U.isLocal(character) then
+			CameraShake.FovKick(if data.last then 5 else 1.5)
+		end
+	elseif phase == "Beam" then
+		local lance = hastaLances[character]
+		if not lance then
+			play(character, ANIMS.HastaBeam)
+			lance = startLance(character, root)
+			hastaLances[character] = lance
+			local sigil = hastaSigils[character]
+			local at: Vector3 = if sigil then sigil.center else data.origin
+			U.flash(at, STAR_WHITE, 9, 0.2)
+			crossGlint(at, data.direction, 6)
+			U.light(at, STAR, 6, 30, 0.4)
+			if U.isLocal(character) then
+				CameraShake.Add(0.12)
+				CameraShake.FovKick(6)
+			end
+		end
+		lance.set(data.origin, data.direction, data.length)
+		if U.isLocal(character) then
+			CameraShake.Add(0.03)
+		end
+	elseif phase == "BeamEnd" then
+		-- One last blast along it: a thick white lance thinning away, rings
+		-- bursting off along it and a great star where it ends.
+		stopLance(character)
+		local sigil = hastaSigils[character]
+		local start: Vector3 = if sigil then sigil.center else data.origin
+		local finish: Vector3 = data.origin + data.direction * data.length
+		local along = finish - start
+		local direction: Vector3 = if along.Magnitude > 1e-3 then along.Unit else data.direction
+		local length = along.Magnitude
+		local core = tube(start, finish, 3.4, STAR_WHITE, 0)
+		local glow = tube(start, finish, 9, STAR, 0.5)
+		local sheath = tube(start, finish, 12, STAR, 0)
 		sheath.Material = Enum.Material.ForceField
-		local light = Instance.new("PointLight")
-		light.Color = STAR
-		light.Range = 30
-		light.Brightness = 6
-		light.Parent = core
-		local strands: { { BasePart } } = {}
-		for k = 1, HASTA_STRANDS do
-			local strand = {}
-			for _ = 1, HASTA_SEGMENTS do
-				table.insert(
-					strand,
-					bar(
-						meet,
-						meet + direction,
-						if k % 2 == 1 then 0.24 else 0.16,
-						if k % 2 == 1 then STAR_WHITE else STAR,
-						0.1
-					)
-				)
-			end
-			table.insert(strands, strand)
+		U.tween(core, 0.35, { Size = Vector3.new(core.Size.X, 0.05, 0.05) })
+		U.tween(glow, 0.35, { Size = Vector3.new(glow.Size.X, 0.5, 0.5) })
+		U.tween(sheath, 0.3, { Size = Vector3.new(sheath.Size.X, 16, 16) })
+		fadeOut({ core, glow, sheath }, 0.38)
+		for i = 0, 10 do
+			task.delay(
+				i * 0.015,
+				U.impactRing,
+				start + direction * (length * i / 10),
+				direction,
+				STAR_WHITE,
+				2.5,
+				8,
+				0.25
+			)
 		end
-		local span = length - 3
-		local nextRing = 0
-		every(0.35, function(elapsed)
-			local spin = elapsed * 16
-			for k, strand in strands do
-				local phase = k * (math.pi * 2 / HASTA_STRANDS) + spin
-				local previous = meet
-				for i, segment in strand do
-					local s = i / #strand * span
-					local angle = phase + s * 0.3
-					local point = meet
-						+ direction * s
-						+ (right * math.cos(angle) + up * math.sin(angle)) * 3.4 * math.min(s / 4, 1)
-					segment.Size = Vector3.new(segment.Size.X, segment.Size.Y, (point - previous).Magnitude + 0.05)
-					segment.CFrame = CFrame.lookAt(previous:Lerp(point, 0.5), point)
-					previous = point
-				end
-			end
-			if elapsed >= nextRing then
-				nextRing = elapsed + 0.04
-				U.impactRing(meet + direction * (math.random() * span), direction, STAR_WHITE, 2.5, 6.5, 0.2)
-			end
-			return true
-		end, function()
-			U.tween(core, 0.3, { Size = Vector3.new(core.Size.X, 0.05, 0.05) })
-			U.tween(glow, 0.3, { Size = Vector3.new(glow.Size.X, 0.5, 0.5) })
-			fadeOut({ core, glow, sheath }, 0.32)
-			for _, strand in strands do
-				fadeOut(strand, 0.25)
-			end
-		end)
-		-- Stars twinkling along it.
 		for _ = 1, 8 do
 			local twinkle = makeStar(0.9 + math.random() * 1.2)
-			twinkle.place(meet + direction * (math.random() * span) + U.randomUnit() * 2, math.random() * 6)
+			twinkle.place(start + direction * (math.random() * length) + U.randomUnit() * 2, math.random() * 6)
 			task.delay(0.15 + math.random() * 0.3, twinkle.fade, 0.3)
 		end
-
-		-- Where it ends it bursts into a star.
-		local burst = makeStar(5)
+		crossGlint(start, direction, 8)
+		U.flash(start, STAR_WHITE, 12, 0.25)
+		local burst = makeStar(5.5)
 		burst.place(finish, 0)
 		task.delay(0.12, burst.fade, 0.4)
-		U.shockwave(finish, STAR, 2, 12, 0.35)
+		U.shockwave(finish, STAR, 2, 14, 0.4)
 		U.burst(finish, {
 			color = STAR,
 			count = 24,
@@ -1586,17 +2039,86 @@ function handlers.QuartileHasta(data, character, root)
 			streaks = true,
 			spread = 180,
 		})
-		U.impactRing(meet, direction, STAR_WHITE, 1, 10, 0.3)
-		U.light(meet, STAR, 7, 34, 0.45)
+		U.light(start, STAR, 7, 34, 0.45)
 		if U.isLocal(character) then
-			CameraShake.Add(0.28)
-			CameraShake.FovKick(11)
+			CameraShake.FovKick(10)
 			U.colorGrade({ Brightness = 0.12, Saturation = 0.15 }, 0, 0.05, 0.3)
-		elseif (workspace.CurrentCamera.CFrame.Position - meet).Magnitude < 40 then
-			CameraShake.Add(0.12)
 		end
-	elseif data.phase == "Cancel" then
+	elseif phase == "Rain" then
+		-- A turning circle of gold on the ground below, stars on its rim.
+		local center: Vector3 = data.center
+		local radius: number = data.radius
+		local token = castTokens[character] or 0
+		local ground = center + UP * 0.15
+		local rim =
+			arcParts(arcPoints(Vector3.zero, Vector3.xAxis, Vector3.zAxis, 1, 0, math.pi * 2, 24), 0.25, STAR, 0.05)
+		local inner = arcParts(
+			arcPoints(Vector3.zero, Vector3.xAxis, Vector3.zAxis, 1, 0, math.pi * 2, 18),
+			0.12,
+			STAR_WHITE,
+			0.3
+		)
+		local stars: { Star } = {}
+		for _ = 1, 4 do
+			table.insert(stars, makeStar(1.8))
+		end
+		local all = table.clone(rim)
+		table.move(inner, 1, #inner, #all + 1, all)
+		U.ringBurst(CFrame.new(ground), STAR_WHITE, 0.5, radius, 0.35, 0.3)
+		U.light(center + UP * 3, STAR_FIRE, 4, radius * 2.5, data.duration + 0.8)
+		every(data.duration + 1, function(elapsed)
+			if not live(character, token) then
+				return false
+			end
+			local grow = math.min(elapsed / 0.25, 1)
+			local spin = elapsed * 1.2
+			poseArc(
+				rim,
+				arcPoints(ground, Vector3.xAxis, Vector3.zAxis, radius * grow + 0.05, spin, spin + math.pi * 2, 24)
+			)
+			poseArc(
+				inner,
+				arcPoints(
+					ground,
+					Vector3.xAxis,
+					Vector3.zAxis,
+					radius * 0.7 * grow + 0.05,
+					-spin * 1.5,
+					-spin * 1.5 + math.pi * 2,
+					18
+				)
+			)
+			for i, star in stars do
+				local angle = (i - 1) * math.pi / 2 + spin
+				star.place(
+					ground + Vector3.new(math.cos(angle), 0, math.sin(angle)) * radius * grow + UP * 0.8,
+					elapsed * 3 + i
+				)
+			end
+			return true
+		end, function()
+			for _, star in stars do
+				star.fade(0.3)
+			end
+			fadeOut(all, 0.3)
+		end)
+	elseif phase == "Fall" then
+		-- Out of the sigil under his feet.
+		local sigil = hastaSigils[character]
+		local from: Vector3 = data.from
+		if sigil then
+			local offset = from - root.Position
+			from = sigil.center + Vector3.new(offset.X, 0, offset.Z)
+			U.flash(from, STAR_WHITE, 2, 0.1)
+		end
+		starFire(from, data.spot)
+	elseif phase == "Done" or phase == "Cancel" then
 		bump(character)
+		stopLance(character)
+		local current = PoseAnimator.Current(character)
+		if current == ANIMS.HastaBeam or current == ANIMS.HastaStars then
+			PoseAnimator.FadeOut(character, 0.2)
+		end
 	end
 end
 
@@ -1670,8 +2192,7 @@ end
 -- down at the ground; then they rain down one after another.
 local ZEPHYRUS_ARROWS = 14
 local ZEPHYRUS_RING = 4.5
-type Floating = { core: BasePart, glow: BasePart, fletch: BasePart }
-type Volley = { arrows: { [number]: Floating }, started: number, ring: { BasePart } }
+type Volley = { arrows: { [number]: Arrow }, started: number, ring: { BasePart } }
 local volleys: { [Model]: Volley } = {}
 
 local function floatingAt(root: BasePart, i: number, t: number): Vector3
@@ -1685,7 +2206,7 @@ local function clearVolley(character: Model)
 	if volley then
 		volleys[character] = nil
 		for _, arrow in volley.arrows do
-			fadeOut({ arrow.core, arrow.glow, arrow.fletch }, 0.15)
+			arrow.destroy(0.15)
 		end
 		fadeOut(volley.ring, 0.2)
 	end
@@ -1734,12 +2255,11 @@ function handlers.SpiritOfZephyrus(data, character, root)
 				if volleys[character] ~= volley then
 					return
 				end
-				volley.arrows[i] = {
-					core = U.newPart({ Size = Vector3.new(0.25, 0.25, 3.4), Color = WIND_WHITE }),
-					glow = U.newPart({ Size = Vector3.new(0.9, 0.9, 4), Color = WIND, Transparency = 0.55 }),
-					fletch = U.newPart({ Size = Vector3.new(0.7, 0.06, 0.7), Color = STAR, Transparency = 0.1 }),
-				}
-				U.flash(floatingAt(root, i, os.clock() - volley.started), WIND_WHITE, 2.5, 0.15)
+				-- The last (the one they never see coming) is the biggest.
+				volley.arrows[i] = makeArrow(if i == count then 1.5 else 1)
+				local at = floatingAt(root, i, os.clock() - volley.started)
+				U.flash(at, WIND_WHITE, 2.5, 0.15)
+				U.ringBurst(CFrame.new(at), WIND, 0.3, 1.6, 0.2, 0.08)
 			end)
 		end
 		every(data.gather + count * 0.06 + 1, function()
@@ -1751,10 +2271,7 @@ function handlers.SpiritOfZephyrus(data, character, root)
 				local position = floatingAt(root, i, t)
 				local outward = Vector3.new(position.X - root.Position.X, 0, position.Z - root.Position.Z)
 				local aim = ((if outward.Magnitude > 1e-3 then outward.Unit else Vector3.xAxis) * 0.45 - UP).Unit
-				local frame = CFrame.lookAt(position, position + aim)
-				arrow.core.CFrame = frame
-				arrow.glow.CFrame = frame
-				arrow.fletch.CFrame = frame * CFrame.new(0, 0, 1.6) * CFrame.Angles(0, rad(45), 0)
+				arrow.place(CFrame.lookAt(position, position + aim) * CFrame.Angles(0, 0, t * 3 + i))
 			end
 			local spin = t * 3
 			poseArc(
@@ -1780,14 +2297,13 @@ function handlers.SpiritOfZephyrus(data, character, root)
 		local volley = volleys[character]
 		local arrow = volley and volley.arrows[data.index]
 		local aim: Vector3 = data.aim
-		local from = if arrow then arrow.core.Position else root.Position
+		local from = if volley and arrow
+			then floatingAt(root, data.index, os.clock() - volley.started)
+			else root.Position
 		if volley and arrow then
 			volley.arrows[data.index] = nil
-			arrow.core:Destroy()
-			arrow.glow:Destroy()
-			arrow.fletch:Destroy()
 		end
-		flyingArrow(from, (aim - from).Unit, data.speed, data.range, if data.last then 1.5 else 0.9)
+		flyingArrow(from, (aim - from).Unit, data.speed, data.range, if data.last then 1.5 else 0.9, arrow)
 		U.flash(from, WIND_WHITE, if data.last then 4 else 2, 0.12)
 		if data.last and volley then
 			task.delay(0.3, function()
@@ -1805,9 +2321,10 @@ function handlers.SpiritOfZephyrus(data, character, root)
 	end
 end
 
--- Spirit of Euros: a recurve bow of wind (curled tips) and an arrow that
--- the wind spirals into as he draws; loosed, a white line is all there is,
--- then the air along it rings.
+-- Spirit of Euros: a recurve bow of wind (curled tips) and a great wind
+-- arrow that the wind spirals into as he draws, a glow swelling at its head;
+-- loosed, it's gone in a blink, a white line all there is of it, then the
+-- air along it rings.
 function handlers.SpiritOfEuros(data, character, root)
 	if data.phase == "Draw" then
 		play(character, ANIMS.EurosDraw)
@@ -1815,11 +2332,10 @@ function handlers.SpiritOfEuros(data, character, root)
 		hideSword(character, data.duration + 0.4)
 		local segments = 12
 		local limbs = arcParts(table.create(segments + 1, Vector3.zero), 0.24, WIND, 0.15)
-		local arrow = bar(Vector3.zero, UP, 0.16, WIND_WHITE, 0)
-		local arrowGlow = bar(Vector3.zero, UP, 0.6, WIND, 0.5)
+		local arrow = makeArrow(1.5)
+		local charge = U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one, Color = WIND, Transparency = 0.6 })
 		local all = table.clone(limbs)
-		table.insert(all, arrow)
-		table.insert(all, arrowGlow)
+		table.insert(all, charge)
 		every(data.duration + 0.05, function(elapsed)
 			local hand = handOf(character, "Left")
 			local pull = handOf(character, "Right")
@@ -1834,13 +2350,15 @@ function handlers.SpiritOfEuros(data, character, root)
 			points[#points] += forward * 0.7
 			poseArc(limbs, points)
 			local tip = hand + forward * 1.6
-			arrow.Size = Vector3.new(0.16, 0.16, (tip - pull).Magnitude)
-			arrow.CFrame = CFrame.lookAt(pull:Lerp(tip, 0.5), tip)
-			arrowGlow.Size = Vector3.new(0.6, 0.6, arrow.Size.Z) * (0.5 + elapsed / data.duration)
-			arrowGlow.CFrame = arrow.CFrame
-			inflow(tip, 4)
+			local frame = CFrame.lookAt(pull, tip) * CFrame.new(0, 0, -2.5)
+			arrow.place(frame * CFrame.Angles(0, 0, elapsed * 2))
+			local head = (frame * CFrame.new(0, 0, -3.1)).Position
+			charge.Size = Vector3.one * (0.6 + 2.4 * math.min(elapsed / data.duration, 1))
+			charge.CFrame = CFrame.new(head)
+			inflow(head, 4)
 			return true
 		end, function()
+			arrow.destroy(0.1)
 			fadeOut(all, 0.1)
 		end)
 	elseif data.phase == "Loose" then
@@ -1849,6 +2367,7 @@ function handlers.SpiritOfEuros(data, character, root)
 		local origin: Vector3 = data.origin
 		local direction: Vector3 = data.direction
 		local finish = origin + direction * data.length
+		flyingArrow(origin, direction, data.length / 0.08, data.length, 1.6)
 		local line = bar(origin, finish, 0.2, WIND_WHITE, 0)
 		local glow = bar(origin, finish, 1.2, WIND, 0.55)
 		U.tween(line, 0.45, { Size = Vector3.new(0.02, 0.02, line.Size.Z) })
