@@ -69,6 +69,7 @@ export type HitInfo = {
 	ragdoll: number?, -- seconds of ragdoll
 	hitsDowned: boolean?, -- can hit someone lying on the floor (the air Black Divider)
 	noShake: boolean?, -- no camera shake for either of them (Black Meteorite)
+	reflected: boolean?, -- sent back by a barrier (Quartile Scutum): never reflected again
 	heavy: boolean?, -- bigger hit effect
 	effect: string?, -- VFX name to play instead of Hit / HeavyHit
 }

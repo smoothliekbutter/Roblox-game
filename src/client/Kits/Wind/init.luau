@@ -1322,78 +1322,278 @@ function handlers.QuartileScutum(data, character, root)
 		if barrier then
 			barrier.drop()
 		end
+	elseif data.phase == "Reflect" then
+		-- What it stopped goes back, twice as hard.
+		local origin: Vector3 = data.origin
+		local barrier = barriers[character]
+		if barrier then
+			barrier.ripple(nil)
+		end
+		U.flash(origin, STAR_WHITE, 6, 0.2)
+		if data.direction then
+			-- A bolt of starlight back at whoever cast it.
+			local direction: Vector3 = data.direction
+			local star = makeStar(2.2)
+			local position = origin
+			local travelled = 0
+			every(data.range / data.speed + 0.1, function(elapsed, dt)
+				local step = data.speed * dt
+				position += direction * step
+				travelled += step
+				star.place(position, elapsed * 12)
+				local streak = bar(position, position - direction * 3.5, 0.35, STAR, 0.25)
+				U.tween(streak, 0.2, { Transparency = 1, Size = Vector3.new(0.05, 0.05, 3.5) })
+				task.delay(0.21, streak.Destroy, streak)
+				return travelled < data.range
+			end, function()
+				star.fade(0.15)
+				U.burst(position, {
+					color = STAR,
+					count = 12,
+					size = 0.4,
+					speed = NumberRange.new(14, 30),
+					lifetime = NumberRange.new(0.15, 0.3),
+					spread = 180,
+				})
+			end)
+		else
+			-- Straight back into them.
+			local target: Vector3 = data.target
+			local ray = bar(origin, target, 0.4, STAR_WHITE, 0)
+			local glow = bar(origin, target, 1.4, STAR, 0.5)
+			fadeOut({ ray, glow }, 0.2)
+			U.shockwave(target, STAR, 1, 8, 0.25)
+			U.burst(target, {
+				color = STAR,
+				count = 16,
+				size = 0.45,
+				speed = NumberRange.new(18, 36),
+				lifetime = NumberRange.new(0.15, 0.3),
+				streaks = true,
+				spread = 180,
+			})
+		end
+		if involves(data, character) then
+			CameraShake.Add(0.15)
+		end
 	end
 end
 
--- Quartile Hasta: four stars turn round his outstretched hand, growing;
--- their beams converge ahead of him into one great lance of starlight.
-local hastaStars: { [Model]: { Star } } = {}
+-- Quartile Hasta. The aim: a sigil of starlight opens in front of his hand,
+-- a gold ring and a counter-turning outer ring, four stars at the corners
+-- of a square of light inside it (the quartile) with a cross between them,
+-- starlight drawn in, brighter and brighter. The lance: each star fires into
+-- the point ahead where they meet (a flash and a cross of light there), then
+-- one great lance (a white-hot core, a gold glow, a shimmering sheath, four
+-- strands of starlight twisting round it, rings bursting off along it,
+-- stars twinkling along it) bursts into a star where it ends, then thins
+-- and fades.
+local HASTA_STRANDS = 4
+local HASTA_SEGMENTS = 14
+local hastaSigils: { [Model]: { Star } } = {}
 
 function handlers.QuartileHasta(data, character, root)
 	if data.phase == "Stars" then
 		play(character, ANIMS.HastaStars)
 		local token = bump(character)
-		local set = {}
+		local stars: { Star } = {}
 		for _ = 1, 4 do
-			table.insert(set, makeStar(1.2))
+			table.insert(stars, makeStar(1.3))
 		end
-		hastaStars[character] = set
-		every(data.duration + 0.1, function(elapsed)
+		local inner = arcParts(arcPoints(Vector3.zero, Vector3.xAxis, UP, 1, 0, math.pi * 2, 16), 0.12, STAR, 0.1)
+		local outer = arcParts(arcPoints(Vector3.zero, Vector3.xAxis, UP, 1, 0, math.pi * 2, 20), 0.08, STAR_WHITE, 0.3)
+		local square, cross = {}, {}
+		for _ = 1, 4 do
+			table.insert(square, bar(Vector3.zero, UP, 0.12, STAR_WHITE, 0.05))
+		end
+		for _ = 1, 2 do
+			table.insert(cross, bar(Vector3.zero, UP, 0.06, STAR, 0.4))
+		end
+		local core =
+			U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.5, Color = STAR, Transparency = 0.45 })
+		local light = Instance.new("PointLight")
+		light.Color = STAR
+		light.Range = 12
+		light.Parent = core
+		local parts = table.clone(inner)
+		for _, list in { outer, square, cross } do
+			table.move(list, 1, #list, #parts + 1, parts)
+		end
+		table.insert(parts, core)
+		hastaSigils[character] = stars
+		every(data.duration + 0.15, function(elapsed)
 			local hand = handOf(character, "Right")
 			if not live(character, token) or not hand then
 				return false
 			end
-			local grow = math.min(elapsed / 0.2, 1)
-			local frame = CFrame.lookAt(hand, hand + root.CFrame.LookVector) * CFrame.Angles(0, 0, elapsed * 3)
-			for i, star in set do
-				local angle = (i - 1) * math.pi / 2
-				star.place(frame * Vector3.new(math.cos(angle), math.sin(angle), -0.8) * 1.8 * grow, elapsed * 4)
+			local grow = math.min(elapsed / 0.25, 1)
+			local forward = root.CFrame.LookVector
+			local center = hand + forward * 1.2
+			local frame = CFrame.lookAt(center, center + forward)
+			local spin = elapsed * 2.5
+			poseArc(
+				inner,
+				arcPoints(center, frame.RightVector, frame.UpVector, 2.2 * grow + 0.05, spin, spin + math.pi * 2, 16)
+			)
+			poseArc(
+				outer,
+				arcPoints(
+					center,
+					frame.RightVector,
+					frame.UpVector,
+					3 * grow + 0.05,
+					-spin * 0.7,
+					-spin * 0.7 + math.pi * 2,
+					20
+				)
+			)
+			local corners = {}
+			for i = 1, 4 do
+				local angle = (i - 1) * math.pi / 2 + spin
+				corners[i] = center
+					+ (frame.RightVector * math.cos(angle) + frame.UpVector * math.sin(angle)) * 2.2 * grow
+				stars[i].place(corners[i], elapsed * 4 + i)
 			end
+			local function span(line: BasePart, a: Vector3, b: Vector3)
+				line.Size = Vector3.new(line.Size.X, line.Size.Y, (b - a).Magnitude + 0.05)
+				line.CFrame = CFrame.lookAt(a:Lerp(b, 0.5), b)
+			end
+			for i, edge in square do
+				span(edge, corners[i], corners[i % 4 + 1])
+			end
+			span(cross[1], corners[1], corners[3])
+			span(cross[2], corners[2], corners[4])
+			core.Size = Vector3.one * (0.5 + 1.5 * grow * (1 + 0.15 * math.sin(elapsed * 30)))
+			core.CFrame = CFrame.new(center)
+			light.Brightness = 1 + 4 * math.min(elapsed / data.duration, 1)
+			inflow(center, 5, STAR)
 			return true
 		end, function()
-			if hastaStars[character] == set then
-				hastaStars[character] = nil
+			if hastaSigils[character] == stars then
+				hastaSigils[character] = nil
 			end
-			for _, star in set do
+			for _, star in stars do
 				star.fade(0.15)
 			end
+			fadeOut(parts, 0.15)
 		end)
+		if U.isLocal(character) then
+			CameraShake.Add(0.05)
+		end
 	elseif data.phase == "Fire" then
 		play(character, ANIMS.HastaFire)
 		local origin: Vector3 = data.origin
 		local direction: Vector3 = data.direction
-		local finish = origin + direction * data.length
+		local length: number = data.length
+		local finish = origin + direction * length
 		local meet = origin + direction * 3
-		local set = hastaStars[character]
-		if set then
-			for _, star in set do
+		local right = direction:Cross(UP)
+		right = if right.Magnitude > 1e-3 then right.Unit else Vector3.xAxis
+		local up = right:Cross(direction).Unit
+
+		-- Each star fires into the point where they meet.
+		local stars = hastaSigils[character]
+		if stars then
+			for _, star in stars do
 				local from = star.parts[1].Position
-				local ray = bar(from, meet, 0.25, STAR_WHITE, 0.05)
-				fadeOut({ ray }, 0.2)
+				fadeOut({ bar(from, meet, 0.3, STAR_WHITE, 0), bar(from, meet, 0.9, STAR, 0.5) }, 0.25)
 			end
 		end
 		bump(character)
-		local core = tube(meet, finish, 1.6, STAR_WHITE, 0)
-		local glow = tube(meet, finish, 5.5, STAR, 0.6)
-		local sheath = tube(meet, finish, 8, STAR, 0.88)
-		U.tween(core, 0.4, { Size = Vector3.new(core.Size.X, 0.1, 0.1) })
-		U.tween(glow, 0.4, { Size = Vector3.new(glow.Size.X, 0.6, 0.6) })
-		fadeOut({ core, glow, sheath }, 0.4)
-		U.flash(meet, STAR_WHITE, 10, 0.25)
-		U.flash(finish, STAR, 8, 0.25)
-		U.impactRing(meet, direction, STAR_WHITE, 1, 8, 0.3)
-		U.light(meet, STAR, 6, 30, 0.4)
+		U.flash(meet, STAR_WHITE, 12, 0.25)
+		for _, axis in { right, up } do
+			local glint = bar(meet - axis * 7, meet + axis * 7, 0.22, STAR_WHITE, 0)
+			U.tween(glint, 0.35, { Size = Vector3.new(0.02, 0.02, 20), Transparency = 1 })
+			task.delay(0.36, glint.Destroy, glint)
+		end
+
+		-- The lance.
+		local core = tube(meet, finish, 2, STAR_WHITE, 0)
+		local glow = tube(meet, finish, 6, STAR, 0.55)
+		local sheath = tube(meet, finish, 9, STAR, 0)
+		sheath.Material = Enum.Material.ForceField
+		local light = Instance.new("PointLight")
+		light.Color = STAR
+		light.Range = 30
+		light.Brightness = 6
+		light.Parent = core
+		local strands: { { BasePart } } = {}
+		for k = 1, HASTA_STRANDS do
+			local strand = {}
+			for _ = 1, HASTA_SEGMENTS do
+				table.insert(
+					strand,
+					bar(
+						meet,
+						meet + direction,
+						if k % 2 == 1 then 0.24 else 0.16,
+						if k % 2 == 1 then STAR_WHITE else STAR,
+						0.1
+					)
+				)
+			end
+			table.insert(strands, strand)
+		end
+		local span = length - 3
+		local nextRing = 0
+		every(0.35, function(elapsed)
+			local spin = elapsed * 16
+			for k, strand in strands do
+				local phase = k * (math.pi * 2 / HASTA_STRANDS) + spin
+				local previous = meet
+				for i, segment in strand do
+					local s = i / #strand * span
+					local angle = phase + s * 0.3
+					local point = meet
+						+ direction * s
+						+ (right * math.cos(angle) + up * math.sin(angle)) * 3.4 * math.min(s / 4, 1)
+					segment.Size = Vector3.new(segment.Size.X, segment.Size.Y, (point - previous).Magnitude + 0.05)
+					segment.CFrame = CFrame.lookAt(previous:Lerp(point, 0.5), point)
+					previous = point
+				end
+			end
+			if elapsed >= nextRing then
+				nextRing = elapsed + 0.04
+				U.impactRing(meet + direction * (math.random() * span), direction, STAR_WHITE, 2.5, 6.5, 0.2)
+			end
+			return true
+		end, function()
+			U.tween(core, 0.3, { Size = Vector3.new(core.Size.X, 0.05, 0.05) })
+			U.tween(glow, 0.3, { Size = Vector3.new(glow.Size.X, 0.5, 0.5) })
+			fadeOut({ core, glow, sheath }, 0.32)
+			for _, strand in strands do
+				fadeOut(strand, 0.25)
+			end
+		end)
+		-- Stars twinkling along it.
+		for _ = 1, 8 do
+			local twinkle = makeStar(0.9 + math.random() * 1.2)
+			twinkle.place(meet + direction * (math.random() * span) + U.randomUnit() * 2, math.random() * 6)
+			task.delay(0.15 + math.random() * 0.3, twinkle.fade, 0.3)
+		end
+
+		-- Where it ends it bursts into a star.
+		local burst = makeStar(5)
+		burst.place(finish, 0)
+		task.delay(0.12, burst.fade, 0.4)
+		U.shockwave(finish, STAR, 2, 12, 0.35)
 		U.burst(finish, {
 			color = STAR,
-			count = 20,
+			count = 24,
 			size = 0.5,
-			speed = NumberRange.new(20, 45),
+			speed = NumberRange.new(20, 50),
 			lifetime = NumberRange.new(0.2, 0.45),
+			streaks = true,
 			spread = 180,
 		})
+		U.impactRing(meet, direction, STAR_WHITE, 1, 10, 0.3)
+		U.light(meet, STAR, 7, 34, 0.45)
 		if U.isLocal(character) then
-			CameraShake.Add(0.25)
-			CameraShake.FovKick(10)
+			CameraShake.Add(0.28)
+			CameraShake.FovKick(11)
+			U.colorGrade({ Brightness = 0.12, Saturation = 0.15 }, 0, 0.05, 0.3)
+		elseif (workspace.CurrentCamera.CFrame.Position - meet).Magnitude < 40 then
+			CameraShake.Add(0.12)
 		end
 	elseif data.phase == "Cancel" then
 		bump(character)

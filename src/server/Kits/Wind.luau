@@ -637,19 +637,57 @@ local function quartileScutum(ctx)
 		local attackerRoot = rootOf(attacker)
 		return attackerRoot ~= nil and c.Flat(attackerRoot.Position - ctx.root.Position):Dot(look(ctx)) > 0.1
 	end
+	-- Whatever it stops goes back at whoever sent it, twice as hard: straight
+	-- back into them up close, as a bolt of starlight from range. (What it
+	-- sends back is never sent back again, so two barriers can't trade it.)
 	local function absorb(attacker: Model, hit: any)
 		local attackerRoot = rootOf(attacker)
 		fx(ctx, "QuartileScutum", "Block", { from = if attackerRoot then attackerRoot.Position else nil })
-		local close = attackerRoot ~= nil and (attackerRoot.Position - ctx.root.Position).Magnitude < 14
-		if close and (hit.attackType or "Melee") == "Melee" and attackerRoot then
-			c.Hit(character, attacker, {
-				damage = 3,
-				stun = 0.6,
-				attackType = "Zone",
-				unblockable = true,
-				velocity = c.Flat(attackerRoot.Position - ctx.root.Position) * 45 + UP * 12,
-				velocityTime = 0.18,
-			})
+		local damage = (tonumber(hit.damage) or 0) * 2
+		if attackerRoot and damage > 0 and not hit.reflected and CombatState.IsAlive(attacker) then
+			local origin = ctx.root.Position + look(ctx) * 3.2 + UP * 0.5
+			local offset = attackerRoot.Position - origin
+			if offset.Magnitude < 14 then
+				fx(ctx, "QuartileScutum", "Reflect", { origin = origin, target = attackerRoot.Position })
+				c.Hit(character, attacker, {
+					damage = damage,
+					stun = 0.8,
+					attackType = "Zone",
+					unblockable = true,
+					reflected = true,
+					heavy = damage >= 8,
+					velocity = c.Flat(offset) * 45 + UP * 12,
+					velocityTime = 0.18,
+				})
+			else
+				local direction = offset.Unit
+				local range = offset.Magnitude + 10
+				fx(
+					ctx,
+					"QuartileScutum",
+					"Reflect",
+					{ origin = origin, direction = direction, speed = 150, range = range }
+				)
+				Projectile.Fire({
+					owner = character,
+					origin = origin,
+					direction = direction,
+					speed = 150,
+					range = range,
+					size = Vector3.new(3, 3, 4),
+					onHit = function(victim)
+						c.Hit(character, victim, {
+							damage = damage,
+							stun = 0.8,
+							attackType = "Bolt",
+							reflected = true,
+							heavy = damage >= 8,
+							velocity = c.Flat(direction) * 35 + UP * 10,
+							velocityTime = 0.18,
+						})
+					end,
+				})
+			end
 		end
 		local left = SCUTUM_TIME - (os.clock() - raisedAt)
 		if left > 0.05 then
