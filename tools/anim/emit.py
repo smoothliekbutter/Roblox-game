@@ -120,12 +120,12 @@ SPEC = {
                            doc="Causality Break: the Demon-Destroyer driven point-first into the ground."),
     'CausalityPull': dict(keys=CAUSALITY_PULL, ease=[None, QUART_OUT, SINE_IO], fadeIn=0.02, fadeOut=0.2,
                           doc="Causality Break: the sword yanked back out."),
-    'CometDrag': dict(keys=COMET_DRAG, ease=[None, QUART_OUT, QUAD_IN, SINE_OUT, QUAD_IN, SINE_OUT, QUAD_IN, LINEAR],
-                      fadeIn=0.05, fadeOut=0.1, delays={'Head': 0.02, 'Sword': 0.04},
-                      doc="Black Comet: flying low and flat, hammering them into the ground three times."),
-    'CometThrow': dict(keys=COMET_THROW, ease=[None, SINE_OUT, QUART_OUT, SINE_OUT, LINEAR], fadeIn=0.03, fadeOut=0.25,
-                       delays={'Head': 0.02, 'Sword': 0.03},
-                       doc="Black Comet: plants, winds round and heaves them away."),
+    # Each slam accelerates into the ground and eases back up; the heave
+    # accelerates into the release.
+    'Comet': dict(keys=COMET, ease=[None, QUART_OUT, SINE_OUT, SINE_IO, QUAD_IN, SINE_OUT, QUAD_IN, SINE_OUT, QUAD_IN, SINE_OUT,
+                                   SINE_IO, SINE_OUT, SINE_IO, QUAD_IN, QUART_OUT, SINE_IO],
+                  fadeIn=0.05, fadeOut=0.3, delays={'Head': 0.02, 'Sword': 0.04},
+                  doc="Black Comet: flying low on his wings, hammering them into the ground three times, then landing skidding and heaving them away."),
     'ZettenStance': dict(keys=ZETTEN_STANCE, ease=[None, SINE_OUT, LINEAR], fadeIn=0.05, fadeOut=0.05,
                          doc="Zetten: still in an iai stance, the katana low at the hip, head bowed."),
     'ZettenCut': dict(keys=ZETTEN_CUT, ease=[None, QUAD_IN, QUART_OUT, LINEAR], fadeIn=0.01, fadeOut=0.25,

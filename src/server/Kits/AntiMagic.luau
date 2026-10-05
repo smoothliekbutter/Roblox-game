@@ -1757,18 +1757,18 @@ local function floorAt(ctx, position: Vector3, ignore: { Instance }): number
 end
 
 --[[
-	Black Comet (Demon-Destroyer Sword 2): a short grab cutscene. His free
-	hand seizes whoever is in front of him; his wings throw him forward low
-	over the ground and he hammers them into it three times as they streak
-	along, then he plants and heaves them away. The path is Shared/BlackComet.
+	Black Comet (Demon-Destroyer Sword 2): a short grab cutscene (about 1.4
+	seconds). His free hand seizes whoever is in front of him; both wings
+	throw him forward low over the ground, dragging them along on their back
+	at his side, hammering them into it three times; then he lands skidding
+	and heaves them away. Both are held on Shared/BlackComet (they hang from
+	his hand there); the clients draw it, camera and all.
 ]]
-local HOLD_COMET = CFrame.new(-1, -1.6, -3) * FACING -- low in front of him
-
 local function blackComet(ctx)
 	local c, character = ctx.combat, ctx.character
 	local times = CometPlan.Times
-	local target, release, hold = reachGrab(ctx, times.Length + 0.4, "BlackComet")
-	if not target or not release or not hold then
+	local target, release = reachGrab(ctx, times.Length + 0.4, "BlackComet")
+	if not target or not release then
 		return
 	end
 	local forward = look(ctx)
@@ -1776,8 +1776,12 @@ local function blackComet(ctx)
 	local wall = sceneRay(ctx, origin + UP, forward * (CometPlan.Distance + 4), { target })
 	local distance = if wall then math.max((wall.Position - (origin + UP)).Magnitude - 4, 4) else CometPlan.Distance
 	local plan = CometPlan.Plan(origin, forward, distance, floorAt(ctx, origin, { target }))
-	hold(HOLD_COMET)
+
+	-- The cutscene takes over from the grab.
+	release()
 	CombatState.SetCasting(character, times.Length + 0.3)
+	CombatState.GiveIFrames(character, times.Length)
+	CombatState.Stun(target, times.Length + 0.5)
 	fx(ctx, "BlackComet", "Drag", {
 		target = target,
 		origin = origin,
@@ -1785,50 +1789,60 @@ local function blackComet(ctx)
 		distance = distance,
 		floorY = plan.floorY,
 	})
-	local stop = c.Cutscene({
+	local stopHim = c.Cutscene({
 		[character] = function(t)
-			return CometPlan.At(plan, t)
+			return CometPlan.Attacker(plan, t)
 		end,
 	}, times.Length)
+	local stopThem = c.Cutscene({
+		[target] = function(t)
+			return CometPlan.Victim(plan, t)
+		end,
+	}, times.Release)
 	local started = os.clock()
 	local function waitUntil(at: number): boolean
 		task.wait(math.max(at - (os.clock() - started), 0))
 		return CombatState.IsAlive(character) and CombatState.IsAlive(target)
 	end
+	local function abort()
+		stopThem()
+		stopHim()
+		fx(ctx, "BlackComet", "Abort", { target = target })
+	end
 	for _, at in times.Slams do
 		if not waitUntil(at) then
-			stop()
-			release()
+			abort()
 			return
 		end
-		c.Hit(character, target, { damage = 2, stun = 2, attackType = "Melee", unblockable = true, noShake = true })
-		local where = CometPlan.At(plan, at).Position + forward * 3
-		fx(ctx, "BlackComet", "Slam", { position = Vector3.new(where.X, plan.floorY, where.Z) })
-		c.ShakeArea(where, 30, 0.2)
+		-- (The cutscene is their reaction, and the camera stays still.)
+		c.Hit(character, target, {
+			damage = 2,
+			stun = 2,
+			attackType = "Melee",
+			unblockable = true,
+			noShake = true,
+			noReaction = true,
+		})
 	end
 
 	-- The heave.
-	if not waitUntil(times.Drag) then
-		stop()
-		release()
+	if not waitUntil(times.Release) then
+		abort()
 		return
 	end
-	fx(ctx, "BlackComet", "Throw", { target = target, direction = forward })
-	waitUntil(times.Drag + times.Throw)
-	release()
-	if CombatState.IsAlive(target) then
-		c.Hit(character, target, {
-			damage = 5,
-			stun = 1,
-			attackType = "Melee",
-			unblockable = true,
-			heavy = true,
-			ragdoll = 1.4,
-			velocity = forward * 85 + UP * 30,
-		})
-	end
+	stopThem()
+	c.Hit(character, target, {
+		damage = 5,
+		stun = 1,
+		attackType = "Melee",
+		unblockable = true,
+		heavy = true,
+		ragdoll = 1.4,
+		noShake = true,
+		velocity = forward * 85 + UP * 30,
+	})
 	waitUntil(times.Length)
-	stop()
+	stopHim()
 	CombatState.SetCasting(character, 0.3)
 end
 

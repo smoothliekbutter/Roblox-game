@@ -72,6 +72,7 @@ export type HitInfo = {
 	ragdoll: number?, -- seconds of ragdoll
 	hitsDowned: boolean?, -- can hit someone lying on the floor (the air Black Divider)
 	noShake: boolean?, -- no camera shake for either of them (Black Meteorite)
+	noReaction: boolean?, -- no flinch on them (they're held in a cutscene pose: Black Comet)
 	reflected: boolean?, -- sent back by a barrier (Quartile Scutum): never reflected again
 	heavy: boolean?, -- bigger hit effect
 	effect: string?, -- VFX name to play instead of Hit / HeavyHit
@@ -799,6 +800,7 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 		variant = variant,
 		kit = attacker:GetAttribute("Kit"),
 		hitConfirm = true,
+		noReaction = hit.noReaction,
 	})
 	if not hit.noShake then
 		CombatService.Shake(attacker, if heavy then 0.45 else 0.18)

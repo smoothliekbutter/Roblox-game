@@ -1,19 +1,17 @@
 --[[
-	Prince of Wind (Yuno): the wind and starlight every spell is drawn with.
+	Soft light: the soft, see-through pieces effects are drawn with. Beams
+	facing the camera (smoke or sparkles flowing along them), rings and
+	arcs of beams, trails, glows and particles. Solid neon parts are kept
+	for the small hard things (star points, blade edges, sparks).
 
-	Wind is pale green with a white core, star magic gold-white. Most of it
-	is soft and see-through: beams facing the camera (wind flowing along
-	them, or a chain of sparkles), rings of beams on a hub, trails, and
-	particles of soft wind and starlight. Solid neon parts are kept for the
-	small hard things (star points, blade edges, sparks).
-
-	Shared by Client/Kits/Wind (the moves) and its Saint module (the
-	Full-Crown ultimate).
+	Its colours are Yuno's (wind pale green with a white core, star magic
+	gold-white); every piece takes its own colours too. Used by
+	Client/Kits/Wind (and its Saint module) and Client/Kits/AntiMagic.
 ]]
 
 local RunService = game:GetService("RunService")
 
-local VFX = require(script.Parent.Parent.Parent.VFX)
+local VFX = require(script.Parent.VFX)
 
 local U = VFX.Util
 local rad = math.rad

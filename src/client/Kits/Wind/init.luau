@@ -20,7 +20,7 @@ local M1Animations = require(script.Parent.Parent.M1Animations)
 local PoseAnimator = require(script.Parent.Parent.PoseAnimator)
 local VFX = require(script.Parent.Parent.VFX)
 local Saint = require(script.Saint)
-local Soft = require(script.Soft)
+local Soft = require(script.Parent.Parent.Soft)
 
 type Animation = PoseAnimator.Animation
 type Star = Soft.Star

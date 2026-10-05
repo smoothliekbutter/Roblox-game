@@ -722,24 +722,47 @@ Z_CUT = {'Torso': R(-16, 40), 'Head': R(10, -28), 'RightArm': L(130, 70), 'Sword
          'LeftArm': L(-10, 0, -35), 'RightLeg': R(-36), 'LeftLeg': R(32)}
 Z_AFTER = {'Torso': R(-10, 34), 'Head': R(6, -24), 'RightArm': L(115, 60), 'Sword': A(-0.55, 0.6, -0.58),
            'LeftArm': L(0, 0, -30), 'RightLeg': R(-26), 'LeftLeg': R(24)}
-# Black Comet: flying low and flat, them by the throat under him, his arm
-# hammering them down three times (CometPlan Slams), sword trailing.
-C_FLY_HIGH = {'Torso': R(-62, 8), 'Head': R(48, -6), 'RightArm': L(-40, -10, 30), 'Sword': A(0.25, 0.3, 0.92),
-              'LeftArm': L(125, -8), 'RightLeg': R(14), 'LeftLeg': R(28)}
-C_FLY_SLAM = {'Torso': R(-70, 8), 'Head': R(52, -6), 'RightArm': L(-45, -10, 30), 'Sword': A(0.25, 0.3, 0.92),
-              'LeftArm': L(75, -8), 'RightLeg': R(10), 'LeftLeg': R(24)}
-COMET_DRAG = [(0.0, SEIZE_LIFT), (0.1, C_FLY_HIGH), (0.22, C_FLY_SLAM), (0.36, C_FLY_HIGH), (0.47, C_FLY_SLAM),
-              (0.61, C_FLY_HIGH), (0.72, C_FLY_SLAM), (0.9, C_FLY_SLAM)]
-# The heave: planted, wound round, them flung away ahead.
-C_PLANT = {'Torso': R(-30, 10), 'Head': R(16, -8), 'RightArm': L(-30, -10, 30), 'Sword': A(0.3, 0.25, 0.92),
-           'LeftArm': L(80, -8), 'RightLeg': R(-40), 'LeftLeg': R(34)}
-C_WIND = {'Torso': R(-18, 40), 'Head': R(10, -30), 'RightArm': L(-20, -10, 30), 'Sword': A(0.3, 0.25, 0.92),
-          'LeftArm': L(60, -40, 10), 'RightLeg': R(-40), 'LeftLeg': R(34)}
-C_HEAVE = {'Torso': R(-22, -35), 'Head': R(12, 25), 'RightArm': L(-25, -10, 30), 'Sword': A(0.3, 0.25, 0.92),
-           'LeftArm': L(150, 10), 'RightLeg': R(-44), 'LeftLeg': R(38)}
-C_FOLLOW = {'Torso': R(-14, -40), 'Head': R(6, 28), 'RightArm': L(-20, -10, 30), 'Sword': A(0.3, 0.25, 0.92),
-            'LeftArm': L(130, 20), 'RightLeg': R(-40), 'LeftLeg': R(34)}
-COMET_THROW = [(0.0, C_PLANT), (0.07, C_WIND), (0.16, C_HEAVE), (0.4, C_FOLLOW), (0.6, C_FOLLOW)]
+# Black Comet: flying low and flat on both wings, them by the throat out at
+# his left, dragged along the ground on their back. Three times he lifts
+# them a little (C_LIFT) and hammers them down flat (C_HAMMER), his whole
+# body driving down into it (Shared/BlackComet dips him at each slam, so
+# the fist reaches the ground: keep COMET_SLAMS in step with Times.Slams).
+# The Destroyer trails behind him.
+COMET_SLAMS = (0.24, 0.45, 0.64)
+C_TRAIL = {'RightArm': L(-42, -10, 30), 'Sword': A(0.25, 0.3, 0.92)}
+# Yanking them out to his side as he goes, then leaning into the flight.
+C_YANK = {'Torso': R(-22, 10), 'Head': R(8, -8), 'LeftArm': L(118, 36, 30), 'RightLeg': R(-20), 'LeftLeg': R(14)} | C_TRAIL
+C_LAUNCH = {'Torso': R(-56, 8), 'Head': R(34, -6), 'LeftArm': L(118, 24, 10), 'RightLeg': R(-14), 'LeftLeg': R(10)} | C_TRAIL
+def c_lift(k):
+    return {'Torso': R(-66 - k, 6), 'Head': R(44 + k, -6), 'LeftArm': L(126 - k, 18),
+            'RightLeg': R(-6), 'LeftLeg': R(6)} | C_TRAIL
+def c_hammer(k):
+    return {'Torso': R(-84 - k, 8), 'Head': R(58 + k, -6), 'LeftArm': L(92 - k, 18),
+            'RightArm': L(-52, -10, 30), 'Sword': A(0.25, 0.42, 0.87), 'RightLeg': R(-8), 'LeftLeg': R(2)}
+S1, S2, S3 = COMET_SLAMS
+# Then he swings his legs down under him and lands skidding (COMET_PLANT,
+# Times.Plant), hauls them round past his left side low along the ground,
+# and heaves them away with a twist of his whole body: it lets go at
+# COMET_RELEASE (Times.Release). One clip, so nothing blends between them;
+# planted from the landing on.
+COMET_PLANT, COMET_RELEASE = 0.79, 1.0
+C_LAND = {'Torso': R(-44, 10), 'Head': R(26, -8), 'LeftArm': L(70, 34), 'RightArm': L(-30, -10, 30),
+          'Sword': A(0.3, 0.25, 0.92), 'RightLeg': R(-56), 'LeftLeg': R(26)}
+C_SKID = {'Torso': R(-36, 14), 'Head': R(20, -10), 'LeftArm': L(62, 40), 'RightArm': L(-26, -10, 30),
+          'Sword': A(0.3, 0.25, 0.92), 'RightLeg': R(-58), 'LeftLeg': R(34)}
+C_HAUL = {'Torso': R(-32, 30), 'Head': R(14, -24), 'LeftArm': L(40, 0, -55), 'RightArm': L(-18, -10, 30),
+          'Sword': A(0.3, 0.25, 0.92), 'RightLeg': R(-48), 'LeftLeg': R(38)}
+C_HEAVE = {'Torso': R(-20, -36), 'Head': R(10, 26), 'LeftArm': L(140, 40), 'RightArm': L(-24, -10, 30),
+           'Sword': A(0.3, 0.25, 0.92), 'RightLeg': R(-46), 'LeftLeg': R(40)}
+C_FOLLOW = {'Torso': R(-16, -44), 'Head': R(4, 30), 'LeftArm': L(128, 24), 'RightArm': L(-20, -10, 30),
+            'Sword': A(0.3, 0.25, 0.92), 'RightLeg': R(-42), 'LeftLeg': R(36)}
+C_SETTLE = {'Torso': R(-12, -30), 'Head': R(2, 22), 'LeftArm': L(70, 20), 'RightArm': L(-14, -10, 30),
+            'Sword': A(0.3, 0.25, 0.92), 'RightLeg': R(-36), 'LeftLeg': R(30)}
+COMET = [(0.0, SEIZE_LIFT), (0.05, C_YANK), (0.11, C_LAUNCH), (S1 - 0.07, c_lift(0)), (S1, c_hammer(0)),
+         (S1 + 0.1, c_lift(2)), (S2, c_hammer(2)), (S2 + 0.09, c_lift(4)), (S3, c_hammer(4)),
+         (S3 + 0.06, c_hammer(0))] + plant([(COMET_PLANT, C_LAND), (COMET_PLANT + 0.06, C_SKID),
+                                           (COMET_RELEASE - 0.06, C_HAUL), (COMET_RELEASE, C_HEAVE),
+                                           (COMET_RELEASE + 0.18, C_FOLLOW), (COMET_RELEASE + 0.4, C_SETTLE)])
 
 ZETTEN_STANCE = [(0.0, UPPER), (0.12, Z_STANCE), (1.4, Z_STANCE)]
 ZETTEN_CUT = [(0.0, Z_STANCE), (0.05, Z_CUT), (0.35, Z_AFTER), (0.6, Z_AFTER)]
@@ -754,8 +777,7 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grab
        'AirDeflectStance': AIR_DEFLECT_STANCE,
        'MeteorLunge': METEOR_LUNGE, 'MeteorReach': METEOR_REACH, 'MeteorRise': METEOR_RISE, 'MeteorSpin': METEOR_SPIN, 'SwordSwap': SWORD_SWAP,
        'RecallThrow': RECALL_THROW, 'RecallCall': RECALL_CALL, 'RecallCatch': RECALL_CATCH,
-       'CausalityPlant': CAUSALITY_PLANT, 'CausalityPull': CAUSALITY_PULL, 'CometDrag': COMET_DRAG,
-       'CometThrow': COMET_THROW, 'ZettenStance': ZETTEN_STANCE,
+       'CausalityPlant': CAUSALITY_PLANT, 'CausalityPull': CAUSALITY_PULL, 'Comet': COMET, 'ZettenStance': ZETTEN_STANCE,
        'ZettenCut': ZETTEN_CUT, 'MeteorDrill': METEOR_DRILL, 'MeteorLand': METEOR_LAND, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
        'DividerCharge': DIVIDER_CHARGE, 'DividerRelease': DIVIDER_RELEASE,
        'DeflectStance': DEFLECT_STANCE, 'DeflectCounter': DEFLECT_COUNTER, 'DeflectReflect': DEFLECT_REFLECT,
@@ -769,7 +791,7 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grab
 # wide stances). These are played in the air instead, or leave the ground
 # (planted only up to the time given).
 AIRBORNE = {'Air', 'Grabbed', 'Launched', 'MoonPerch', 'MoonFlight', 'Plunge', 'AirDividerCharge', 'AirDividerRelease', 'MeteorRise', 'MeteorSpin', 'MeteorDrill', 'MeteorLand', 'MeteorSlam', 'Chop',
-            'AirPropel', 'AirMeteorLunge', 'AirMeteorReach', 'AirSeize', 'AirDeflectStance', 'CometDrag'}
+            'AirPropel', 'AirMeteorLunge', 'AirMeteorReach', 'AirSeize', 'AirDeflectStance', 'Comet'}
 PLANT_UNTIL = {'Leap': 0.1}
 UNPLANTED = dict(ALL)
 # The run sets its own height (its bob lifts off the floor between steps).
@@ -799,7 +821,7 @@ if __name__ == '__main__':
              # The other swords are shorter than the Demon-Slayer.
              'CausalityPlant': dict(floor=-4.0, reach=DESTROYER_REACH),  # driven into the ground
              'CausalityPull': dict(floor=-4.0, reach=DESTROYER_REACH),
-             'CometDrag': dict(floor=-10, reach=DESTROYER_REACH), 'CometThrow': dict(reach=DESTROYER_REACH),
+             'Comet': dict(floor=-10, reach=DESTROYER_REACH),
              'ZettenStance': dict(reach=SLASHER_REACH), 'ZettenCut': dict(reach=SLASHER_REACH)}
     ok = True
     for name, keys in ALL.items():

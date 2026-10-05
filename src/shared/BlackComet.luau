@@ -1,13 +1,24 @@
 --[[
 	BlackComet
 	Black Comet (Black Form, Demon-Destroyer Sword 2), a short grab
-	cutscene: with them by the throat, his wings throw him forward low over
-	the ground and he hammers them into it again and again as they streak
-	along, then he plants and heaves them away.
+	cutscene, about 1.4 seconds. With them by the throat, both wings throw
+	him forward low over the ground. He drives them down onto their back and
+	drags them along at his side, three times lifting them a little and
+	hammering them flat into the ground (his whole body dips into each one),
+	then swings his legs down, lands skidding, hauls them round past his
+	side and heaves them away.
 
-	Shared so the server (which holds him on the path; they hang from his
-	hand) and every client (which draws it smoothly) agree on where he is.
-	t = 0 is the take-off, right after the seize.
+	Shared so the server (which holds them both here) and every client
+	(which draws them smoothly) agree on where they are. t = 0 is the
+	take-off, right after the seize. The times are in step with the Comet
+	clip (tools/anim/asta_anims.py: COMET_SLAMS, COMET_PLANT, COMET_RELEASE).
+
+	They hang from his hand like a body would: a rod from their throat to
+	their feet with its weight swinging under the hand, dragged along the
+	ground (scraping, so it trails), kept out at his side. Clients hang them
+	from his real hand every frame (Body / Step); the server uses where the
+	hand is in the clip's keyframes (Victim), close enough for its hits and
+	for where they fly from when he lets go.
 ]]
 
 local BlackComet = {}
@@ -15,30 +26,223 @@ local BlackComet = {}
 local UP = Vector3.yAxis
 
 BlackComet.Times = {
-	Slams = { 0.22, 0.47, 0.72 }, -- into the ground as his arm comes down
-	Drag = 0.9, -- along the ground
-	Throw = 0.14, -- the heave lets go of them
-	Length = 1.25,
+	Slams = { 0.24, 0.45, 0.64 }, -- each time he hammers them into the ground
+	Plant = 0.79, -- his feet touch down; he skids to a stop
+	Stop = 0.92,
+	Release = 1.0, -- the heave lets go of them
+	Length = 1.4,
 }
 BlackComet.Distance = 30 -- the most he covers (walls cut it short)
-BlackComet.Low = 1.2 -- how far above standing height he flies
 
-export type Plan = { origin: Vector3, forward: Vector3, distance: number, floorY: number }
+local CRUISE = 0.5 -- studs above standing height he flies at
+local DIP = 1.4 -- how far each slam drives him down (so his fist reaches the ground)
+local DIP_WIDTH = 0.055 -- seconds
+local START_TIME = 0.06 -- how fast he gets up to speed (an exponential's time)
+local DIVE = 0.2 -- seconds to come down to the ground if he grabbed them in the air
 
-function BlackComet.Plan(origin: Vector3, forward: Vector3, distance: number, floorY: number): Plan
-	return { origin = origin, forward = forward, distance = distance, floorY = floorY }
+local BODY = 4 -- throat to feet
+local THROAT = 0.55 -- the hand to the middle of the neck
+local SIDE = 2.8 -- their feet stay at least this far out at his left
+local SIDE_START = 2 -- (eased out to SIDE from here over the take-off)
+local GRAVITY = Vector3.new(0, -196.2, 0)
+local FRICTION = 0.08 -- of their sliding speed lost each step on the ground
+local DAMPING = 0.98
+local HEAD_DOWN = 0.3 -- their feet stay this far under their neck (never upside down)
+local STEP = 1 / 240
+
+export type Plan = {
+	origin: Vector3,
+	forward: Vector3,
+	right: Vector3,
+	distance: number,
+	floorY: number,
+	above: number, -- how far over standing height he started
+	victim: { CFrame }, -- (server) where they are, every 1/60 s up to Release
+}
+
+local function smooth(u: number): number
+	u = math.clamp(u, 0, 1)
+	return u * u * (3 - 2 * u)
 end
 
-function BlackComet.At(plan: Plan, t: number): CFrame
+-- Ground covered by the take-off: a velocity of (1 - e^(-u/k))(1 - u^2), up
+-- to speed almost at once and sliding to a stop, integrated (u = t / Stop).
+local function covered(u: number): number
+	local k = START_TIME
+	local slow = k * ((1 - 2 * k * k) - math.exp(-u / k) * (1 - u * u - 2 * k * u - 2 * k * k))
+	return u - u * u * u / 3 - slow
+end
+local TOTAL = covered(1)
+
+-- Height over standing height: cruising low, dipping into each slam, down
+-- onto his feet for the landing.
+local function lift(t: number): number
 	local times = BlackComet.Times
-	local base = Vector3.new(plan.origin.X, plan.floorY + 3, plan.origin.Z)
-	local a = math.clamp(t / times.Drag, 0, 1)
-	-- Off fast, slowing to a stop; up off the ground at once, back down
-	-- for the heave.
-	local along = plan.distance * (1 - (1 - a) ^ 2)
-	local lift = BlackComet.Low * math.min(a / 0.15, 1) * (1 - math.clamp((a - 0.85) / 0.15, 0, 1))
-	local position = base + plan.forward * along + UP * lift
+	local cruise = CRUISE * smooth(t / 0.14) * (1 - smooth((t - 0.66) / (times.Plant - 0.66)))
+	local dips = 0
+	for _, at in times.Slams do
+		dips += math.exp(-((t - at) / DIP_WIDTH) ^ 2)
+	end
+	return cruise - DIP * dips
+end
+
+function BlackComet.Attacker(plan: Plan, t: number): CFrame
+	local times = BlackComet.Times
+	local along = plan.distance * covered(math.clamp(t / times.Stop, 0, 1)) / TOTAL
+	local height = 3 + lift(t) + plan.above * (1 - smooth(t / DIVE))
+	local position = Vector3.new(plan.origin.X, plan.floorY + height, plan.origin.Z) + plan.forward * along
 	return CFrame.lookAt(position, position + plan.forward)
+end
+
+-- His free hand (root space) at the Comet clip's keyframes, with the
+-- easing into each (from forward kinematics of the clip).
+local HAND: { { any } } = {
+	{ 0, Vector3.new(-1.6, 1.18, -1.08) },
+	{ 0.05, Vector3.new(-2.48, 0.73, -0.49), "Quart", "Out" },
+	{ 0.11, Vector3.new(-2.21, 0.07, -1.29), "Sine", "Out" },
+	{ 0.17, Vector3.new(-1.94, -0.17, -1.59), "Sine", "InOut" },
+	{ 0.24, Vector3.new(-2.1, -0.93, -0.65), "Quad", "In" },
+	{ 0.34, Vector3.new(-1.96, -0.27, -1.55), "Sine", "Out" },
+	{ 0.45, Vector3.new(-2.1, -0.95, -0.57), "Quad", "In" },
+	{ 0.54, Vector3.new(-1.97, -0.36, -1.51), "Sine", "Out" },
+	{ 0.64, Vector3.new(-2.1, -0.97, -0.48), "Quad", "In" },
+	{ 0.7, Vector3.new(-2.1, -0.93, -0.65), "Sine", "Out" },
+	{ 0.79, Vector3.new(-2.32, -0.65, -0.35), "Sine", "InOut" },
+	{ 0.85, Vector3.new(-2.34, -0.52, 0.01), "Sine", "Out" },
+	{ 0.94, Vector3.new(-2.41, 0.06, 0.1), "Sine", "InOut" },
+	{ 1, Vector3.new(-1.38, 1.06, -1.99), "Quad", "In" },
+}
+
+local function ease(a: number, style: string?, direction: string?): number
+	local function base(x: number): number
+		if style == "Quart" then
+			return x ^ 4
+		elseif style == "Sine" then
+			return 1 - math.cos(x * math.pi / 2)
+		end
+		return x * x
+	end
+	if direction == "In" then
+		return base(a)
+	elseif direction == "InOut" then
+		return if a < 0.5 then base(2 * a) / 2 else 1 - base(2 * (1 - a)) / 2
+	end
+	return 1 - base(1 - a)
+end
+
+-- Where the clip has his free hand at `t` (world space).
+function BlackComet.Hand(plan: Plan, t: number): Vector3
+	local offset = HAND[#HAND][2]
+	for i = 1, #HAND - 1 do
+		local a, b = HAND[i], HAND[i + 1]
+		if t < b[1] then
+			local alpha = math.clamp((t - a[1]) / (b[1] - a[1]), 0, 1)
+			offset = (a[2] :: Vector3):Lerp(b[2], ease(alpha, b[3], b[4]))
+			break
+		end
+	end
+	return BlackComet.Attacker(plan, t):PointToWorldSpace(offset)
+end
+
+-- A body hanging from his hand: where their feet are (and were, a step
+-- ago: the speed they swing and slide with), and which way they face.
+export type Body = { feet: Vector3, last: Vector3, look: Vector3, neck: Vector3, t: number }
+
+-- Starts them hanging straight down from `hand`, facing him (as the grab
+-- held them).
+function BlackComet.Body(plan: Plan, hand: Vector3): Body
+	local look = -plan.forward
+	local neck = hand - look * THROAT
+	local feet = neck - UP * BODY
+	return { feet = feet, last = feet, look = look, neck = neck, t = 0 }
+end
+
+-- Moves the body on to time `t` with the hand at `hand`, and returns where
+-- their root is: the throat in his hand, their weight swinging under it,
+-- dragged along the ground, out at his side, never under the floor.
+function BlackComet.Step(plan: Plan, body: Body, hand: Vector3, t: number): CFrame
+	local floor = plan.floorY + 0.5
+	local from, fromTime = body.neck, body.t
+	local target = hand - body.look * THROAT
+	target = Vector3.new(target.X, math.max(target.Y, plan.floorY + 0.35), target.Z)
+	local steps = math.clamp(math.floor((t - fromTime) / STEP + 0.5), 1, 24)
+	local root = BlackComet.Attacker(plan, t).Position
+	local side = SIDE_START + (SIDE - SIDE_START) * smooth(t / 0.15)
+	for i = 1, steps do
+		local neck = from:Lerp(target, i / steps)
+		local feet = body.feet
+		local velocity = (feet - body.last) * DAMPING
+		body.last = feet
+		feet += velocity + GRAVITY * STEP * STEP
+		-- Pushes that hold them in place (the ground, his side, their own
+		-- neck) move where they were too, so they stop them dead rather
+		-- than throwing them.
+		local function push(by: Vector3)
+			feet += by
+			body.last += by
+		end
+		for _ = 1, 3 do
+			if feet.Y < floor then
+				-- Scraping along the ground: no bounce, and it slows them.
+				local slide = feet - body.last
+				push(Vector3.new(0, floor - feet.Y, 0))
+				body.last += Vector3.new(slide.X, 0, slide.Z) * FRICTION
+			end
+			local out = (feet - root):Dot(plan.right)
+			if out > -side then
+				push(plan.right * -(out + side))
+			end
+			if feet.Y > neck.Y - HEAD_DOWN then
+				push(Vector3.new(0, neck.Y - HEAD_DOWN - feet.Y, 0))
+			end
+			local rod = feet - neck
+			feet = neck + (if rod.Magnitude > 1e-4 then rod.Unit else -UP) * BODY
+		end
+		body.feet = feet
+	end
+	body.neck, body.t = target, t
+
+	-- They turn with their body (the way they face carried round as it
+	-- tips); lying flat on their back, they settle facing up.
+	local axis = (target - body.feet).Unit
+	local look = body.look - axis * body.look:Dot(axis)
+	look = if look.Magnitude > 1e-3 then look.Unit else (UP - axis * axis.Y).Unit
+	local upward = UP - axis * axis.Y
+	if upward.Magnitude > 0.8 and look:Dot(upward) > 0 then
+		local settle = math.clamp((upward.Magnitude - 0.8) / 0.2, 0, 1) * math.min((t - fromTime) * 6, 1)
+		look = look:Lerp(upward.Unit, settle).Unit
+	end
+	body.look = look
+	return CFrame.fromMatrix(target - axis, axis:Cross(-look), axis, -look)
+end
+
+function BlackComet.Plan(origin: Vector3, forward: Vector3, distance: number, floorY: number): Plan
+	local plan: Plan = {
+		origin = origin,
+		forward = forward,
+		right = forward:Cross(UP),
+		distance = distance,
+		floorY = floorY,
+		above = math.clamp(origin.Y - (floorY + 3), 0, 40),
+		victim = {},
+	}
+	-- Where the server holds them: the same body, on the clip's hand.
+	local body = BlackComet.Body(plan, BlackComet.Hand(plan, 0))
+	local release = BlackComet.Times.Release
+	for i = 0, math.ceil(release * 60) do
+		local t = math.min(i / 60, release)
+		plan.victim[i + 1] = BlackComet.Step(plan, body, BlackComet.Hand(plan, t), t)
+	end
+	return plan
+end
+
+-- Where the server has them at `t` (up to Release).
+function BlackComet.Victim(plan: Plan, t: number): CFrame
+	local x = math.clamp(t, 0, BlackComet.Times.Release) * 60
+	local i = math.floor(x)
+	local a = plan.victim[i + 1]
+	local b = plan.victim[math.min(i + 2, #plan.victim)]
+	return a:Lerp(b, x - i)
 end
 
 return BlackComet

@@ -15,11 +15,11 @@ local TweenService = game:GetService("TweenService")
 
 local BlackMoon = require(ReplicatedStorage:WaitForChild("Shared").BlackMoon)
 local MeteorVortex = require(ReplicatedStorage:WaitForChild("Shared").MeteorVortex)
-local CometPlan = require(ReplicatedStorage:WaitForChild("Shared").BlackComet)
 local AscentPlan = require(ReplicatedStorage:WaitForChild("Shared").BlackAscent)
 
 local CameraShake = require(script.Parent.Parent.CameraShake)
 local Cinematic = require(script.Parent.Parent.Cinematic)
+local Comet = require(script.Comet)
 local PoseAnimator = require(script.Parent.Parent.PoseAnimator)
 local Reactions = require(script.Parent.Parent.Reactions)
 local VFX = require(script.Parent.Parent.VFX)
@@ -5649,88 +5649,44 @@ function handlers.CausalityBreak(data, character, root)
 	end
 end
 
--- Black Comet: the reach and the seize are drawn with Black Meteorite's.
--- Then his wings throw him forward low over the ground with them, black
--- smoke and torn-up earth trailing behind; each time he hammers them down
--- the ground cracks and rocks fly; then he plants and heaves them away.
+-- Black Comet: the reach and the seize are drawn with Black Meteorite's;
+-- the cutscene itself is the Comet module.
+local cometContext: Comet.Context = {
+	anims = ANIMS,
+	play = play,
+	held = function(victim: Model): Animation?
+		return if victim:GetAttribute("Kit") == "AntiMagic" then ANIMS.Grabbed else Reactions.Grabbed
+	end,
+	wings = function(character: Model): Comet.Wings?
+		return awakenedVisuals[character]
+	end,
+	blackSmoke = blackSmoke,
+	redSparks = redSparks,
+	blackLightning = blackLightning,
+	glowBurst = glowBurst,
+	bloomPulse = bloomPulse,
+	heavyTrail = heavyTrail,
+	edgeGlow = edgeGlow,
+	swordAura = swordAura,
+	trailEmitter = trailEmitter,
+	impactFrame = impactFrame,
+	lingerSmoke = lingerSmoke,
+}
+local cometStops: { [Model]: () -> () } = setmetatable({}, { __mode = "k" }) :: any
+
 function handlers.BlackComet(data, character, root)
 	local phase = data.phase
 	if phase == "Drag" then
-		play(character, ANIMS.CometDrag)
-		local plan = CometPlan.Plan(data.origin, data.forward, data.distance, data.floorY)
-		local times = CometPlan.Times
-		local started = os.clock()
-		local bind = "CloverBlackComet" .. tostring(started)
-		local nextDust = 0
-		RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
-			local t = os.clock() - started
-			if t > times.Length or not root.Parent then
-				pcall(function()
-					RunService:UnbindFromRenderStep(bind)
-				end)
-				return
-			end
-			root.CFrame = CometPlan.At(plan, t)
-			if t < times.Drag and t >= nextDust then
-				nextDust = t + 0.05
-				local at = root.Position + plan.forward * 3
-				local ground = Vector3.new(at.X, plan.floorY + 0.3, at.Z)
-				blackSmoke(ground, 2, 2.5, 3)
-				U.burst(ground, {
-					color = Color3.fromRGB(90, 78, 66),
-					count = 3,
-					size = 0.5,
-					speed = NumberRange.new(8, 16),
-					lifetime = NumberRange.new(0.3, 0.6),
-					spread = 50,
-					direction = (UP - plan.forward * 0.6).Unit,
-					acceleration = Vector3.new(0, -60, 0),
-				})
-			end
-		end)
-		local feet = root.Position - UP * 2.8
-		glowBurst(feet, 4, 0.3)
-		U.ringBurst(CFrame.new(feet), RED, 1, 8, 0.3, 0.25)
-		blackSmoke(feet, 8, 3, 10)
-		U.bodyTrail(character, RED, times.Drag)
-		heavyTrail(character, times.Drag)
-		local mine = U.isLocal(character) or U.isLocal(data.target)
-		if mine then
-			CameraShake.Add(0.12)
-			CameraShake.FovKick(10)
-			-- Alongside them, low, as they streak along the ground.
-			local right = plan.forward:Cross(UP)
-			Cinematic.Camera(function(t)
-				local at = CometPlan.At(plan, math.min(t, times.Drag)).Position
-				local eye = at - plan.forward * 8 + right * 7 + UP * 2.5
-				return CFrame.lookAt(eye, at + plan.forward * 3 - UP), 78
-			end, times.Length)
+		local stop = Comet.Play(cometContext, data, character, root)
+		if stop then
+			cometStops[character] = stop
 		end
-	elseif phase == "Slam" then
-		local position: Vector3 = data.position
-		U.groundRocks(position, 5, 3, 1.1)
-		U.groundCracks(position, 5, 4, RED, 0.8)
-		U.shockwave(position, RED, 1, 9, 0.25)
-		blackSmoke(position + UP * 0.5, 6, 3, 6)
-		redSparks(position + UP * 0.5, 10, 0.5, UP)
-		U.debris(position, 5, 25, 0.5)
-		if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 40 then
-			CameraShake.Add(0.12)
-		end
-	elseif phase == "Throw" then
-		play(character, ANIMS.CometThrow)
-		local at = gripPoint(character) or root.Position
-		local direction: Vector3 = data.direction
-		glowBurst(at, 4, 0.3)
-		blackLightning(at, 4, 5)
-		U.afterimage(character, RED, 0.3)
-		task.delay(0.14, function()
-			U.impactRing(at + direction * 2, direction, RED, 1, 6, 0.25)
-			blackSmoke(at, 8, 3, 8)
-		end)
-		if U.isLocal(character) then
-			CameraShake.Add(0.2)
-			CameraShake.FovKick(8)
+	elseif phase == "Abort" then
+		-- Cut short (one of them went down): let them go.
+		local stop = cometStops[character]
+		cometStops[character] = nil
+		if stop then
+			stop()
 		end
 	else
 		handlers.BlackMeteorite(data, character, root)

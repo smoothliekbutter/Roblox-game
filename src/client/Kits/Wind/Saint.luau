@@ -43,7 +43,7 @@ local SaintPlan = require(ReplicatedStorage:WaitForChild("Shared").SaintZephyr)
 local CameraShake = require(script.Parent.Parent.Parent.CameraShake)
 local Cinematic = require(script.Parent.Parent.Parent.Cinematic)
 local PoseAnimator = require(script.Parent.Parent.Parent.PoseAnimator)
-local Soft = require(script.Parent.Soft)
+local Soft = require(script.Parent.Parent.Parent.Soft)
 
 local U = Soft.U
 local rad = math.rad

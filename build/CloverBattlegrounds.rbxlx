@@ -183,13 +183,24 @@ return BlackAscent
           <string name="Source"><![CDATA[--[[
 	BlackComet
 	Black Comet (Black Form, Demon-Destroyer Sword 2), a short grab
-	cutscene: with them by the throat, his wings throw him forward low over
-	the ground and he hammers them into it again and again as they streak
-	along, then he plants and heaves them away.
+	cutscene, about 1.4 seconds. With them by the throat, both wings throw
+	him forward low over the ground. He drives them down onto their back and
+	drags them along at his side, three times lifting them a little and
+	hammering them flat into the ground (his whole body dips into each one),
+	then swings his legs down, lands skidding, hauls them round past his
+	side and heaves them away.
 
-	Shared so the server (which holds him on the path; they hang from his
-	hand) and every client (which draws it smoothly) agree on where he is.
-	t = 0 is the take-off, right after the seize.
+	Shared so the server (which holds them both here) and every client
+	(which draws them smoothly) agree on where they are. t = 0 is the
+	take-off, right after the seize. The times are in step with the Comet
+	clip (tools/anim/asta_anims.py: COMET_SLAMS, COMET_PLANT, COMET_RELEASE).
+
+	They hang from his hand like a body would: a rod from their throat to
+	their feet with its weight swinging under the hand, dragged along the
+	ground (scraping, so it trails), kept out at his side. Clients hang them
+	from his real hand every frame (Body / Step); the server uses where the
+	hand is in the clip's keyframes (Victim), close enough for its hits and
+	for where they fly from when he lets go.
 ]]
 
 local BlackComet = {}
@@ -197,30 +208,223 @@ local BlackComet = {}
 local UP = Vector3.yAxis
 
 BlackComet.Times = {
-	Slams = { 0.22, 0.47, 0.72 }, -- into the ground as his arm comes down
-	Drag = 0.9, -- along the ground
-	Throw = 0.14, -- the heave lets go of them
-	Length = 1.25,
+	Slams = { 0.24, 0.45, 0.64 }, -- each time he hammers them into the ground
+	Plant = 0.79, -- his feet touch down; he skids to a stop
+	Stop = 0.92,
+	Release = 1.0, -- the heave lets go of them
+	Length = 1.4,
 }
 BlackComet.Distance = 30 -- the most he covers (walls cut it short)
-BlackComet.Low = 1.2 -- how far above standing height he flies
 
-export type Plan = { origin: Vector3, forward: Vector3, distance: number, floorY: number }
+local CRUISE = 0.5 -- studs above standing height he flies at
+local DIP = 1.4 -- how far each slam drives him down (so his fist reaches the ground)
+local DIP_WIDTH = 0.055 -- seconds
+local START_TIME = 0.06 -- how fast he gets up to speed (an exponential's time)
+local DIVE = 0.2 -- seconds to come down to the ground if he grabbed them in the air
 
-function BlackComet.Plan(origin: Vector3, forward: Vector3, distance: number, floorY: number): Plan
-	return { origin = origin, forward = forward, distance = distance, floorY = floorY }
+local BODY = 4 -- throat to feet
+local THROAT = 0.55 -- the hand to the middle of the neck
+local SIDE = 2.8 -- their feet stay at least this far out at his left
+local SIDE_START = 2 -- (eased out to SIDE from here over the take-off)
+local GRAVITY = Vector3.new(0, -196.2, 0)
+local FRICTION = 0.08 -- of their sliding speed lost each step on the ground
+local DAMPING = 0.98
+local HEAD_DOWN = 0.3 -- their feet stay this far under their neck (never upside down)
+local STEP = 1 / 240
+
+export type Plan = {
+	origin: Vector3,
+	forward: Vector3,
+	right: Vector3,
+	distance: number,
+	floorY: number,
+	above: number, -- how far over standing height he started
+	victim: { CFrame }, -- (server) where they are, every 1/60 s up to Release
+}
+
+local function smooth(u: number): number
+	u = math.clamp(u, 0, 1)
+	return u * u * (3 - 2 * u)
 end
 
-function BlackComet.At(plan: Plan, t: number): CFrame
+-- Ground covered by the take-off: a velocity of (1 - e^(-u/k))(1 - u^2), up
+-- to speed almost at once and sliding to a stop, integrated (u = t / Stop).
+local function covered(u: number): number
+	local k = START_TIME
+	local slow = k * ((1 - 2 * k * k) - math.exp(-u / k) * (1 - u * u - 2 * k * u - 2 * k * k))
+	return u - u * u * u / 3 - slow
+end
+local TOTAL = covered(1)
+
+-- Height over standing height: cruising low, dipping into each slam, down
+-- onto his feet for the landing.
+local function lift(t: number): number
 	local times = BlackComet.Times
-	local base = Vector3.new(plan.origin.X, plan.floorY + 3, plan.origin.Z)
-	local a = math.clamp(t / times.Drag, 0, 1)
-	-- Off fast, slowing to a stop; up off the ground at once, back down
-	-- for the heave.
-	local along = plan.distance * (1 - (1 - a) ^ 2)
-	local lift = BlackComet.Low * math.min(a / 0.15, 1) * (1 - math.clamp((a - 0.85) / 0.15, 0, 1))
-	local position = base + plan.forward * along + UP * lift
+	local cruise = CRUISE * smooth(t / 0.14) * (1 - smooth((t - 0.66) / (times.Plant - 0.66)))
+	local dips = 0
+	for _, at in times.Slams do
+		dips += math.exp(-((t - at) / DIP_WIDTH) ^ 2)
+	end
+	return cruise - DIP * dips
+end
+
+function BlackComet.Attacker(plan: Plan, t: number): CFrame
+	local times = BlackComet.Times
+	local along = plan.distance * covered(math.clamp(t / times.Stop, 0, 1)) / TOTAL
+	local height = 3 + lift(t) + plan.above * (1 - smooth(t / DIVE))
+	local position = Vector3.new(plan.origin.X, plan.floorY + height, plan.origin.Z) + plan.forward * along
 	return CFrame.lookAt(position, position + plan.forward)
+end
+
+-- His free hand (root space) at the Comet clip's keyframes, with the
+-- easing into each (from forward kinematics of the clip).
+local HAND: { { any } } = {
+	{ 0, Vector3.new(-1.6, 1.18, -1.08) },
+	{ 0.05, Vector3.new(-2.48, 0.73, -0.49), "Quart", "Out" },
+	{ 0.11, Vector3.new(-2.21, 0.07, -1.29), "Sine", "Out" },
+	{ 0.17, Vector3.new(-1.94, -0.17, -1.59), "Sine", "InOut" },
+	{ 0.24, Vector3.new(-2.1, -0.93, -0.65), "Quad", "In" },
+	{ 0.34, Vector3.new(-1.96, -0.27, -1.55), "Sine", "Out" },
+	{ 0.45, Vector3.new(-2.1, -0.95, -0.57), "Quad", "In" },
+	{ 0.54, Vector3.new(-1.97, -0.36, -1.51), "Sine", "Out" },
+	{ 0.64, Vector3.new(-2.1, -0.97, -0.48), "Quad", "In" },
+	{ 0.7, Vector3.new(-2.1, -0.93, -0.65), "Sine", "Out" },
+	{ 0.79, Vector3.new(-2.32, -0.65, -0.35), "Sine", "InOut" },
+	{ 0.85, Vector3.new(-2.34, -0.52, 0.01), "Sine", "Out" },
+	{ 0.94, Vector3.new(-2.41, 0.06, 0.1), "Sine", "InOut" },
+	{ 1, Vector3.new(-1.38, 1.06, -1.99), "Quad", "In" },
+}
+
+local function ease(a: number, style: string?, direction: string?): number
+	local function base(x: number): number
+		if style == "Quart" then
+			return x ^ 4
+		elseif style == "Sine" then
+			return 1 - math.cos(x * math.pi / 2)
+		end
+		return x * x
+	end
+	if direction == "In" then
+		return base(a)
+	elseif direction == "InOut" then
+		return if a < 0.5 then base(2 * a) / 2 else 1 - base(2 * (1 - a)) / 2
+	end
+	return 1 - base(1 - a)
+end
+
+-- Where the clip has his free hand at `t` (world space).
+function BlackComet.Hand(plan: Plan, t: number): Vector3
+	local offset = HAND[#HAND][2]
+	for i = 1, #HAND - 1 do
+		local a, b = HAND[i], HAND[i + 1]
+		if t < b[1] then
+			local alpha = math.clamp((t - a[1]) / (b[1] - a[1]), 0, 1)
+			offset = (a[2] :: Vector3):Lerp(b[2], ease(alpha, b[3], b[4]))
+			break
+		end
+	end
+	return BlackComet.Attacker(plan, t):PointToWorldSpace(offset)
+end
+
+-- A body hanging from his hand: where their feet are (and were, a step
+-- ago: the speed they swing and slide with), and which way they face.
+export type Body = { feet: Vector3, last: Vector3, look: Vector3, neck: Vector3, t: number }
+
+-- Starts them hanging straight down from `hand`, facing him (as the grab
+-- held them).
+function BlackComet.Body(plan: Plan, hand: Vector3): Body
+	local look = -plan.forward
+	local neck = hand - look * THROAT
+	local feet = neck - UP * BODY
+	return { feet = feet, last = feet, look = look, neck = neck, t = 0 }
+end
+
+-- Moves the body on to time `t` with the hand at `hand`, and returns where
+-- their root is: the throat in his hand, their weight swinging under it,
+-- dragged along the ground, out at his side, never under the floor.
+function BlackComet.Step(plan: Plan, body: Body, hand: Vector3, t: number): CFrame
+	local floor = plan.floorY + 0.5
+	local from, fromTime = body.neck, body.t
+	local target = hand - body.look * THROAT
+	target = Vector3.new(target.X, math.max(target.Y, plan.floorY + 0.35), target.Z)
+	local steps = math.clamp(math.floor((t - fromTime) / STEP + 0.5), 1, 24)
+	local root = BlackComet.Attacker(plan, t).Position
+	local side = SIDE_START + (SIDE - SIDE_START) * smooth(t / 0.15)
+	for i = 1, steps do
+		local neck = from:Lerp(target, i / steps)
+		local feet = body.feet
+		local velocity = (feet - body.last) * DAMPING
+		body.last = feet
+		feet += velocity + GRAVITY * STEP * STEP
+		-- Pushes that hold them in place (the ground, his side, their own
+		-- neck) move where they were too, so they stop them dead rather
+		-- than throwing them.
+		local function push(by: Vector3)
+			feet += by
+			body.last += by
+		end
+		for _ = 1, 3 do
+			if feet.Y < floor then
+				-- Scraping along the ground: no bounce, and it slows them.
+				local slide = feet - body.last
+				push(Vector3.new(0, floor - feet.Y, 0))
+				body.last += Vector3.new(slide.X, 0, slide.Z) * FRICTION
+			end
+			local out = (feet - root):Dot(plan.right)
+			if out > -side then
+				push(plan.right * -(out + side))
+			end
+			if feet.Y > neck.Y - HEAD_DOWN then
+				push(Vector3.new(0, neck.Y - HEAD_DOWN - feet.Y, 0))
+			end
+			local rod = feet - neck
+			feet = neck + (if rod.Magnitude > 1e-4 then rod.Unit else -UP) * BODY
+		end
+		body.feet = feet
+	end
+	body.neck, body.t = target, t
+
+	-- They turn with their body (the way they face carried round as it
+	-- tips); lying flat on their back, they settle facing up.
+	local axis = (target - body.feet).Unit
+	local look = body.look - axis * body.look:Dot(axis)
+	look = if look.Magnitude > 1e-3 then look.Unit else (UP - axis * axis.Y).Unit
+	local upward = UP - axis * axis.Y
+	if upward.Magnitude > 0.8 and look:Dot(upward) > 0 then
+		local settle = math.clamp((upward.Magnitude - 0.8) / 0.2, 0, 1) * math.min((t - fromTime) * 6, 1)
+		look = look:Lerp(upward.Unit, settle).Unit
+	end
+	body.look = look
+	return CFrame.fromMatrix(target - axis, axis:Cross(-look), axis, -look)
+end
+
+function BlackComet.Plan(origin: Vector3, forward: Vector3, distance: number, floorY: number): Plan
+	local plan: Plan = {
+		origin = origin,
+		forward = forward,
+		right = forward:Cross(UP),
+		distance = distance,
+		floorY = floorY,
+		above = math.clamp(origin.Y - (floorY + 3), 0, 40),
+		victim = {},
+	}
+	-- Where the server holds them: the same body, on the clip's hand.
+	local body = BlackComet.Body(plan, BlackComet.Hand(plan, 0))
+	local release = BlackComet.Times.Release
+	for i = 0, math.ceil(release * 60) do
+		local t = math.min(i / 60, release)
+		plan.victim[i + 1] = BlackComet.Step(plan, body, BlackComet.Hand(plan, t), t)
+	end
+	return plan
+end
+
+-- Where the server has them at `t` (up to Release).
+function BlackComet.Victim(plan: Plan, t: number): CFrame
+	local x = math.clamp(t, 0, BlackComet.Times.Release) * 60
+	local i = math.floor(x)
+	local a = plan.victim[i + 1]
+	local b = plan.victim[math.min(i + 2, #plan.victim)]
+	return a:Lerp(b, x - i)
 end
 
 return BlackComet
@@ -2149,6 +2353,7 @@ export type HitInfo = {
 	ragdoll: number?, -- seconds of ragdoll
 	hitsDowned: boolean?, -- can hit someone lying on the floor (the air Black Divider)
 	noShake: boolean?, -- no camera shake for either of them (Black Meteorite)
+	noReaction: boolean?, -- no flinch on them (they're held in a cutscene pose: Black Comet)
 	reflected: boolean?, -- sent back by a barrier (Quartile Scutum): never reflected again
 	heavy: boolean?, -- bigger hit effect
 	effect: string?, -- VFX name to play instead of Hit / HeavyHit
@@ -2876,6 +3081,7 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 		variant = variant,
 		kit = attacker:GetAttribute("Kit"),
 		hitConfirm = true,
+		noReaction = hit.noReaction,
 	})
 	if not hit.noShake then
 		CombatService.Shake(attacker, if heavy then 0.45 else 0.18)
@@ -5643,18 +5849,18 @@ local function floorAt(ctx, position: Vector3, ignore: { Instance }): number
 end
 
 --[[
-	Black Comet (Demon-Destroyer Sword 2): a short grab cutscene. His free
-	hand seizes whoever is in front of him; his wings throw him forward low
-	over the ground and he hammers them into it three times as they streak
-	along, then he plants and heaves them away. The path is Shared/BlackComet.
+	Black Comet (Demon-Destroyer Sword 2): a short grab cutscene (about 1.4
+	seconds). His free hand seizes whoever is in front of him; both wings
+	throw him forward low over the ground, dragging them along on their back
+	at his side, hammering them into it three times; then he lands skidding
+	and heaves them away. Both are held on Shared/BlackComet (they hang from
+	his hand there); the clients draw it, camera and all.
 ]]
-local HOLD_COMET = CFrame.new(-1, -1.6, -3) * FACING -- low in front of him
-
 local function blackComet(ctx)
 	local c, character = ctx.combat, ctx.character
 	local times = CometPlan.Times
-	local target, release, hold = reachGrab(ctx, times.Length + 0.4, "BlackComet")
-	if not target or not release or not hold then
+	local target, release = reachGrab(ctx, times.Length + 0.4, "BlackComet")
+	if not target or not release then
 		return
 	end
 	local forward = look(ctx)
@@ -5662,8 +5868,12 @@ local function blackComet(ctx)
 	local wall = sceneRay(ctx, origin + UP, forward * (CometPlan.Distance + 4), { target })
 	local distance = if wall then math.max((wall.Position - (origin + UP)).Magnitude - 4, 4) else CometPlan.Distance
 	local plan = CometPlan.Plan(origin, forward, distance, floorAt(ctx, origin, { target }))
-	hold(HOLD_COMET)
+
+	-- The cutscene takes over from the grab.
+	release()
 	CombatState.SetCasting(character, times.Length + 0.3)
+	CombatState.GiveIFrames(character, times.Length)
+	CombatState.Stun(target, times.Length + 0.5)
 	fx(ctx, "BlackComet", "Drag", {
 		target = target,
 		origin = origin,
@@ -5671,50 +5881,60 @@ local function blackComet(ctx)
 		distance = distance,
 		floorY = plan.floorY,
 	})
-	local stop = c.Cutscene({
+	local stopHim = c.Cutscene({
 		[character] = function(t)
-			return CometPlan.At(plan, t)
+			return CometPlan.Attacker(plan, t)
 		end,
 	}, times.Length)
+	local stopThem = c.Cutscene({
+		[target] = function(t)
+			return CometPlan.Victim(plan, t)
+		end,
+	}, times.Release)
 	local started = os.clock()
 	local function waitUntil(at: number): boolean
 		task.wait(math.max(at - (os.clock() - started), 0))
 		return CombatState.IsAlive(character) and CombatState.IsAlive(target)
 	end
+	local function abort()
+		stopThem()
+		stopHim()
+		fx(ctx, "BlackComet", "Abort", { target = target })
+	end
 	for _, at in times.Slams do
 		if not waitUntil(at) then
-			stop()
-			release()
+			abort()
 			return
 		end
-		c.Hit(character, target, { damage = 2, stun = 2, attackType = "Melee", unblockable = true, noShake = true })
-		local where = CometPlan.At(plan, at).Position + forward * 3
-		fx(ctx, "BlackComet", "Slam", { position = Vector3.new(where.X, plan.floorY, where.Z) })
-		c.ShakeArea(where, 30, 0.2)
+		-- (The cutscene is their reaction, and the camera stays still.)
+		c.Hit(character, target, {
+			damage = 2,
+			stun = 2,
+			attackType = "Melee",
+			unblockable = true,
+			noShake = true,
+			noReaction = true,
+		})
 	end
 
 	-- The heave.
-	if not waitUntil(times.Drag) then
-		stop()
-		release()
+	if not waitUntil(times.Release) then
+		abort()
 		return
 	end
-	fx(ctx, "BlackComet", "Throw", { target = target, direction = forward })
-	waitUntil(times.Drag + times.Throw)
-	release()
-	if CombatState.IsAlive(target) then
-		c.Hit(character, target, {
-			damage = 5,
-			stun = 1,
-			attackType = "Melee",
-			unblockable = true,
-			heavy = true,
-			ragdoll = 1.4,
-			velocity = forward * 85 + UP * 30,
-		})
-	end
+	stopThem()
+	c.Hit(character, target, {
+		damage = 5,
+		stun = 1,
+		attackType = "Melee",
+		unblockable = true,
+		heavy = true,
+		ragdoll = 1.4,
+		noShake = true,
+		velocity = forward * 85 + UP * 30,
+	})
 	waitUntil(times.Length)
-	stop()
+	stopHim()
 	CombatState.SetCasting(character, 0.3)
 end
 
@@ -9269,11 +9489,11 @@ local TweenService = game:GetService("TweenService")
 
 local BlackMoon = require(ReplicatedStorage:WaitForChild("Shared").BlackMoon)
 local MeteorVortex = require(ReplicatedStorage:WaitForChild("Shared").MeteorVortex)
-local CometPlan = require(ReplicatedStorage:WaitForChild("Shared").BlackComet)
 local AscentPlan = require(ReplicatedStorage:WaitForChild("Shared").BlackAscent)
 
 local CameraShake = require(script.Parent.Parent.CameraShake)
 local Cinematic = require(script.Parent.Parent.Cinematic)
+local Comet = require(script.Comet)
 local PoseAnimator = require(script.Parent.Parent.PoseAnimator)
 local Reactions = require(script.Parent.Parent.Reactions)
 local VFX = require(script.Parent.Parent.VFX)
@@ -14903,88 +15123,44 @@ function handlers.CausalityBreak(data, character, root)
 	end
 end
 
--- Black Comet: the reach and the seize are drawn with Black Meteorite's.
--- Then his wings throw him forward low over the ground with them, black
--- smoke and torn-up earth trailing behind; each time he hammers them down
--- the ground cracks and rocks fly; then he plants and heaves them away.
+-- Black Comet: the reach and the seize are drawn with Black Meteorite's;
+-- the cutscene itself is the Comet module.
+local cometContext: Comet.Context = {
+	anims = ANIMS,
+	play = play,
+	held = function(victim: Model): Animation?
+		return if victim:GetAttribute("Kit") == "AntiMagic" then ANIMS.Grabbed else Reactions.Grabbed
+	end,
+	wings = function(character: Model): Comet.Wings?
+		return awakenedVisuals[character]
+	end,
+	blackSmoke = blackSmoke,
+	redSparks = redSparks,
+	blackLightning = blackLightning,
+	glowBurst = glowBurst,
+	bloomPulse = bloomPulse,
+	heavyTrail = heavyTrail,
+	edgeGlow = edgeGlow,
+	swordAura = swordAura,
+	trailEmitter = trailEmitter,
+	impactFrame = impactFrame,
+	lingerSmoke = lingerSmoke,
+}
+local cometStops: { [Model]: () -> () } = setmetatable({}, { __mode = "k" }) :: any
+
 function handlers.BlackComet(data, character, root)
 	local phase = data.phase
 	if phase == "Drag" then
-		play(character, ANIMS.CometDrag)
-		local plan = CometPlan.Plan(data.origin, data.forward, data.distance, data.floorY)
-		local times = CometPlan.Times
-		local started = os.clock()
-		local bind = "CloverBlackComet" .. tostring(started)
-		local nextDust = 0
-		RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
-			local t = os.clock() - started
-			if t > times.Length or not root.Parent then
-				pcall(function()
-					RunService:UnbindFromRenderStep(bind)
-				end)
-				return
-			end
-			root.CFrame = CometPlan.At(plan, t)
-			if t < times.Drag and t >= nextDust then
-				nextDust = t + 0.05
-				local at = root.Position + plan.forward * 3
-				local ground = Vector3.new(at.X, plan.floorY + 0.3, at.Z)
-				blackSmoke(ground, 2, 2.5, 3)
-				U.burst(ground, {
-					color = Color3.fromRGB(90, 78, 66),
-					count = 3,
-					size = 0.5,
-					speed = NumberRange.new(8, 16),
-					lifetime = NumberRange.new(0.3, 0.6),
-					spread = 50,
-					direction = (UP - plan.forward * 0.6).Unit,
-					acceleration = Vector3.new(0, -60, 0),
-				})
-			end
-		end)
-		local feet = root.Position - UP * 2.8
-		glowBurst(feet, 4, 0.3)
-		U.ringBurst(CFrame.new(feet), RED, 1, 8, 0.3, 0.25)
-		blackSmoke(feet, 8, 3, 10)
-		U.bodyTrail(character, RED, times.Drag)
-		heavyTrail(character, times.Drag)
-		local mine = U.isLocal(character) or U.isLocal(data.target)
-		if mine then
-			CameraShake.Add(0.12)
-			CameraShake.FovKick(10)
-			-- Alongside them, low, as they streak along the ground.
-			local right = plan.forward:Cross(UP)
-			Cinematic.Camera(function(t)
-				local at = CometPlan.At(plan, math.min(t, times.Drag)).Position
-				local eye = at - plan.forward * 8 + right * 7 + UP * 2.5
-				return CFrame.lookAt(eye, at + plan.forward * 3 - UP), 78
-			end, times.Length)
+		local stop = Comet.Play(cometContext, data, character, root)
+		if stop then
+			cometStops[character] = stop
 		end
-	elseif phase == "Slam" then
-		local position: Vector3 = data.position
-		U.groundRocks(position, 5, 3, 1.1)
-		U.groundCracks(position, 5, 4, RED, 0.8)
-		U.shockwave(position, RED, 1, 9, 0.25)
-		blackSmoke(position + UP * 0.5, 6, 3, 6)
-		redSparks(position + UP * 0.5, 10, 0.5, UP)
-		U.debris(position, 5, 25, 0.5)
-		if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 40 then
-			CameraShake.Add(0.12)
-		end
-	elseif phase == "Throw" then
-		play(character, ANIMS.CometThrow)
-		local at = gripPoint(character) or root.Position
-		local direction: Vector3 = data.direction
-		glowBurst(at, 4, 0.3)
-		blackLightning(at, 4, 5)
-		U.afterimage(character, RED, 0.3)
-		task.delay(0.14, function()
-			U.impactRing(at + direction * 2, direction, RED, 1, 6, 0.25)
-			blackSmoke(at, 8, 3, 8)
-		end)
-		if U.isLocal(character) then
-			CameraShake.Add(0.2)
-			CameraShake.FovKick(8)
+	elseif phase == "Abort" then
+		-- Cut short (one of them went down): let them go.
+		local stop = cometStops[character]
+		cometStops[character] = nil
+		if stop then
+			stop()
 		end
 	else
 		handlers.BlackMeteorite(data, character, root)
@@ -18501,10 +18677,10 @@ Animations.CausalityPull = {
 	},
 }
 
--- Black Comet: flying low and flat, hammering them into the ground three times.
-Animations.CometDrag = {
+-- Black Comet: flying low on his wings, hammering them into the ground three times, then landing skidding and heaving them away.
+Animations.Comet = {
 	fadeIn = 0.05,
-	fadeOut = 0.1,
+	fadeOut = 0.3,
 	delays = { Head = 0.02, Sword = 0.04 },
 	keys = {
 		{
@@ -18520,179 +18696,214 @@ Animations.CometDrag = {
 			},
 		},
 		{
-			0.1,
+			0.05,
 			{
-				Torso = rot(-62, 8),
-				Head = rot(48, -6),
-				RightArm = limb(-40, -10, 30),
+				Torso = rot(-22, 10),
+				Head = rot(8, -8),
+				RightArm = limb(-42, -10, 30),
 				Sword = aim(0.25, 0.3, 0.92),
-				LeftArm = limb(125, -8),
-				RightLeg = rot(14),
-				LeftLeg = rot(28),
+				LeftArm = limb(118, 36, 30),
+				RightLeg = rot(-20),
+				LeftLeg = rot(14),
 			},
 			"Quart",
 			"Out",
 		},
 		{
-			0.22,
+			0.11,
 			{
-				Torso = rot(-70, 8),
-				Head = rot(52, -6),
-				RightArm = limb(-45, -10, 30),
+				Torso = rot(-56, 8),
+				Head = rot(34, -6),
+				RightArm = limb(-42, -10, 30),
 				Sword = aim(0.25, 0.3, 0.92),
-				LeftArm = limb(75, -8),
-				RightLeg = rot(10),
-				LeftLeg = rot(24),
-			},
-			"Quad",
-			"In",
-		},
-		{
-			0.36,
-			{
-				Torso = rot(-62, 8),
-				Head = rot(48, -6),
-				RightArm = limb(-40, -10, 30),
-				Sword = aim(0.25, 0.3, 0.92),
-				LeftArm = limb(125, -8),
-				RightLeg = rot(14),
-				LeftLeg = rot(28),
+				LeftArm = limb(118, 24, 10),
+				RightLeg = rot(-14),
+				LeftLeg = rot(10),
 			},
 			"Sine",
 			"Out",
 		},
 		{
-			0.47,
+			0.17,
 			{
-				Torso = rot(-70, 8),
-				Head = rot(52, -6),
-				RightArm = limb(-45, -10, 30),
+				Torso = rot(-66, 6),
+				Head = rot(44, -6),
+				RightArm = limb(-42, -10, 30),
 				Sword = aim(0.25, 0.3, 0.92),
-				LeftArm = limb(75, -8),
-				RightLeg = rot(10),
-				LeftLeg = rot(24),
+				LeftArm = limb(126, 18),
+				RightLeg = rot(-6),
+				LeftLeg = rot(6),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.24,
+			{
+				Torso = rot(-84, 8),
+				Head = rot(58, -6),
+				RightArm = limb(-52, -10, 30),
+				Sword = aim(0.25, 0.42, 0.87),
+				LeftArm = limb(92, 18),
+				RightLeg = rot(-8),
+				LeftLeg = rot(2),
 			},
 			"Quad",
 			"In",
 		},
 		{
-			0.61,
+			0.34,
 			{
-				Torso = rot(-62, 8),
-				Head = rot(48, -6),
-				RightArm = limb(-40, -10, 30),
+				Torso = rot(-68, 6),
+				Head = rot(46, -6),
+				RightArm = limb(-42, -10, 30),
 				Sword = aim(0.25, 0.3, 0.92),
-				LeftArm = limb(125, -8),
-				RightLeg = rot(14),
-				LeftLeg = rot(28),
+				LeftArm = limb(124, 18),
+				RightLeg = rot(-6),
+				LeftLeg = rot(6),
 			},
 			"Sine",
 			"Out",
 		},
 		{
-			0.72,
+			0.45,
 			{
-				Torso = rot(-70, 8),
-				Head = rot(52, -6),
-				RightArm = limb(-45, -10, 30),
-				Sword = aim(0.25, 0.3, 0.92),
-				LeftArm = limb(75, -8),
-				RightLeg = rot(10),
-				LeftLeg = rot(24),
+				Torso = rot(-86, 8),
+				Head = rot(60, -6),
+				RightArm = limb(-52, -10, 30),
+				Sword = aim(0.25, 0.42, 0.87),
+				LeftArm = limb(90, 18),
+				RightLeg = rot(-8),
+				LeftLeg = rot(2),
 			},
 			"Quad",
 			"In",
 		},
 		{
-			0.9,
+			0.54,
 			{
-				Torso = rot(-70, 8),
-				Head = rot(52, -6),
-				RightArm = limb(-45, -10, 30),
+				Torso = rot(-70, 6),
+				Head = rot(48, -6),
+				RightArm = limb(-42, -10, 30),
 				Sword = aim(0.25, 0.3, 0.92),
-				LeftArm = limb(75, -8),
-				RightLeg = rot(10),
-				LeftLeg = rot(24),
+				LeftArm = limb(122, 18),
+				RightLeg = rot(-6),
+				LeftLeg = rot(6),
 			},
-			"Linear",
+			"Sine",
 			"Out",
 		},
-	},
-}
-
--- Black Comet: plants, winds round and heaves them away.
-Animations.CometThrow = {
-	fadeIn = 0.03,
-	fadeOut = 0.25,
-	delays = { Head = 0.02, Sword = 0.03 },
-	keys = {
 		{
-			0,
+			0.64,
 			{
-				Torso = body(-0.153, -30, 10),
-				Head = rot(16, -8),
+				Torso = rot(-88, 8),
+				Head = rot(62, -6),
+				RightArm = limb(-52, -10, 30),
+				Sword = aim(0.25, 0.42, 0.87),
+				LeftArm = limb(88, 18),
+				RightLeg = rot(-8),
+				LeftLeg = rot(2),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.7,
+			{
+				Torso = rot(-84, 8),
+				Head = rot(58, -6),
+				RightArm = limb(-52, -10, 30),
+				Sword = aim(0.25, 0.42, 0.87),
+				LeftArm = limb(92, 18),
+				RightLeg = rot(-8),
+				LeftLeg = rot(2),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.79,
+			{
+				Torso = body(-0.298, -44, 10),
+				Head = rot(26, -8),
 				RightArm = limb(-30, -10, 30),
 				Sword = aim(0.3, 0.25, 0.92),
-				LeftArm = limb(80, -8),
-				RightLeg = rot(-40),
-				LeftLeg = rot(34),
+				LeftArm = limb(70, 34),
+				RightLeg = rot(-56),
+				LeftLeg = rot(26),
 			},
+			"Sine",
+			"InOut",
 		},
 		{
-			0.07,
+			0.85,
 			{
-				Torso = body(-0.139, -18, 40),
-				Head = rot(10, -30),
-				RightArm = limb(-20, -10, 30),
+				Torso = body(-0.273, -36, 14),
+				Head = rot(20, -10),
+				RightArm = limb(-26, -10, 30),
 				Sword = aim(0.3, 0.25, 0.92),
-				LeftArm = limb(60, -40, 10),
-				RightLeg = rot(-40),
+				LeftArm = limb(62, 40),
+				RightLeg = rot(-58),
 				LeftLeg = rot(34),
 			},
 			"Sine",
 			"Out",
 		},
 		{
-			0.16,
+			0.94,
 			{
-				Torso = body(0.038, -22, -35),
-				Head = rot(12, 25),
-				RightArm = limb(-25, -10, 30),
+				Torso = body(-0.303, -32, 30),
+				Head = rot(14, -24),
+				RightArm = limb(-18, -10, 30),
 				Sword = aim(0.3, 0.25, 0.92),
-				LeftArm = limb(150, 10),
-				RightLeg = rot(-44),
+				LeftArm = limb(40, 0, -55),
+				RightLeg = rot(-48),
 				LeftLeg = rot(38),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			1,
+			{
+				Torso = body(0.032, -20, -36),
+				Head = rot(10, 26),
+				RightArm = limb(-24, -10, 30),
+				Sword = aim(0.3, 0.25, 0.92),
+				LeftArm = limb(140, 40),
+				RightLeg = rot(-46),
+				LeftLeg = rot(40),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			1.18,
+			{
+				Torso = body(0.048, -16, -44),
+				Head = rot(4, 30),
+				RightArm = limb(-20, -10, 30),
+				Sword = aim(0.3, 0.25, 0.92),
+				LeftArm = limb(128, 24),
+				RightLeg = rot(-42),
+				LeftLeg = rot(36),
 			},
 			"Quart",
 			"Out",
 		},
 		{
-			0.4,
+			1.4,
 			{
-				Torso = body(0.059, -14, -40),
-				Head = rot(6, 28),
-				RightArm = limb(-20, -10, 30),
+				Torso = body(0.071, -12, -30),
+				Head = rot(2, 22),
+				RightArm = limb(-14, -10, 30),
 				Sword = aim(0.3, 0.25, 0.92),
-				LeftArm = limb(130, 20),
-				RightLeg = rot(-40),
-				LeftLeg = rot(34),
+				LeftArm = limb(70, 20),
+				RightLeg = rot(-36),
+				LeftLeg = rot(30),
 			},
 			"Sine",
-			"Out",
-		},
-		{
-			0.6,
-			{
-				Torso = body(0.059, -14, -40),
-				Head = rot(6, 28),
-				RightArm = limb(-20, -10, 30),
-				Sword = aim(0.3, 0.25, 0.92),
-				LeftArm = limb(130, 20),
-				RightLeg = rot(-40),
-				LeftLeg = rot(34),
-			},
-			"Linear",
-			"Out",
+			"InOut",
 		},
 	},
 }
@@ -21170,8 +21381,647 @@ return Animations
 ]]></string>
               </Properties>
             </Item>
+            <Item class="ModuleScript" referent="39">
+              <Properties>
+                <string name="Name">Comet</string>
+                <string name="Source"><![CDATA[--[[
+	Anti-Magic Knight (Asta): Black Comet (Black Form, Demon-Destroyer 2),
+	drawn. The paths are Shared/BlackComet (the server holds them both on
+	them); this draws it, about 1.4 seconds:
+
+	  take-off  both wings beat once: a ring of black wind bursts off his
+	            back, the ground under him cracks red and blows out, and he
+	            is gone, low and flat, black flame streaming off him.
+	  the drag  they hang from his real hand, dragged along on their back:
+	            the ground tears open under them in a glowing trench, dirt
+	            and sparks spray off it. Three times he hammers them flat
+	            into it, each harder than the last: a crater, rocks, red
+	            cracks, a ring of dust and a ring of red racing out.
+	  the heave he swings his legs down and lands skidding, his feet
+	            ploughing two furrows; hauls them round past his side and
+	            heaves them away: rings of black and red blow out after them
+	            and they fly off as a black comet, red embers streaming.
+
+	The camera (for the two of them) runs low alongside, a touch behind as
+	they tear off, swinging round behind him for the heave. No shake: each
+	blow is an eased zoom.
+]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local CometPlan = require(ReplicatedStorage:WaitForChild("Shared").BlackComet)
+local Cinematic = require(script.Parent.Parent.Parent.Cinematic)
+local PoseAnimator = require(script.Parent.Parent.Parent.PoseAnimator)
+local Soft = require(script.Parent.Parent.Parent.Soft)
+
+local U = Soft.U
+local rad = math.rad
+local UP = Vector3.yAxis
+local key = Soft.key
+
+local BLACK = Color3.fromRGB(8, 8, 10)
+local RED = Color3.fromRGB(200, 25, 35)
+local DARK_RED = Color3.fromRGB(110, 8, 18)
+local HOT = Color3.fromRGB(255, 110, 110)
+local WHITE_HOT = Color3.fromRGB(255, 225, 225)
+local DUST = Color3.fromRGB(150, 138, 122)
+
+type Animation = PoseAnimator.Animation
+
+export type Wings = { flap: (() -> ())?, setPose: ((string?) -> ())?, setPair: ((boolean) -> ())? }
+
+-- What the kit lends this module.
+export type Context = {
+	anims: { [string]: Animation },
+	play: (Model, Animation) -> (),
+	held: (Model) -> Animation?, -- their "held by the throat" struggle
+	wings: (Model) -> Wings?,
+	blackSmoke: (Vector3, number, number, number?) -> (),
+	redSparks: (Vector3, number, number?, Vector3?) -> (),
+	blackLightning: (Vector3, number, number, number?) -> (),
+	glowBurst: (Vector3, number, number?) -> (),
+	bloomPulse: (Vector3, number, number) -> (),
+	heavyTrail: (Model, number) -> (),
+	edgeGlow: (Model, number, number?) -> (),
+	swordAura: (Model, number, number) -> (),
+	trailEmitter: (BasePart, { [string]: any }, number) -> ParticleEmitter,
+	impactFrame: (number?) -> (),
+	lingerSmoke: (Vector3, number, number) -> (),
+}
+
+local Comet = {}
+
+local function smooth(u: number): number
+	u = math.clamp(u, 0, 1)
+	return u * u * (3 - 2 * u)
+end
+
+local function gripPoint(character: Model): Vector3?
+	local hand = character:FindFirstChild("Left Arm")
+	return if hand and hand:IsA("BasePart") then (hand.CFrame * CFrame.new(0, -1, 0)).Position else nil
+end
+
+-- A flat dark strip laid on the ground from `a` to `b` (both on it), with a
+-- glowing red seam down its middle that cools first.
+local function groove(a: Vector3, b: Vector3, width: number, life: number)
+	local length = (b - a).Magnitude
+	if length < 0.05 then
+		return
+	end
+	local frame = CFrame.lookAt((a + b) / 2, b)
+	local dark = U.newPart({
+		Size = Vector3.new(width, 0.12, length + width * 0.5),
+		CFrame = frame,
+		Color = Color3.fromRGB(26, 22, 22),
+		Material = Enum.Material.Slate,
+		Transparency = 0.05,
+	})
+	local seam = U.newPart({
+		Size = Vector3.new(width * 0.28, 0.14, length + 0.1),
+		CFrame = frame,
+		Color = RED,
+		Transparency = 0.1,
+	})
+	task.delay(0.25, U.tween, seam, life * 0.5, { Transparency = 1, Color = DARK_RED })
+	task.delay(life * 0.6, U.tween, dark, life * 0.4, { Transparency = 1 })
+	task.delay(life + 0.05, function()
+		dark:Destroy()
+		seam:Destroy()
+	end)
+end
+
+-- An emitter on a little invisible part that's moved along with whatever
+-- it's spraying off.
+local function sprayer(props: { [string]: any }): (BasePart, ParticleEmitter)
+	local holder = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1 })
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.LightInfluence = 0
+	emitter.Enabled = false
+	for name, value in props do
+		(emitter :: any)[name] = value
+	end
+	emitter.Parent = holder
+	return holder, emitter
+end
+
+-- A soft ring racing out across `normal`, smoke flowing round it.
+local function smokeRing(
+	center: Vector3,
+	normal: Vector3,
+	from: number,
+	to: number,
+	duration: number,
+	color: Color3,
+	width: number
+)
+	local ring = Soft.softRing({
+		color = ColorSequence.new(color),
+		width0 = width,
+		width1 = width,
+		transparency = NumberSequence.new(0.15),
+		texture = Soft.SMOKE,
+		speed = 3,
+		length = 3,
+		emission = if color == BLACK then 0 else 1,
+	})
+	local frame = CFrame.lookAt(center, center + normal) * CFrame.Angles(rad(90), 0, 0)
+	ring.set(frame, from)
+	Soft.every(duration, function(elapsed)
+		local a = 1 - (1 - elapsed / duration) ^ 3
+		ring.set(frame, from + (to - from) * a)
+		for _, beam in ring.beams do
+			beam.Width0 = width * (1 - 0.6 * a)
+			beam.Width1 = beam.Width0
+		end
+		return true
+	end)
+	ring.fade(duration)
+end
+
+-- A thin bright ring (white-hot inside, red out) racing out across `normal`.
+local function redRing(center: Vector3, normal: Vector3, from: number, to: number, duration: number)
+	Soft.lightRing(center, normal, from, to, duration, RED)
+end
+
+-- Draws it (t = 0 now). Returns stop(), which cuts it short.
+function Comet.Play(ctx: Context, data, character: Model, root: BasePart): (() -> ())?
+	if typeof(data.origin) ~= "Vector3" or typeof(data.forward) ~= "Vector3" then
+		return nil
+	end
+	local times = CometPlan.Times
+	local plan = CometPlan.Plan(data.origin, data.forward, tonumber(data.distance) or 4, tonumber(data.floorY) or 0)
+	local forward, right = plan.forward, plan.right
+	local floorY = plan.floorY
+	local victim: Model? = if typeof(data.target) == "Instance" and data.target:IsA("Model") then data.target else nil
+	local victimRoot = U.getRoot(victim)
+	local mine = U.isLocal(character) or U.isLocal(victim)
+	local started = os.clock()
+	local finished = false
+
+	local function at(time: number, fn: () -> ())
+		task.delay(math.max(time - (os.clock() - started), 0), function()
+			if not finished and character.Parent then
+				fn()
+			end
+		end)
+	end
+	local function ground(position: Vector3): Vector3
+		return Vector3.new(position.X, floorY, position.Z)
+	end
+
+	ctx.play(character, ctx.anims.Comet)
+	if victim then
+		local held = ctx.held(victim)
+		if held then
+			PoseAnimator.Play(victim, held)
+		end
+	end
+
+	-- His wings: both out for this, one huge beat to launch him, swept back
+	-- for speed; flared open as he lands; back to normal after.
+	local wings = ctx.wings(character)
+	if wings then
+		if wings.setPair then
+			wings.setPair(true)
+		end
+		if wings.flap then
+			wings.flap()
+		end
+		task.delay(0.12, function()
+			if wings.setPose then
+				wings.setPose("glide")
+			end
+		end)
+	end
+
+	-- What's sprayed off them as they're dragged: dirt and grit thrown up
+	-- off the back of them, dust clouds rolling behind, red sparks.
+	local dirtHolder, dirt = sprayer({
+		Texture = U.textures.Smoke,
+		Color = ColorSequence.new(Color3.fromRGB(120, 104, 88), Color3.fromRGB(90, 78, 66)),
+		LightEmission = 0,
+		Size = NumberSequence.new({ key(0, 0.5), key(1, 1.6) }),
+		Transparency = NumberSequence.new({ key(0, 0.15), key(1, 1) }),
+		Lifetime = NumberRange.new(0.3, 0.55),
+		Speed = NumberRange.new(10, 22),
+		SpreadAngle = Vector2.new(35, 35),
+		Acceleration = Vector3.new(0, -70, 0),
+		Drag = 1,
+		Rate = 130,
+		EmissionDirection = Enum.NormalId.Front,
+	})
+	local cloudHolder, cloud = sprayer({
+		Texture = U.textures.Smoke,
+		Color = ColorSequence.new(DUST, Color3.fromRGB(110, 102, 94)),
+		LightEmission = 0,
+		Size = NumberSequence.new({ key(0, 2), key(1, 6) }),
+		Transparency = NumberSequence.new({ key(0, 0.55), key(1, 1) }),
+		Lifetime = NumberRange.new(0.8, 1.3),
+		Speed = NumberRange.new(2, 6),
+		SpreadAngle = Vector2.new(70, 70),
+		Acceleration = Vector3.new(0, 3, 0),
+		Drag = 2,
+		Rate = 45,
+	})
+	local sparkHolder, sparks = sprayer({
+		Texture = U.textures.Spark,
+		Color = ColorSequence.new(HOT, RED),
+		LightEmission = 1,
+		Size = NumberSequence.new({ key(0, 0.35), key(1, 0) }),
+		Lifetime = NumberRange.new(0.12, 0.3),
+		Speed = NumberRange.new(18, 34),
+		SpreadAngle = Vector2.new(25, 25),
+		Acceleration = Vector3.new(0, -40, 0),
+		Rate = 70,
+		EmissionDirection = Enum.NormalId.Front,
+	})
+	local spray = { dirtHolder, cloudHolder, sparkHolder }
+
+	-- Their body, hung from his real hand (it's where the clip puts it, so
+	-- they stay in his grip at any speed), eased in from where the grab
+	-- held them.
+	local body: CometPlan.Body? = nil
+	local heldFrom = if victimRoot then victimRoot.CFrame else nil
+	local lastTrench: Vector3? = nil
+	local nextTrench = 0
+	local bind = "CloverBlackComet" .. tostring(started)
+	local stop: () -> ()
+	function stop()
+		if finished then
+			return
+		end
+		finished = true
+		pcall(function()
+			RunService:UnbindFromRenderStep(bind)
+		end)
+		dirt.Enabled, cloud.Enabled, sparks.Enabled = false, false, false
+		for _, holder in spray do
+			task.delay(1.4, holder.Destroy, holder)
+		end
+	end
+	RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
+		local t = os.clock() - started
+		if t > times.Length or not root.Parent then
+			stop()
+			return
+		end
+		root.CFrame = CometPlan.Attacker(plan, t)
+		local dragging = t < times.Release and victimRoot ~= nil and victimRoot.Parent ~= nil
+		if dragging and victimRoot then
+			local hand = gripPoint(character) or CometPlan.Hand(plan, t)
+			if not body then
+				body = CometPlan.Body(plan, hand)
+			end
+			local frame = CometPlan.Step(plan, body :: CometPlan.Body, hand, t)
+			if heldFrom and t < 0.1 then
+				frame = heldFrom:Lerp(frame, smooth(t / 0.1))
+			end
+			victimRoot.CFrame = frame
+
+			-- Where they meet the ground: along their back when they're
+			-- down flat, their heels when he's lifted them.
+			local feet = (body :: CometPlan.Body).feet
+			local low = math.clamp((frame.Position.Y - floorY - 0.6) / 1.6, 0, 1)
+			local contact = ground(frame.Position:Lerp(feet, 0.35 + 0.65 * low))
+			local touching = feet.Y < floorY + 0.9 and t > 0.08
+			local back = (-forward + UP * 0.9).Unit
+			dirtHolder.CFrame = CFrame.lookAt(contact + UP * 0.3, contact + UP * 0.3 + back)
+			cloudHolder.CFrame = CFrame.new(contact + UP * 0.8)
+			sparkHolder.CFrame = CFrame.lookAt(contact + UP * 0.2, contact + UP * 0.2 - forward + UP * 0.3)
+			dirt.Enabled = touching
+			cloud.Enabled = touching
+			sparks.Enabled = touching and low < 0.6
+			-- The trench they tear open, wider where they're slammed flat.
+			if touching and t >= nextTrench then
+				nextTrench = t + 1 / 45
+				if lastTrench then
+					groove(lastTrench, contact + UP * 0.03, 0.8 + 1.4 * (1 - low), 2.4)
+				end
+				lastTrench = contact + UP * 0.03
+			elseif not touching then
+				lastTrench = nil
+			end
+		elseif dirt.Enabled then
+			dirt.Enabled, cloud.Enabled, sparks.Enabled = false, false, false
+		end
+	end)
+	task.delay(times.Length + 0.5, stop)
+
+	-- Take-off: the wings beat and he's gone.
+	local start = CometPlan.Attacker(plan, 0)
+	local feetAt = ground(start.Position)
+	local backOf = start.Position - forward * 1.4 + UP * 0.8
+	smokeRing(backOf, forward, 1, 10, 0.4, BLACK, 2.2)
+	task.delay(0.03, redRing, backOf, forward, 0.8, 8, 0.3)
+	ctx.glowBurst(backOf, 4, 0.3)
+	ctx.blackSmoke(backOf - forward, 10, 3.5, 14)
+	ctx.blackLightning(start.Position, 5, 6, 0.22)
+	U.shockwave(feetAt, BLACK, 1, 12, 0.35)
+	U.groundCracks(feetAt, 7, 5, RED, 1.4)
+	U.debris(feetAt, 8, 30, 0.7)
+	U.burst(feetAt + UP * 0.4, {
+		texture = U.textures.Smoke,
+		color = DUST,
+		count = 14,
+		size = 3.5,
+		speed = NumberRange.new(14, 26),
+		lifetime = NumberRange.new(0.5, 0.9),
+		lightEmission = 0,
+		transparency = 0.45,
+		drag = 4,
+		spread = 80,
+		direction = UP,
+	})
+	U.light(start.Position, RED, 6, 16, 0.35)
+
+	-- In flight: black flame streaming off him, the Destroyer burning, and
+	-- the air torn past him.
+	ctx.trailEmitter(root, {
+		Texture = U.textures.Smoke,
+		Color = ColorSequence.new(BLACK, Color3.fromRGB(30, 8, 10)),
+		LightEmission = 0,
+		Size = NumberSequence.new({ key(0, 1.6), key(1, 3.6) }),
+		Transparency = NumberSequence.new({ key(0, 0.2), key(1, 1) }),
+		Lifetime = NumberRange.new(0.22, 0.38),
+		Rate = 140,
+		Speed = NumberRange.new(2, 6),
+		SpreadAngle = Vector2.new(40, 40),
+		Drag = 3,
+	}, times.Plant)
+	ctx.trailEmitter(root, {
+		Texture = U.textures.Spark,
+		Color = ColorSequence.new(HOT, RED),
+		LightEmission = 1,
+		Size = NumberSequence.new({ key(0, 0.3), key(1, 0) }),
+		Lifetime = NumberRange.new(0.2, 0.4),
+		Rate = 50,
+		Speed = NumberRange.new(3, 8),
+		SpreadAngle = Vector2.new(180, 180),
+	}, times.Plant)
+	U.bodyTrail(character, RED, times.Plant)
+	ctx.heavyTrail(character, times.Release + 0.2)
+	ctx.edgeGlow(character, times.Release + 0.15, 0.7)
+	ctx.swordAura(character, times.Length, 30)
+	U.speedLines(root, forward, times.Plant - 0.1, Color3.fromRGB(255, 235, 235))
+
+	-- Each slam into the ground, harder than the last.
+	for i, slam in times.Slams do
+		at(slam, function()
+			local where = CometPlan.Victim(plan, slam).Position
+			if victimRoot and victimRoot.Parent then
+				where = victimRoot.Position
+			end
+			local point = ground(where)
+			local k = 1 + 0.2 * (i - 1)
+			U.groundCracks(point, 5 + 2 * i, 4 + 1.5 * i, RED, 1.4)
+			U.groundRocks(point, 4 + 2 * i, 2.5 + i, 1 + 0.25 * i)
+			U.debris(point, 7 + 3 * i, 28 + 6 * i, 0.6 + 0.1 * i)
+			U.shockwave(point, RED, 1, 9 * k, 0.3)
+			smokeRing(point + UP * 0.4, UP, 1, 8 * k, 0.45, Color3.fromRGB(70, 62, 56), 1.8)
+			ctx.blackSmoke(point + UP * 0.6, 7 + i, 3, 8)
+			ctx.glowBurst(point + UP * 0.7, 3 + i, 0.25)
+			ctx.redSparks(point + UP * 0.5, 10 + 4 * i, 0.5, UP)
+			ctx.blackLightning(point + UP * 0.5, 2 + i, 4 + i, 0.18)
+			U.flash(point + UP * 0.6, BLACK, 4 + i, 0.14)
+			ctx.bloomPulse(point, 0.3 + 0.15 * i, 0.25)
+			if mine and i == #times.Slams then
+				ctx.impactFrame(0.35)
+			end
+		end)
+	end
+
+	-- Landing: his feet plough two furrows as he skids to a stop; the wings
+	-- flare open to brake.
+	at(times.Plant, function()
+		if wings and wings.setPose then
+			wings.setPose("spread")
+		end
+		local skidHolder, skid = sprayer({
+			Texture = U.textures.Smoke,
+			Color = ColorSequence.new(Color3.fromRGB(130, 116, 100)),
+			LightEmission = 0,
+			Size = NumberSequence.new({ key(0, 0.8), key(1, 2.6) }),
+			Transparency = NumberSequence.new({ key(0, 0.2), key(1, 1) }),
+			Lifetime = NumberRange.new(0.35, 0.6),
+			Speed = NumberRange.new(10, 20),
+			SpreadAngle = Vector2.new(30, 30),
+			Acceleration = Vector3.new(0, -40, 0),
+			Drag = 1.5,
+			Rate = 110,
+			EmissionDirection = Enum.NormalId.Front,
+		})
+		skid.Enabled = true
+		local feet = { root.Position - right * 0.5, root.Position + right * 0.5 }
+		local last = { ground(feet[1]), ground(feet[2]) }
+		Soft.every(times.Stop - times.Plant + 0.05, function()
+			if not root.Parent then
+				return false
+			end
+			local here = ground(root.Position)
+			skidHolder.CFrame = CFrame.lookAt(here + UP * 0.3, here + UP * 0.3 + (forward + UP * 0.7).Unit)
+			for side = 1, 2 do
+				local foot = ground(root.Position + right * (if side == 1 then -0.5 else 0.5)) + UP * 0.03
+				groove(last[side], foot, 0.55, 1.6)
+				last[side] = foot
+			end
+			return true
+		end, function()
+			skid.Enabled = false
+			task.delay(0.8, skidHolder.Destroy, skidHolder)
+		end)
+		U.ringBurst(CFrame.new(ground(root.Position) + UP * 0.2), Color3.fromRGB(150, 138, 122), 1, 7, 0.35, 0.3)
+		ctx.blackSmoke(ground(root.Position) + UP * 0.5, 8, 3, 8)
+	end)
+
+	-- The haul: black smoke wound round him as he twists.
+	at(times.Release - 0.08, function()
+		local hand = gripPoint(character) or root.Position
+		ctx.blackSmoke(hand, 6, 2.5, 6)
+		ctx.blackLightning(hand, 3, 3, 0.15)
+	end)
+
+	-- The heave: they're thrown away as a black comet.
+	at(times.Release, function()
+		local hand = gripPoint(character) or root.Position + forward * 2 + UP
+		local direction = (forward * 85 + UP * 30).Unit
+		local feet = ground(root.Position)
+		ctx.glowBurst(hand, 6, 0.35)
+		U.flash(hand, WHITE_HOT, 4, 0.08)
+		U.flash(hand, BLACK, 8, 0.2)
+		smokeRing(hand, direction, 1.5, 13, 0.45, BLACK, 2.6)
+		task.delay(0.03, smokeRing, hand + direction, direction, 1, 9, 0.35, RED, 1.2)
+		task.delay(0.05, redRing, hand + direction * 2, direction, 1, 11, 0.3)
+		U.impactRing(hand, direction, RED, 1, 8, 0.3)
+		U.burst(hand, {
+			texture = U.textures.Smoke,
+			color = BLACK,
+			count = 16,
+			size = 3,
+			speed = NumberRange.new(20, 45),
+			lifetime = NumberRange.new(0.3, 0.6),
+			lightEmission = 0,
+			transparency = 0.15,
+			drag = 4,
+			spread = 25,
+			direction = direction,
+		})
+		ctx.redSparks(hand, 20, 0.7, direction)
+		ctx.blackLightning(hand, 6, 7, 0.22)
+		U.shockwave(feet, RED, 1, 16, 0.4)
+		U.groundCracks(feet + forward * 2, 8, 7, RED, 1.6)
+		ctx.lingerSmoke(feet, 1.4, 8)
+		ctx.bloomPulse(hand, 0.9, 0.4)
+		U.light(hand, RED, 9, 22, 0.4)
+		if wings and wings.flap then
+			wings.flap()
+		end
+		if mine then
+			ctx.impactFrame(0.7)
+		end
+		-- The comet: a black tail and red embers streaming off them.
+		if victimRoot and victimRoot.Parent then
+			ctx.trailEmitter(victimRoot, {
+				Texture = U.textures.Smoke,
+				Color = ColorSequence.new(BLACK, Color3.fromRGB(40, 10, 12)),
+				LightEmission = 0,
+				Size = NumberSequence.new({ key(0, 2.6), key(1, 5) }),
+				Transparency = NumberSequence.new({ key(0, 0.15), key(1, 1) }),
+				Lifetime = NumberRange.new(0.3, 0.5),
+				Rate = 150,
+				Speed = NumberRange.new(2, 5),
+				SpreadAngle = Vector2.new(50, 50),
+				Drag = 3,
+			}, 0.8)
+			ctx.trailEmitter(victimRoot, {
+				Texture = U.textures.Spark,
+				Color = ColorSequence.new(HOT, RED),
+				LightEmission = 1,
+				Size = NumberSequence.new({ key(0, 0.4), key(1, 0) }),
+				Lifetime = NumberRange.new(0.25, 0.5),
+				Rate = 80,
+				Speed = NumberRange.new(4, 10),
+				SpreadAngle = Vector2.new(180, 180),
+			}, 0.8)
+			local tail = Soft.trail(victimRoot, Vector3.new(0, 1.2, 0), Vector3.new(0, -1.2, 0), {
+				color = ColorSequence.new(RED, DARK_RED),
+				transparency = NumberSequence.new({ key(0, 0.2), key(1, 1) }),
+				lifetime = 0.25,
+				width = NumberSequence.new(1, 0.2),
+			})
+			task.delay(0.8, Soft.endTrail, tail)
+		end
+	end)
+
+	at(times.Length + 0.3, function()
+		if wings then
+			if wings.setPose then
+				wings.setPose(nil)
+			end
+			if wings.setPair then
+				wings.setPair(false)
+			end
+		end
+	end)
+	-- (If it's cut short, the wings still go back.)
+	task.delay(times.Length + 0.6, function()
+		if wings and finished then
+			if wings.setPose then
+				wings.setPose(nil)
+			end
+			if wings.setPair then
+				wings.setPair(false)
+			end
+		end
+	end)
+
+	-- For the two of them: the light deepens a touch (never dark) and the
+	-- reds bloom.
+	if mine then
+		U.colorGrade(
+			{ Contrast = 0.12, Saturation = -0.12, TintColor = Color3.fromRGB(255, 238, 238) },
+			0.15,
+			times.Length - 0.25,
+			0.4
+		)
+		local release = Comet.Camera(plan)
+		local stopDrawing = stop
+		stop = function()
+			stopDrawing()
+			release()
+		end
+	end
+
+	return stop
+end
+
+--[[
+	The camera: low, at their side (the side he holds them on), riding
+	along a touch behind them so they pull ahead as he tears off, coming
+	round behind his shoulder for the heave and watching them go. Each slam
+	and the heave is an eased zoom in and out; nothing shakes.
+]]
+function Comet.Camera(plan: CometPlan.Plan): () -> ()
+	local times = CometPlan.Times
+	local forward, right = plan.forward, plan.right
+	local function him(t: number): Vector3
+		return CometPlan.Attacker(plan, t).Position
+	end
+	local function them(t: number): Vector3
+		if t <= times.Release then
+			return CometPlan.Victim(plan, t).Position
+		end
+		-- Thrown: where they're flying, roughly.
+		local s = t - times.Release
+		local from = CometPlan.Victim(plan, times.Release).Position
+		return from + forward * 85 * s + UP * (30 * s - 70 * s * s)
+	end
+	-- Steady: their ground track at a fixed height, so the camera doesn't
+	-- bob with every slam (only the dive down from the air, if any).
+	local function level(p: Vector3, height: number, t: number): Vector3
+		return Vector3.new(p.X, plan.floorY + height + plan.above * (1 - smooth(t / 0.2)), p.Z)
+	end
+	local function blow(t: number, at: number, amount: number): number
+		if t < at then
+			return 0
+		end
+		local u = (t - at) / 0.07
+		return amount * u * math.exp(1 - u)
+	end
+	local release = times.Release
+	return Cinematic.Camera(function(elapsed)
+		local t = math.min(elapsed, times.Length)
+		-- Riding along with them, a touch behind (more as they take off).
+		local lag = 0.05 * smooth(t / 0.2) * (1 - smooth((t - 0.6) / 0.3))
+		local anchor = level(him(t - lag):Lerp(them(math.min(t - lag, release)), 0.5), 2.2, t)
+		-- Round from in front of them at their side to behind his
+		-- shoulder for the heave.
+		local swing = smooth((t - 0.05) / 0.75) * 0.55 + smooth((t - 0.78) / 0.4) * 0.45
+		local angle = rad(55 + 95 * swing)
+		local around = forward * math.cos(angle) - right * math.sin(angle)
+		local distance = 8.5 + 1.5 * smooth((t - 0.8) / 0.4)
+		local eye = anchor + around * distance + UP * (1.6 + 1.4 * smooth((t - 0.75) / 0.5))
+		eye = Vector3.new(eye.X, math.max(eye.Y, plan.floorY + 1), eye.Z)
+		-- Looking at the pair, then after them as they fly.
+		local pair = level(him(t):Lerp(them(math.min(t, release)), 0.5), 1.6, t) + forward * 1.2
+		local follow = smooth((t - release) / 0.3)
+		local focus = pair:Lerp(him(t):Lerp(them(t), 0.55), follow)
+		local roll = -3 + 6 * swing
+		local fov = 74 - 4 * swing
+		for i, slam in times.Slams do
+			fov -= blow(t, slam, 2 + i)
+		end
+		fov -= blow(t, release, 9)
+		return CFrame.lookAt(eye, focus) * CFrame.Angles(0, 0, rad(roll)), fov
+	end, times.Length + 0.05)
+end
+
+return Comet
+]]></string>
+              </Properties>
+            </Item>
           </Item>
-          <Item class="ModuleScript" referent="39">
+          <Item class="ModuleScript" referent="40">
             <Properties>
               <string name="Name">Wind</string>
               <string name="Source"><![CDATA[--[[
@@ -21196,7 +22046,7 @@ local M1Animations = require(script.Parent.Parent.M1Animations)
 local PoseAnimator = require(script.Parent.Parent.PoseAnimator)
 local VFX = require(script.Parent.Parent.VFX)
 local Saint = require(script.Saint)
-local Soft = require(script.Soft)
+local Soft = require(script.Parent.Parent.Soft)
 
 type Animation = PoseAnimator.Animation
 type Star = Soft.Star
@@ -25572,7 +26422,7 @@ end
 return Kit
 ]]></string>
             </Properties>
-            <Item class="ModuleScript" referent="40">
+            <Item class="ModuleScript" referent="41">
               <Properties>
                 <string name="Name">Animations</string>
                 <string name="Source"><![CDATA[--[[
@@ -27766,7 +28616,7 @@ return Animations
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="41">
+            <Item class="ModuleScript" referent="42">
               <Properties>
                 <string name="Name">Saint</string>
                 <string name="Source"><![CDATA[--[[
@@ -27814,7 +28664,7 @@ local SaintPlan = require(ReplicatedStorage:WaitForChild("Shared").SaintZephyr)
 local CameraShake = require(script.Parent.Parent.Parent.CameraShake)
 local Cinematic = require(script.Parent.Parent.Parent.Cinematic)
 local PoseAnimator = require(script.Parent.Parent.Parent.PoseAnimator)
-local Soft = require(script.Parent.Soft)
+local Soft = require(script.Parent.Parent.Parent.Soft)
 
 local U = Soft.U
 local rad = math.rad
@@ -29600,1033 +30450,6 @@ return Saint
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="42">
-              <Properties>
-                <string name="Name">Soft</string>
-                <string name="Source"><![CDATA[--[[
-	Prince of Wind (Yuno): the wind and starlight every spell is drawn with.
-
-	Wind is pale green with a white core, star magic gold-white. Most of it
-	is soft and see-through: beams facing the camera (wind flowing along
-	them, or a chain of sparkles), rings of beams on a hub, trails, and
-	particles of soft wind and starlight. Solid neon parts are kept for the
-	small hard things (star points, blade edges, sparks).
-
-	Shared by Client/Kits/Wind (the moves) and its Saint module (the
-	Full-Crown ultimate).
-]]
-
-local RunService = game:GetService("RunService")
-
-local VFX = require(script.Parent.Parent.Parent.VFX)
-
-local U = VFX.Util
-local rad = math.rad
-local UP = Vector3.yAxis
-local TERRAIN = workspace.Terrain
-
-local Soft = {}
-Soft.U = U
-
-Soft.WIND = Color3.fromRGB(120, 235, 175)
-Soft.WIND_DEEP = Color3.fromRGB(35, 170, 110)
-Soft.WIND_WHITE = Color3.fromRGB(228, 255, 240)
-Soft.STAR = Color3.fromRGB(255, 226, 130)
-Soft.STAR_WHITE = Color3.fromRGB(255, 250, 228)
-Soft.STAR_FIRE = Color3.fromRGB(255, 140, 40)
-
-Soft.SMOKE = U.textures.Smoke
-Soft.SPARKLE = U.textures.Spark
-
-local WIND, WIND_DEEP, WIND_WHITE = Soft.WIND, Soft.WIND_DEEP, Soft.WIND_WHITE
-local STAR, STAR_WHITE = Soft.STAR, Soft.STAR_WHITE
-local SMOKE, SPARKLE = Soft.SMOKE, Soft.SPARKLE
-
-local KAPPA = 0.5523 -- a quarter circle as a cubic curve
-
----------------------------------------------------------------------------
--- Timing and cleanup
----------------------------------------------------------------------------
-
--- Runs `step(elapsed, dt)` every frame until it returns false or `duration`
--- runs out; then `finish` (if any).
-function Soft.every(duration: number, step: (number, number) -> boolean?, finish: (() -> ())?)
-	local start = os.clock()
-	local connection
-	connection = RunService.RenderStepped:Connect(function(dt)
-		local elapsed = os.clock() - start
-		if elapsed >= duration or step(elapsed, dt) == false then
-			connection:Disconnect()
-			if finish then
-				finish()
-			end
-		end
-	end)
-end
-local every = Soft.every
-
-function Soft.fadeOut(parts: { BasePart }, duration: number)
-	for _, part in parts do
-		U.tween(part, duration, { Transparency = 1 })
-	end
-	task.delay(duration + 0.05, function()
-		for _, part in parts do
-			part:Destroy()
-		end
-	end)
-end
-local fadeOut = Soft.fadeOut
-
-function Soft.key(time: number, value: number): NumberSequenceKeypoint
-	return NumberSequenceKeypoint.new(time, value)
-end
-local key = Soft.key
-
-function Soft.quadratic(a: Vector3, b: Vector3, c: Vector3, s: number): Vector3
-	return a * ((1 - s) * (1 - s)) + b * (2 * s * (1 - s)) + c * (s * s)
-end
-local quadratic = Soft.quadratic
-
----------------------------------------------------------------------------
--- Hard shapes: bars, tubes, wedges, stars
----------------------------------------------------------------------------
-
--- A straight bar of light or wind between two points.
-function Soft.bar(from: Vector3, to: Vector3, width: number, color: Color3, transparency: number): BasePart
-	if (to - from).Magnitude < 1e-3 then
-		to = from + UP * 0.05
-	end
-	local length = math.max((to - from).Magnitude, 0.05)
-	return U.newPart({
-		Size = Vector3.new(width, width, length),
-		CFrame = CFrame.lookAt(from:Lerp(to, 0.5), to),
-		Color = color,
-		Transparency = transparency,
-	})
-end
-local bar = Soft.bar
-
--- A round beam (cylinder) between two points.
-function Soft.tube(from: Vector3, to: Vector3, width: number, color: Color3, transparency: number): BasePart
-	if (to - from).Magnitude < 1e-3 then
-		to = from + UP * 0.05
-	end
-	local length = math.max((to - from).Magnitude, 0.05)
-	return U.newPart({
-		Shape = Enum.PartType.Cylinder,
-		Size = Vector3.new(length, width, width),
-		CFrame = CFrame.lookAt(from:Lerp(to, 0.5), to) * CFrame.Angles(0, rad(90), 0),
-		Color = color,
-		Transparency = transparency,
-	})
-end
-
--- Re-poses a bar (from `bar`) to run between two points.
-function Soft.stretch(line: BasePart, from: Vector3, to: Vector3)
-	line.Size = Vector3.new(line.Size.X, line.Size.Y, (to - from).Magnitude + 0.05)
-	line.CFrame = CFrame.lookAt(from:Lerp(to, 0.5), to)
-end
-
--- A neon wedge (U.newPart for wedges), for pointed shapes.
-function Soft.newWedge(props: { [string]: any }): WedgePart
-	local wedge = Instance.new("WedgePart")
-	wedge.Anchored = true
-	wedge.CanCollide = false
-	wedge.CanQuery = false
-	wedge.CanTouch = false
-	wedge.CastShadow = false
-	wedge.Material = Enum.Material.Neon
-	for name, value in props do
-		(wedge :: any)[name] = value
-	end
-	wedge.Parent = U.folder
-	return wedge
-end
-
--- Wind streaming into a point from all round it.
-function Soft.inflow(target: Vector3, radius: number, color: Color3?)
-	local from = target + U.randomUnit() * radius
-	local wisp = bar(from, from + (target - from).Unit * 1.2, 0.08, color or WIND_WHITE, 0.3)
-	U.tween(wisp, 0.22, { CFrame = CFrame.lookAt(target, target + (target - from).Unit), Transparency = 1 })
-	task.delay(0.25, wisp.Destroy, wisp)
-end
-
--- A burst of pale wind streaks.
-function Soft.gust(position: Vector3, size: number, direction: Vector3?)
-	U.burst(position, {
-		color = WIND_WHITE,
-		count = math.floor(8 + size * 3),
-		size = 0.3 + size * 0.06,
-		speed = NumberRange.new(14 + size * 4, 28 + size * 8),
-		lifetime = NumberRange.new(0.15, 0.35),
-		streaks = true,
-		spread = if direction then 40 else 180,
-		direction = direction,
-	})
-	U.ringBurst(CFrame.new(position), WIND, size * 0.2, size, 0.3, 0.12)
-	U.light(position, WIND, 3, size * 2.5, 0.25)
-end
-
--- A four-pointed star of light (star magic): a white core, a gold cross and
--- a smaller diagonal cross, always turned to face the camera, and a soft
--- glitter of starlight round it.
-export type Star = { place: (Vector3, number) -> (), fade: (number) -> (), parts: { BasePart } }
-
-function Soft.makeStar(size: number, color: Color3?): Star
-	local tint = color or STAR
-	local parts: { BasePart } = {}
-	local offsets: { CFrame } = {}
-	local function add(part: BasePart, offset: CFrame)
-		table.insert(parts, part)
-		table.insert(offsets, offset)
-	end
-	add(
-		U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * size * 0.32, Color = STAR_WHITE }),
-		CFrame.identity
-	)
-	for i = 0, 3 do
-		local long = i % 2 == 0
-		add(
-			U.newPart({
-				Size = Vector3.new(size * 0.07, size * (if long then 1.15 else 0.55), size * 0.07),
-				Color = tint,
-				Transparency = 0.05,
-			}),
-			CFrame.Angles(0, 0, i * math.pi / 4)
-		)
-	end
-	add(
-		U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * size * 0.95, Color = tint, Transparency = 0.82 }),
-		CFrame.identity
-	)
-	local light = Instance.new("PointLight")
-	light.Color = tint
-	light.Range = size * 6
-	light.Brightness = 2.5
-	light.Parent = parts[1]
-	-- Glitter: sparkles of starlight round it, and a soft halo.
-	local glitter = Instance.new("ParticleEmitter")
-	glitter.Texture = SPARKLE
-	glitter.Color = ColorSequence.new(STAR_WHITE, tint)
-	glitter.LightEmission = 1
-	glitter.LightInfluence = 0
-	glitter.Size = NumberSequence.new({ key(0, size * 0.5), key(1, 0) })
-	glitter.Transparency = NumberSequence.new({ key(0, 0.2), key(1, 1) })
-	glitter.Lifetime = NumberRange.new(0.25, 0.5)
-	glitter.Rate = 10
-	glitter.Speed = NumberRange.new(0.5, 1.5)
-	glitter.SpreadAngle = Vector2.new(180, 180)
-	glitter.Rotation = NumberRange.new(0, 90)
-	glitter.Enabled = false -- (until it's first placed)
-	glitter.Parent = parts[1]
-	local placed, faded = false, false
-	local star = { parts = parts }
-	function star.place(position: Vector3, spin: number)
-		local base = CFrame.lookAt(position, workspace.CurrentCamera.CFrame.Position) * CFrame.Angles(0, 0, spin)
-		for i, part in parts do
-			part.CFrame = base * offsets[i]
-		end
-		if not placed and not faded then
-			placed = true
-			glitter.Enabled = true
-		end
-	end
-	function star.fade(duration: number)
-		faded = true
-		light.Enabled = false
-		glitter.Enabled = false
-		fadeOut(parts, duration)
-	end
-	return star
-end
-local makeStar = Soft.makeStar
-
--- A star, softer: its rays see-through.
-function Soft.softStar(size: number, color: Color3?): Star
-	local star = makeStar(size, color)
-	for i, part in star.parts do
-		if i > 1 then
-			part.Transparency = math.max(part.Transparency, 0.35)
-		end
-	end
-	return star
-end
-
--- Sylph: a small spirit of wind, a glowing body with two fluttering wings
--- and a trail of wind behind her.
-export type Sprite = { place: (CFrame, number) -> (), fade: (number) -> () }
-
-function Soft.makeSprite(scale: number): Sprite
-	local body = U.newPart({
-		Shape = Enum.PartType.Ball,
-		Size = Vector3.new(0.5, 0.5, 0.5) * scale,
-		Color = WIND_WHITE,
-	})
-	local glow = U.newPart({
-		Shape = Enum.PartType.Ball,
-		Size = Vector3.one * 1.3 * scale,
-		Color = WIND,
-		Transparency = 0.7,
-	})
-	local wings = {
-		U.newPart({ Size = Vector3.new(0.9, 0.05, 0.5) * scale, Color = WIND, Transparency = 0.35 }),
-		U.newPart({ Size = Vector3.new(0.9, 0.05, 0.5) * scale, Color = WIND, Transparency = 0.35 }),
-	}
-	local light = Instance.new("PointLight")
-	light.Color = WIND
-	light.Range = 6 * scale
-	light.Brightness = 2
-	light.Parent = body
-	local a0 = Instance.new("Attachment")
-	a0.Position = Vector3.new(0, 0.25 * scale, 0)
-	a0.Parent = body
-	local a1 = Instance.new("Attachment")
-	a1.Position = Vector3.new(0, -0.25 * scale, 0)
-	a1.Parent = body
-	local trail = Instance.new("Trail")
-	trail.Attachment0 = a0
-	trail.Attachment1 = a1
-	trail.Color = ColorSequence.new(WIND_WHITE, WIND)
-	trail.Transparency = NumberSequence.new({ key(0, 0.2), key(1, 1) })
-	trail.WidthScale = NumberSequence.new({ key(0, 1), key(1, 0) })
-	trail.Lifetime = 0.35
-	trail.LightEmission = 1
-	trail.LightInfluence = 0
-	trail.FaceCamera = true
-	trail.Enabled = false -- (until she's first placed)
-	trail.Parent = body
-	local started = false
-	local sprite = {}
-	function sprite.place(cframe: CFrame, t: number)
-		body.CFrame = cframe
-		glow.CFrame = cframe
-		if not started then
-			started = true
-			trail:Clear()
-			trail.Enabled = true
-		end
-		local flap = math.sin(t * 30) * rad(40)
-		wings[1].CFrame = cframe * CFrame.Angles(0, 0, flap) * CFrame.new(0.45 * scale, 0, 0)
-		wings[2].CFrame = cframe * CFrame.Angles(0, 0, -flap) * CFrame.new(-0.45 * scale, 0, 0)
-	end
-	function sprite.fade(duration: number)
-		light.Enabled = false
-		trail.Enabled = false
-		fadeOut({ glow, wings[1], wings[2] }, duration)
-		Soft.linger(body, duration, trail.Lifetime + 0.15)
-	end
-	return sprite
-end
-
--- An arc of thin segments (a bow, a crescent of wind): points on a circle of
--- `radius` round `center` from angle `from` to `to` (radians) in the plane of
--- `right` and `up`.
-function Soft.arcPoints(
-	center: Vector3,
-	right: Vector3,
-	up: Vector3,
-	radius: number,
-	from: number,
-	to: number,
-	count: number
-): { Vector3 }
-	local points = {}
-	for i = 0, count do
-		local angle = from + (to - from) * i / count
-		table.insert(points, center + (right * math.cos(angle) + up * math.sin(angle)) * radius)
-	end
-	return points
-end
-
-function Soft.arcParts(points: { Vector3 }, width: number, color: Color3, transparency: number): { BasePart }
-	local parts = {}
-	for i = 1, #points - 1 do
-		table.insert(parts, bar(points[i], points[i + 1], width, color, transparency))
-	end
-	return parts
-end
-
-function Soft.poseArc(parts: { BasePart }, points: { Vector3 })
-	for i, part in parts do
-		local a, b = points[i], points[i + 1]
-		part.Size = Vector3.new(part.Size.X, part.Size.Y, (b - a).Magnitude + 0.05)
-		part.CFrame = CFrame.lookAt(a:Lerp(b, 0.5), b)
-	end
-end
-
----------------------------------------------------------------------------
--- Soft shapes: beams, rings, trails, particles
----------------------------------------------------------------------------
-
--- An attachment fixed in the world (on Terrain), its X axis along `axis`
--- (the way a beam leaving it curves).
-function Soft.worldAnchor(position: Vector3, axis: Vector3?): Attachment
-	local x = if axis and axis.Magnitude > 1e-3 then axis.Unit else Vector3.xAxis
-	local y = if math.abs(x.Y) > 0.98 then Vector3.zAxis else UP
-	local z = x:Cross(y).Unit
-	local attachment = Instance.new("Attachment")
-	attachment.CFrame = CFrame.fromMatrix(position, x, z:Cross(x).Unit)
-	attachment.Parent = TERRAIN
-	return attachment
-end
-local worldAnchor = Soft.worldAnchor
-
--- Re-aims a world anchor (from `worldAnchor`).
-function Soft.aim(attachment: Attachment, position: Vector3, axis: Vector3?)
-	local x = if axis and axis.Magnitude > 1e-3 then axis.Unit else Vector3.xAxis
-	local y = if math.abs(x.Y) > 0.98 then Vector3.zAxis else UP
-	local z = x:Cross(y).Unit
-	attachment.CFrame = CFrame.fromMatrix(position, x, z:Cross(x).Unit)
-end
-
-export type BeamStyle = {
-	color: ColorSequence,
-	width0: number,
-	width1: number,
-	transparency: NumberSequence,
-	curve0: number?,
-	curve1: number?,
-	texture: string?,
-	speed: number?,
-	length: number?,
-	emission: number?,
-	wrap: boolean?, -- tile the texture every `length` studs (a chain of sparkles)
-	segments: number?,
-}
-
--- A soft beam between two attachments: facing the camera, glowing, see-
--- through, wind flowing along it when it's textured.
-function Soft.softBeam(a0: Attachment, a1: Attachment, style: BeamStyle, parent: Instance?): Beam
-	local beam = Instance.new("Beam")
-	beam.Attachment0 = a0
-	beam.Attachment1 = a1
-	beam.Color = style.color
-	beam.Width0 = style.width0
-	beam.Width1 = style.width1
-	beam.Transparency = style.transparency
-	beam.CurveSize0 = style.curve0 or 0
-	beam.CurveSize1 = style.curve1 or 0
-	beam.FaceCamera = true
-	beam.LightEmission = style.emission or 1
-	beam.LightInfluence = 0
-	local curved = (style.curve0 or 0) ~= 0 or (style.curve1 or 0) ~= 0
-	beam.Segments = style.segments or (if curved then 20 else 10)
-	if style.texture then
-		beam.Texture = style.texture
-		beam.TextureMode = if style.wrap then Enum.TextureMode.Wrap else Enum.TextureMode.Stretch
-		beam.TextureLength = style.length or 1
-		beam.TextureSpeed = style.speed or 0
-	end
-	beam.Parent = parent or TERRAIN
-	return beam
-end
-local softBeam = Soft.softBeam
-
--- Eases beams out to nothing, then removes them (and `extra`).
-function Soft.fadeBeams(beams: { Beam }, duration: number, extra: { any }?)
-	local originals: { { NumberSequenceKeypoint } } = {}
-	for i, beam in beams do
-		originals[i] = beam.Transparency.Keypoints
-	end
-	every(duration, function(elapsed)
-		local a = math.clamp(elapsed / duration, 0, 1)
-		for i, beam in beams do
-			if beam.Parent then
-				local points = {}
-				for _, point in originals[i] do
-					table.insert(points, key(point.Time, point.Value + (1 - point.Value) * a))
-				end
-				beam.Transparency = NumberSequence.new(points)
-			end
-		end
-		return true
-	end, function()
-		for _, beam in beams do
-			beam:Destroy()
-		end
-		if extra then
-			for _, instance in extra do
-				instance:Destroy()
-			end
-		end
-	end)
-end
-local fadeBeams = Soft.fadeBeams
-
--- Scales a beam's widths by `scale` (from the widths it was made with).
-function Soft.scaleBeams(beams: { Beam }, scale: number, base: { { number } })
-	for i, beam in beams do
-		beam.Width0 = base[i][1] * scale
-		beam.Width1 = base[i][2] * scale
-	end
-end
-
-function Soft.widths(beams: { Beam }): { { number } }
-	local base = {}
-	for i, beam in beams do
-		base[i] = { beam.Width0, beam.Width1 }
-	end
-	return base
-end
-
--- A ring of soft light: four quarter-circle beams on an invisible hub, so
--- turning or tilting it is just moving the hub. It lies in the hub's XZ
--- plane.
-export type Ring = { hub: BasePart, beams: { Beam }, set: (CFrame, number) -> (), fade: (number) -> () }
-
-function Soft.softRing(style: BeamStyle): Ring
-	local hub = U.newPart({ Size = Vector3.one * 0.1, Transparency = 1 })
-	local anchors: { Attachment } = {}
-	for _ = 1, 4 do
-		local attachment = Instance.new("Attachment")
-		attachment.Parent = hub
-		table.insert(anchors, attachment)
-	end
-	local beams: { Beam } = {}
-	for i = 1, 4 do
-		local beam = softBeam(anchors[i], anchors[i % 4 + 1], style, hub)
-		beam.Segments = style.segments or 12
-		table.insert(beams, beam)
-	end
-	local ring = { hub = hub, beams = beams }
-	function ring.set(frame: CFrame, radius: number)
-		hub.CFrame = frame
-		for i, attachment in anchors do
-			local angle = (i - 1) * math.pi / 2
-			local out = Vector3.new(math.cos(angle), 0, math.sin(angle))
-			attachment.CFrame = CFrame.fromMatrix(out * radius, Vector3.new(-math.sin(angle), 0, math.cos(angle)), UP)
-		end
-		for _, beam in beams do
-			beam.CurveSize0 = radius * KAPPA
-			beam.CurveSize1 = radius * KAPPA
-		end
-	end
-	function ring.fade(duration: number)
-		fadeBeams(beams, duration, { hub })
-	end
-	return ring
-end
-local softRing = Soft.softRing
-
--- A ring of wind racing out from `from` to `to` studs across `normal`.
-function Soft.windRing(
-	center: Vector3,
-	normal: Vector3,
-	from: number,
-	to: number,
-	duration: number,
-	color: Color3?,
-	width: number?
-)
-	local w = width or 1.4
-	local ring = softRing({
-		color = ColorSequence.new(WIND_WHITE, color or WIND),
-		width0 = w,
-		width1 = w,
-		transparency = NumberSequence.new(0.3),
-		texture = SMOKE,
-		speed = 2,
-		length = 4,
-	})
-	local frame = CFrame.lookAt(center, center + normal) * CFrame.Angles(rad(90), 0, 0)
-	ring.set(frame, from)
-	every(duration, function(elapsed)
-		ring.set(frame, from + (to - from) * (1 - (1 - elapsed / duration) ^ 2))
-		return true
-	end)
-	ring.fade(duration)
-end
-
--- A thin bright ring of starlight racing out (sharper than a wind ring).
-function Soft.lightRing(center: Vector3, normal: Vector3, from: number, to: number, duration: number, color: Color3?)
-	local ring = softRing({
-		color = ColorSequence.new(STAR_WHITE, color or STAR),
-		width0 = 0.35,
-		width1 = 0.35,
-		transparency = NumberSequence.new(0.1),
-	})
-	local frame = CFrame.lookAt(center, center + normal) * CFrame.Angles(rad(90), 0, 0)
-	ring.set(frame, from)
-	every(duration, function(elapsed)
-		local a = 1 - (1 - elapsed / duration) ^ 3
-		ring.set(frame, from + (to - from) * a)
-		for _, beam in ring.beams do
-			beam.Width0 = 0.35 * (1 - a) + 0.05
-			beam.Width1 = beam.Width0
-		end
-		return true
-	end)
-	ring.fade(duration)
-end
-
--- A soft arc: beams curving round `center` from one angle to another (in
--- the plane of `right` and `up`), re-posed every frame with set().
-export type Arc = {
-	beams: { Beam },
-	set: (Vector3, Vector3, Vector3, number, number, number) -> (),
-	fade: (number) -> (),
-}
-
-function Soft.softArc(styles: { BeamStyle }): Arc
-	local a0, a1 = worldAnchor(Vector3.zero), worldAnchor(Vector3.zero)
-	local beams: { Beam } = {}
-	for _, style in styles do
-		local beam = softBeam(a0, a1, style)
-		beam.Segments = style.segments or 16
-		table.insert(beams, beam)
-	end
-	local arc = { beams = beams }
-	function arc.set(center: Vector3, right: Vector3, up: Vector3, radius: number, from: number, to: number)
-		local function at(angle: number): Vector3
-			return center + (right * math.cos(angle) + up * math.sin(angle)) * radius
-		end
-		local function tangent(angle: number): Vector3
-			return up * math.cos(angle) - right * math.sin(angle)
-		end
-		local k = 4 / 3 * math.tan((to - from) / 4) * radius
-		Soft.aim(a0, at(from), tangent(from))
-		Soft.aim(a1, at(to), tangent(to))
-		for _, beam in beams do
-			beam.CurveSize0 = k
-			beam.CurveSize1 = k
-		end
-	end
-	function arc.fade(duration: number)
-		fadeBeams(beams, duration, { a0, a1 })
-	end
-	return arc
-end
-
--- A particle emitter of soft wind (or sparkles) on `parent`.
-function Soft.windEmitter(parent: Instance, props: { [string]: any }): ParticleEmitter
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = SMOKE
-	emitter.Color = ColorSequence.new(WIND_WHITE, WIND)
-	emitter.LightEmission = 0.5
-	emitter.LightInfluence = 0
-	emitter.Transparency = NumberSequence.new({ key(0, 1), key(0.2, 0.65), key(0.7, 0.8), key(1, 1) })
-	emitter.Rotation = NumberRange.new(0, 360)
-	emitter.RotSpeed = NumberRange.new(-180, 180)
-	for name, value in props do
-		(emitter :: any)[name] = value
-	end
-	emitter.Parent = parent
-	return emitter
-end
-local windEmitter = Soft.windEmitter
-
--- A soft glow that follows `parent` (a stream of overlapping puffs of
--- light, so it moves with it and fades as soon as it stops).
-function Soft.glow(parent: Instance, color: Color3, size: number, transparency: number?): ParticleEmitter
-	local base = transparency or 0.6
-	return windEmitter(parent, {
-		Color = ColorSequence.new(color),
-		LightEmission = 1,
-		Transparency = NumberSequence.new({ key(0, 1), key(0.25, base), key(0.75, base), key(1, 1) }),
-		Size = NumberSequence.new(size),
-		Lifetime = NumberRange.new(0.2, 0.26),
-		Speed = NumberRange.new(0),
-		RotSpeed = NumberRange.new(-40, 40),
-		LockedToPart = true,
-		Rate = 20,
-	})
-end
-
--- A puff of wind: soft gusts thrown out of a point.
-function Soft.windPuff(position: Vector3, size: number, direction: Vector3?)
-	U.burst(position, {
-		texture = SMOKE,
-		color = WIND_WHITE,
-		count = math.floor(5 + size),
-		size = size,
-		speed = NumberRange.new(size * 4, size * 9),
-		lifetime = NumberRange.new(0.25, 0.5),
-		transparency = 0.55,
-		lightEmission = 0.6,
-		drag = 5,
-		spread = if direction then 50 else 180,
-		direction = direction,
-	})
-end
-
--- Sparks of starlight thrown out of a point (glittering four-point stars).
-function Soft.starDust(position: Vector3, count: number, speed: number, direction: Vector3?, color: Color3?)
-	U.burst(position, {
-		color = color or STAR,
-		count = count,
-		size = 0.5,
-		speed = NumberRange.new(speed * 0.4, speed),
-		lifetime = NumberRange.new(0.3, 0.7),
-		drag = 4,
-		spread = if direction then 60 else 180,
-		direction = direction,
-	})
-end
-
--- Fast streaks of wind thrown out along `direction` (or every way).
-function Soft.streaks(position: Vector3, count: number, speed: number, direction: Vector3?, spread: number?)
-	U.burst(position, {
-		color = WIND_WHITE,
-		count = count,
-		size = 0.4,
-		speed = NumberRange.new(speed * 0.5, speed),
-		lifetime = NumberRange.new(0.12, 0.3),
-		streaks = true,
-		spread = spread or (if direction then 35 else 180),
-		direction = direction,
-	})
-end
-
--- One big glint of starlight: a sparkle that flares and goes (a camera-
--- facing particle, so it's the same from every side).
-function Soft.twinkle(position: Vector3, size: number, color: Color3?, duration: number?)
-	local life = duration or 0.25
-	local holder = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.new(position) })
-	local attachment = Instance.new("Attachment")
-	attachment.Parent = holder
-	local flare = Instance.new("ParticleEmitter")
-	flare.Texture = SPARKLE
-	flare.Color = ColorSequence.new(STAR_WHITE, color or STAR)
-	flare.LightEmission = 1
-	flare.LightInfluence = 0
-	flare.Size = NumberSequence.new({ key(0, size * 0.4), key(0.25, size), key(1, 0) })
-	flare.Transparency = NumberSequence.new({ key(0, 0), key(0.7, 0.2), key(1, 1) })
-	flare.Lifetime = NumberRange.new(life)
-	flare.Speed = NumberRange.new(0)
-	flare.Rotation = NumberRange.new(-10, 10)
-	flare.RotSpeed = NumberRange.new(-60, 60)
-	flare.Enabled = false
-	flare.Parent = attachment
-	flare:Emit(1)
-	-- A soft halo under it.
-	local halo = flare:Clone()
-	halo.Texture = SMOKE
-	halo.Color = ColorSequence.new(color or STAR)
-	halo.Size = NumberSequence.new({ key(0, size * 0.6), key(1, size * 1.2) })
-	halo.Transparency = NumberSequence.new({ key(0, 0.55), key(1, 1) })
-	halo.Parent = attachment
-	halo:Emit(1)
-	task.delay(life + 0.1, holder.Destroy, holder)
-end
-
--- A trail between two points on `part` (offsets in its space).
-export type TrailStyle = {
-	color: ColorSequence,
-	transparency: NumberSequence,
-	lifetime: number,
-	width: NumberSequence?,
-	texture: string?,
-	faceCamera: boolean?,
-	emission: number?,
-	off: boolean?, -- made switched off: start it with beginTrail once its part is in place
-}
-
-function Soft.trail(part: BasePart, a: Vector3, b: Vector3, style: TrailStyle): Trail
-	local a0 = Instance.new("Attachment")
-	a0.Position = a
-	a0.Parent = part
-	local a1 = Instance.new("Attachment")
-	a1.Position = b
-	a1.Parent = part
-	local trail = Instance.new("Trail")
-	trail.Attachment0 = a0
-	trail.Attachment1 = a1
-	trail.Color = style.color
-	trail.Transparency = style.transparency
-	trail.Lifetime = style.lifetime
-	trail.WidthScale = style.width or NumberSequence.new(1)
-	trail.LightEmission = style.emission or 1
-	trail.LightInfluence = 0
-	trail.FaceCamera = style.faceCamera ~= false
-	trail.MinLength = 0
-	trail.Enabled = not style.off
-	if style.texture then
-		trail.Texture = style.texture
-		trail.TextureMode = Enum.TextureMode.Stretch
-		trail.TextureLength = 1
-	end
-	trail.Parent = part
-	trail.Destroying:Connect(function()
-		a0:Destroy()
-		a1:Destroy()
-	end)
-	return trail
-end
-
--- Starts a trail made switched off, once its part is where it should be
--- (so nothing streaks in from wherever the part was made).
-function Soft.beginTrail(trail: Trail)
-	if not trail.Enabled then
-		trail:Clear()
-		trail.Enabled = true
-	end
-end
-
--- Stops a trail and removes it once what it left behind has faded.
-function Soft.endTrail(trail: Trail)
-	trail.Enabled = false
-	task.delay(trail.Lifetime + 0.1, trail.Destroy, trail)
-end
-
--- Hides `part` (over `fade`) but keeps it, and whatever trails or
--- particles are on it, until `keep` seconds, so they fade out on their own.
-function Soft.linger(part: BasePart, fade: number, keep: number)
-	U.tween(part, fade, { Transparency = 1 })
-	task.delay(keep, part.Destroy, part)
-end
-
--- Ribbons of wind spiralling up round a moving axis: `axis(t)` gives the
--- foot and the top of it each frame (t: seconds since it started); the
--- ribbons climb it over `climb` seconds, over and over, `turns` times
--- round on the way. Each climb is a fresh ribbon (the last one left to
--- fade at the top), so nothing streaks back down the axis. Returns stop().
-function Soft.helix(
-	axis: (number) -> (Vector3, Vector3),
-	radius: number,
-	strands: number,
-	climb: number,
-	turns: number,
-	width: number,
-	duration: number,
-	color: Color3?
-): () -> ()
-	type Runner = { part: BasePart, trail: Trail, phase: number }
-	local runners: { [number]: Runner } = {}
-	local function retire(runner: Runner)
-		Soft.endTrail(runner.trail)
-		task.delay(runner.trail.Lifetime + 0.2, runner.part.Destroy, runner.part)
-	end
-	local function spawnRunner(i: number, at: Vector3, phase: number): Runner
-		-- Placed before its trail is attached, so the trail starts here.
-		local part = U.newPart({ Size = Vector3.one * 0.1, Transparency = 1, CFrame = CFrame.new(at) })
-		local trail = Soft.trail(part, Vector3.new(0, width / 2, 0), Vector3.new(0, -width / 2, 0), {
-			color = ColorSequence.new(if i % 2 == 0 then WIND_WHITE else color or WIND, color or WIND),
-			transparency = NumberSequence.new({ key(0, 0.25), key(1, 1) }),
-			width = NumberSequence.new({ key(0, 1), key(1, 0.2) }),
-			lifetime = 0.25,
-		})
-		return { part = part, trail = trail, phase = phase }
-	end
-	local stopped = false
-	local function stop()
-		if stopped then
-			return
-		end
-		stopped = true
-		for i = 1, strands do
-			local runner = runners[i]
-			if runner then
-				runners[i] = nil
-				retire(runner)
-			end
-		end
-	end
-	every(duration, function(elapsed)
-		if stopped then
-			return false
-		end
-		local foot, top = axis(elapsed)
-		local along = top - foot
-		local length = along.Magnitude
-		if length < 1e-3 then
-			return true -- (no axis yet: nothing drawn)
-		end
-		local up = along / length
-		local side = up:Cross(if math.abs(up.Y) > 0.9 then Vector3.xAxis else UP).Unit
-		local other = up:Cross(side)
-		for i = 1, strands do
-			local phase = (elapsed / climb + (i - 1) / strands) % 1
-			local angle = phase * turns * math.pi * 2 + i * 2.1
-			local r = radius * (1 - phase * 0.35)
-			local position = foot + up * (length * phase) + (side * math.cos(angle) + other * math.sin(angle)) * r
-			local runner = runners[i]
-			if runner and phase < runner.phase then
-				-- Back to the foot: this ribbon is left to fade at the top.
-				retire(runner)
-				runner = nil
-			end
-			if runner then
-				runner.part.CFrame = CFrame.new(position)
-				runner.phase = phase
-			else
-				runners[i] = spawnRunner(i, position, phase)
-			end
-		end
-		return true
-	end, stop)
-	return stop
-end
-
--- A chain of sparkles streaming from one attachment to another (starlight
--- poured along a line).
-function Soft.starStream(a0: Attachment, a1: Attachment, width: number, speed: number, parent: Instance?): Beam
-	return softBeam(a0, a1, {
-		color = ColorSequence.new(STAR_WHITE, STAR),
-		width0 = width,
-		width1 = width * 0.6,
-		transparency = NumberSequence.new({ key(0, 0.5), key(0.15, 0.1), key(0.85, 0.1), key(1, 0.5) }),
-		texture = SPARKLE,
-		wrap = true,
-		length = width * 1.6,
-		speed = speed,
-	}, parent)
-end
-
----------------------------------------------------------------------------
--- Cuts of wind
----------------------------------------------------------------------------
-
--- A cut of wind through the air: a crescent from `from` to `to` bowed out
--- by `bend`. A swipe of wind streaks along it and it's left hanging: a
--- white-hot edge glittering with starlight inside a soft green glow and a
--- broad haze, wind flowing along it and wisps of wind drifting off it.
--- flare() blazes it up (just before it bursts), fade() lets it go.
-export type Slash = {
-	flare: () -> (),
-	fade: (number) -> (),
-	move: (Vector3, number) -> (),
-	apex: Vector3,
-	from: Vector3,
-	to: Vector3,
-}
-
-function Soft.windSlash(from: Vector3, to: Vector3, bend: Vector3, scale: number, swipe: number?): Slash
-	local middle = from:Lerp(to, 0.5)
-	local apex = middle + bend
-	local control = middle + bend * 2
-	local a = worldAnchor(from, control - from)
-	local m = worldAnchor(apex, to - from)
-	local b = worldAnchor(to, to - control)
-	local k1 = (apex - from).Magnitude * 0.42
-	local k2 = (to - apex).Magnitude * 0.42
-	local white = ColorSequence.new(STAR_WHITE, WIND_WHITE)
-	local green = ColorSequence.new(WIND_WHITE, WIND)
-	local haze = ColorSequence.new(WIND, WIND_DEEP)
-	local function half(first: boolean, style: BeamStyle): Beam
-		style.curve0 = if first then k1 else k2
-		style.curve1 = style.curve0
-		return softBeam(if first then a else m, if first then m else b, style)
-	end
-	local function taper(first: boolean, wide: number, thin: number): (number, number)
-		if first then
-			return thin, wide
-		end
-		return wide, thin
-	end
-	local function fadeEnds(first: boolean, edge: number, middleValue: number): NumberSequence
-		if first then
-			return NumberSequence.new({ key(0, 1), key(0.5, (edge + middleValue) / 2), key(1, middleValue) })
-		end
-		return NumberSequence.new({ key(0, middleValue), key(0.5, (edge + middleValue) / 2), key(1, 1) })
-	end
-	local beams: { Beam } = {}
-	for _, first in { true, false } do
-		local w0, w1 = taper(first, 0.5 * scale, 0.05)
-		table.insert(
-			beams,
-			half(first, { color = white, width0 = w0, width1 = w1, transparency = fadeEnds(first, 0.2, 0.05) })
-		)
-		w0, w1 = taper(first, 0.9 * scale, 0.1)
-		table.insert(
-			beams,
-			half(first, {
-				color = ColorSequence.new(STAR_WHITE, STAR),
-				width0 = w0,
-				width1 = w1,
-				transparency = fadeEnds(first, 0.4, 0.25),
-				texture = SPARKLE,
-				wrap = true,
-				length = 1.4 * scale,
-				speed = if first then 3 else -3,
-			})
-		)
-		w0, w1 = taper(first, 3 * scale, 0.4)
-		table.insert(
-			beams,
-			half(first, {
-				color = green,
-				width0 = w0,
-				width1 = w1,
-				transparency = fadeEnds(first, 0.72, 0.6),
-				texture = SMOKE,
-				speed = 1.5,
-				length = 3,
-			})
-		)
-		w0, w1 = taper(first, 7 * scale, 1)
-		table.insert(
-			beams,
-			half(first, {
-				color = haze,
-				width0 = w0,
-				width1 = w1,
-				transparency = fadeEnds(first, 0.94, 0.87),
-				texture = SMOKE,
-				speed = -1,
-				length = 6,
-				emission = 0.6,
-			})
-		)
-	end
-	for _, beam in beams do
-		beam.Enabled = false
-	end
-	-- Wisps of wind drifting off it while it hangs there.
-	local wisps = windEmitter(m, {
-		Size = NumberSequence.new({ key(0, 1.2 * scale), key(1, 3 * scale) }),
-		Transparency = NumberSequence.new({ key(0, 1), key(0.3, 0.8), key(1, 1) }),
-		Lifetime = NumberRange.new(0.4, 0.8),
-		Speed = NumberRange.new(1, 3),
-		SpreadAngle = Vector2.new(180, 180),
-		Drag = 2,
-		Rate = 0,
-	})
-	-- The swipe: a ribbon of wind streaking along the curve.
-	local sweep = swipe or 0.06
-	local runner = U.newPart({ Size = Vector3.one * 0.1, Transparency = 1, CFrame = CFrame.new(from) })
-	local swipeTrail = Soft.trail(runner, Vector3.new(0, 1.3 * scale, 0), Vector3.new(0, -1.3 * scale, 0), {
-		color = ColorSequence.new(STAR_WHITE, WIND),
-		transparency = NumberSequence.new({ key(0, 0.1), key(1, 1) }),
-		width = NumberSequence.new({ key(0, 1), key(1, 0.15) }),
-		lifetime = 0.3,
-	})
-	every(sweep, function(elapsed)
-		runner.CFrame = CFrame.new(quadratic(from, control, to, elapsed / sweep))
-		return true
-	end, function()
-		runner.CFrame = CFrame.new(to)
-		for _, beam in beams do
-			beam.Enabled = true
-		end
-		wisps.Rate = 14
-		Soft.endTrail(swipeTrail)
-		task.delay(0.45, runner.Destroy, runner)
-	end)
-	local slash = { apex = apex, from = from, to = to }
-	local base = Soft.widths(beams)
-	function slash.flare()
-		every(0.12, function(elapsed)
-			Soft.scaleBeams(beams, 1 + 1.6 * math.sin(math.min(elapsed / 0.12, 1) * math.pi / 2), base)
-			return true
-		end)
-	end
-	function slash.fade(duration: number)
-		wisps.Enabled = false
-		fadeBeams(beams, duration, { a, m, b })
-	end
-	-- Carries it `offset` over `duration` (easing out), as if blown along.
-	function slash.move(offset: Vector3, duration: number)
-		for _, anchor in { a, m, b } do
-			U.tween(anchor, duration, { CFrame = anchor.CFrame + offset })
-		end
-	end
-	return slash
-end
-
-return Soft
-]]></string>
-              </Properties>
-            </Item>
           </Item>
         </Item>
         <Item class="ModuleScript" referent="43">
@@ -31140,7 +30963,7 @@ end
 
 local function onLandedHit(name: string, data)
 	local victim = data.victim
-	if typeof(victim) ~= "Instance" or not victim:IsA("Model") then
+	if typeof(victim) ~= "Instance" or not victim:IsA("Model") or data.noReaction == true then
 		return
 	end
 	if name == "HeavyHit" or name == "PerfectDivider" then
@@ -32413,6 +32236,1031 @@ return ShiftLock
         </Item>
         <Item class="ModuleScript" referent="48">
           <Properties>
+            <string name="Name">Soft</string>
+            <string name="Source"><![CDATA[--[[
+	Soft light: the soft, see-through pieces effects are drawn with. Beams
+	facing the camera (smoke or sparkles flowing along them), rings and
+	arcs of beams, trails, glows and particles. Solid neon parts are kept
+	for the small hard things (star points, blade edges, sparks).
+
+	Its colours are Yuno's (wind pale green with a white core, star magic
+	gold-white); every piece takes its own colours too. Used by
+	Client/Kits/Wind (and its Saint module) and Client/Kits/AntiMagic.
+]]
+
+local RunService = game:GetService("RunService")
+
+local VFX = require(script.Parent.VFX)
+
+local U = VFX.Util
+local rad = math.rad
+local UP = Vector3.yAxis
+local TERRAIN = workspace.Terrain
+
+local Soft = {}
+Soft.U = U
+
+Soft.WIND = Color3.fromRGB(120, 235, 175)
+Soft.WIND_DEEP = Color3.fromRGB(35, 170, 110)
+Soft.WIND_WHITE = Color3.fromRGB(228, 255, 240)
+Soft.STAR = Color3.fromRGB(255, 226, 130)
+Soft.STAR_WHITE = Color3.fromRGB(255, 250, 228)
+Soft.STAR_FIRE = Color3.fromRGB(255, 140, 40)
+
+Soft.SMOKE = U.textures.Smoke
+Soft.SPARKLE = U.textures.Spark
+
+local WIND, WIND_DEEP, WIND_WHITE = Soft.WIND, Soft.WIND_DEEP, Soft.WIND_WHITE
+local STAR, STAR_WHITE = Soft.STAR, Soft.STAR_WHITE
+local SMOKE, SPARKLE = Soft.SMOKE, Soft.SPARKLE
+
+local KAPPA = 0.5523 -- a quarter circle as a cubic curve
+
+---------------------------------------------------------------------------
+-- Timing and cleanup
+---------------------------------------------------------------------------
+
+-- Runs `step(elapsed, dt)` every frame until it returns false or `duration`
+-- runs out; then `finish` (if any).
+function Soft.every(duration: number, step: (number, number) -> boolean?, finish: (() -> ())?)
+	local start = os.clock()
+	local connection
+	connection = RunService.RenderStepped:Connect(function(dt)
+		local elapsed = os.clock() - start
+		if elapsed >= duration or step(elapsed, dt) == false then
+			connection:Disconnect()
+			if finish then
+				finish()
+			end
+		end
+	end)
+end
+local every = Soft.every
+
+function Soft.fadeOut(parts: { BasePart }, duration: number)
+	for _, part in parts do
+		U.tween(part, duration, { Transparency = 1 })
+	end
+	task.delay(duration + 0.05, function()
+		for _, part in parts do
+			part:Destroy()
+		end
+	end)
+end
+local fadeOut = Soft.fadeOut
+
+function Soft.key(time: number, value: number): NumberSequenceKeypoint
+	return NumberSequenceKeypoint.new(time, value)
+end
+local key = Soft.key
+
+function Soft.quadratic(a: Vector3, b: Vector3, c: Vector3, s: number): Vector3
+	return a * ((1 - s) * (1 - s)) + b * (2 * s * (1 - s)) + c * (s * s)
+end
+local quadratic = Soft.quadratic
+
+---------------------------------------------------------------------------
+-- Hard shapes: bars, tubes, wedges, stars
+---------------------------------------------------------------------------
+
+-- A straight bar of light or wind between two points.
+function Soft.bar(from: Vector3, to: Vector3, width: number, color: Color3, transparency: number): BasePart
+	if (to - from).Magnitude < 1e-3 then
+		to = from + UP * 0.05
+	end
+	local length = math.max((to - from).Magnitude, 0.05)
+	return U.newPart({
+		Size = Vector3.new(width, width, length),
+		CFrame = CFrame.lookAt(from:Lerp(to, 0.5), to),
+		Color = color,
+		Transparency = transparency,
+	})
+end
+local bar = Soft.bar
+
+-- A round beam (cylinder) between two points.
+function Soft.tube(from: Vector3, to: Vector3, width: number, color: Color3, transparency: number): BasePart
+	if (to - from).Magnitude < 1e-3 then
+		to = from + UP * 0.05
+	end
+	local length = math.max((to - from).Magnitude, 0.05)
+	return U.newPart({
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(length, width, width),
+		CFrame = CFrame.lookAt(from:Lerp(to, 0.5), to) * CFrame.Angles(0, rad(90), 0),
+		Color = color,
+		Transparency = transparency,
+	})
+end
+
+-- Re-poses a bar (from `bar`) to run between two points.
+function Soft.stretch(line: BasePart, from: Vector3, to: Vector3)
+	line.Size = Vector3.new(line.Size.X, line.Size.Y, (to - from).Magnitude + 0.05)
+	line.CFrame = CFrame.lookAt(from:Lerp(to, 0.5), to)
+end
+
+-- A neon wedge (U.newPart for wedges), for pointed shapes.
+function Soft.newWedge(props: { [string]: any }): WedgePart
+	local wedge = Instance.new("WedgePart")
+	wedge.Anchored = true
+	wedge.CanCollide = false
+	wedge.CanQuery = false
+	wedge.CanTouch = false
+	wedge.CastShadow = false
+	wedge.Material = Enum.Material.Neon
+	for name, value in props do
+		(wedge :: any)[name] = value
+	end
+	wedge.Parent = U.folder
+	return wedge
+end
+
+-- Wind streaming into a point from all round it.
+function Soft.inflow(target: Vector3, radius: number, color: Color3?)
+	local from = target + U.randomUnit() * radius
+	local wisp = bar(from, from + (target - from).Unit * 1.2, 0.08, color or WIND_WHITE, 0.3)
+	U.tween(wisp, 0.22, { CFrame = CFrame.lookAt(target, target + (target - from).Unit), Transparency = 1 })
+	task.delay(0.25, wisp.Destroy, wisp)
+end
+
+-- A burst of pale wind streaks.
+function Soft.gust(position: Vector3, size: number, direction: Vector3?)
+	U.burst(position, {
+		color = WIND_WHITE,
+		count = math.floor(8 + size * 3),
+		size = 0.3 + size * 0.06,
+		speed = NumberRange.new(14 + size * 4, 28 + size * 8),
+		lifetime = NumberRange.new(0.15, 0.35),
+		streaks = true,
+		spread = if direction then 40 else 180,
+		direction = direction,
+	})
+	U.ringBurst(CFrame.new(position), WIND, size * 0.2, size, 0.3, 0.12)
+	U.light(position, WIND, 3, size * 2.5, 0.25)
+end
+
+-- A four-pointed star of light (star magic): a white core, a gold cross and
+-- a smaller diagonal cross, always turned to face the camera, and a soft
+-- glitter of starlight round it.
+export type Star = { place: (Vector3, number) -> (), fade: (number) -> (), parts: { BasePart } }
+
+function Soft.makeStar(size: number, color: Color3?): Star
+	local tint = color or STAR
+	local parts: { BasePart } = {}
+	local offsets: { CFrame } = {}
+	local function add(part: BasePart, offset: CFrame)
+		table.insert(parts, part)
+		table.insert(offsets, offset)
+	end
+	add(
+		U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * size * 0.32, Color = STAR_WHITE }),
+		CFrame.identity
+	)
+	for i = 0, 3 do
+		local long = i % 2 == 0
+		add(
+			U.newPart({
+				Size = Vector3.new(size * 0.07, size * (if long then 1.15 else 0.55), size * 0.07),
+				Color = tint,
+				Transparency = 0.05,
+			}),
+			CFrame.Angles(0, 0, i * math.pi / 4)
+		)
+	end
+	add(
+		U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * size * 0.95, Color = tint, Transparency = 0.82 }),
+		CFrame.identity
+	)
+	local light = Instance.new("PointLight")
+	light.Color = tint
+	light.Range = size * 6
+	light.Brightness = 2.5
+	light.Parent = parts[1]
+	-- Glitter: sparkles of starlight round it, and a soft halo.
+	local glitter = Instance.new("ParticleEmitter")
+	glitter.Texture = SPARKLE
+	glitter.Color = ColorSequence.new(STAR_WHITE, tint)
+	glitter.LightEmission = 1
+	glitter.LightInfluence = 0
+	glitter.Size = NumberSequence.new({ key(0, size * 0.5), key(1, 0) })
+	glitter.Transparency = NumberSequence.new({ key(0, 0.2), key(1, 1) })
+	glitter.Lifetime = NumberRange.new(0.25, 0.5)
+	glitter.Rate = 10
+	glitter.Speed = NumberRange.new(0.5, 1.5)
+	glitter.SpreadAngle = Vector2.new(180, 180)
+	glitter.Rotation = NumberRange.new(0, 90)
+	glitter.Enabled = false -- (until it's first placed)
+	glitter.Parent = parts[1]
+	local placed, faded = false, false
+	local star = { parts = parts }
+	function star.place(position: Vector3, spin: number)
+		local base = CFrame.lookAt(position, workspace.CurrentCamera.CFrame.Position) * CFrame.Angles(0, 0, spin)
+		for i, part in parts do
+			part.CFrame = base * offsets[i]
+		end
+		if not placed and not faded then
+			placed = true
+			glitter.Enabled = true
+		end
+	end
+	function star.fade(duration: number)
+		faded = true
+		light.Enabled = false
+		glitter.Enabled = false
+		fadeOut(parts, duration)
+	end
+	return star
+end
+local makeStar = Soft.makeStar
+
+-- A star, softer: its rays see-through.
+function Soft.softStar(size: number, color: Color3?): Star
+	local star = makeStar(size, color)
+	for i, part in star.parts do
+		if i > 1 then
+			part.Transparency = math.max(part.Transparency, 0.35)
+		end
+	end
+	return star
+end
+
+-- Sylph: a small spirit of wind, a glowing body with two fluttering wings
+-- and a trail of wind behind her.
+export type Sprite = { place: (CFrame, number) -> (), fade: (number) -> () }
+
+function Soft.makeSprite(scale: number): Sprite
+	local body = U.newPart({
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.new(0.5, 0.5, 0.5) * scale,
+		Color = WIND_WHITE,
+	})
+	local glow = U.newPart({
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.one * 1.3 * scale,
+		Color = WIND,
+		Transparency = 0.7,
+	})
+	local wings = {
+		U.newPart({ Size = Vector3.new(0.9, 0.05, 0.5) * scale, Color = WIND, Transparency = 0.35 }),
+		U.newPart({ Size = Vector3.new(0.9, 0.05, 0.5) * scale, Color = WIND, Transparency = 0.35 }),
+	}
+	local light = Instance.new("PointLight")
+	light.Color = WIND
+	light.Range = 6 * scale
+	light.Brightness = 2
+	light.Parent = body
+	local a0 = Instance.new("Attachment")
+	a0.Position = Vector3.new(0, 0.25 * scale, 0)
+	a0.Parent = body
+	local a1 = Instance.new("Attachment")
+	a1.Position = Vector3.new(0, -0.25 * scale, 0)
+	a1.Parent = body
+	local trail = Instance.new("Trail")
+	trail.Attachment0 = a0
+	trail.Attachment1 = a1
+	trail.Color = ColorSequence.new(WIND_WHITE, WIND)
+	trail.Transparency = NumberSequence.new({ key(0, 0.2), key(1, 1) })
+	trail.WidthScale = NumberSequence.new({ key(0, 1), key(1, 0) })
+	trail.Lifetime = 0.35
+	trail.LightEmission = 1
+	trail.LightInfluence = 0
+	trail.FaceCamera = true
+	trail.Enabled = false -- (until she's first placed)
+	trail.Parent = body
+	local started = false
+	local sprite = {}
+	function sprite.place(cframe: CFrame, t: number)
+		body.CFrame = cframe
+		glow.CFrame = cframe
+		if not started then
+			started = true
+			trail:Clear()
+			trail.Enabled = true
+		end
+		local flap = math.sin(t * 30) * rad(40)
+		wings[1].CFrame = cframe * CFrame.Angles(0, 0, flap) * CFrame.new(0.45 * scale, 0, 0)
+		wings[2].CFrame = cframe * CFrame.Angles(0, 0, -flap) * CFrame.new(-0.45 * scale, 0, 0)
+	end
+	function sprite.fade(duration: number)
+		light.Enabled = false
+		trail.Enabled = false
+		fadeOut({ glow, wings[1], wings[2] }, duration)
+		Soft.linger(body, duration, trail.Lifetime + 0.15)
+	end
+	return sprite
+end
+
+-- An arc of thin segments (a bow, a crescent of wind): points on a circle of
+-- `radius` round `center` from angle `from` to `to` (radians) in the plane of
+-- `right` and `up`.
+function Soft.arcPoints(
+	center: Vector3,
+	right: Vector3,
+	up: Vector3,
+	radius: number,
+	from: number,
+	to: number,
+	count: number
+): { Vector3 }
+	local points = {}
+	for i = 0, count do
+		local angle = from + (to - from) * i / count
+		table.insert(points, center + (right * math.cos(angle) + up * math.sin(angle)) * radius)
+	end
+	return points
+end
+
+function Soft.arcParts(points: { Vector3 }, width: number, color: Color3, transparency: number): { BasePart }
+	local parts = {}
+	for i = 1, #points - 1 do
+		table.insert(parts, bar(points[i], points[i + 1], width, color, transparency))
+	end
+	return parts
+end
+
+function Soft.poseArc(parts: { BasePart }, points: { Vector3 })
+	for i, part in parts do
+		local a, b = points[i], points[i + 1]
+		part.Size = Vector3.new(part.Size.X, part.Size.Y, (b - a).Magnitude + 0.05)
+		part.CFrame = CFrame.lookAt(a:Lerp(b, 0.5), b)
+	end
+end
+
+---------------------------------------------------------------------------
+-- Soft shapes: beams, rings, trails, particles
+---------------------------------------------------------------------------
+
+-- An attachment fixed in the world (on Terrain), its X axis along `axis`
+-- (the way a beam leaving it curves).
+function Soft.worldAnchor(position: Vector3, axis: Vector3?): Attachment
+	local x = if axis and axis.Magnitude > 1e-3 then axis.Unit else Vector3.xAxis
+	local y = if math.abs(x.Y) > 0.98 then Vector3.zAxis else UP
+	local z = x:Cross(y).Unit
+	local attachment = Instance.new("Attachment")
+	attachment.CFrame = CFrame.fromMatrix(position, x, z:Cross(x).Unit)
+	attachment.Parent = TERRAIN
+	return attachment
+end
+local worldAnchor = Soft.worldAnchor
+
+-- Re-aims a world anchor (from `worldAnchor`).
+function Soft.aim(attachment: Attachment, position: Vector3, axis: Vector3?)
+	local x = if axis and axis.Magnitude > 1e-3 then axis.Unit else Vector3.xAxis
+	local y = if math.abs(x.Y) > 0.98 then Vector3.zAxis else UP
+	local z = x:Cross(y).Unit
+	attachment.CFrame = CFrame.fromMatrix(position, x, z:Cross(x).Unit)
+end
+
+export type BeamStyle = {
+	color: ColorSequence,
+	width0: number,
+	width1: number,
+	transparency: NumberSequence,
+	curve0: number?,
+	curve1: number?,
+	texture: string?,
+	speed: number?,
+	length: number?,
+	emission: number?,
+	wrap: boolean?, -- tile the texture every `length` studs (a chain of sparkles)
+	segments: number?,
+}
+
+-- A soft beam between two attachments: facing the camera, glowing, see-
+-- through, wind flowing along it when it's textured.
+function Soft.softBeam(a0: Attachment, a1: Attachment, style: BeamStyle, parent: Instance?): Beam
+	local beam = Instance.new("Beam")
+	beam.Attachment0 = a0
+	beam.Attachment1 = a1
+	beam.Color = style.color
+	beam.Width0 = style.width0
+	beam.Width1 = style.width1
+	beam.Transparency = style.transparency
+	beam.CurveSize0 = style.curve0 or 0
+	beam.CurveSize1 = style.curve1 or 0
+	beam.FaceCamera = true
+	beam.LightEmission = style.emission or 1
+	beam.LightInfluence = 0
+	local curved = (style.curve0 or 0) ~= 0 or (style.curve1 or 0) ~= 0
+	beam.Segments = style.segments or (if curved then 20 else 10)
+	if style.texture then
+		beam.Texture = style.texture
+		beam.TextureMode = if style.wrap then Enum.TextureMode.Wrap else Enum.TextureMode.Stretch
+		beam.TextureLength = style.length or 1
+		beam.TextureSpeed = style.speed or 0
+	end
+	beam.Parent = parent or TERRAIN
+	return beam
+end
+local softBeam = Soft.softBeam
+
+-- Eases beams out to nothing, then removes them (and `extra`).
+function Soft.fadeBeams(beams: { Beam }, duration: number, extra: { any }?)
+	local originals: { { NumberSequenceKeypoint } } = {}
+	for i, beam in beams do
+		originals[i] = beam.Transparency.Keypoints
+	end
+	every(duration, function(elapsed)
+		local a = math.clamp(elapsed / duration, 0, 1)
+		for i, beam in beams do
+			if beam.Parent then
+				local points = {}
+				for _, point in originals[i] do
+					table.insert(points, key(point.Time, point.Value + (1 - point.Value) * a))
+				end
+				beam.Transparency = NumberSequence.new(points)
+			end
+		end
+		return true
+	end, function()
+		for _, beam in beams do
+			beam:Destroy()
+		end
+		if extra then
+			for _, instance in extra do
+				instance:Destroy()
+			end
+		end
+	end)
+end
+local fadeBeams = Soft.fadeBeams
+
+-- Scales a beam's widths by `scale` (from the widths it was made with).
+function Soft.scaleBeams(beams: { Beam }, scale: number, base: { { number } })
+	for i, beam in beams do
+		beam.Width0 = base[i][1] * scale
+		beam.Width1 = base[i][2] * scale
+	end
+end
+
+function Soft.widths(beams: { Beam }): { { number } }
+	local base = {}
+	for i, beam in beams do
+		base[i] = { beam.Width0, beam.Width1 }
+	end
+	return base
+end
+
+-- A ring of soft light: four quarter-circle beams on an invisible hub, so
+-- turning or tilting it is just moving the hub. It lies in the hub's XZ
+-- plane.
+export type Ring = { hub: BasePart, beams: { Beam }, set: (CFrame, number) -> (), fade: (number) -> () }
+
+function Soft.softRing(style: BeamStyle): Ring
+	local hub = U.newPart({ Size = Vector3.one * 0.1, Transparency = 1 })
+	local anchors: { Attachment } = {}
+	for _ = 1, 4 do
+		local attachment = Instance.new("Attachment")
+		attachment.Parent = hub
+		table.insert(anchors, attachment)
+	end
+	local beams: { Beam } = {}
+	for i = 1, 4 do
+		local beam = softBeam(anchors[i], anchors[i % 4 + 1], style, hub)
+		beam.Segments = style.segments or 12
+		table.insert(beams, beam)
+	end
+	local ring = { hub = hub, beams = beams }
+	function ring.set(frame: CFrame, radius: number)
+		hub.CFrame = frame
+		for i, attachment in anchors do
+			local angle = (i - 1) * math.pi / 2
+			local out = Vector3.new(math.cos(angle), 0, math.sin(angle))
+			attachment.CFrame = CFrame.fromMatrix(out * radius, Vector3.new(-math.sin(angle), 0, math.cos(angle)), UP)
+		end
+		for _, beam in beams do
+			beam.CurveSize0 = radius * KAPPA
+			beam.CurveSize1 = radius * KAPPA
+		end
+	end
+	function ring.fade(duration: number)
+		fadeBeams(beams, duration, { hub })
+	end
+	return ring
+end
+local softRing = Soft.softRing
+
+-- A ring of wind racing out from `from` to `to` studs across `normal`.
+function Soft.windRing(
+	center: Vector3,
+	normal: Vector3,
+	from: number,
+	to: number,
+	duration: number,
+	color: Color3?,
+	width: number?
+)
+	local w = width or 1.4
+	local ring = softRing({
+		color = ColorSequence.new(WIND_WHITE, color or WIND),
+		width0 = w,
+		width1 = w,
+		transparency = NumberSequence.new(0.3),
+		texture = SMOKE,
+		speed = 2,
+		length = 4,
+	})
+	local frame = CFrame.lookAt(center, center + normal) * CFrame.Angles(rad(90), 0, 0)
+	ring.set(frame, from)
+	every(duration, function(elapsed)
+		ring.set(frame, from + (to - from) * (1 - (1 - elapsed / duration) ^ 2))
+		return true
+	end)
+	ring.fade(duration)
+end
+
+-- A thin bright ring of starlight racing out (sharper than a wind ring).
+function Soft.lightRing(center: Vector3, normal: Vector3, from: number, to: number, duration: number, color: Color3?)
+	local ring = softRing({
+		color = ColorSequence.new(STAR_WHITE, color or STAR),
+		width0 = 0.35,
+		width1 = 0.35,
+		transparency = NumberSequence.new(0.1),
+	})
+	local frame = CFrame.lookAt(center, center + normal) * CFrame.Angles(rad(90), 0, 0)
+	ring.set(frame, from)
+	every(duration, function(elapsed)
+		local a = 1 - (1 - elapsed / duration) ^ 3
+		ring.set(frame, from + (to - from) * a)
+		for _, beam in ring.beams do
+			beam.Width0 = 0.35 * (1 - a) + 0.05
+			beam.Width1 = beam.Width0
+		end
+		return true
+	end)
+	ring.fade(duration)
+end
+
+-- A soft arc: beams curving round `center` from one angle to another (in
+-- the plane of `right` and `up`), re-posed every frame with set().
+export type Arc = {
+	beams: { Beam },
+	set: (Vector3, Vector3, Vector3, number, number, number) -> (),
+	fade: (number) -> (),
+}
+
+function Soft.softArc(styles: { BeamStyle }): Arc
+	local a0, a1 = worldAnchor(Vector3.zero), worldAnchor(Vector3.zero)
+	local beams: { Beam } = {}
+	for _, style in styles do
+		local beam = softBeam(a0, a1, style)
+		beam.Segments = style.segments or 16
+		table.insert(beams, beam)
+	end
+	local arc = { beams = beams }
+	function arc.set(center: Vector3, right: Vector3, up: Vector3, radius: number, from: number, to: number)
+		local function at(angle: number): Vector3
+			return center + (right * math.cos(angle) + up * math.sin(angle)) * radius
+		end
+		local function tangent(angle: number): Vector3
+			return up * math.cos(angle) - right * math.sin(angle)
+		end
+		local k = 4 / 3 * math.tan((to - from) / 4) * radius
+		Soft.aim(a0, at(from), tangent(from))
+		Soft.aim(a1, at(to), tangent(to))
+		for _, beam in beams do
+			beam.CurveSize0 = k
+			beam.CurveSize1 = k
+		end
+	end
+	function arc.fade(duration: number)
+		fadeBeams(beams, duration, { a0, a1 })
+	end
+	return arc
+end
+
+-- A particle emitter of soft wind (or sparkles) on `parent`.
+function Soft.windEmitter(parent: Instance, props: { [string]: any }): ParticleEmitter
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Texture = SMOKE
+	emitter.Color = ColorSequence.new(WIND_WHITE, WIND)
+	emitter.LightEmission = 0.5
+	emitter.LightInfluence = 0
+	emitter.Transparency = NumberSequence.new({ key(0, 1), key(0.2, 0.65), key(0.7, 0.8), key(1, 1) })
+	emitter.Rotation = NumberRange.new(0, 360)
+	emitter.RotSpeed = NumberRange.new(-180, 180)
+	for name, value in props do
+		(emitter :: any)[name] = value
+	end
+	emitter.Parent = parent
+	return emitter
+end
+local windEmitter = Soft.windEmitter
+
+-- A soft glow that follows `parent` (a stream of overlapping puffs of
+-- light, so it moves with it and fades as soon as it stops).
+function Soft.glow(parent: Instance, color: Color3, size: number, transparency: number?): ParticleEmitter
+	local base = transparency or 0.6
+	return windEmitter(parent, {
+		Color = ColorSequence.new(color),
+		LightEmission = 1,
+		Transparency = NumberSequence.new({ key(0, 1), key(0.25, base), key(0.75, base), key(1, 1) }),
+		Size = NumberSequence.new(size),
+		Lifetime = NumberRange.new(0.2, 0.26),
+		Speed = NumberRange.new(0),
+		RotSpeed = NumberRange.new(-40, 40),
+		LockedToPart = true,
+		Rate = 20,
+	})
+end
+
+-- A puff of wind: soft gusts thrown out of a point.
+function Soft.windPuff(position: Vector3, size: number, direction: Vector3?)
+	U.burst(position, {
+		texture = SMOKE,
+		color = WIND_WHITE,
+		count = math.floor(5 + size),
+		size = size,
+		speed = NumberRange.new(size * 4, size * 9),
+		lifetime = NumberRange.new(0.25, 0.5),
+		transparency = 0.55,
+		lightEmission = 0.6,
+		drag = 5,
+		spread = if direction then 50 else 180,
+		direction = direction,
+	})
+end
+
+-- Sparks of starlight thrown out of a point (glittering four-point stars).
+function Soft.starDust(position: Vector3, count: number, speed: number, direction: Vector3?, color: Color3?)
+	U.burst(position, {
+		color = color or STAR,
+		count = count,
+		size = 0.5,
+		speed = NumberRange.new(speed * 0.4, speed),
+		lifetime = NumberRange.new(0.3, 0.7),
+		drag = 4,
+		spread = if direction then 60 else 180,
+		direction = direction,
+	})
+end
+
+-- Fast streaks of wind thrown out along `direction` (or every way).
+function Soft.streaks(position: Vector3, count: number, speed: number, direction: Vector3?, spread: number?)
+	U.burst(position, {
+		color = WIND_WHITE,
+		count = count,
+		size = 0.4,
+		speed = NumberRange.new(speed * 0.5, speed),
+		lifetime = NumberRange.new(0.12, 0.3),
+		streaks = true,
+		spread = spread or (if direction then 35 else 180),
+		direction = direction,
+	})
+end
+
+-- One big glint of starlight: a sparkle that flares and goes (a camera-
+-- facing particle, so it's the same from every side).
+function Soft.twinkle(position: Vector3, size: number, color: Color3?, duration: number?)
+	local life = duration or 0.25
+	local holder = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.new(position) })
+	local attachment = Instance.new("Attachment")
+	attachment.Parent = holder
+	local flare = Instance.new("ParticleEmitter")
+	flare.Texture = SPARKLE
+	flare.Color = ColorSequence.new(STAR_WHITE, color or STAR)
+	flare.LightEmission = 1
+	flare.LightInfluence = 0
+	flare.Size = NumberSequence.new({ key(0, size * 0.4), key(0.25, size), key(1, 0) })
+	flare.Transparency = NumberSequence.new({ key(0, 0), key(0.7, 0.2), key(1, 1) })
+	flare.Lifetime = NumberRange.new(life)
+	flare.Speed = NumberRange.new(0)
+	flare.Rotation = NumberRange.new(-10, 10)
+	flare.RotSpeed = NumberRange.new(-60, 60)
+	flare.Enabled = false
+	flare.Parent = attachment
+	flare:Emit(1)
+	-- A soft halo under it.
+	local halo = flare:Clone()
+	halo.Texture = SMOKE
+	halo.Color = ColorSequence.new(color or STAR)
+	halo.Size = NumberSequence.new({ key(0, size * 0.6), key(1, size * 1.2) })
+	halo.Transparency = NumberSequence.new({ key(0, 0.55), key(1, 1) })
+	halo.Parent = attachment
+	halo:Emit(1)
+	task.delay(life + 0.1, holder.Destroy, holder)
+end
+
+-- A trail between two points on `part` (offsets in its space).
+export type TrailStyle = {
+	color: ColorSequence,
+	transparency: NumberSequence,
+	lifetime: number,
+	width: NumberSequence?,
+	texture: string?,
+	faceCamera: boolean?,
+	emission: number?,
+	off: boolean?, -- made switched off: start it with beginTrail once its part is in place
+}
+
+function Soft.trail(part: BasePart, a: Vector3, b: Vector3, style: TrailStyle): Trail
+	local a0 = Instance.new("Attachment")
+	a0.Position = a
+	a0.Parent = part
+	local a1 = Instance.new("Attachment")
+	a1.Position = b
+	a1.Parent = part
+	local trail = Instance.new("Trail")
+	trail.Attachment0 = a0
+	trail.Attachment1 = a1
+	trail.Color = style.color
+	trail.Transparency = style.transparency
+	trail.Lifetime = style.lifetime
+	trail.WidthScale = style.width or NumberSequence.new(1)
+	trail.LightEmission = style.emission or 1
+	trail.LightInfluence = 0
+	trail.FaceCamera = style.faceCamera ~= false
+	trail.MinLength = 0
+	trail.Enabled = not style.off
+	if style.texture then
+		trail.Texture = style.texture
+		trail.TextureMode = Enum.TextureMode.Stretch
+		trail.TextureLength = 1
+	end
+	trail.Parent = part
+	trail.Destroying:Connect(function()
+		a0:Destroy()
+		a1:Destroy()
+	end)
+	return trail
+end
+
+-- Starts a trail made switched off, once its part is where it should be
+-- (so nothing streaks in from wherever the part was made).
+function Soft.beginTrail(trail: Trail)
+	if not trail.Enabled then
+		trail:Clear()
+		trail.Enabled = true
+	end
+end
+
+-- Stops a trail and removes it once what it left behind has faded.
+function Soft.endTrail(trail: Trail)
+	trail.Enabled = false
+	task.delay(trail.Lifetime + 0.1, trail.Destroy, trail)
+end
+
+-- Hides `part` (over `fade`) but keeps it, and whatever trails or
+-- particles are on it, until `keep` seconds, so they fade out on their own.
+function Soft.linger(part: BasePart, fade: number, keep: number)
+	U.tween(part, fade, { Transparency = 1 })
+	task.delay(keep, part.Destroy, part)
+end
+
+-- Ribbons of wind spiralling up round a moving axis: `axis(t)` gives the
+-- foot and the top of it each frame (t: seconds since it started); the
+-- ribbons climb it over `climb` seconds, over and over, `turns` times
+-- round on the way. Each climb is a fresh ribbon (the last one left to
+-- fade at the top), so nothing streaks back down the axis. Returns stop().
+function Soft.helix(
+	axis: (number) -> (Vector3, Vector3),
+	radius: number,
+	strands: number,
+	climb: number,
+	turns: number,
+	width: number,
+	duration: number,
+	color: Color3?
+): () -> ()
+	type Runner = { part: BasePart, trail: Trail, phase: number }
+	local runners: { [number]: Runner } = {}
+	local function retire(runner: Runner)
+		Soft.endTrail(runner.trail)
+		task.delay(runner.trail.Lifetime + 0.2, runner.part.Destroy, runner.part)
+	end
+	local function spawnRunner(i: number, at: Vector3, phase: number): Runner
+		-- Placed before its trail is attached, so the trail starts here.
+		local part = U.newPart({ Size = Vector3.one * 0.1, Transparency = 1, CFrame = CFrame.new(at) })
+		local trail = Soft.trail(part, Vector3.new(0, width / 2, 0), Vector3.new(0, -width / 2, 0), {
+			color = ColorSequence.new(if i % 2 == 0 then WIND_WHITE else color or WIND, color or WIND),
+			transparency = NumberSequence.new({ key(0, 0.25), key(1, 1) }),
+			width = NumberSequence.new({ key(0, 1), key(1, 0.2) }),
+			lifetime = 0.25,
+		})
+		return { part = part, trail = trail, phase = phase }
+	end
+	local stopped = false
+	local function stop()
+		if stopped then
+			return
+		end
+		stopped = true
+		for i = 1, strands do
+			local runner = runners[i]
+			if runner then
+				runners[i] = nil
+				retire(runner)
+			end
+		end
+	end
+	every(duration, function(elapsed)
+		if stopped then
+			return false
+		end
+		local foot, top = axis(elapsed)
+		local along = top - foot
+		local length = along.Magnitude
+		if length < 1e-3 then
+			return true -- (no axis yet: nothing drawn)
+		end
+		local up = along / length
+		local side = up:Cross(if math.abs(up.Y) > 0.9 then Vector3.xAxis else UP).Unit
+		local other = up:Cross(side)
+		for i = 1, strands do
+			local phase = (elapsed / climb + (i - 1) / strands) % 1
+			local angle = phase * turns * math.pi * 2 + i * 2.1
+			local r = radius * (1 - phase * 0.35)
+			local position = foot + up * (length * phase) + (side * math.cos(angle) + other * math.sin(angle)) * r
+			local runner = runners[i]
+			if runner and phase < runner.phase then
+				-- Back to the foot: this ribbon is left to fade at the top.
+				retire(runner)
+				runner = nil
+			end
+			if runner then
+				runner.part.CFrame = CFrame.new(position)
+				runner.phase = phase
+			else
+				runners[i] = spawnRunner(i, position, phase)
+			end
+		end
+		return true
+	end, stop)
+	return stop
+end
+
+-- A chain of sparkles streaming from one attachment to another (starlight
+-- poured along a line).
+function Soft.starStream(a0: Attachment, a1: Attachment, width: number, speed: number, parent: Instance?): Beam
+	return softBeam(a0, a1, {
+		color = ColorSequence.new(STAR_WHITE, STAR),
+		width0 = width,
+		width1 = width * 0.6,
+		transparency = NumberSequence.new({ key(0, 0.5), key(0.15, 0.1), key(0.85, 0.1), key(1, 0.5) }),
+		texture = SPARKLE,
+		wrap = true,
+		length = width * 1.6,
+		speed = speed,
+	}, parent)
+end
+
+---------------------------------------------------------------------------
+-- Cuts of wind
+---------------------------------------------------------------------------
+
+-- A cut of wind through the air: a crescent from `from` to `to` bowed out
+-- by `bend`. A swipe of wind streaks along it and it's left hanging: a
+-- white-hot edge glittering with starlight inside a soft green glow and a
+-- broad haze, wind flowing along it and wisps of wind drifting off it.
+-- flare() blazes it up (just before it bursts), fade() lets it go.
+export type Slash = {
+	flare: () -> (),
+	fade: (number) -> (),
+	move: (Vector3, number) -> (),
+	apex: Vector3,
+	from: Vector3,
+	to: Vector3,
+}
+
+function Soft.windSlash(from: Vector3, to: Vector3, bend: Vector3, scale: number, swipe: number?): Slash
+	local middle = from:Lerp(to, 0.5)
+	local apex = middle + bend
+	local control = middle + bend * 2
+	local a = worldAnchor(from, control - from)
+	local m = worldAnchor(apex, to - from)
+	local b = worldAnchor(to, to - control)
+	local k1 = (apex - from).Magnitude * 0.42
+	local k2 = (to - apex).Magnitude * 0.42
+	local white = ColorSequence.new(STAR_WHITE, WIND_WHITE)
+	local green = ColorSequence.new(WIND_WHITE, WIND)
+	local haze = ColorSequence.new(WIND, WIND_DEEP)
+	local function half(first: boolean, style: BeamStyle): Beam
+		style.curve0 = if first then k1 else k2
+		style.curve1 = style.curve0
+		return softBeam(if first then a else m, if first then m else b, style)
+	end
+	local function taper(first: boolean, wide: number, thin: number): (number, number)
+		if first then
+			return thin, wide
+		end
+		return wide, thin
+	end
+	local function fadeEnds(first: boolean, edge: number, middleValue: number): NumberSequence
+		if first then
+			return NumberSequence.new({ key(0, 1), key(0.5, (edge + middleValue) / 2), key(1, middleValue) })
+		end
+		return NumberSequence.new({ key(0, middleValue), key(0.5, (edge + middleValue) / 2), key(1, 1) })
+	end
+	local beams: { Beam } = {}
+	for _, first in { true, false } do
+		local w0, w1 = taper(first, 0.5 * scale, 0.05)
+		table.insert(
+			beams,
+			half(first, { color = white, width0 = w0, width1 = w1, transparency = fadeEnds(first, 0.2, 0.05) })
+		)
+		w0, w1 = taper(first, 0.9 * scale, 0.1)
+		table.insert(
+			beams,
+			half(first, {
+				color = ColorSequence.new(STAR_WHITE, STAR),
+				width0 = w0,
+				width1 = w1,
+				transparency = fadeEnds(first, 0.4, 0.25),
+				texture = SPARKLE,
+				wrap = true,
+				length = 1.4 * scale,
+				speed = if first then 3 else -3,
+			})
+		)
+		w0, w1 = taper(first, 3 * scale, 0.4)
+		table.insert(
+			beams,
+			half(first, {
+				color = green,
+				width0 = w0,
+				width1 = w1,
+				transparency = fadeEnds(first, 0.72, 0.6),
+				texture = SMOKE,
+				speed = 1.5,
+				length = 3,
+			})
+		)
+		w0, w1 = taper(first, 7 * scale, 1)
+		table.insert(
+			beams,
+			half(first, {
+				color = haze,
+				width0 = w0,
+				width1 = w1,
+				transparency = fadeEnds(first, 0.94, 0.87),
+				texture = SMOKE,
+				speed = -1,
+				length = 6,
+				emission = 0.6,
+			})
+		)
+	end
+	for _, beam in beams do
+		beam.Enabled = false
+	end
+	-- Wisps of wind drifting off it while it hangs there.
+	local wisps = windEmitter(m, {
+		Size = NumberSequence.new({ key(0, 1.2 * scale), key(1, 3 * scale) }),
+		Transparency = NumberSequence.new({ key(0, 1), key(0.3, 0.8), key(1, 1) }),
+		Lifetime = NumberRange.new(0.4, 0.8),
+		Speed = NumberRange.new(1, 3),
+		SpreadAngle = Vector2.new(180, 180),
+		Drag = 2,
+		Rate = 0,
+	})
+	-- The swipe: a ribbon of wind streaking along the curve.
+	local sweep = swipe or 0.06
+	local runner = U.newPart({ Size = Vector3.one * 0.1, Transparency = 1, CFrame = CFrame.new(from) })
+	local swipeTrail = Soft.trail(runner, Vector3.new(0, 1.3 * scale, 0), Vector3.new(0, -1.3 * scale, 0), {
+		color = ColorSequence.new(STAR_WHITE, WIND),
+		transparency = NumberSequence.new({ key(0, 0.1), key(1, 1) }),
+		width = NumberSequence.new({ key(0, 1), key(1, 0.15) }),
+		lifetime = 0.3,
+	})
+	every(sweep, function(elapsed)
+		runner.CFrame = CFrame.new(quadratic(from, control, to, elapsed / sweep))
+		return true
+	end, function()
+		runner.CFrame = CFrame.new(to)
+		for _, beam in beams do
+			beam.Enabled = true
+		end
+		wisps.Rate = 14
+		Soft.endTrail(swipeTrail)
+		task.delay(0.45, runner.Destroy, runner)
+	end)
+	local slash = { apex = apex, from = from, to = to }
+	local base = Soft.widths(beams)
+	function slash.flare()
+		every(0.12, function(elapsed)
+			Soft.scaleBeams(beams, 1 + 1.6 * math.sin(math.min(elapsed / 0.12, 1) * math.pi / 2), base)
+			return true
+		end)
+	end
+	function slash.fade(duration: number)
+		wisps.Enabled = false
+		fadeBeams(beams, duration, { a, m, b })
+	end
+	-- Carries it `offset` over `duration` (easing out), as if blown along.
+	function slash.move(offset: Vector3, duration: number)
+		for _, anchor in { a, m, b } do
+			U.tween(anchor, duration, { CFrame = anchor.CFrame + offset })
+		end
+	end
+	return slash
+end
+
+return Soft
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="49">
+          <Properties>
             <string name="Name">TopBar</string>
             <string name="Source"><![CDATA[--[[
 	TopBar
@@ -32723,7 +33571,7 @@ return TopBar
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="49">
+        <Item class="ModuleScript" referent="50">
           <Properties>
             <string name="Name">VFX</string>
             <string name="Source"><![CDATA[--[[
@@ -34092,13 +34940,13 @@ return VFX
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="50">
+  <Item class="Workspace" referent="51">
     <Properties>
       <string name="Name">Workspace</string>
       <float name="Gravity">225</float>
       <bool name="NeedsPivotMigration">false</bool>
     </Properties>
-    <Item class="Part" referent="51">
+    <Item class="Part" referent="52">
       <Properties>
         <string name="Name">Baseplate</string>
         <bool name="Anchored">true</bool>
@@ -34117,7 +34965,7 @@ return VFX
         </Vector3>
       </Properties>
     </Item>
-    <Item class="SpawnLocation" referent="52">
+    <Item class="SpawnLocation" referent="53">
       <Properties>
         <string name="Name">SpawnLocation</string>
         <bool name="Anchored">true</bool>

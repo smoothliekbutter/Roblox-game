@@ -118,7 +118,7 @@ end
 
 local function onLandedHit(name: string, data)
 	local victim = data.victim
-	if typeof(victim) ~= "Instance" or not victim:IsA("Model") then
+	if typeof(victim) ~= "Instance" or not victim:IsA("Model") or data.noReaction == true then
 		return
 	end
 	if name == "HeavyHit" or name == "PerfectDivider" then
