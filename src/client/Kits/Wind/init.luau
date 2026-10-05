@@ -23,6 +23,8 @@ local Saint = require(script.Saint)
 local Soft = require(script.Parent.Parent.Soft)
 local Nova = require(script.Nova)
 local Waltz = require(script.Waltz)
+local Sword = require(script.Sword)
+local Wings = require(script.Wings)
 
 type Animation = PoseAnimator.Animation
 type Star = Soft.Star
@@ -2957,29 +2959,13 @@ end
 -- The look. Half-Crown: green mana coats his left side (where Sylph sits),
 -- a wing of wind grows from his left shoulder blade and half a crown of
 -- gold leaves forms over his left temple. Full-Crown: both sides, both
--- wings, the whole crown, and a two-handed sword of wind. Either way his
--- grimoire comes out and circles him, open, pages fluttering. Anchored
--- parts posed every frame round his body; they fade in.
+-- wings, the whole crown, and a sword of wind in his right hand (the wings
+-- and the sword are their own modules). Either way his grimoire comes out
+-- and circles him, open, pages fluttering. Anchored parts posed every frame
+-- round his body; they fade in.
 local GRIMOIRE_COVER = Color3.fromRGB(28, 70, 58)
 local GRIMOIRE_PAPER = Color3.fromRGB(226, 234, 214)
 
--- Feathers per wing: long primaries fanned high and wide (with a shimmer of
--- wind over them) behind shorter coverts nearer the shoulder. Spread is
--- degrees up from straight out; back is how far they sweep behind him.
-local WING_LAYERS = {
-	{ count = 5, from = 10, to = 82, length = 3.9, shrink = 0.3, width = 0.72, back = 0.62, shimmer = true },
-	{ count = 4, from = 4, to = 62, length = 2.1, shrink = 0.22, width = 0.56, back = 0.48, shimmer = false },
-}
-
-type Feather = {
-	vane: BasePart,
-	tip: BasePart,
-	core: BasePart,
-	shell: BasePart?,
-	layer: { [string]: any },
-	index: number,
-	length: number,
-}
 type Spike = { left: BasePart, right: BasePart, angle: number, height: number }
 type Page = { part: BasePart, offset: CFrame, side: number }
 
@@ -2993,6 +2979,7 @@ local function buildLook(character: Model, full: boolean): () -> ()
 	local look: { hideSword: number, blade: BasePart? } = { hideSword = 0, blade = nil }
 	looks[character] = look
 	local entries: { { part: BasePart, base: number } } = {}
+	local baseOf: { [BasePart]: number } = {}
 	local function part(props: { [string]: any }, base: number, wedge: boolean?): BasePart
 		local p: BasePart
 		if wedge then
@@ -3012,69 +2999,36 @@ local function buildLook(character: Model, full: boolean): () -> ()
 		end
 		p.Transparency = 1
 		table.insert(entries, { part = p, base = base })
+		baseOf[p] = base
 		return p
 	end
 	local sides = if full then { -1, 1 } else { -1 } -- -1: his left
 
-	-- Wings.
-	local wings: { { side: number, feathers: { Feather } } } = {}
+	-- Wings (see Wings): beating slowly as he hovers, swept back into a
+	-- glide as he moves.
+	local wings: { Wings.Wing } = {}
 	local emitters: { ParticleEmitter } = {}
 	local wingTrails: { Trail } = {}
-	local wingsStarted = false
+	local wingBeams: { Beam } = {}
 	for _, side in sides do
-		local feathers: { Feather } = {}
-		for _, layer in WING_LAYERS do
-			for i = 1, layer.count do
-				local length = layer.length - (i - 1) * layer.shrink
-				local tip =
-					part({ Size = Vector3.new(0.07, layer.width * 0.72, layer.width * 0.72), Color = WIND }, 0.3)
-				table.insert(feathers, {
-					vane = part({ Size = Vector3.new(0.07, layer.width, length), Color = WIND }, 0.32),
-					tip = tip,
-					core = part({ Size = Vector3.new(0.09, 0.07, length), Color = WIND_WHITE }, 0.1),
-					shell = if layer.shimmer
-						then part({
-							Size = Vector3.new(0.18, layer.width * 1.35, length * 1.05),
-							Color = WIND,
-							Material = Enum.Material.ForceField,
-						}, 0)
-						else nil,
-					layer = layer,
-					index = i,
-					length = length,
-				})
-				-- Wind streaming off the longest feathers' tips as he moves.
-				if layer.shimmer and i <= 3 then
-					table.insert(
-						wingTrails,
-						Soft.trail(tip, Vector3.new(0, 0.22, 0), Vector3.new(0, -0.22, 0), {
-							color = ColorSequence.new(WIND_WHITE, WIND),
-							transparency = NumberSequence.new({ key(0, 0.55), key(1, 1) }),
-							width = NumberSequence.new({ key(0, 1), key(1, 0.2) }),
-							lifetime = 0.3,
-							off = true,
-						})
-					)
-				end
-				-- Wisps of wind off the very longest.
-				if layer.shimmer and i <= 2 then
-					local wisp = Instance.new("ParticleEmitter")
-					wisp.Texture = U.textures.Smoke
-					wisp.Color = ColorSequence.new(WIND_WHITE, WIND)
-					wisp.LightEmission = 1
-					wisp.LightInfluence = 0
-					wisp.Size = NumberSequence.new(0.35, 0)
-					wisp.Transparency = NumberSequence.new(0.4, 1)
-					wisp.Lifetime = NumberRange.new(0.3, 0.5)
-					wisp.Rate = 14
-					wisp.Speed = NumberRange.new(0.5, 1)
-					wisp.Parent = tip
-					table.insert(emitters, wisp)
-				end
-			end
+		local wing = Wings.new(part, side)
+		table.insert(wings, wing)
+		for _, trail in wing.trails do
+			table.insert(wingTrails, trail)
 		end
-		table.insert(wings, { side = side, feathers = feathers })
+		for _, beam in wing.beams do
+			beam.Enabled = false -- (once the wing's in)
+			table.insert(wingBeams, beam)
+		end
+		for _, emitter in wing.emitters do
+			table.insert(emitters, emitter)
+		end
 	end
+	local wingsStarted = false
+	local phase = 0 -- how far through a beat (radians)
+	-- How far into a glide: following how fast he's moving on a soft spring
+	-- (critically damped), so the wings ease into it and out of it.
+	local glide, gliding = 0, 0
 
 	-- Crown: a gold band and leaf-shaped spikes (two wedges back to back),
 	-- the tallest at the front (Full-Crown) or over his left temple (Half).
@@ -3197,48 +3151,14 @@ local function buildLook(character: Model, full: boolean): () -> ()
 	bookLight.Brightness = 1.5
 	bookLight.Parent = book[#book].part
 
-	-- The wind sword (Full-Crown), in the right hand.
-	local sword: { BasePart }? = nil
-	local swordBeams: { Beam } = {}
+	-- The wind sword (Full-Crown), in his right hand (see Sword).
+	local sword: Sword.Sword? = nil
 	if full then
-		local parts = {
-			part({ Size = Vector3.new(0.22, 1.1, 0.22), Color = WIND_DEEP }, 0),
-			part({ Size = Vector3.new(1.5, 0.18, 0.32), Color = STAR }, 0),
-			part({ Size = Vector3.new(0.2, 5.6, 0.85), Color = WIND }, 0.25),
-			part({ Size = Vector3.new(0.1, 5.4, 0.28), Color = WIND_WHITE }, 0),
-			part({ Size = Vector3.new(0.3, 5.9, 1.15), Color = WIND, Material = Enum.Material.ForceField }, 0),
-		}
-		sword = parts
-		look.blade = parts[4] -- (moves trail wind off it as it swings)
-		-- Wind flowing up the blade, glitter along its edge.
-		local low = Instance.new("Attachment")
-		low.Position = Vector3.new(0, -2.6, 0)
-		low.Parent = parts[4]
-		local high = Instance.new("Attachment")
-		high.Position = Vector3.new(0, 2.8, 0)
-		high.Parent = parts[4]
-		swordBeams = {
-			softBeam(low, high, {
-				color = ColorSequence.new(WIND_WHITE, WIND),
-				width0 = 1.4,
-				width1 = 0.6,
-				transparency = NumberSequence.new({ key(0, 0.85), key(0.3, 0.62), key(1, 0.8) }),
-				texture = SMOKE,
-				speed = 2.5,
-				length = 3,
-			}, parts[4]),
-			softBeam(low, high, {
-				color = ColorSequence.new(STAR_WHITE, WIND_WHITE),
-				width0 = 0.45,
-				width1 = 0.25,
-				transparency = NumberSequence.new({ key(0, 0.75), key(0.5, 0.45), key(1, 0.7) }),
-				texture = SPARKLE,
-				wrap = true,
-				length = 0.8,
-				speed = 1.5,
-			}, parts[4]),
-		}
+		local made = Sword.new(part)
+		sword = made
+		look.blade = made.blade
 	end
+	local swordShown = true
 
 	-- Hovering: a ring of wind turning on the ground under him and a soft
 	-- downdraft off his feet.
@@ -3268,6 +3188,8 @@ local function buildLook(character: Model, full: boolean): () -> ()
 	})
 
 	local start = os.clock()
+	local last = start
+	local faded = false
 	local connection: RBXScriptConnection
 	local function destroy()
 		connection:Disconnect()
@@ -3279,8 +3201,14 @@ local function buildLook(character: Model, full: boolean): () -> ()
 		for _, trail in wingTrails do
 			trail.Enabled = false
 		end
-		for _, beam in swordBeams do
-			beam.Enabled = false
+		Soft.fadeBeams(wingBeams, 0.3)
+		if sword then
+			for _, beam in sword.beams do
+				beam.Enabled = false
+			end
+			for _, emitter in sword.emitters do
+				emitter.Enabled = false
+			end
 		end
 		task.delay(1, draft.Destroy, draft)
 		for _, emitter in emitters do
@@ -3299,10 +3227,22 @@ local function buildLook(character: Model, full: boolean): () -> ()
 			destroy()
 			return
 		end
-		local t = os.clock() - start
+		local now = os.clock()
+		local t = now - start
+		local dt = math.min(now - last, 0.1)
+		last = now
 		local alpha = math.min(t / 0.5, 1)
-		for _, entry in entries do
-			entry.part.Transparency = 1 - (1 - entry.base) * alpha
+		local fading = not faded
+		if fading then
+			for _, entry in entries do
+				entry.part.Transparency = 1 - (1 - entry.base) * alpha
+			end
+			if alpha >= 1 then
+				faded = true
+				for _, beam in wingBeams do
+					beam.Enabled = true
+				end
+			end
 		end
 		hoverRing.set(
 			CFrame.new(root.Position - UP * 2.95) * CFrame.Angles(0, t * 1.2, 0),
@@ -3310,31 +3250,20 @@ local function buildLook(character: Model, full: boolean): () -> ()
 		)
 		draft.CFrame = root.CFrame * CFrame.new(0, -1.1, 0)
 
-		-- Wings: each feather fanned out from the shoulder blade, a slow
-		-- beat rippling out along the wing (the tips move most).
-		local back = -torso.CFrame.LookVector
+		-- Wings: beating as he hovers, swept back into a glide (beating
+		-- shallow and quick) as he picks up speed.
+		local velocity = root.AssemblyLinearVelocity
+		local speed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
+		gliding += ((math.clamp((speed - 6) / 14, 0, 1) - glide) * 16 - gliding * 8) * dt
+		glide += gliding * dt
+		if glide <= 0 or glide >= 1 then
+			glide = math.clamp(glide, 0, 1)
+			gliding = 0
+		end
+		local hold = Wings.Blend(Wings.Hover, Wings.Glide, glide)
+		phase = (phase + dt * hold.rate * math.pi * 2) % (math.pi * 2)
 		for _, wing in wings do
-			local base = torso.CFrame * Vector3.new(wing.side * 0.45, 0.55, 0.55)
-			for _, feather in wing.feathers do
-				local layer = feather.layer
-				local f = if layer.count > 1 then (feather.index - 1) / (layer.count - 1) else 0
-				local flap = math.sin(t * 2.1 - feather.index * 0.35) * (6 + f * 6)
-				local angle = rad(layer.from + (layer.to - layer.from) * f + flap)
-				local localDirection =
-					Vector3.new(wing.side * math.cos(angle), math.sin(angle) * 0.95 + 0.05, layer.back).Unit
-				local direction = torso.CFrame:VectorToWorldSpace(localDirection)
-				local across = direction:Cross(back)
-				local up = if across.Magnitude > 1e-3 then across.Unit else UP
-				local center = base + direction * (feather.length / 2)
-				local frame = CFrame.lookAt(center, center + direction, up)
-				feather.vane.CFrame = frame
-				feather.core.CFrame = frame
-				if feather.shell then
-					feather.shell.CFrame = frame
-				end
-				local tipAt = base + direction * feather.length
-				feather.tip.CFrame = CFrame.lookAt(tipAt, tipAt + direction, up) * CFrame.Angles(rad(45), 0, 0)
-			end
+			Wings.Place(wing, torso.CFrame, hold, phase, glide, t)
 		end
 		if not wingsStarted then
 			-- (The tips are in place now: their trails start here.)
@@ -3388,25 +3317,28 @@ local function buildLook(character: Model, full: boolean): () -> ()
 			p.part.CFrame = bookFrame * hinge * spin * p.offset
 		end
 
-		-- Sword.
+		-- Sword (hidden while a move has it put away).
 		if sword then
 			local arm = character:FindFirstChild("Right Arm") :: BasePart?
 			if arm then
-				local grip = arm.CFrame * CFrame.new(0, -1.1, 0) * CFrame.Angles(rad(-90), 0, 0)
-				sword[1].CFrame = grip
-				sword[2].CFrame = grip * CFrame.new(0, 0.6, 0)
-				sword[3].CFrame = grip * CFrame.new(0, 3.5, 0)
-				sword[4].CFrame = grip * CFrame.new(0, 3.5, 0)
-				sword[5].CFrame = grip * CFrame.new(0, 3.55, 0)
+				Sword.Place(sword, arm.CFrame * CFrame.new(0, -1.1, 0) * CFrame.Angles(rad(-90), 0, 0))
 			end
-			local hidden = os.clock() < look.hideSword
-			if hidden then
-				for _, p in sword do
+			local hidden = now < look.hideSword
+			if hidden and (swordShown or fading) then
+				for _, p in sword.parts do
 					p.Transparency = 1
 				end
+			elseif not hidden and not swordShown and not fading then
+				for _, p in sword.parts do
+					p.Transparency = baseOf[p]
+				end
 			end
-			for _, beam in swordBeams do
-				beam.Enabled = not hidden and alpha >= 1
+			swordShown = not hidden
+			for _, beam in sword.beams do
+				beam.Enabled = not hidden and faded
+			end
+			for _, emitter in sword.emitters do
+				emitter.Enabled = not hidden
 			end
 		end
 	end)
