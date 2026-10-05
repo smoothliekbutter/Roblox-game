@@ -29233,11 +29233,11 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			blend = 0,
 			get = function(u, t)
 				local e = smooth(u)
-				local eye = (origin - forward * 6 + right * 2.5 + UP * 2.8):Lerp(
-					origin - forward * 3 + right * 1.8 + UP * 2.2,
+				local eye = (origin - forward * 9.5 + right * 3.5 + UP * 2.4):Lerp(
+					origin - forward * 7.5 + right * 3 + UP * 2,
 					e
 				)
-				return eye, them(t) + UP * 0.5, -2 * e, 72 - 10 * e
+				return eye, them(t):Lerp(him(t), 0.55) + UP * 0.3, -2 * e, 74 - 6 * e
 			end,
 		},
 		{
@@ -29246,11 +29246,12 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			blend = 0.3,
 			get = function(u, t)
 				local e = smooth(u)
-				local victim = them(t)
+				local victim, attacker = them(t), him(t)
+				local middle = victim:Lerp(attacker, 0.5)
 				local angle = rad(-20 + 60 * e)
 				local around = forward * math.sin(angle) + right * math.cos(angle)
-				local eye = Vector3.new(start.X, start.Y + 1.5 + (victim.Y - start.Y) * 0.8, start.Z) + around * 13
-				return eye, victim:Lerp(him(t), 0.35) + UP, 3, 84 - 8 * e
+				local eye = Vector3.new(start.X, start.Y + 1.5 + (middle.Y - start.Y) * 0.85, start.Z) + around * 16
+				return eye, middle + UP, 3, 84 - 6 * e
 			end,
 		},
 		{
@@ -29281,8 +29282,10 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			blend = 0.25,
 			get = function(u, t)
 				local e = smooth(u)
-				local look = center:Lerp(him(t), smooth((u - 0.35) / 0.65))
-				return center + xSide * (20 - 2 * e) + UP * (1 + 4 * e), look, 3 * e, 66 - 4 * e
+				-- Pulling back as he rises out of it, to keep them both.
+				local rise = smooth((u - 0.35) / 0.65)
+				local look = center:Lerp(him(t), 0.5 * rise)
+				return center + xSide * (20 + 12 * rise) + UP * (1 + 4 * e), look, 3 * e, 66 - 4 * e + 10 * rise
 			end,
 		},
 		{
@@ -29293,8 +29296,10 @@ local function play(data, character: Model, root: BasePart, context: Context)
 				local e = smooth(u)
 				local angle = rad(-30 + 50 * e)
 				local around = right * math.cos(angle) + forward * math.sin(angle)
-				local eye = center - UP * (10 - 3 * e) + around * (14 - 4 * e)
-				return eye, top + UP * 4, -5 + 3 * e, 72 - 16 * e
+				-- From below them: them hanging close, him high above them with
+				-- the blade.
+				local eye = center - UP * 4 + around * (25 - 3 * e)
+				return eye, center:Lerp(top + UP * 6, 0.44), -5 + 3 * e, 80 - 5 * e
 			end,
 		},
 		{
@@ -29302,7 +29307,7 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			to = times.Burst + 0.05,
 			blend = 0,
 			get = function(u, _)
-				return center + right * (50 + 6 * u) + UP * (2 + u), center - UP * 8, 0, 74 + 6 * u
+				return center + right * (56 + 6 * u) + UP * (1 + u), center - UP * 4, 0, 76 + 4 * u
 			end,
 		},
 		{
@@ -29310,8 +29315,10 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			to = times.Land + 0.1,
 			blend = 0.25,
 			get = function(_, t)
-				local victim = them(t)
-				return victim + right * 16 + UP * 10 + forward * 6, victim:Lerp(start, 0.4), 4, 82
+				-- Held still, panning down with them as they fall (so nothing
+				-- lurches when they hit).
+				local eye = start + UP * 18 + right * 30 + forward * 6
+				return eye, them(t):Lerp(start, 0.4), 4, 80
 			end,
 		},
 		{
