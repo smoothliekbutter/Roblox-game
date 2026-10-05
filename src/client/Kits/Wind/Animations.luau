@@ -1469,6 +1469,96 @@ Animations.SaintCut = {
 	},
 }
 
+-- Saint Spirit of Zephyr: the backhand cut (every other star).
+Animations.SaintCutBack = {
+	fadeIn = 0.03,
+	fadeOut = 0.1,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-14, -45),
+				Head = rot(8, 35),
+				RightArm = limb(80, -60, 10),
+				LeftArm = limb(70, -40, -10),
+				RightLeg = rot(-30, 0, 12),
+				LeftLeg = rot(26, 0, -12),
+			},
+		},
+		{
+			0.06,
+			{
+				Torso = rot(-8, 40),
+				Head = rot(6, -30),
+				RightArm = limb(110, 50, 10),
+				LeftArm = limb(100, 70, -10),
+				RightLeg = rot(-24, 0, 10),
+				LeftLeg = rot(20, 0, -10),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.25,
+			{
+				Torso = rot(-8, 40),
+				Head = rot(6, -30),
+				RightArm = limb(110, 50, 10),
+				LeftArm = limb(100, 70, -10),
+				RightLeg = rot(-24, 0, 10),
+				LeftLeg = rot(20, 0, -10),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Saint Spirit of Zephyr: flying up beside them on the wind.
+Animations.SaintAscend = {
+	fadeIn = 0.05,
+	fadeOut = 0.1,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+		},
+		{
+			0.15,
+			{
+				Torso = rot(14),
+				Head = rot(-22),
+				RightArm = limb(-20, 0, 35),
+				LeftArm = limb(-20, 0, -35),
+				RightLeg = rot(12, 0, 4),
+				LeftLeg = rot(18, 0, -4),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			1.2,
+			{
+				Torso = rot(14),
+				Head = rot(-22),
+				RightArm = limb(-20, 0, 35),
+				LeftArm = limb(-20, 0, -35),
+				RightLeg = rot(12, 0, 4),
+				LeftLeg = rot(18, 0, -4),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
 -- Saint Spirit of Zephyr: the blade raised high above them.
 Animations.SaintRise = {
 	fadeIn = 0.03,

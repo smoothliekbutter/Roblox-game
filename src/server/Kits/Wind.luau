@@ -1139,14 +1139,15 @@ local function spiritOfEuros(ctx)
 end
 
 --[[
-	Saint Spirit of Zephyr (Full-Crown 4): a cutscene. He flicks a star at
-	whoever is in front of him (about 15 studs); it binds them and lifts them
-	into the air in a pentagram of stars. Conjunction takes him from star to
-	star, straight through them each time, then he's high above them and
-	splits them with one strike of wind and starlight, down through them to
-	the ground. The cuts left hanging in the air burst and drive them into
-	the ground. The timeline is Shared/SaintZephyr, the camera work and
-	effects client side.
+	Saint Spirit of Zephyr (Full-Crown 4): a 6-second cutscene. He flicks a
+	star at whoever is in front of him (about 15 studs); it binds them and a
+	column of wind carries them 32 studs into the sky, him flying up beside
+	them. A constellation of twelve stars opens round them and Conjunction
+	takes him through them from star to star, faster and faster, then an X;
+	then he's high above them and splits them with one strike of wind and
+	starlight down through them to the ground. The cuts left hanging in the
+	air detonate and they fall like a meteor into the ground. The timeline
+	is Shared/SaintZephyr, the camera work and effects client side.
 ]]
 local SAINT_FLICK = 0.2 -- the star leaves his hand (Conjunction's point)
 local SAINT_BOX = Vector3.new(5, 7, 15)
@@ -1212,16 +1213,21 @@ local function saintSpiritOfZephyr(ctx)
 	local function waitUntil(at: number)
 		task.wait(math.max(at - (os.clock() - started), 0))
 	end
-	for _, at in times.Cuts do
-		waitUntil(at)
+	local function cut(damage: number)
 		if CombatState.IsAlive(target) then
 			c.Hit(
 				character,
 				target,
-				{ damage = 1.6, stun = 3, attackType = "Melee", unblockable = true, noShake = true }
+				{ damage = damage, stun = 3, attackType = "Melee", unblockable = true, noShake = true }
 			)
 		end
 	end
+	for _, at in times.Cuts do
+		waitUntil(at)
+		cut(0.9)
+	end
+	waitUntil(times.Cross)
+	cut(2)
 	waitUntil(times.Strike)
 	if CombatState.IsAlive(target) then
 		c.Hit(character, target, { damage = 3, stun = 3, attackType = "Melee", unblockable = true, noShake = true })
@@ -1233,17 +1239,17 @@ local function saintSpiritOfZephyr(ctx)
 	local center = Vector3.new(plan.start.X, plan.floorY, plan.start.Z)
 	if CombatState.IsAlive(target) then
 		c.Hit(character, target, {
-			damage = 11,
+			damage = 10,
 			stun = 1.4,
 			attackType = "Melee",
 			unblockable = true,
 			heavy = true,
-			ragdoll = 2.2,
+			ragdoll = 2.4,
 			velocity = UP * -20 + plan.forward * 4,
 		})
 	end
 	fx(ctx, "SaintSpiritOfZephyr", "Impact", { position = center })
-	c.ShakeArea(center, 80, 0.7)
+	c.ShakeArea(center, 90, 0.8)
 	waitUntil(times.Length)
 	stopHim()
 end
