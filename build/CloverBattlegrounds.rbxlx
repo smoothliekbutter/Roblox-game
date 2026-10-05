@@ -5493,7 +5493,7 @@ return Kit
 	  3 Heavenly Wind Ark    a crescent of wind rises out of the ground ahead and
 	                         carries them and him up together, held there for an
 	                         air string that ends in the downslam (air: it sweeps
-	                         down and spikes them)
+	                         down and spikes them); breaks guards
 	  4 Gale White Bow       a great bow of wind; six big arrows, aimed at whoever
 	                         he faces
 	  R Conjunction          a star goes down where he's moving (ahead if he's
@@ -5794,7 +5794,8 @@ end
 -- front of him and carries whoever it catches up into the air, and him
 -- right behind them; both hang there for an air string (M1s in the air
 -- keep them both up, the 4th slams them down). In the air the ark sweeps
--- down beneath him instead and spikes them into the ground.
+-- down beneath him instead and spikes them into the ground. Either way it
+-- breaks guards (a broken guard isn't carried up, just left open).
 local ARK_CAST = 0.18
 local ARK_RISE = 46 -- studs a second, for ARK_RISE_TIME: about 14 studs up
 local ARK_RISE_TIME = 0.3
@@ -5820,6 +5821,7 @@ local function heavenlyWindArk(ctx)
 				damage = 8,
 				stun = 1,
 				attackType = "Zone",
+				guardBreak = true,
 				heavy = true,
 				ragdoll = 1.2,
 				velocity = forward * 10 + UP * -70,
@@ -5830,7 +5832,14 @@ local function heavenlyWindArk(ctx)
 	end
 	local launched = {}
 	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 1, -5.5), Vector3.new(11, 9, 11)) do
-		if c.Hit(character, victim, { damage = 7, stun = 1.6, attackType = "Zone", heavy = true }) == "Hit" then
+		local result = c.Hit(character, victim, {
+			damage = 7,
+			stun = 1.6,
+			attackType = "Zone",
+			guardBreak = true,
+			heavy = true,
+		})
+		if result == "Hit" then
 			table.insert(launched, victim)
 		end
 	end
