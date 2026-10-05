@@ -55,6 +55,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
 local SaintPlan = require(ReplicatedStorage:WaitForChild("Shared").SaintZephyr)
 local DivePlan = require(ReplicatedStorage:WaitForChild("Shared").TempestDive)
+local WaltzPlan = require(ReplicatedStorage:WaitForChild("Shared").Zephyrus)
 local Projectile = require(script.Parent.Parent.Projectile)
 
 local KIT_ID = "Wind"
@@ -1001,16 +1002,16 @@ end
 --[[
 	Spirit of Zephyrus (Full-Crown 2, the west wind): his sword of wind grows
 	long and he lunges at whoever he's facing on a burst of wind (steerable).
-	Caught, they're cut three times in a blur of wind, held in front of him,
-	and run through with a thrust that blows them away. From the air the
-	lunge dives at them.
+	Caught, it's the waltz of the west wind (Shared/Zephyrus, a cutscene for
+	the two of them, about 1.3s): the wind holds them up while he whirls
+	round them twice, cutting them every half turn, then he swings out in
+	front of them and runs them through with a spear of wind that blows
+	them away. From the air the lunge dives at them, and the waltz happens
+	up there.
 ]]
 local LUNGE_SPEED = 100
 local LUNGE_TIME = 0.34
 local LUNGE_STEER = 180
-local LUNGE_CUTS = { 0.12, 0.24, 0.36 } -- after the catch
-local LUNGE_THRUST = 0.52
-local LUNGE_HOLD = 3.6 -- studs in front of him while he cuts
 
 local function spiritOfZephyrus(ctx)
 	local c, character = ctx.combat, ctx.character
@@ -1052,60 +1053,82 @@ local function spiritOfZephyrus(ctx)
 		return
 	end
 	c.ApplyVelocity(character, Vector3.zero, 0.05)
-	forward = look(ctx)
 	if c.Hit(character, target, { damage = 3, stun = 1.4, attackType = "Melee" }) ~= "Hit" then
 		fx(ctx, "SpiritOfZephyrus", "Whiff")
 		CombatState.SetCasting(character, 0.4)
 		return
 	end
-
-	-- The cuts, held in front of him in a blur of wind, then the thrust.
-	CombatState.SetCasting(character, LUNGE_THRUST + 0.3)
-	fx(ctx, "SpiritOfZephyrus", "Catch", { target = target })
 	local caught = target :: Model
-	local started = os.clock()
-	local function pull(): Vector3
-		local targetRoot = rootOf(caught)
-		if not targetRoot then
-			return Vector3.zero
-		end
-		local offset = ctx.root.Position + forward * LUNGE_HOLD - targetRoot.Position
-		local flat = Vector3.new(offset.X, 0, offset.Z) / 0.12
-		return if flat.Magnitude > 30 then flat.Unit * 30 else flat
-	end
-	for index, at in LUNGE_CUTS do
-		task.wait(math.max(at - (os.clock() - started), 0))
-		if interrupted(ctx) or not CombatState.IsAlive(caught) then
-			return
-		end
-		local hit = c.Hit(character, caught, {
-			damage = 1.5,
-			stun = 1,
-			attackType = "Melee",
-			noShake = true,
-			velocity = pull(),
-			velocityTime = 0.12,
-		})
-		if hit ~= "Hit" then
-			return
-		end
-		fx(ctx, "SpiritOfZephyrus", "Cut", { target = caught, index = index })
-	end
-	task.wait(math.max(LUNGE_THRUST - (os.clock() - started), 0))
-	if interrupted(ctx) or not CombatState.IsAlive(caught) then
+	local caughtRoot = rootOf(caught)
+	if not caughtRoot then
 		return
 	end
-	fx(ctx, "SpiritOfZephyrus", "Thrust", { target = caught, direction = forward })
+
+	-- The waltz: both of them on the paths, the cuts and the thrust on time.
+	local plan = WaltzPlan.Plan(ctx.root.Position, caughtRoot.Position)
+	local times = WaltzPlan.Times
+	CombatState.SetCasting(character, times.Length + 0.2)
+	CombatState.GiveIFrames(character, times.Length)
+	CombatState.Stun(caught, times.Length + 0.4)
+	fx(ctx, "SpiritOfZephyrus", "Waltz", {
+		target = caught,
+		attacker = ctx.root.Position,
+		victim = caughtRoot.Position,
+	})
+	local stopHim = c.Cutscene({
+		[character] = function(t)
+			return WaltzPlan.Attacker(plan, t)
+		end,
+	}, times.Length)
+	local stopThem = c.Cutscene({
+		[caught] = function(t)
+			return WaltzPlan.Victim(plan, t)
+		end,
+	}, times.Thrust)
+	local started = os.clock()
+	local function waitUntil(at: number): boolean
+		task.wait(math.max(at - (os.clock() - started), 0))
+		return CombatState.IsAlive(character) and CombatState.IsAlive(caught)
+	end
+	local function abort()
+		stopThem()
+		stopHim()
+		fx(ctx, "SpiritOfZephyrus", "Abort", { target = caught })
+	end
+	for _, at in times.Cuts do
+		if not waitUntil(at) then
+			abort()
+			return
+		end
+		-- (The waltz is their reaction; the camera stays still.)
+		c.Hit(character, caught, {
+			damage = 1.2,
+			stun = 1.2,
+			attackType = "Melee",
+			unblockable = true,
+			noShake = true,
+			noReaction = true,
+		})
+	end
+	if not waitUntil(times.Thrust) then
+		abort()
+		return
+	end
+	-- Run through: blown away from him, through where he caught them.
+	stopThem()
 	c.Hit(character, caught, {
-		damage = 4,
+		damage = 4.5,
 		stun = 1,
 		attackType = "Melee",
+		unblockable = true,
 		heavy = true,
-		ragdoll = 1,
-		velocity = forward * 65 + UP * 18,
+		ragdoll = 1.2,
+		noShake = true,
+		velocity = -plan.out * 70 + UP * 22,
 	})
-	c.ShakeArea(ctx.root.Position, 40, 0.3)
-	CombatState.SetCasting(character, 0.3)
+	waitUntil(times.Length)
+	stopHim()
+	CombatState.SetCasting(character, 0.25)
 end
 
 -- Spirit of Euros: a recurve bow of wind, drawn while the wind spirals into

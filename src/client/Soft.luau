@@ -31,6 +31,51 @@ Soft.STAR_FIRE = Color3.fromRGB(255, 140, 40)
 Soft.SMOKE = U.textures.Smoke
 Soft.SPARKLE = U.textures.Spark
 
+-- Sheer: while one is in force (Soft.sheer(k) until its release), every
+-- soft piece made is that much more see-through: what would block a
+-- fraction a of the light now blocks a(1 - k). Scoped to whatever wants it
+-- (a whole cutscene), so the rest of the time nothing changes.
+local sheers: { number } = {}
+local function sheerness(): number
+	local k = 0
+	for _, value in sheers do
+		k = math.max(k, value)
+	end
+	return k
+end
+function Soft.sheer(k: number): () -> ()
+	table.insert(sheers, k)
+	local released = false
+	return function()
+		if not released then
+			released = true
+			local i = table.find(sheers, k)
+			if i then
+				table.remove(sheers, i)
+			end
+		end
+	end
+end
+local function sheerValue(transparency: number): number
+	local k = sheerness()
+	return if k > 0 then 1 - (1 - transparency) * (1 - k) else transparency
+end
+local function sheerSequence(sequence: NumberSequence): NumberSequence
+	local k = sheerness()
+	if k <= 0 then
+		return sequence
+	end
+	local points = {}
+	for _, point in sequence.Keypoints do
+		table.insert(
+			points,
+			NumberSequenceKeypoint.new(point.Time, 1 - (1 - point.Value) * (1 - k), point.Envelope * (1 - k))
+		)
+	end
+	return NumberSequence.new(points)
+end
+Soft.sheerValue = sheerValue
+
 local WIND, WIND_DEEP, WIND_WHITE = Soft.WIND, Soft.WIND_DEEP, Soft.WIND_WHITE
 local STAR, STAR_WHITE = Soft.STAR, Soft.STAR_WHITE
 local SMOKE, SPARKLE = Soft.SMOKE, Soft.SPARKLE
@@ -94,7 +139,7 @@ function Soft.bar(from: Vector3, to: Vector3, width: number, color: Color3, tran
 		Size = Vector3.new(width, width, length),
 		CFrame = CFrame.lookAt(from:Lerp(to, 0.5), to),
 		Color = color,
-		Transparency = transparency,
+		Transparency = sheerValue(transparency),
 	})
 end
 local bar = Soft.bar
@@ -110,7 +155,7 @@ function Soft.tube(from: Vector3, to: Vector3, width: number, color: Color3, tra
 		Size = Vector3.new(length, width, width),
 		CFrame = CFrame.lookAt(from:Lerp(to, 0.5), to) * CFrame.Angles(0, rad(90), 0),
 		Color = color,
-		Transparency = transparency,
+		Transparency = sheerValue(transparency),
 	})
 end
 
@@ -132,6 +177,7 @@ function Soft.newWedge(props: { [string]: any }): WedgePart
 	for name, value in props do
 		(wedge :: any)[name] = value
 	end
+	wedge.Transparency = sheerValue(wedge.Transparency)
 	wedge.Parent = U.folder
 	return wedge
 end
@@ -192,6 +238,9 @@ function Soft.makeStar(size: number, color: Color3?): Star
 		U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * size * 0.95, Color = tint, Transparency = 0.82 }),
 		CFrame.identity
 	)
+	for _, part in parts do
+		part.Transparency = sheerValue(part.Transparency)
+	end
 	local light = Instance.new("PointLight")
 	light.Color = tint
 	light.Range = size * 6
@@ -204,7 +253,7 @@ function Soft.makeStar(size: number, color: Color3?): Star
 	glitter.LightEmission = 1
 	glitter.LightInfluence = 0
 	glitter.Size = NumberSequence.new({ key(0, size * 0.5), key(1, 0) })
-	glitter.Transparency = NumberSequence.new({ key(0, 0.2), key(1, 1) })
+	glitter.Transparency = sheerSequence(NumberSequence.new({ key(0, 0.2), key(1, 1) }))
 	glitter.Lifetime = NumberRange.new(0.25, 0.5)
 	glitter.Rate = 10
 	glitter.Speed = NumberRange.new(0.5, 1.5)
@@ -265,6 +314,9 @@ function Soft.makeSprite(scale: number): Sprite
 		U.newPart({ Size = Vector3.new(0.9, 0.05, 0.5) * scale, Color = WIND, Transparency = 0.35 }),
 		U.newPart({ Size = Vector3.new(0.9, 0.05, 0.5) * scale, Color = WIND, Transparency = 0.35 }),
 	}
+	for _, part in { body, glow, wings[1], wings[2] } do
+		part.Transparency = sheerValue(part.Transparency)
+	end
 	local light = Instance.new("PointLight")
 	light.Color = WIND
 	light.Range = 6 * scale
@@ -280,7 +332,7 @@ function Soft.makeSprite(scale: number): Sprite
 	trail.Attachment0 = a0
 	trail.Attachment1 = a1
 	trail.Color = ColorSequence.new(WIND_WHITE, WIND)
-	trail.Transparency = NumberSequence.new({ key(0, 0.2), key(1, 1) })
+	trail.Transparency = sheerSequence(NumberSequence.new({ key(0, 0.2), key(1, 1) }))
 	trail.WidthScale = NumberSequence.new({ key(0, 1), key(1, 0) })
 	trail.Lifetime = 0.35
 	trail.LightEmission = 1
@@ -396,7 +448,7 @@ function Soft.softBeam(a0: Attachment, a1: Attachment, style: BeamStyle, parent:
 	beam.Color = style.color
 	beam.Width0 = style.width0
 	beam.Width1 = style.width1
-	beam.Transparency = style.transparency
+	beam.Transparency = sheerSequence(style.transparency)
 	beam.CurveSize0 = style.curve0 or 0
 	beam.CurveSize1 = style.curve1 or 0
 	beam.FaceCamera = true
@@ -603,6 +655,7 @@ function Soft.windEmitter(parent: Instance, props: { [string]: any }): ParticleE
 	for name, value in props do
 		(emitter :: any)[name] = value
 	end
+	emitter.Transparency = sheerSequence(emitter.Transparency)
 	emitter.Parent = parent
 	return emitter
 end
@@ -683,7 +736,7 @@ function Soft.twinkle(position: Vector3, size: number, color: Color3?, duration:
 	flare.LightEmission = 1
 	flare.LightInfluence = 0
 	flare.Size = NumberSequence.new({ key(0, size * 0.4), key(0.25, size), key(1, 0) })
-	flare.Transparency = NumberSequence.new({ key(0, 0), key(0.7, 0.2), key(1, 1) })
+	flare.Transparency = sheerSequence(NumberSequence.new({ key(0, 0), key(0.7, 0.2), key(1, 1) }))
 	flare.Lifetime = NumberRange.new(life)
 	flare.Speed = NumberRange.new(0)
 	flare.Rotation = NumberRange.new(-10, 10)
@@ -696,7 +749,7 @@ function Soft.twinkle(position: Vector3, size: number, color: Color3?, duration:
 	halo.Texture = SMOKE
 	halo.Color = ColorSequence.new(color or STAR)
 	halo.Size = NumberSequence.new({ key(0, size * 0.6), key(1, size * 1.2) })
-	halo.Transparency = NumberSequence.new({ key(0, 0.55), key(1, 1) })
+	halo.Transparency = sheerSequence(NumberSequence.new({ key(0, 0.55), key(1, 1) }))
 	halo.Parent = attachment
 	halo:Emit(1)
 	task.delay(life + 0.1, holder.Destroy, holder)
@@ -725,7 +778,7 @@ function Soft.trail(part: BasePart, a: Vector3, b: Vector3, style: TrailStyle): 
 	trail.Attachment0 = a0
 	trail.Attachment1 = a1
 	trail.Color = style.color
-	trail.Transparency = style.transparency
+	trail.Transparency = sheerSequence(style.transparency)
 	trail.Lifetime = style.lifetime
 	trail.WidthScale = style.width or NumberSequence.new(1)
 	trail.LightEmission = style.emission or 1
@@ -1014,6 +1067,48 @@ function Soft.windSlash(from: Vector3, to: Vector3, bend: Vector3, scale: number
 		end
 	end
 	return slash
+end
+
+-- Manga focus lines: thin streaks of light rushing in toward the middle of
+-- the screen for a moment (for whoever's watching it from the cutscene).
+function Soft.focusLines(duration: number)
+	local playerGui = game:GetService("Players").LocalPlayer:FindFirstChildOfClass("PlayerGui")
+	if not playerGui then
+		return
+	end
+	local viewport = workspace.CurrentCamera.ViewportSize
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "FocusLines"
+	gui.IgnoreGuiInset = true
+	gui.ResetOnSpawn = false
+	gui.DisplayOrder = 45 -- under the letterbox bars
+	gui.Parent = playerGui
+	local half = viewport.Magnitude / 2
+	local lines: { Frame } = {}
+	for i = 1, 56 do
+		local angle = (i / 56) * math.pi * 2 + math.random() * 0.08
+		local length = half * (0.55 + math.random() * 0.35)
+		local reach = half * (0.42 + math.random() * 0.2) + length / 2
+		local line = Instance.new("Frame")
+		line.AnchorPoint = Vector2.new(0.5, 0.5)
+		line.Position =
+			UDim2.fromOffset(viewport.X / 2 + math.cos(angle) * reach, viewport.Y / 2 + math.sin(angle) * reach)
+		line.Size = UDim2.fromOffset(length, 1 + math.random() * 3)
+		line.Rotation = math.deg(angle)
+		line.BackgroundColor3 = if i % 7 == 0 then STAR else Color3.new(1, 1, 1)
+		line.BorderSizePixel = 0
+		line.BackgroundTransparency = 0.1
+		local gradient = Instance.new("UIGradient")
+		-- Faint where it starts nearest the middle, solid at the edge.
+		gradient.Transparency = NumberSequence.new({ key(0, 1), key(0.45, 0.4), key(1, 0) })
+		gradient.Parent = line
+		line.Parent = gui
+		table.insert(lines, line)
+	end
+	for _, line in lines do
+		U.tween(line, duration, { BackgroundTransparency = 1 })
+	end
+	task.delay(duration + 0.05, gui.Destroy, gui)
 end
 
 return Soft

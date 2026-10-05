@@ -71,6 +71,7 @@ export type Context = {
 local Saint = {}
 
 local SAINT_BLADE = 40 -- the colossal blade's length
+local SHEER = 0.4 -- how much more see-through everything in it is
 
 local function smooth(u: number): number
 	u = math.clamp(u, 0, 1)
@@ -661,7 +662,7 @@ local function featherFall(center: Vector3, count: number, duration: number)
 			Material = Enum.Material.ForceField,
 			Transparency = 1,
 		})
-		U.tween(feather, 0.3, { Transparency = 0.2 })
+		U.tween(feather, 0.3, { Transparency = Soft.sheerValue(0.2) })
 		local from = center + Vector3.new(math.random(-70, 70) / 10, 5 + math.random() * 7, math.random(-70, 70) / 10)
 		local life = duration * (0.7 + math.random() * 0.3)
 		every(life, function(elapsed)
@@ -751,7 +752,7 @@ local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
 	toSun = Vector3.new(toSun.X, math.max(toSun.Y, 0.1), toSun.Z).Unit
 	local sun = center + toSun * 420
 	local halos: { { part: BasePart, base: number } } = {}
-	for i, layer in { { 46, 0.25, SKY_SUN }, { 110, 0.62, SKY_GOLD }, { 210, 0.82, SKY_GOLD } } do
+	for i, layer in { { 46, 0.5, SKY_SUN }, { 110, 0.76, SKY_GOLD }, { 210, 0.9, SKY_GOLD } } do
 		local part = U.newPart({
 			Shape = Enum.PartType.Cylinder,
 			Size = Vector3.new(0.5, layer[1], layer[1]),
@@ -776,7 +777,7 @@ local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
 				transparency = NumberSequence.new(0),
 				emission = 1,
 			}),
-			0.86
+			0.92
 		)
 	end
 
@@ -819,7 +820,7 @@ local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
 				curve0 = 40,
 				curve1 = 40,
 			}),
-			0.8
+			0.88
 		)
 	end
 
@@ -841,7 +842,7 @@ local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
 		})
 		table.insert(made, ring.hub)
 		for _, beam in ring.beams do
-			track(beam, 0.55 + i * 0.05)
+			track(beam, 0.7 + i * 0.04)
 		end
 		table.insert(
 			swirls,
@@ -862,7 +863,7 @@ local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
 			length = 40,
 			segments = 20,
 		})
-		track(beam, 0.6)
+		track(beam, 0.76)
 		table.insert(arms, { from = from, to = to, beam = beam, phase = (i - 1) * math.pi / 3 })
 	end
 
@@ -891,7 +892,7 @@ local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
 					transparency = NumberSequence.new(0),
 					emission = 1,
 				}),
-				0.9
+				0.94
 			)
 		)
 	end
@@ -917,7 +918,7 @@ local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
 		end
 		for _, twinkle_ in stars do
 			local glint = 0.5 + 0.5 * math.sin(t * twinkle_.speed + twinkle_.phase)
-			twinkle_.part.Transparency = 1 - a * (0.35 + 0.65 * glint)
+			twinkle_.part.Transparency = 1 - a * (0.25 + 0.45 * glint)
 		end
 		-- The spiral turns; its arms curl in from the outer ring to the eye.
 		for _, swirl in swirls do
@@ -941,7 +942,7 @@ local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
 		star.place(eye, t * 0.6)
 		local glow = a * (0.25 + 0.15 * math.sin(t * 3))
 		for i, part in star.parts do
-			part.Transparency = if i == 1 then 1 - a * math.min(scale, 1) else 1 - glow * 2.4 * math.min(scale, 1)
+			part.Transparency = if i == 1 then 1 - 0.6 * a * math.min(scale, 1) else 1 - glow * 1.6 * math.min(scale, 1)
 			if i == 1 then
 				part.Size = Vector3.one * 30 * 0.32 * math.max(scale, 0.05)
 			end
@@ -1016,13 +1017,13 @@ local function sylphSpirit(plan: SaintPlan.Plan): Spirit
 		width0 = 0.09 * H,
 		width1 = 0.14 * H,
 		transparency = NumberSequence.new(0),
-	}, 0.72)
+	}, 0.82)
 	limb("head", {
 		color = ColorSequence.new(WIND_WHITE),
-		width0 = 0.085 * H,
-		width1 = 0.07 * H,
+		width0 = 0.1 * H,
+		width1 = 0.085 * H,
 		transparency = NumberSequence.new(0),
-	}, 0.66)
+	}, 0.76)
 	limb("dress", {
 		color = wind,
 		width0 = 0.17 * H,
@@ -1031,14 +1032,14 @@ local function sylphSpirit(plan: SaintPlan.Plan): Spirit
 		texture = SMOKE,
 		speed = -8,
 		length = 30,
-	}, 0.76, 0.25)
+	}, 0.86, 0.25)
 	for _, side in { "L", "R" } do
 		limb("arm" .. side, {
 			color = ColorSequence.new(WIND_WHITE),
 			width0 = 0.035 * H,
 			width1 = 0.022 * H,
 			transparency = NumberSequence.new(0),
-		}, 0.74, 0.1)
+		}, 0.84, 0.1)
 		limb("wingHigh" .. side, {
 			color = wind,
 			width0 = 0.2 * H,
@@ -1047,7 +1048,7 @@ local function sylphSpirit(plan: SaintPlan.Plan): Spirit
 			texture = SMOKE,
 			speed = 5,
 			length = 26,
-		}, 0.84, 0.18)
+		}, 0.9, 0.18)
 		limb("wingLow" .. side, {
 			color = wind,
 			width0 = 0.16 * H,
@@ -1056,7 +1057,7 @@ local function sylphSpirit(plan: SaintPlan.Plan): Spirit
 			texture = SMOKE,
 			speed = 5,
 			length = 26,
-		}, 0.86, 0.15)
+		}, 0.92, 0.15)
 	end
 	for i = 1, 3 do
 		limb("hair" .. i, {
@@ -1067,7 +1068,7 @@ local function sylphSpirit(plan: SaintPlan.Plan): Spirit
 			texture = SMOKE,
 			speed = 6 + i,
 			length = 18,
-		}, 0.72, 0.14)
+		}, 0.82, 0.14)
 	end
 	local halo = softRing({
 		color = ColorSequence.new(STAR_WHITE, STAR),
@@ -1078,7 +1079,7 @@ local function sylphSpirit(plan: SaintPlan.Plan): Spirit
 	table.insert(made, halo.hub)
 	local core = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.new(plan.center) })
 	table.insert(made, core)
-	local glow = Soft.glow(core, WIND_WHITE, 0.3 * H, 0.82)
+	local glow = Soft.glow(core, WIND_WHITE, 0.3 * H, 0.88)
 
 	local shown, target = 0, 1 -- faded in
 	local raise, raiseTarget = 0, 0 -- arms open to arms over her head
@@ -1136,7 +1137,7 @@ local function sylphSpirit(plan: SaintPlan.Plan): Spirit
 				NumberSequence.new({ key(0, 1 - (1 - limb_.base) * a), key(1, 1 - (1 - limb_.base) * a * 0.6) })
 		end
 		for _, beam in halo.beams do
-			beam.Transparency = NumberSequence.new(1 - 0.8 * a)
+			beam.Transparency = NumberSequence.new(1 - 0.5 * a)
 		end
 		glow.Enabled = a > 0.05
 	end
@@ -1181,48 +1182,6 @@ local function sylphSpirit(plan: SaintPlan.Plan): Spirit
 	return spirit
 end
 
--- Manga focus lines: thin streaks of light rushing in toward the middle of
--- the screen for a moment (for whoever's watching it from the cutscene).
-local function focusLines(duration: number)
-	local playerGui = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
-	if not playerGui then
-		return
-	end
-	local viewport = workspace.CurrentCamera.ViewportSize
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "FocusLines"
-	gui.IgnoreGuiInset = true
-	gui.ResetOnSpawn = false
-	gui.DisplayOrder = 45 -- under the letterbox bars
-	gui.Parent = playerGui
-	local half = viewport.Magnitude / 2
-	local lines: { Frame } = {}
-	for i = 1, 56 do
-		local angle = (i / 56) * math.pi * 2 + math.random() * 0.08
-		local length = half * (0.55 + math.random() * 0.35)
-		local reach = half * (0.42 + math.random() * 0.2) + length / 2
-		local line = Instance.new("Frame")
-		line.AnchorPoint = Vector2.new(0.5, 0.5)
-		line.Position =
-			UDim2.fromOffset(viewport.X / 2 + math.cos(angle) * reach, viewport.Y / 2 + math.sin(angle) * reach)
-		line.Size = UDim2.fromOffset(length, 1 + math.random() * 3)
-		line.Rotation = math.deg(angle)
-		line.BackgroundColor3 = if i % 7 == 0 then STAR else Color3.new(1, 1, 1)
-		line.BorderSizePixel = 0
-		line.BackgroundTransparency = 0.1
-		local gradient = Instance.new("UIGradient")
-		-- Faint where it starts nearest the middle, solid at the edge.
-		gradient.Transparency = NumberSequence.new({ key(0, 1), key(0.45, 0.4), key(1, 0) })
-		gradient.Parent = line
-		line.Parent = gui
-		table.insert(lines, line)
-	end
-	for _, line in lines do
-		U.tween(line, duration, { BackgroundTransparency = 1 })
-	end
-	task.delay(duration + 0.05, gui.Destroy, gui)
-end
-
 local function play(data, character: Model, root: BasePart, context: Context)
 	local anims = context.anims
 	local target: Model? = data.target
@@ -1244,6 +1203,11 @@ local function play(data, character: Model, root: BasePart, context: Context)
 	-- The path starts where his body is (raised by his hover), so his hover
 	-- goes at the same moment and he doesn't move.
 	PoseAnimator.SettleLift(character, times.Length)
+
+	-- All of it sheer: every piece of wind and light made while it plays is
+	-- that much more see-through, so the two of them show through it.
+	local unsheer = Soft.sheer(SHEER)
+	task.delay(times.Length + 0.3, unsheer)
 
 	-- Both of them stay readable through everything.
 	outline(character, WIND_WHITE, times.Length)
@@ -1825,7 +1789,7 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			sky.flare()
 		end
 		if mine then
-			focusLines(0.35)
+			Soft.focusLines(0.35)
 		end
 	end)
 	task.delay(times.Burst, function()
@@ -1833,7 +1797,7 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			sky.scatter()
 		end
 		if mine then
-			focusLines(0.3)
+			Soft.focusLines(0.3)
 		end
 	end)
 	task.delay(times.Length, function()

@@ -21,6 +21,7 @@ local PoseAnimator = require(script.Parent.Parent.PoseAnimator)
 local VFX = require(script.Parent.Parent.VFX)
 local Saint = require(script.Saint)
 local Soft = require(script.Parent.Parent.Soft)
+local Waltz = require(script.Waltz)
 
 type Animation = PoseAnimator.Animation
 type Star = Soft.Star
@@ -3271,7 +3272,7 @@ end
 -- wind, afterimages behind him. Caught, three cuts in a blur, each a
 -- crescent of wind through them, then a thrust that runs a seam of wind
 -- straight through them.
-type LongSword = { stop: () -> () }
+type LongSword = { stop: () -> (), hold: (number) -> (), point: () -> Vector3 }
 local longSwords: { [Model]: LongSword } = {}
 
 local function longSword(character: Model, duration: number): LongSword
@@ -3339,9 +3340,10 @@ local function longSword(character: Model, duration: number): LongSword
 	sweep.LightInfluence = 0
 	sweep.Parent = hub
 	local alive = true
-	every(duration, function()
+	local untilTime = os.clock() + duration
+	every(math.huge, function()
 		local arm = character:FindFirstChild("Right Arm") :: BasePart?
-		if not alive or not arm then
+		if not alive or not arm or os.clock() > untilTime then
 			return false
 		end
 		-- The same grip as his sword of wind (see the look below).
@@ -3366,8 +3368,24 @@ local function longSword(character: Model, duration: number): LongSword
 			fadeBeams(beams, 0.2, { hub })
 		end
 	end
+	-- Keeps it out at least `seconds` longer.
+	function sword.hold(seconds: number)
+		untilTime = math.max(untilTime, os.clock() + seconds)
+	end
+	function sword.point(): Vector3
+		return point.WorldPosition
+	end
 	return sword
 end
+
+local waltzContext: Waltz.Context = {
+	anims = ANIMS,
+	play = play,
+	sword = function(character: Model): LongSword?
+		return longSwords[character]
+	end,
+}
+local waltzStops: { [Model]: () -> () } = setmetatable({}, { __mode = "k" }) :: any
 
 function handlers.SpiritOfZephyrus(data, character, root)
 	local phase = data.phase
@@ -3377,7 +3395,7 @@ function handlers.SpiritOfZephyrus(data, character, root)
 		if old then
 			old.stop()
 		end
-		longSwords[character] = longSword(character, data.duration + 1)
+		longSwords[character] = longSword(character, data.duration + 0.4)
 		local direction: Vector3 = data.direction
 		windPuff(root.Position - UP * 2.4, 3, -direction)
 		windRing(root.Position, direction, 1, 6, 0.3)
@@ -3401,90 +3419,23 @@ function handlers.SpiritOfZephyrus(data, character, root)
 			U.speedLines(root, direction, data.duration, WIND_WHITE)
 			CameraShake.FovKick(8)
 		end
-	elseif phase == "Catch" then
-		local targetRoot = U.getRoot(data.target)
-		if targetRoot then
-			U.flash(targetRoot.Position, WIND_WHITE, 3, 0.1)
-			windRing(targetRoot.Position, root.CFrame.LookVector, 1, 7, 0.25)
-			windPuff(targetRoot.Position, 3, root.CFrame.LookVector)
+	elseif phase == "Waltz" then
+		-- Caught: the waltz of the west wind (the Waltz module).
+		local stop = Waltz.Play(waltzContext, data, character, root)
+		if stop then
+			waltzStops[character] = stop
 		end
-	elseif phase == "Cut" then
-		local index: number = data.index or 1
-		play(character, if index % 2 == 1 then ANIMS.SaintCut else ANIMS.SaintCutBack)
-		local targetRoot = U.getRoot(data.target)
-		if targetRoot then
-			local at = targetRoot.Position
-			local side = root.CFrame.RightVector * (if index % 2 == 1 then 1 else -1)
-			local tilt = UP * (index - 2) * 1.5
-			local slash =
-				windSlash(at + side * 3.6 + tilt, at - side * 3.6 - tilt, root.CFrame.LookVector * 1.4 + UP * 0.4, 0.7)
-			task.delay(0.15, slash.fade, 0.25)
-			twinkle(at, 3, WIND, 0.18)
-			lightRing(at, side, 0.4, 4, 0.2, WIND_WHITE)
-			windPuff(at, 2, side)
-			U.burst(at, {
-				color = WIND_WHITE,
-				count = 8,
-				size = 0.4,
-				speed = NumberRange.new(24, 50),
-				lifetime = NumberRange.new(0.1, 0.25),
-				streaks = true,
-				spread = 40,
-				direction = side,
-			})
-			U.highlight(data.target, WIND_WHITE, 0.08, 0.6)
-			if involves(data, character) then
-				CameraShake.Add(0.06)
-			end
+	elseif phase == "Abort" then
+		-- Cut short (one of them went down).
+		local stop = waltzStops[character]
+		waltzStops[character] = nil
+		if stop then
+			stop()
 		end
-	elseif phase == "Thrust" then
-		play(character, ANIMS.ZephyrusThrust)
-		local direction: Vector3 = data.direction
-		local targetRoot = U.getRoot(data.target)
-		local through = if targetRoot then targetRoot.Position else root.Position + direction * 4
-		local from = through - direction * 4
-		local a, b = worldAnchor(from, direction), worldAnchor(from + direction * 16, direction)
-		local beams = {
-			softBeam(a, b, {
-				color = ColorSequence.new(STAR_WHITE, WIND_WHITE),
-				width0 = 0.8,
-				width1 = 0.1,
-				transparency = NumberSequence.new({ key(0, 0.05), key(1, 0.6) }),
-			}),
-			softBeam(a, b, {
-				color = ColorSequence.new(WIND_WHITE, WIND),
-				width0 = 4,
-				width1 = 1,
-				transparency = NumberSequence.new({ key(0, 0.5), key(1, 0.9) }),
-				texture = SMOKE,
-				speed = 6,
-				length = 8,
-			}),
-		}
-		task.delay(0.12, fadeBeams, beams, 0.3, { a, b })
-		windRing(through, direction, 1, 9, 0.3)
-		U.shockwave(through, WIND, 1, 12, 0.3)
-		windPuff(through + direction * 2, 4, direction)
-		twinkle(through, 6, WIND, 0.25)
-		streaks(through + direction, 16, 90, direction, 25)
-		-- The air rings out behind them along the thrust.
-		for i = 1, 4 do
-			task.delay(i * 0.03, function()
-				local at = through + direction * (i * 3)
-				lightRing(at, direction, 0.5, 3 + i, 0.25, WIND_WHITE)
-				windRing(at, direction, 0.5, 4 + i, 0.3)
-			end)
-		end
-		task.delay(0.35, function()
-			local sword = longSwords[character]
-			if sword then
-				longSwords[character] = nil
-				sword.stop()
-			end
-		end)
-		if involves(data, character) then
-			CameraShake.Add(0.2)
-			CameraShake.FovKick(6)
+		local sword = longSwords[character]
+		if sword then
+			longSwords[character] = nil
+			sword.stop()
 		end
 	elseif phase == "Whiff" then
 		windPuff(root.Position + root.CFrame.LookVector * 3, 2)

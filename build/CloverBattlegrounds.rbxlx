@@ -2200,13 +2200,156 @@ return TempestDive
 ]]></string>
         </Properties>
       </Item>
+      <Item class="ModuleScript" referent="18">
+        <Properties>
+          <string name="Name">Zephyrus</string>
+          <string name="Source"><![CDATA[--[[
+	Zephyrus
+	Spirit of Zephyrus (Full-Crown 2), once the lunge has caught them: the
+	waltz of the west wind, about 1.3 seconds. The wind holds them up off
+	the ground while he whirls round them twice at a blur, cutting them
+	every half turn, his ghosts left behind him all the way round; then he
+	swings back out in front of them and runs them through: his sword of
+	wind shoots out into a spear of wind that blows them away.
+
+	Shared so the server (which holds them both here) and every client
+	(which draws them smoothly) agree. t = 0 is the catch. His path is one
+	smooth curve round them (out onto the circle, twice round it speeding up
+	and slowing down, out to the front, in for the thrust), always facing
+	them, leaning into the turn; nothing jumps.
+]]
+
+local Zephyrus = {}
+
+local UP = Vector3.yAxis
+
+local TURNS = 2
+local ORBIT = 0.9 -- seconds round them
+
+Zephyrus.Radius = 4.6 -- how far out he circles them
+Zephyrus.Lift = 1.6 -- how high the wind holds them (and him) up
+
+local WIND_UP = 6 -- studs out from them as he draws back for the thrust
+local THROUGH = 2.6 -- studs from them when the thrust lands
+
+local function smooth(u: number): number
+	u = math.clamp(u, 0, 1)
+	return u * u * (3 - 2 * u)
+end
+
+-- When (in seconds) the eased turn reaches `fraction` of the way round.
+local function whenAround(fraction: number): number
+	local lo, hi = 0, 1
+	for _ = 1, 40 do
+		local mid = (lo + hi) / 2
+		if smooth(mid) < fraction then
+			lo = mid
+		else
+			hi = mid
+		end
+	end
+	return (lo + hi) / 2 * ORBIT
+end
+
+-- A cut every half turn: each time he's out at their side.
+local cuts = {}
+for i = 1, TURNS * 2 do
+	table.insert(cuts, whenAround((i - 0.5) / (TURNS * 2)))
+end
+
+Zephyrus.Times = {
+	Cuts = cuts,
+	Out = ORBIT, -- round twice: he's back out in front of them
+	Thrust = 1.0, -- the thrust lands (the spear goes through them)
+	Length = 1.3, -- he's held his follow-through
+}
+
+export type Plan = {
+	center: Vector3, -- where they're held (before the wind lifts them)
+	out: Vector3, -- from them toward where he caught them (flat)
+	side: Vector3, -- a quarter turn round from `out`
+	start: number, -- how far from them he caught them
+	height: number, -- his root's height over theirs when he caught them
+}
+
+function Zephyrus.Plan(attacker: Vector3, victim: Vector3): Plan
+	local flat = Vector3.new(attacker.X - victim.X, 0, attacker.Z - victim.Z)
+	local out = if flat.Magnitude > 1e-3 then flat.Unit else Vector3.new(0, 0, 1)
+	return {
+		center = victim,
+		out = out,
+		side = UP:Cross(out).Unit,
+		start = math.max(flat.Magnitude, 1.5),
+		height = attacker.Y - victim.Y,
+	}
+end
+
+-- How far round him (radians) and how far out (studs), at `t`.
+local function around(t: number): number
+	return TURNS * 2 * math.pi * smooth(t / ORBIT)
+end
+
+local function outward(plan: Plan, t: number): number
+	local times = Zephyrus.Times
+	local r = plan.start + (Zephyrus.Radius - plan.start) * smooth(t / 0.15)
+	-- Out a little as he comes round the last time, drawing back...
+	r += (WIND_UP - Zephyrus.Radius) * smooth((t - (ORBIT - 0.14)) / 0.2)
+	-- ...then in, faster and faster, for the thrust.
+	local a = math.clamp((t - (times.Thrust - 0.1)) / 0.1, 0, 1)
+	r += (THROUGH - WIND_UP) * a * a
+	return r
+end
+
+local function lifted(t: number): number
+	return Zephyrus.Lift * smooth(t / 0.3)
+end
+
+function Zephyrus.Attacker(plan: Plan, t: number): CFrame
+	local angle = around(t)
+	local radial = plan.out * math.cos(angle) + plan.side * math.sin(angle)
+	local position = plan.center + radial * outward(plan, t) + UP * (plan.height + lifted(t))
+	-- Facing them, looking a little ahead round the turn and leaning in
+	-- toward them with the speed (the turn pulls him in).
+	local spin = 1.5 * TURNS * 2 * math.pi / ORBIT -- the fastest it goes round
+	local speed = if t < ORBIT then (6 * (t / ORBIT) * (1 - t / ORBIT)) * TURNS * 2 * math.pi / ORBIT else 0
+	local pace = speed / spin
+	local lead = math.rad(18) * pace
+	local facing = -radial * math.cos(lead) + UP:Cross(radial).Unit * math.sin(lead)
+	return CFrame.lookAt(position, position + facing) * CFrame.Angles(math.rad(-14) * pace, 0, 0)
+end
+
+-- A shove from a cut: out fast, easing back (u e^(1-u)).
+local function knock(t: number, at: number): number
+	if t <= at then
+		return 0
+	end
+	local u = (t - at) / 0.08
+	return u * math.exp(1 - u)
+end
+
+function Zephyrus.Victim(plan: Plan, t: number): CFrame
+	local position = plan.center + UP * lifted(t)
+	-- Facing where he caught them from, knocked about by each cut.
+	local roll, pitch = 0, 0
+	for i, at in Zephyrus.Times.Cuts do
+		local k = knock(t, at)
+		roll += (if i % 2 == 1 then 14 else -14) * k
+		pitch -= 8 * k
+	end
+	return CFrame.lookAt(position, position + plan.out) * CFrame.Angles(math.rad(pitch), 0, math.rad(roll))
+end
+
+return Zephyrus
+]]></string>
+        </Properties>
+      </Item>
     </Item>
   </Item>
-  <Item class="ServerScriptService" referent="18">
+  <Item class="ServerScriptService" referent="19">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Script" referent="19">
+    <Item class="Script" referent="20">
       <Properties>
         <string name="Name">Server</string>
         <token name="RunContext">0</token>
@@ -2240,7 +2383,7 @@ CharacterLoader.Start()
 Dummies.Start()
 ]]></string>
       </Properties>
-      <Item class="ModuleScript" referent="20">
+      <Item class="ModuleScript" referent="21">
         <Properties>
           <string name="Name">CharacterLoader</string>
           <string name="Source"><![CDATA[--[[
@@ -2335,7 +2478,7 @@ return CharacterLoader
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="21">
+      <Item class="ModuleScript" referent="22">
         <Properties>
           <string name="Name">CombatService</string>
           <string name="Source"><![CDATA[--[[
@@ -3883,7 +4026,7 @@ return CombatService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="22">
+      <Item class="ModuleScript" referent="23">
         <Properties>
           <string name="Name">Dummies</string>
           <string name="Source"><![CDATA[--[[
@@ -4041,7 +4184,7 @@ return Dummies
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="23">
+      <Item class="ModuleScript" referent="24">
         <Properties>
           <string name="Name">Hitbox</string>
           <string name="Source"><![CDATA[--[[
@@ -4142,11 +4285,11 @@ return Hitbox
 ]]></string>
         </Properties>
       </Item>
-      <Item class="Folder" referent="24">
+      <Item class="Folder" referent="25">
         <Properties>
           <string name="Name">Kits</string>
         </Properties>
-        <Item class="ModuleScript" referent="25">
+        <Item class="ModuleScript" referent="26">
           <Properties>
             <string name="Name">AntiMagic</string>
             <string name="Source"><![CDATA[--[[
@@ -6272,7 +6415,7 @@ return Kit
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="26">
+        <Item class="ModuleScript" referent="27">
           <Properties>
             <string name="Name">Wind</string>
             <string name="Source"><![CDATA[--[[
@@ -6332,6 +6475,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
 local SaintPlan = require(ReplicatedStorage:WaitForChild("Shared").SaintZephyr)
 local DivePlan = require(ReplicatedStorage:WaitForChild("Shared").TempestDive)
+local WaltzPlan = require(ReplicatedStorage:WaitForChild("Shared").Zephyrus)
 local Projectile = require(script.Parent.Parent.Projectile)
 
 local KIT_ID = "Wind"
@@ -7278,16 +7422,16 @@ end
 --[[
 	Spirit of Zephyrus (Full-Crown 2, the west wind): his sword of wind grows
 	long and he lunges at whoever he's facing on a burst of wind (steerable).
-	Caught, they're cut three times in a blur of wind, held in front of him,
-	and run through with a thrust that blows them away. From the air the
-	lunge dives at them.
+	Caught, it's the waltz of the west wind (Shared/Zephyrus, a cutscene for
+	the two of them, about 1.3s): the wind holds them up while he whirls
+	round them twice, cutting them every half turn, then he swings out in
+	front of them and runs them through with a spear of wind that blows
+	them away. From the air the lunge dives at them, and the waltz happens
+	up there.
 ]]
 local LUNGE_SPEED = 100
 local LUNGE_TIME = 0.34
 local LUNGE_STEER = 180
-local LUNGE_CUTS = { 0.12, 0.24, 0.36 } -- after the catch
-local LUNGE_THRUST = 0.52
-local LUNGE_HOLD = 3.6 -- studs in front of him while he cuts
 
 local function spiritOfZephyrus(ctx)
 	local c, character = ctx.combat, ctx.character
@@ -7329,60 +7473,82 @@ local function spiritOfZephyrus(ctx)
 		return
 	end
 	c.ApplyVelocity(character, Vector3.zero, 0.05)
-	forward = look(ctx)
 	if c.Hit(character, target, { damage = 3, stun = 1.4, attackType = "Melee" }) ~= "Hit" then
 		fx(ctx, "SpiritOfZephyrus", "Whiff")
 		CombatState.SetCasting(character, 0.4)
 		return
 	end
-
-	-- The cuts, held in front of him in a blur of wind, then the thrust.
-	CombatState.SetCasting(character, LUNGE_THRUST + 0.3)
-	fx(ctx, "SpiritOfZephyrus", "Catch", { target = target })
 	local caught = target :: Model
-	local started = os.clock()
-	local function pull(): Vector3
-		local targetRoot = rootOf(caught)
-		if not targetRoot then
-			return Vector3.zero
-		end
-		local offset = ctx.root.Position + forward * LUNGE_HOLD - targetRoot.Position
-		local flat = Vector3.new(offset.X, 0, offset.Z) / 0.12
-		return if flat.Magnitude > 30 then flat.Unit * 30 else flat
-	end
-	for index, at in LUNGE_CUTS do
-		task.wait(math.max(at - (os.clock() - started), 0))
-		if interrupted(ctx) or not CombatState.IsAlive(caught) then
-			return
-		end
-		local hit = c.Hit(character, caught, {
-			damage = 1.5,
-			stun = 1,
-			attackType = "Melee",
-			noShake = true,
-			velocity = pull(),
-			velocityTime = 0.12,
-		})
-		if hit ~= "Hit" then
-			return
-		end
-		fx(ctx, "SpiritOfZephyrus", "Cut", { target = caught, index = index })
-	end
-	task.wait(math.max(LUNGE_THRUST - (os.clock() - started), 0))
-	if interrupted(ctx) or not CombatState.IsAlive(caught) then
+	local caughtRoot = rootOf(caught)
+	if not caughtRoot then
 		return
 	end
-	fx(ctx, "SpiritOfZephyrus", "Thrust", { target = caught, direction = forward })
+
+	-- The waltz: both of them on the paths, the cuts and the thrust on time.
+	local plan = WaltzPlan.Plan(ctx.root.Position, caughtRoot.Position)
+	local times = WaltzPlan.Times
+	CombatState.SetCasting(character, times.Length + 0.2)
+	CombatState.GiveIFrames(character, times.Length)
+	CombatState.Stun(caught, times.Length + 0.4)
+	fx(ctx, "SpiritOfZephyrus", "Waltz", {
+		target = caught,
+		attacker = ctx.root.Position,
+		victim = caughtRoot.Position,
+	})
+	local stopHim = c.Cutscene({
+		[character] = function(t)
+			return WaltzPlan.Attacker(plan, t)
+		end,
+	}, times.Length)
+	local stopThem = c.Cutscene({
+		[caught] = function(t)
+			return WaltzPlan.Victim(plan, t)
+		end,
+	}, times.Thrust)
+	local started = os.clock()
+	local function waitUntil(at: number): boolean
+		task.wait(math.max(at - (os.clock() - started), 0))
+		return CombatState.IsAlive(character) and CombatState.IsAlive(caught)
+	end
+	local function abort()
+		stopThem()
+		stopHim()
+		fx(ctx, "SpiritOfZephyrus", "Abort", { target = caught })
+	end
+	for _, at in times.Cuts do
+		if not waitUntil(at) then
+			abort()
+			return
+		end
+		-- (The waltz is their reaction; the camera stays still.)
+		c.Hit(character, caught, {
+			damage = 1.2,
+			stun = 1.2,
+			attackType = "Melee",
+			unblockable = true,
+			noShake = true,
+			noReaction = true,
+		})
+	end
+	if not waitUntil(times.Thrust) then
+		abort()
+		return
+	end
+	-- Run through: blown away from him, through where he caught them.
+	stopThem()
 	c.Hit(character, caught, {
-		damage = 4,
+		damage = 4.5,
 		stun = 1,
 		attackType = "Melee",
+		unblockable = true,
 		heavy = true,
-		ragdoll = 1,
-		velocity = forward * 65 + UP * 18,
+		ragdoll = 1.2,
+		noShake = true,
+		velocity = -plan.out * 70 + UP * 22,
 	})
-	c.ShakeArea(ctx.root.Position, 40, 0.3)
-	CombatState.SetCasting(character, 0.3)
+	waitUntil(times.Length)
+	stopHim()
+	CombatState.SetCasting(character, 0.25)
 end
 
 -- Spirit of Euros: a recurve bow of wind, drawn while the wind spirals into
@@ -7636,7 +7802,7 @@ return Kit
           </Properties>
         </Item>
       </Item>
-      <Item class="ModuleScript" referent="27">
+      <Item class="ModuleScript" referent="28">
         <Properties>
           <string name="Name">Projectile</string>
           <string name="Source"><![CDATA[--[[
@@ -7732,7 +7898,7 @@ return Projectile
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="28">
+      <Item class="ModuleScript" referent="29">
         <Properties>
           <string name="Name">Ragdoll</string>
           <string name="Source"><![CDATA[--[[
@@ -8028,16 +8194,16 @@ return Ragdoll
       </Item>
     </Item>
   </Item>
-  <Item class="StarterPlayer" referent="29">
+  <Item class="StarterPlayer" referent="30">
     <Properties>
       <string name="Name">StarterPlayer</string>
       <bool name="EnableMouseLockOption">false</bool>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="30">
+    <Item class="StarterPlayerScripts" referent="31">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="LocalScript" referent="31">
+      <Item class="LocalScript" referent="32">
         <Properties>
           <string name="Name">Client</string>
           <string name="Source"><![CDATA[--[[
@@ -8068,7 +8234,7 @@ ShiftLock.Start()
 TopBar.Start()
 ]]></string>
         </Properties>
-        <Item class="ModuleScript" referent="32">
+        <Item class="ModuleScript" referent="33">
           <Properties>
             <string name="Name">CameraShake</string>
             <string name="Source"><![CDATA[--[[
@@ -8134,7 +8300,7 @@ return CameraShake
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="33">
+        <Item class="ModuleScript" referent="34">
           <Properties>
             <string name="Name">Cinematic</string>
             <string name="Source"><![CDATA[--[[
@@ -8416,7 +8582,7 @@ return Cinematic
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="34">
+        <Item class="ModuleScript" referent="35">
           <Properties>
             <string name="Name">HUD</string>
             <string name="Source"><![CDATA[--[[
@@ -8981,7 +9147,7 @@ return HUD
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="35">
+        <Item class="ModuleScript" referent="36">
           <Properties>
             <string name="Name">Input</string>
             <string name="Source"><![CDATA[--[[
@@ -9579,11 +9745,11 @@ return Input
 ]]></string>
           </Properties>
         </Item>
-        <Item class="Folder" referent="36">
+        <Item class="Folder" referent="37">
           <Properties>
             <string name="Name">Kits</string>
           </Properties>
-          <Item class="ModuleScript" referent="37">
+          <Item class="ModuleScript" referent="38">
             <Properties>
               <string name="Name">AntiMagic</string>
               <string name="Source"><![CDATA[--[[
@@ -15566,7 +15732,7 @@ end)
 return Kit
 ]]></string>
             </Properties>
-            <Item class="ModuleScript" referent="38">
+            <Item class="ModuleScript" referent="39">
               <Properties>
                 <string name="Name">Animations</string>
                 <string name="Source"><![CDATA[--[[
@@ -21683,7 +21849,7 @@ return Animations
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="39">
+            <Item class="ModuleScript" referent="40">
               <Properties>
                 <string name="Name">Ascent</string>
                 <string name="Source"><![CDATA[--[[
@@ -22089,7 +22255,7 @@ return Ascent
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="40">
+            <Item class="ModuleScript" referent="41">
               <Properties>
                 <string name="Name">Comet</string>
                 <string name="Source"><![CDATA[--[[
@@ -22729,7 +22895,7 @@ return Comet
               </Properties>
             </Item>
           </Item>
-          <Item class="ModuleScript" referent="41">
+          <Item class="ModuleScript" referent="42">
             <Properties>
               <string name="Name">Wind</string>
               <string name="Source"><![CDATA[--[[
@@ -22755,6 +22921,7 @@ local PoseAnimator = require(script.Parent.Parent.PoseAnimator)
 local VFX = require(script.Parent.Parent.VFX)
 local Saint = require(script.Saint)
 local Soft = require(script.Parent.Parent.Soft)
+local Waltz = require(script.Waltz)
 
 type Animation = PoseAnimator.Animation
 type Star = Soft.Star
@@ -26005,7 +26172,7 @@ end
 -- wind, afterimages behind him. Caught, three cuts in a blur, each a
 -- crescent of wind through them, then a thrust that runs a seam of wind
 -- straight through them.
-type LongSword = { stop: () -> () }
+type LongSword = { stop: () -> (), hold: (number) -> (), point: () -> Vector3 }
 local longSwords: { [Model]: LongSword } = {}
 
 local function longSword(character: Model, duration: number): LongSword
@@ -26073,9 +26240,10 @@ local function longSword(character: Model, duration: number): LongSword
 	sweep.LightInfluence = 0
 	sweep.Parent = hub
 	local alive = true
-	every(duration, function()
+	local untilTime = os.clock() + duration
+	every(math.huge, function()
 		local arm = character:FindFirstChild("Right Arm") :: BasePart?
-		if not alive or not arm then
+		if not alive or not arm or os.clock() > untilTime then
 			return false
 		end
 		-- The same grip as his sword of wind (see the look below).
@@ -26100,8 +26268,24 @@ local function longSword(character: Model, duration: number): LongSword
 			fadeBeams(beams, 0.2, { hub })
 		end
 	end
+	-- Keeps it out at least `seconds` longer.
+	function sword.hold(seconds: number)
+		untilTime = math.max(untilTime, os.clock() + seconds)
+	end
+	function sword.point(): Vector3
+		return point.WorldPosition
+	end
 	return sword
 end
+
+local waltzContext: Waltz.Context = {
+	anims = ANIMS,
+	play = play,
+	sword = function(character: Model): LongSword?
+		return longSwords[character]
+	end,
+}
+local waltzStops: { [Model]: () -> () } = setmetatable({}, { __mode = "k" }) :: any
 
 function handlers.SpiritOfZephyrus(data, character, root)
 	local phase = data.phase
@@ -26111,7 +26295,7 @@ function handlers.SpiritOfZephyrus(data, character, root)
 		if old then
 			old.stop()
 		end
-		longSwords[character] = longSword(character, data.duration + 1)
+		longSwords[character] = longSword(character, data.duration + 0.4)
 		local direction: Vector3 = data.direction
 		windPuff(root.Position - UP * 2.4, 3, -direction)
 		windRing(root.Position, direction, 1, 6, 0.3)
@@ -26135,90 +26319,23 @@ function handlers.SpiritOfZephyrus(data, character, root)
 			U.speedLines(root, direction, data.duration, WIND_WHITE)
 			CameraShake.FovKick(8)
 		end
-	elseif phase == "Catch" then
-		local targetRoot = U.getRoot(data.target)
-		if targetRoot then
-			U.flash(targetRoot.Position, WIND_WHITE, 3, 0.1)
-			windRing(targetRoot.Position, root.CFrame.LookVector, 1, 7, 0.25)
-			windPuff(targetRoot.Position, 3, root.CFrame.LookVector)
+	elseif phase == "Waltz" then
+		-- Caught: the waltz of the west wind (the Waltz module).
+		local stop = Waltz.Play(waltzContext, data, character, root)
+		if stop then
+			waltzStops[character] = stop
 		end
-	elseif phase == "Cut" then
-		local index: number = data.index or 1
-		play(character, if index % 2 == 1 then ANIMS.SaintCut else ANIMS.SaintCutBack)
-		local targetRoot = U.getRoot(data.target)
-		if targetRoot then
-			local at = targetRoot.Position
-			local side = root.CFrame.RightVector * (if index % 2 == 1 then 1 else -1)
-			local tilt = UP * (index - 2) * 1.5
-			local slash =
-				windSlash(at + side * 3.6 + tilt, at - side * 3.6 - tilt, root.CFrame.LookVector * 1.4 + UP * 0.4, 0.7)
-			task.delay(0.15, slash.fade, 0.25)
-			twinkle(at, 3, WIND, 0.18)
-			lightRing(at, side, 0.4, 4, 0.2, WIND_WHITE)
-			windPuff(at, 2, side)
-			U.burst(at, {
-				color = WIND_WHITE,
-				count = 8,
-				size = 0.4,
-				speed = NumberRange.new(24, 50),
-				lifetime = NumberRange.new(0.1, 0.25),
-				streaks = true,
-				spread = 40,
-				direction = side,
-			})
-			U.highlight(data.target, WIND_WHITE, 0.08, 0.6)
-			if involves(data, character) then
-				CameraShake.Add(0.06)
-			end
+	elseif phase == "Abort" then
+		-- Cut short (one of them went down).
+		local stop = waltzStops[character]
+		waltzStops[character] = nil
+		if stop then
+			stop()
 		end
-	elseif phase == "Thrust" then
-		play(character, ANIMS.ZephyrusThrust)
-		local direction: Vector3 = data.direction
-		local targetRoot = U.getRoot(data.target)
-		local through = if targetRoot then targetRoot.Position else root.Position + direction * 4
-		local from = through - direction * 4
-		local a, b = worldAnchor(from, direction), worldAnchor(from + direction * 16, direction)
-		local beams = {
-			softBeam(a, b, {
-				color = ColorSequence.new(STAR_WHITE, WIND_WHITE),
-				width0 = 0.8,
-				width1 = 0.1,
-				transparency = NumberSequence.new({ key(0, 0.05), key(1, 0.6) }),
-			}),
-			softBeam(a, b, {
-				color = ColorSequence.new(WIND_WHITE, WIND),
-				width0 = 4,
-				width1 = 1,
-				transparency = NumberSequence.new({ key(0, 0.5), key(1, 0.9) }),
-				texture = SMOKE,
-				speed = 6,
-				length = 8,
-			}),
-		}
-		task.delay(0.12, fadeBeams, beams, 0.3, { a, b })
-		windRing(through, direction, 1, 9, 0.3)
-		U.shockwave(through, WIND, 1, 12, 0.3)
-		windPuff(through + direction * 2, 4, direction)
-		twinkle(through, 6, WIND, 0.25)
-		streaks(through + direction, 16, 90, direction, 25)
-		-- The air rings out behind them along the thrust.
-		for i = 1, 4 do
-			task.delay(i * 0.03, function()
-				local at = through + direction * (i * 3)
-				lightRing(at, direction, 0.5, 3 + i, 0.25, WIND_WHITE)
-				windRing(at, direction, 0.5, 4 + i, 0.3)
-			end)
-		end
-		task.delay(0.35, function()
-			local sword = longSwords[character]
-			if sword then
-				longSwords[character] = nil
-				sword.stop()
-			end
-		end)
-		if involves(data, character) then
-			CameraShake.Add(0.2)
-			CameraShake.FovKick(6)
+		local sword = longSwords[character]
+		if sword then
+			longSwords[character] = nil
+			sword.stop()
 		end
 	elseif phase == "Whiff" then
 		windPuff(root.Position + root.CFrame.LookVector * 3, 2)
@@ -27130,7 +27247,7 @@ end
 return Kit
 ]]></string>
             </Properties>
-            <Item class="ModuleScript" referent="42">
+            <Item class="ModuleScript" referent="43">
               <Properties>
                 <string name="Name">Animations</string>
                 <string name="Source"><![CDATA[--[[
@@ -29040,6 +29157,96 @@ Animations.ZephyrusThrust = {
 	},
 }
 
+-- Spirit of Zephyrus: after the waltz, drawn back in front of them, sword low at the hip.
+Animations.ZephyrusDraw = {
+	fadeIn = 0.1,
+	fadeOut = 0.1,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -32),
+				Head = rot(8, 26),
+				RightArm = limb(-22, 0, 16),
+				LeftArm = limb(78, 22),
+				RightLeg = rot(-46, 0, 10),
+				LeftLeg = rot(-12, 0, -10),
+			},
+		},
+		{
+			0.3,
+			{
+				Torso = rot(-6, -32),
+				Head = rot(8, 26),
+				RightArm = limb(-22, 0, 16),
+				LeftArm = limb(78, 22),
+				RightLeg = rot(-46, 0, 10),
+				LeftLeg = rot(-12, 0, -10),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Spirit of Zephyrus: the thrust in the air that runs them through.
+Animations.ZephyrusSkewer = {
+	fadeIn = 0.02,
+	fadeOut = 0.25,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-6, -32),
+				Head = rot(8, 26),
+				RightArm = limb(-22, 0, 16),
+				LeftArm = limb(78, 22),
+				RightLeg = rot(-46, 0, 10),
+				LeftLeg = rot(-12, 0, -10),
+			},
+		},
+		{
+			0.07,
+			{
+				Torso = rot(-34, 24),
+				Head = rot(20, -16),
+				RightArm = limb(24, 6),
+				LeftArm = limb(-46, 0, -30),
+				RightLeg = rot(-30, 0, 10),
+				LeftLeg = rot(26, 0, -10),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.18,
+			{
+				Torso = rot(-30, 20),
+				Head = rot(16, -14),
+				RightArm = limb(30, 6),
+				LeftArm = limb(-38, 0, -28),
+				RightLeg = rot(-26, 0, 10),
+				LeftLeg = rot(22, 0, -10),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.5,
+			{
+				Torso = rot(-30, 20),
+				Head = rot(16, -14),
+				RightArm = limb(30, 6),
+				LeftArm = limb(-38, 0, -28),
+				RightLeg = rot(-26, 0, 10),
+				LeftLeg = rot(22, 0, -10),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
 -- Tempest Dive: both hands raised over them at the top.
 Animations.BoreasForm = {
 	fadeOut = 0.05,
@@ -30039,7 +30246,7 @@ return Animations
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="43">
+            <Item class="ModuleScript" referent="44">
               <Properties>
                 <string name="Name">Saint</string>
                 <string name="Source"><![CDATA[--[[
@@ -30115,6 +30322,7 @@ export type Context = {
 local Saint = {}
 
 local SAINT_BLADE = 40 -- the colossal blade's length
+local SHEER = 0.4 -- how much more see-through everything in it is
 
 local function smooth(u: number): number
 	u = math.clamp(u, 0, 1)
@@ -30705,7 +30913,7 @@ local function featherFall(center: Vector3, count: number, duration: number)
 			Material = Enum.Material.ForceField,
 			Transparency = 1,
 		})
-		U.tween(feather, 0.3, { Transparency = 0.2 })
+		U.tween(feather, 0.3, { Transparency = Soft.sheerValue(0.2) })
 		local from = center + Vector3.new(math.random(-70, 70) / 10, 5 + math.random() * 7, math.random(-70, 70) / 10)
 		local life = duration * (0.7 + math.random() * 0.3)
 		every(life, function(elapsed)
@@ -30795,7 +31003,7 @@ local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
 	toSun = Vector3.new(toSun.X, math.max(toSun.Y, 0.1), toSun.Z).Unit
 	local sun = center + toSun * 420
 	local halos: { { part: BasePart, base: number } } = {}
-	for i, layer in { { 46, 0.25, SKY_SUN }, { 110, 0.62, SKY_GOLD }, { 210, 0.82, SKY_GOLD } } do
+	for i, layer in { { 46, 0.5, SKY_SUN }, { 110, 0.76, SKY_GOLD }, { 210, 0.9, SKY_GOLD } } do
 		local part = U.newPart({
 			Shape = Enum.PartType.Cylinder,
 			Size = Vector3.new(0.5, layer[1], layer[1]),
@@ -30820,7 +31028,7 @@ local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
 				transparency = NumberSequence.new(0),
 				emission = 1,
 			}),
-			0.86
+			0.92
 		)
 	end
 
@@ -30863,7 +31071,7 @@ local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
 				curve0 = 40,
 				curve1 = 40,
 			}),
-			0.8
+			0.88
 		)
 	end
 
@@ -30885,7 +31093,7 @@ local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
 		})
 		table.insert(made, ring.hub)
 		for _, beam in ring.beams do
-			track(beam, 0.55 + i * 0.05)
+			track(beam, 0.7 + i * 0.04)
 		end
 		table.insert(
 			swirls,
@@ -30906,7 +31114,7 @@ local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
 			length = 40,
 			segments = 20,
 		})
-		track(beam, 0.6)
+		track(beam, 0.76)
 		table.insert(arms, { from = from, to = to, beam = beam, phase = (i - 1) * math.pi / 3 })
 	end
 
@@ -30935,7 +31143,7 @@ local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
 					transparency = NumberSequence.new(0),
 					emission = 1,
 				}),
-				0.9
+				0.94
 			)
 		)
 	end
@@ -30961,7 +31169,7 @@ local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
 		end
 		for _, twinkle_ in stars do
 			local glint = 0.5 + 0.5 * math.sin(t * twinkle_.speed + twinkle_.phase)
-			twinkle_.part.Transparency = 1 - a * (0.35 + 0.65 * glint)
+			twinkle_.part.Transparency = 1 - a * (0.25 + 0.45 * glint)
 		end
 		-- The spiral turns; its arms curl in from the outer ring to the eye.
 		for _, swirl in swirls do
@@ -30985,7 +31193,7 @@ local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
 		star.place(eye, t * 0.6)
 		local glow = a * (0.25 + 0.15 * math.sin(t * 3))
 		for i, part in star.parts do
-			part.Transparency = if i == 1 then 1 - a * math.min(scale, 1) else 1 - glow * 2.4 * math.min(scale, 1)
+			part.Transparency = if i == 1 then 1 - 0.6 * a * math.min(scale, 1) else 1 - glow * 1.6 * math.min(scale, 1)
 			if i == 1 then
 				part.Size = Vector3.one * 30 * 0.32 * math.max(scale, 0.05)
 			end
@@ -31060,13 +31268,13 @@ local function sylphSpirit(plan: SaintPlan.Plan): Spirit
 		width0 = 0.09 * H,
 		width1 = 0.14 * H,
 		transparency = NumberSequence.new(0),
-	}, 0.72)
+	}, 0.82)
 	limb("head", {
 		color = ColorSequence.new(WIND_WHITE),
-		width0 = 0.085 * H,
-		width1 = 0.07 * H,
+		width0 = 0.1 * H,
+		width1 = 0.085 * H,
 		transparency = NumberSequence.new(0),
-	}, 0.66)
+	}, 0.76)
 	limb("dress", {
 		color = wind,
 		width0 = 0.17 * H,
@@ -31075,14 +31283,14 @@ local function sylphSpirit(plan: SaintPlan.Plan): Spirit
 		texture = SMOKE,
 		speed = -8,
 		length = 30,
-	}, 0.76, 0.25)
+	}, 0.86, 0.25)
 	for _, side in { "L", "R" } do
 		limb("arm" .. side, {
 			color = ColorSequence.new(WIND_WHITE),
 			width0 = 0.035 * H,
 			width1 = 0.022 * H,
 			transparency = NumberSequence.new(0),
-		}, 0.74, 0.1)
+		}, 0.84, 0.1)
 		limb("wingHigh" .. side, {
 			color = wind,
 			width0 = 0.2 * H,
@@ -31091,7 +31299,7 @@ local function sylphSpirit(plan: SaintPlan.Plan): Spirit
 			texture = SMOKE,
 			speed = 5,
 			length = 26,
-		}, 0.84, 0.18)
+		}, 0.9, 0.18)
 		limb("wingLow" .. side, {
 			color = wind,
 			width0 = 0.16 * H,
@@ -31100,7 +31308,7 @@ local function sylphSpirit(plan: SaintPlan.Plan): Spirit
 			texture = SMOKE,
 			speed = 5,
 			length = 26,
-		}, 0.86, 0.15)
+		}, 0.92, 0.15)
 	end
 	for i = 1, 3 do
 		limb("hair" .. i, {
@@ -31111,7 +31319,7 @@ local function sylphSpirit(plan: SaintPlan.Plan): Spirit
 			texture = SMOKE,
 			speed = 6 + i,
 			length = 18,
-		}, 0.72, 0.14)
+		}, 0.82, 0.14)
 	end
 	local halo = softRing({
 		color = ColorSequence.new(STAR_WHITE, STAR),
@@ -31122,7 +31330,7 @@ local function sylphSpirit(plan: SaintPlan.Plan): Spirit
 	table.insert(made, halo.hub)
 	local core = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.new(plan.center) })
 	table.insert(made, core)
-	local glow = Soft.glow(core, WIND_WHITE, 0.3 * H, 0.82)
+	local glow = Soft.glow(core, WIND_WHITE, 0.3 * H, 0.88)
 
 	local shown, target = 0, 1 -- faded in
 	local raise, raiseTarget = 0, 0 -- arms open to arms over her head
@@ -31180,7 +31388,7 @@ local function sylphSpirit(plan: SaintPlan.Plan): Spirit
 				NumberSequence.new({ key(0, 1 - (1 - limb_.base) * a), key(1, 1 - (1 - limb_.base) * a * 0.6) })
 		end
 		for _, beam in halo.beams do
-			beam.Transparency = NumberSequence.new(1 - 0.8 * a)
+			beam.Transparency = NumberSequence.new(1 - 0.5 * a)
 		end
 		glow.Enabled = a > 0.05
 	end
@@ -31225,48 +31433,6 @@ local function sylphSpirit(plan: SaintPlan.Plan): Spirit
 	return spirit
 end
 
--- Manga focus lines: thin streaks of light rushing in toward the middle of
--- the screen for a moment (for whoever's watching it from the cutscene).
-local function focusLines(duration: number)
-	local playerGui = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
-	if not playerGui then
-		return
-	end
-	local viewport = workspace.CurrentCamera.ViewportSize
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "FocusLines"
-	gui.IgnoreGuiInset = true
-	gui.ResetOnSpawn = false
-	gui.DisplayOrder = 45 -- under the letterbox bars
-	gui.Parent = playerGui
-	local half = viewport.Magnitude / 2
-	local lines: { Frame } = {}
-	for i = 1, 56 do
-		local angle = (i / 56) * math.pi * 2 + math.random() * 0.08
-		local length = half * (0.55 + math.random() * 0.35)
-		local reach = half * (0.42 + math.random() * 0.2) + length / 2
-		local line = Instance.new("Frame")
-		line.AnchorPoint = Vector2.new(0.5, 0.5)
-		line.Position =
-			UDim2.fromOffset(viewport.X / 2 + math.cos(angle) * reach, viewport.Y / 2 + math.sin(angle) * reach)
-		line.Size = UDim2.fromOffset(length, 1 + math.random() * 3)
-		line.Rotation = math.deg(angle)
-		line.BackgroundColor3 = if i % 7 == 0 then STAR else Color3.new(1, 1, 1)
-		line.BorderSizePixel = 0
-		line.BackgroundTransparency = 0.1
-		local gradient = Instance.new("UIGradient")
-		-- Faint where it starts nearest the middle, solid at the edge.
-		gradient.Transparency = NumberSequence.new({ key(0, 1), key(0.45, 0.4), key(1, 0) })
-		gradient.Parent = line
-		line.Parent = gui
-		table.insert(lines, line)
-	end
-	for _, line in lines do
-		U.tween(line, duration, { BackgroundTransparency = 1 })
-	end
-	task.delay(duration + 0.05, gui.Destroy, gui)
-end
-
 local function play(data, character: Model, root: BasePart, context: Context)
 	local anims = context.anims
 	local target: Model? = data.target
@@ -31288,6 +31454,11 @@ local function play(data, character: Model, root: BasePart, context: Context)
 	-- The path starts where his body is (raised by his hover), so his hover
 	-- goes at the same moment and he doesn't move.
 	PoseAnimator.SettleLift(character, times.Length)
+
+	-- All of it sheer: every piece of wind and light made while it plays is
+	-- that much more see-through, so the two of them show through it.
+	local unsheer = Soft.sheer(SHEER)
+	task.delay(times.Length + 0.3, unsheer)
 
 	-- Both of them stay readable through everything.
 	outline(character, WIND_WHITE, times.Length)
@@ -31869,7 +32040,7 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			sky.flare()
 		end
 		if mine then
-			focusLines(0.35)
+			Soft.focusLines(0.35)
 		end
 	end)
 	task.delay(times.Burst, function()
@@ -31877,7 +32048,7 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			sky.scatter()
 		end
 		if mine then
-			focusLines(0.3)
+			Soft.focusLines(0.3)
 		end
 	end)
 	task.delay(times.Length, function()
@@ -32435,9 +32606,380 @@ return Saint
 ]]></string>
               </Properties>
             </Item>
+            <Item class="ModuleScript" referent="45">
+              <Properties>
+                <string name="Name">Waltz</string>
+                <string name="Source"><![CDATA[--[[
+	Prince of Wind (Yuno): Spirit of Zephyrus (Full-Crown 2), the waltz of
+	the west wind, drawn. The paths are Shared/Zephyrus (the server holds
+	them both on them); this draws it, about 1.3 seconds from the catch:
+
+	  the catch  his lunge runs into them: a ring of wind bursts off them
+	             and the wind lifts them off their feet.
+	  the waltz  he whirls round them twice at a blur, a ring of his ghosts
+	             left behind him all the way round, wind spiralling up round
+	             them; every half turn a cut, his long sword of wind through
+	             them, each cut left hanging in the air round them.
+	  the spear  he swings out in front of them, draws back (the wind pours
+	             into his sword), and runs them through: the sword shoots out
+	             into a spear of wind thirty studs long, spiralling, rings of
+	             wind racing down it; every hanging cut bursts at once and
+	             they're blown away trailing wind.
+
+	Everything is see-through wind and light. The camera (for the two of
+	them) circles the other way round them, low, so the waltz sweeps past
+	it, and comes round behind him for the spear. No shake: eased zooms.
+]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local WaltzPlan = require(ReplicatedStorage:WaitForChild("Shared").Zephyrus)
+local Cinematic = require(script.Parent.Parent.Parent.Cinematic)
+local PoseAnimator = require(script.Parent.Parent.Parent.PoseAnimator)
+local Reactions = require(script.Parent.Parent.Parent.Reactions)
+local Soft = require(script.Parent.Parent.Parent.Soft)
+
+local U = Soft.U
+local rad = math.rad
+local UP = Vector3.yAxis
+local key = Soft.key
+
+local WIND, WIND_WHITE = Soft.WIND, Soft.WIND_WHITE
+local STAR, STAR_WHITE = Soft.STAR, Soft.STAR_WHITE
+local SMOKE = Soft.SMOKE
+
+type Animation = PoseAnimator.Animation
+type Sword = { hold: (number) -> (), point: () -> Vector3 }
+
+-- What the kit lends this module.
+export type Context = {
+	anims: { [string]: Animation },
+	play: (Model, Animation) -> (),
+	sword: (Model) -> Sword?, -- his long sword of wind, out since the lunge
+}
+
+local Waltz = {}
+
+local function smooth(u: number): number
+	u = math.clamp(u, 0, 1)
+	return u * u * (3 - 2 * u)
+end
+
+-- Draws it (t = 0 now). Returns stop(), which cuts it short.
+function Waltz.Play(ctx: Context, data, character: Model, root: BasePart): (() -> ())?
+	if typeof(data.attacker) ~= "Vector3" or typeof(data.victim) ~= "Vector3" then
+		return nil
+	end
+	local times = WaltzPlan.Times
+	local plan = WaltzPlan.Plan(data.attacker, data.victim)
+	local victim: Model? = if typeof(data.target) == "Instance" and data.target:IsA("Model") then data.target else nil
+	local victimRoot = U.getRoot(victim)
+	local mine = U.isLocal(character) or U.isLocal(victim)
+	local started = os.clock()
+	local finished = false
+	local through = -plan.out -- the way the spear goes
+
+	local function at(time: number, fn: () -> ())
+		task.delay(math.max(time - (os.clock() - started), 0), function()
+			if not finished and character.Parent then
+				fn()
+			end
+		end)
+	end
+	local function them(t: number): Vector3
+		return WaltzPlan.Victim(plan, math.min(t, times.Thrust)).Position
+	end
+
+	-- Both of them on the paths.
+	local bind = "CloverZephyrWaltz" .. tostring(started)
+	local stop: () -> ()
+	function stop()
+		if finished then
+			return
+		end
+		finished = true
+		pcall(function()
+			RunService:UnbindFromRenderStep(bind)
+		end)
+	end
+	RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
+		local t = os.clock() - started
+		if t > times.Length then
+			stop()
+			return
+		end
+		if root.Parent then
+			root.CFrame = WaltzPlan.Attacker(plan, t)
+		end
+		if victimRoot and victimRoot.Parent and t <= times.Thrust then
+			victimRoot.CFrame = WaltzPlan.Victim(plan, t)
+		end
+	end)
+	task.delay(times.Length + 0.5, stop)
+	local sword = ctx.sword(character)
+	if sword then
+		sword.hold(times.Length + 0.2)
+	end
+
+	-- The catch: a ring of wind off them, and the wind lifts them.
+	local center = plan.center
+	Soft.windRing(center, plan.out, 1, 8, 0.3)
+	Soft.lightRing(center, plan.out, 0.5, 6, 0.25, WIND_WHITE)
+	Soft.twinkle(center, 5, WIND, 0.25)
+	Soft.windPuff(center, 3, through)
+	U.flash(center, WIND_WHITE, 3, 0.1)
+	if victim then
+		U.highlight(victim, WIND_WHITE, 0.1, 0.6)
+		-- Swept off their feet: flailing in the wind.
+		local flail = Reactions.Launched
+		if flail then
+			PoseAnimator.Play(victim, flail)
+		end
+	end
+
+	-- The wind round them while he whirls: two rings of wind turning with
+	-- him, ribbons spiralling up round them, a ring of light under them.
+	local rings = {
+		Soft.softRing({
+			color = ColorSequence.new(WIND_WHITE, WIND),
+			width0 = 1.6,
+			width1 = 1.6,
+			transparency = NumberSequence.new(0.55),
+			texture = SMOKE,
+			speed = 6,
+			length = 5,
+		}),
+		Soft.softRing({
+			color = ColorSequence.new(STAR_WHITE, WIND_WHITE),
+			width0 = 0.3,
+			width1 = 0.3,
+			transparency = NumberSequence.new(0.45),
+		}),
+	}
+	local stopHelix = Soft.helix(function()
+		local foot = them(os.clock() - started) - UP * 3
+		return foot, foot + UP * 8
+	end, 3.6, 3, 0.5, 1.5, 0.9, times.Out + 0.15, WIND)
+	Soft.every(times.Out + 0.15, function(elapsed)
+		local spin = WaltzPlan.Attacker(plan, math.min(elapsed, times.Out))
+		local heart = them(elapsed)
+		local grow = smooth(elapsed / 0.15)
+		local turn = math.atan2(spin.Position.Z - heart.Z, spin.Position.X - heart.X)
+		rings[1].set(CFrame.new(heart) * CFrame.Angles(0, -turn, 0), WaltzPlan.Radius * grow + 0.05)
+		rings[2].set(CFrame.new(heart - UP * 2.4) * CFrame.Angles(0, turn, 0), (WaltzPlan.Radius + 0.8) * grow + 0.05)
+		return true
+	end, function()
+		for _, ring in rings do
+			ring.fade(0.25)
+		end
+		stopHelix()
+	end)
+
+	-- Whirling round them: his ghosts left behind him all the way round, and
+	-- the wind he trails painting the circle.
+	local torso = character:FindFirstChild("Torso") :: BasePart?
+	if torso then
+		local wake = Soft.trail(torso, Vector3.new(0, 1.4, 0), Vector3.new(0, -1.4, 0), {
+			color = ColorSequence.new(WIND_WHITE, WIND),
+			transparency = NumberSequence.new({ key(0, 0.4), key(1, 1) }),
+			width = NumberSequence.new({ key(0, 1), key(1, 0.2) }),
+			lifetime = 0.45,
+			texture = SMOKE,
+		})
+		task.delay(times.Out + 0.05, Soft.endTrail, wake)
+	end
+	for i = 0, 17 do
+		at(0.06 + i * 0.045, function()
+			U.afterimage(character, WIND, 0.4)
+		end)
+	end
+
+	-- Each cut: his sword through them, the cut left hanging round them.
+	local slashes: { Soft.Slash } = {}
+	for i, when in times.Cuts do
+		at(when - 0.05, function()
+			ctx.play(character, if i % 2 == 1 then ctx.anims.SaintCut else ctx.anims.SaintCutBack)
+		end)
+		at(when, function()
+			local heart = them(when)
+			local him = WaltzPlan.Attacker(plan, when)
+			local across = UP:Cross((heart - him.Position).Unit)
+			across = if across.Magnitude > 1e-3 then across.Unit else plan.side
+			local tilt = UP * (if i % 2 == 1 then 1.4 else -1.4)
+			local slash = Soft.windSlash(
+				heart + across * 4 + tilt,
+				heart - across * 4 - tilt,
+				(heart - him.Position).Unit * 1.2 + UP * 0.3,
+				0.8
+			)
+			table.insert(slashes, slash)
+			Soft.twinkle(heart, 3, WIND, 0.18)
+			Soft.lightRing(heart, across, 0.4, 4.5, 0.2, WIND_WHITE)
+			Soft.windPuff(heart, 2, across)
+			U.burst(heart, {
+				color = WIND_WHITE,
+				count = 8,
+				size = 0.4,
+				speed = NumberRange.new(24, 50),
+				lifetime = NumberRange.new(0.1, 0.25),
+				streaks = true,
+				spread = 40,
+				direction = across,
+			})
+			if victim then
+				U.highlight(victim, WIND_WHITE, 0.08, 0.6)
+			end
+		end)
+	end
+
+	-- Out in front of them, drawn back: the wind pours into his sword.
+	at(times.Out - 0.06, function()
+		ctx.play(character, ctx.anims.ZephyrusDraw)
+		for i = 0, 6 do
+			task.delay(i * 0.015, function()
+				local current = ctx.sword(character)
+				if current then
+					Soft.inflow(current.point(), 4, WIND_WHITE)
+				end
+			end)
+		end
+		Soft.twinkle(root.Position, 4, STAR, 0.2)
+	end)
+	at(times.Thrust - 0.07, function()
+		ctx.play(character, ctx.anims.ZephyrusSkewer)
+	end)
+
+	-- The spear: his sword shoots out through them and blows them away.
+	at(times.Thrust, function()
+		local hand = WaltzPlan.Attacker(plan, times.Thrust).Position + UP * 0.3
+		local heart = them(times.Thrust)
+		local tip = heart + through * 26
+		local a, b = Soft.worldAnchor(hand, through), Soft.worldAnchor(hand, through)
+		local spear = {
+			Soft.softBeam(a, b, {
+				color = ColorSequence.new(STAR_WHITE, WIND_WHITE),
+				width0 = 1.1,
+				width1 = 0.15,
+				transparency = NumberSequence.new({ key(0, 0.1), key(1, 0.6) }),
+			}),
+			Soft.softBeam(a, b, {
+				color = ColorSequence.new(WIND_WHITE, WIND),
+				width0 = 5,
+				width1 = 1.4,
+				transparency = NumberSequence.new({ key(0, 0.55), key(1, 0.92) }),
+				texture = SMOKE,
+				speed = 14,
+				length = 10,
+			}),
+		}
+		table.insert(spear, Soft.starStream(a, b, 0.7, 16))
+		-- It shoots out, then fades.
+		Soft.every(0.07, function(elapsed)
+			Soft.aim(b, hand:Lerp(tip, smooth(elapsed / 0.07)), through)
+			return true
+		end, function()
+			Soft.aim(b, tip, through)
+			task.delay(0.12, Soft.fadeBeams, spear, 0.32, { a, b })
+		end)
+		local stopSpiral = Soft.helix(function()
+			return hand, tip
+		end, 1.4, 4, 0.3, 3, 0.5, 0.4, WIND_WHITE)
+		task.delay(0.4, stopSpiral)
+		-- Rings of wind racing down it.
+		for i = 1, 6 do
+			task.delay(i * 0.025, function()
+				local ring = hand + through * (2 + i * 4)
+				Soft.windRing(ring, through, 0.6, 3 + i * 0.8, 0.3)
+				Soft.lightRing(ring, through, 0.5, 2.5 + i * 0.7, 0.25, WIND_WHITE)
+			end)
+		end
+		-- Where it goes through them: the air bursts, every cut bursts.
+		U.flash(heart, STAR_WHITE, 5, 0.12)
+		Soft.twinkle(heart, 9, STAR, 0.3)
+		Soft.windRing(heart, through, 1, 12, 0.35)
+		U.shockwave(heart, WIND, 1, 14, 0.3)
+		Soft.windPuff(heart + through * 2, 4, through)
+		Soft.streaks(heart + through, 18, 95, through, 25)
+		for i, slash in slashes do
+			task.delay(0.02 * i, function()
+				slash.flare()
+				slash.fade(0.22)
+				Soft.twinkle(slash.apex, 3, WIND, 0.2)
+			end)
+		end
+		if victimRoot and victimRoot.Parent then
+			local comet = Soft.trail(victimRoot, Vector3.new(0, 1.2, 0), Vector3.new(0, -1.2, 0), {
+				color = ColorSequence.new(WIND_WHITE, WIND),
+				transparency = NumberSequence.new({ key(0, 0.35), key(1, 1) }),
+				width = NumberSequence.new({ key(0, 1), key(1, 0.2) }),
+				lifetime = 0.35,
+				texture = SMOKE,
+			})
+			task.delay(0.7, Soft.endTrail, comet)
+		end
+		if mine then
+			Soft.focusLines(0.3)
+		end
+	end)
+
+	if mine then
+		local release = Waltz.Camera(plan)
+		local stopDrawing = stop
+		stop = function()
+			stopDrawing()
+			release()
+		end
+	end
+	return stop
+end
+
+--[[
+	The camera: low, a little way out, going round them the other way to
+	him (so the waltz sweeps past it, fast), then round behind his shoulder
+	for the spear, watching them blown away. Each cut and the spear is an
+	eased zoom in and out; nothing shakes.
+]]
+function Waltz.Camera(plan: WaltzPlan.Plan): () -> ()
+	local times = WaltzPlan.Times
+	local function them(t: number): Vector3
+		return WaltzPlan.Victim(plan, math.min(t, times.Thrust)).Position
+	end
+	local function blow(t: number, at: number, amount: number): number
+		if t < at then
+			return 0
+		end
+		local u = (t - at) / 0.07
+		return amount * u * math.exp(1 - u)
+	end
+	return Cinematic.Camera(function(elapsed)
+		local t = math.min(elapsed, times.Length)
+		-- From beside his shoulder, round the other way to him...
+		local counter = rad(-40) - rad(40) * smooth(t / times.Out)
+		-- ...then on round behind him for the spear.
+		local behind = smooth((t - (times.Out - 0.35)) / 0.45)
+		local angle = counter + (rad(18) - counter) * behind
+		local radial = plan.out * math.cos(angle) + plan.side * math.sin(angle)
+		local heart = them(t)
+		local eye = heart + radial * (11 + 3 * behind) + UP * (0.6 + 1.6 * behind)
+		local follow = smooth((t - times.Thrust) / 0.25)
+		local focus = heart:Lerp(heart - plan.out * 8, follow) + UP * 0.4
+		local fov = 72 - 4 * behind
+		for _, cut in times.Cuts do
+			fov -= blow(t, cut, 3)
+		end
+		fov -= blow(t, times.Thrust, 9)
+		return CFrame.lookAt(eye, focus) * CFrame.Angles(0, 0, rad(3 - 5 * behind)), fov
+	end, times.Length + 0.05)
+end
+
+return Waltz
+]]></string>
+              </Properties>
+            </Item>
           </Item>
         </Item>
-        <Item class="ModuleScript" referent="44">
+        <Item class="ModuleScript" referent="46">
           <Properties>
             <string name="Name">M1Animations</string>
             <string name="Source"><![CDATA[--[[
@@ -32825,7 +33367,7 @@ return M1Animations
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="45">
+        <Item class="ModuleScript" referent="47">
           <Properties>
             <string name="Name">Moves</string>
             <string name="Source"><![CDATA[--[[
@@ -33206,7 +33748,7 @@ return Moves
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="46">
+        <Item class="ModuleScript" referent="48">
           <Properties>
             <string name="Name">PoseAnimator</string>
             <string name="Source"><![CDATA[--[[
@@ -33829,7 +34371,7 @@ return PoseAnimator
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="47">
+        <Item class="ModuleScript" referent="49">
           <Properties>
             <string name="Name">Reactions</string>
             <string name="Source"><![CDATA[--[[
@@ -34058,7 +34600,7 @@ return Reactions
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="48">
+        <Item class="ModuleScript" referent="50">
           <Properties>
             <string name="Name">ShiftLock</string>
             <string name="Source"><![CDATA[--[[
@@ -34219,7 +34761,7 @@ return ShiftLock
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="49">
+        <Item class="ModuleScript" referent="51">
           <Properties>
             <string name="Name">Soft</string>
             <string name="Source"><![CDATA[--[[
@@ -34254,6 +34796,51 @@ Soft.STAR_FIRE = Color3.fromRGB(255, 140, 40)
 
 Soft.SMOKE = U.textures.Smoke
 Soft.SPARKLE = U.textures.Spark
+
+-- Sheer: while one is in force (Soft.sheer(k) until its release), every
+-- soft piece made is that much more see-through: what would block a
+-- fraction a of the light now blocks a(1 - k). Scoped to whatever wants it
+-- (a whole cutscene), so the rest of the time nothing changes.
+local sheers: { number } = {}
+local function sheerness(): number
+	local k = 0
+	for _, value in sheers do
+		k = math.max(k, value)
+	end
+	return k
+end
+function Soft.sheer(k: number): () -> ()
+	table.insert(sheers, k)
+	local released = false
+	return function()
+		if not released then
+			released = true
+			local i = table.find(sheers, k)
+			if i then
+				table.remove(sheers, i)
+			end
+		end
+	end
+end
+local function sheerValue(transparency: number): number
+	local k = sheerness()
+	return if k > 0 then 1 - (1 - transparency) * (1 - k) else transparency
+end
+local function sheerSequence(sequence: NumberSequence): NumberSequence
+	local k = sheerness()
+	if k <= 0 then
+		return sequence
+	end
+	local points = {}
+	for _, point in sequence.Keypoints do
+		table.insert(
+			points,
+			NumberSequenceKeypoint.new(point.Time, 1 - (1 - point.Value) * (1 - k), point.Envelope * (1 - k))
+		)
+	end
+	return NumberSequence.new(points)
+end
+Soft.sheerValue = sheerValue
 
 local WIND, WIND_DEEP, WIND_WHITE = Soft.WIND, Soft.WIND_DEEP, Soft.WIND_WHITE
 local STAR, STAR_WHITE = Soft.STAR, Soft.STAR_WHITE
@@ -34318,7 +34905,7 @@ function Soft.bar(from: Vector3, to: Vector3, width: number, color: Color3, tran
 		Size = Vector3.new(width, width, length),
 		CFrame = CFrame.lookAt(from:Lerp(to, 0.5), to),
 		Color = color,
-		Transparency = transparency,
+		Transparency = sheerValue(transparency),
 	})
 end
 local bar = Soft.bar
@@ -34334,7 +34921,7 @@ function Soft.tube(from: Vector3, to: Vector3, width: number, color: Color3, tra
 		Size = Vector3.new(length, width, width),
 		CFrame = CFrame.lookAt(from:Lerp(to, 0.5), to) * CFrame.Angles(0, rad(90), 0),
 		Color = color,
-		Transparency = transparency,
+		Transparency = sheerValue(transparency),
 	})
 end
 
@@ -34356,6 +34943,7 @@ function Soft.newWedge(props: { [string]: any }): WedgePart
 	for name, value in props do
 		(wedge :: any)[name] = value
 	end
+	wedge.Transparency = sheerValue(wedge.Transparency)
 	wedge.Parent = U.folder
 	return wedge
 end
@@ -34416,6 +35004,9 @@ function Soft.makeStar(size: number, color: Color3?): Star
 		U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * size * 0.95, Color = tint, Transparency = 0.82 }),
 		CFrame.identity
 	)
+	for _, part in parts do
+		part.Transparency = sheerValue(part.Transparency)
+	end
 	local light = Instance.new("PointLight")
 	light.Color = tint
 	light.Range = size * 6
@@ -34428,7 +35019,7 @@ function Soft.makeStar(size: number, color: Color3?): Star
 	glitter.LightEmission = 1
 	glitter.LightInfluence = 0
 	glitter.Size = NumberSequence.new({ key(0, size * 0.5), key(1, 0) })
-	glitter.Transparency = NumberSequence.new({ key(0, 0.2), key(1, 1) })
+	glitter.Transparency = sheerSequence(NumberSequence.new({ key(0, 0.2), key(1, 1) }))
 	glitter.Lifetime = NumberRange.new(0.25, 0.5)
 	glitter.Rate = 10
 	glitter.Speed = NumberRange.new(0.5, 1.5)
@@ -34489,6 +35080,9 @@ function Soft.makeSprite(scale: number): Sprite
 		U.newPart({ Size = Vector3.new(0.9, 0.05, 0.5) * scale, Color = WIND, Transparency = 0.35 }),
 		U.newPart({ Size = Vector3.new(0.9, 0.05, 0.5) * scale, Color = WIND, Transparency = 0.35 }),
 	}
+	for _, part in { body, glow, wings[1], wings[2] } do
+		part.Transparency = sheerValue(part.Transparency)
+	end
 	local light = Instance.new("PointLight")
 	light.Color = WIND
 	light.Range = 6 * scale
@@ -34504,7 +35098,7 @@ function Soft.makeSprite(scale: number): Sprite
 	trail.Attachment0 = a0
 	trail.Attachment1 = a1
 	trail.Color = ColorSequence.new(WIND_WHITE, WIND)
-	trail.Transparency = NumberSequence.new({ key(0, 0.2), key(1, 1) })
+	trail.Transparency = sheerSequence(NumberSequence.new({ key(0, 0.2), key(1, 1) }))
 	trail.WidthScale = NumberSequence.new({ key(0, 1), key(1, 0) })
 	trail.Lifetime = 0.35
 	trail.LightEmission = 1
@@ -34620,7 +35214,7 @@ function Soft.softBeam(a0: Attachment, a1: Attachment, style: BeamStyle, parent:
 	beam.Color = style.color
 	beam.Width0 = style.width0
 	beam.Width1 = style.width1
-	beam.Transparency = style.transparency
+	beam.Transparency = sheerSequence(style.transparency)
 	beam.CurveSize0 = style.curve0 or 0
 	beam.CurveSize1 = style.curve1 or 0
 	beam.FaceCamera = true
@@ -34827,6 +35421,7 @@ function Soft.windEmitter(parent: Instance, props: { [string]: any }): ParticleE
 	for name, value in props do
 		(emitter :: any)[name] = value
 	end
+	emitter.Transparency = sheerSequence(emitter.Transparency)
 	emitter.Parent = parent
 	return emitter
 end
@@ -34907,7 +35502,7 @@ function Soft.twinkle(position: Vector3, size: number, color: Color3?, duration:
 	flare.LightEmission = 1
 	flare.LightInfluence = 0
 	flare.Size = NumberSequence.new({ key(0, size * 0.4), key(0.25, size), key(1, 0) })
-	flare.Transparency = NumberSequence.new({ key(0, 0), key(0.7, 0.2), key(1, 1) })
+	flare.Transparency = sheerSequence(NumberSequence.new({ key(0, 0), key(0.7, 0.2), key(1, 1) }))
 	flare.Lifetime = NumberRange.new(life)
 	flare.Speed = NumberRange.new(0)
 	flare.Rotation = NumberRange.new(-10, 10)
@@ -34920,7 +35515,7 @@ function Soft.twinkle(position: Vector3, size: number, color: Color3?, duration:
 	halo.Texture = SMOKE
 	halo.Color = ColorSequence.new(color or STAR)
 	halo.Size = NumberSequence.new({ key(0, size * 0.6), key(1, size * 1.2) })
-	halo.Transparency = NumberSequence.new({ key(0, 0.55), key(1, 1) })
+	halo.Transparency = sheerSequence(NumberSequence.new({ key(0, 0.55), key(1, 1) }))
 	halo.Parent = attachment
 	halo:Emit(1)
 	task.delay(life + 0.1, holder.Destroy, holder)
@@ -34949,7 +35544,7 @@ function Soft.trail(part: BasePart, a: Vector3, b: Vector3, style: TrailStyle): 
 	trail.Attachment0 = a0
 	trail.Attachment1 = a1
 	trail.Color = style.color
-	trail.Transparency = style.transparency
+	trail.Transparency = sheerSequence(style.transparency)
 	trail.Lifetime = style.lifetime
 	trail.WidthScale = style.width or NumberSequence.new(1)
 	trail.LightEmission = style.emission or 1
@@ -35240,11 +35835,53 @@ function Soft.windSlash(from: Vector3, to: Vector3, bend: Vector3, scale: number
 	return slash
 end
 
+-- Manga focus lines: thin streaks of light rushing in toward the middle of
+-- the screen for a moment (for whoever's watching it from the cutscene).
+function Soft.focusLines(duration: number)
+	local playerGui = game:GetService("Players").LocalPlayer:FindFirstChildOfClass("PlayerGui")
+	if not playerGui then
+		return
+	end
+	local viewport = workspace.CurrentCamera.ViewportSize
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "FocusLines"
+	gui.IgnoreGuiInset = true
+	gui.ResetOnSpawn = false
+	gui.DisplayOrder = 45 -- under the letterbox bars
+	gui.Parent = playerGui
+	local half = viewport.Magnitude / 2
+	local lines: { Frame } = {}
+	for i = 1, 56 do
+		local angle = (i / 56) * math.pi * 2 + math.random() * 0.08
+		local length = half * (0.55 + math.random() * 0.35)
+		local reach = half * (0.42 + math.random() * 0.2) + length / 2
+		local line = Instance.new("Frame")
+		line.AnchorPoint = Vector2.new(0.5, 0.5)
+		line.Position =
+			UDim2.fromOffset(viewport.X / 2 + math.cos(angle) * reach, viewport.Y / 2 + math.sin(angle) * reach)
+		line.Size = UDim2.fromOffset(length, 1 + math.random() * 3)
+		line.Rotation = math.deg(angle)
+		line.BackgroundColor3 = if i % 7 == 0 then STAR else Color3.new(1, 1, 1)
+		line.BorderSizePixel = 0
+		line.BackgroundTransparency = 0.1
+		local gradient = Instance.new("UIGradient")
+		-- Faint where it starts nearest the middle, solid at the edge.
+		gradient.Transparency = NumberSequence.new({ key(0, 1), key(0.45, 0.4), key(1, 0) })
+		gradient.Parent = line
+		line.Parent = gui
+		table.insert(lines, line)
+	end
+	for _, line in lines do
+		U.tween(line, duration, { BackgroundTransparency = 1 })
+	end
+	task.delay(duration + 0.05, gui.Destroy, gui)
+end
+
 return Soft
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="50">
+        <Item class="ModuleScript" referent="52">
           <Properties>
             <string name="Name">TopBar</string>
             <string name="Source"><![CDATA[--[[
@@ -35556,7 +36193,7 @@ return TopBar
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="51">
+        <Item class="ModuleScript" referent="53">
           <Properties>
             <string name="Name">VFX</string>
             <string name="Source"><![CDATA[--[[
@@ -36925,13 +37562,13 @@ return VFX
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="52">
+  <Item class="Workspace" referent="54">
     <Properties>
       <string name="Name">Workspace</string>
       <float name="Gravity">225</float>
       <bool name="NeedsPivotMigration">false</bool>
     </Properties>
-    <Item class="Part" referent="53">
+    <Item class="Part" referent="55">
       <Properties>
         <string name="Name">Baseplate</string>
         <bool name="Anchored">true</bool>
@@ -36950,7 +37587,7 @@ return VFX
         </Vector3>
       </Properties>
     </Item>
-    <Item class="SpawnLocation" referent="54">
+    <Item class="SpawnLocation" referent="56">
       <Properties>
         <string name="Name">SpawnLocation</string>
         <bool name="Anchored">true</bool>

@@ -179,6 +179,14 @@ LUNGE = pose(R(-28, 18), R(18, -14), L(20, 8, 0), L(-35, 0, -25), R(-55, 0, 8), 
 THRUST = pose(R(-36, 26), R(22, -18), L(26, 6, 0), L(-48, 0, -30), R(-62, 0, 8), R(52, 0, -8))
 ZEPHYRUS_LUNGE = [(0.0, STANCE), (0.08, LUNGE), (0.6, LUNGE)]
 ZEPHYRUS_THRUST = [(0.0, LUNGE), (0.06, THRUST), (0.45, THRUST)]
+# The waltz (in the air, held up by the wind): after the cuts round them he
+# draws back out in front of them, sword low at his hip, free hand aimed at
+# them, knees up; then the thrust, flat out, the free arm flung back.
+WALTZ_DRAW = pose(R(-6, -32), R(8, 26), L(-22, 0, 16), L(78, 22, 0), R(-46, 0, 10), R(-12, 0, -10))
+WALTZ_SKEWER = pose(R(-34, 24), R(20, -16), L(24, 6, 0), L(-46, 0, -30), R(-30, 0, 10), R(26, 0, -10))
+WALTZ_FOLLOW = pose(R(-30, 20), R(16, -14), L(30, 6, 0), L(-38, 0, -28), R(-26, 0, 10), R(22, 0, -10))
+ZEPHYRUS_DRAW = [(0.0, WALTZ_DRAW), (0.3, WALTZ_DRAW)]  # (eased in from the last cut by its fadeIn)
+ZEPHYRUS_SKEWER = [(0.0, WALTZ_DRAW), (0.07, WALTZ_SKEWER), (0.18, WALTZ_FOLLOW), (0.5, WALTZ_FOLLOW)]
 BOREAS_CHOP = [(0.0, BOREAS_RAISE), (0.1, BOREAS_DOWN), (0.5, BOREAS_DOWN)]
 
 # Spirit of Euros: the archer's stance again, drawn deeper and held longer;
@@ -287,6 +295,8 @@ SPEC = {
     'Notos': dict(keys=NOTOS, ease=snap(4), fadeOut=0.3, doc="Spirit of Notos: arms crossed, then flung wide."),
     'ZephyrusLunge': dict(keys=ZEPHYRUS_LUNGE, ease=[None, QUART_OUT, LINEAR], fadeIn=0.03, fadeOut=0.2, doc="Spirit of Zephyrus: the lunge, sword low and forward."),
     'ZephyrusThrust': dict(keys=ZEPHYRUS_THRUST, ease=[None, QUART_OUT, LINEAR], fadeIn=0.02, fadeOut=0.25, doc="Spirit of Zephyrus: the thrust through them."),
+    'ZephyrusDraw': dict(keys=ZEPHYRUS_DRAW, ease=[None, LINEAR], fadeIn=0.1, fadeOut=0.1, doc="Spirit of Zephyrus: after the waltz, drawn back in front of them, sword low at the hip."),
+    'ZephyrusSkewer': dict(keys=ZEPHYRUS_SKEWER, ease=[None, QUART_OUT, SINE_OUT, LINEAR], fadeIn=0.02, fadeOut=0.25, doc="Spirit of Zephyrus: the thrust in the air that runs them through."),
     'BoreasForm': dict(keys=BOREAS_FORM, ease=[None, SINE_OUT, LINEAR], fadeOut=0.05, doc="Tempest Dive: both hands raised over them at the top."),
     'BoreasChop': dict(keys=BOREAS_CHOP, ease=[None, QUAD_IN, LINEAR], fadeIn=0.01, fadeOut=0.3, doc="Tempest Dive: driving them down into the ground."),
     'EurosDraw': dict(keys=EUROS_DRAW, ease=[None, SINE_OUT, SINE_IO, LINEAR], fadeOut=0.05, doc="Spirit of Euros: drawn deep and held."),
@@ -362,7 +372,7 @@ for _name in ('Shower', 'Hawk', 'Ark', 'AirArk', 'Bow', 'Conjunction', 'Warp', '
     lively(SPEC[_name])
 
 # Played in the air (not planted, feet not checked); the run sets its own height.
-AIRBORNE = {'Air', 'AirArk', 'TempestDrag', 'HastaRain', 'HoverIdle', 'HoverMove', 'SaintCut', 'SaintCutBack', 'SaintAscend', 'SaintPoise', 'SaintRise', 'SaintStrike'}
+AIRBORNE = {'Air', 'AirArk', 'TempestDrag', 'HastaRain', 'HoverIdle', 'HoverMove', 'SaintCut', 'SaintCutBack', 'SaintAscend', 'SaintPoise', 'SaintRise', 'SaintStrike', 'ZephyrusDraw', 'ZephyrusSkewer'}
 OWN_HEIGHT = {'Run'}
 ALL = {name: spec['keys'] if name in AIRBORNE or name in OWN_HEIGHT else plant(spec['keys']) for name, spec in SPEC.items()}
 
