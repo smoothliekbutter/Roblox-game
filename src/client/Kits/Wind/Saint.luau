@@ -1215,6 +1215,29 @@ local function play(data, character: Model, root: BasePart, context: Context)
 				windRing(center, side, 2, 20, 0.4)
 				U.shockwave(center, WIND, 2, 22, 0.35)
 				starDust(center, 30, 40)
+				-- Rays of light thrown out from them every way.
+				local rays: { Beam } = {}
+				local ends: { Attachment } = {}
+				local hub = worldAnchor(center)
+				table.insert(ends, hub)
+				for k = 1, 12 do
+					local out = U.randomUnit()
+					local tip = worldAnchor(center + out * (14 + math.random() * 8), out)
+					table.insert(ends, tip)
+					table.insert(
+						rays,
+						softBeam(hub, tip, {
+							color = ColorSequence.new(STAR_WHITE, if k % 2 == 0 then STAR else WIND_WHITE),
+							width0 = 1.6,
+							width1 = 0.05,
+							transparency = NumberSequence.new({ key(0, 0.15), key(1, 0.9) }),
+						})
+					)
+				end
+				for _, ray in rays do
+					U.tween(ray, 0.3, { Width0 = 0.1 })
+				end
+				fadeBeams(rays, 0.32, ends)
 				punch(1.2, 0.35)
 				if mine or near then
 					U.colorGrade({ Brightness = 0.08, Contrast = 0.25, Saturation = -0.3 }, 0, 0.05, 0.18)
@@ -1236,6 +1259,15 @@ local function play(data, character: Model, root: BasePart, context: Context)
 				twinkle(star, 3.2, STAR, 0.22)
 				lightRing(star, (center - star).Unit, 0.3, 3, 0.25)
 				windPuff(star, 1.4)
+				-- The lines of light meeting at this star flare up and settle.
+				local count = #plan.stars
+				for _, line in { (i - 1) % count + 1, (i - 2) % count + 1 } do
+					local stream = lines[line * 2 - 1]
+					if stream.Parent then
+						stream.Width0, stream.Width1 = 1.6, 1
+						U.tween(stream, 0.3, { Width0 = 0.55, Width1 = 0.33 })
+					end
+				end
 			end)
 		end
 	end
