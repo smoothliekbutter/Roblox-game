@@ -10,7 +10,8 @@ R6 rig, then turned into Luau.
   above the floor.
 - `asta_anims.py`: the animations. Run it to print blade tip positions and
   any problems.
-- `emit.py`: writes `src/client/Kits/AntiMagic/Animations.luau`.
+- `emit.py`: writes `src/client/Kits/AntiMagic/Animations.luau` (`yuno_anims.py <path>` writes Yuno's). Both go
+  through `compact.py`: one line of text per keyframe, read back by `clip()` in the Luau.
 
 Needs Python 3 with numpy (`pip install numpy`). From the repo root:
 

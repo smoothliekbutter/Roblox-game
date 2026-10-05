@@ -1,16 +1,4 @@
---[[
-	Cinematic
-	Tools for cutscenes (e.g. Asta's Black Moon):
-	  Cinematic.Camera(shot, length)  a scripted camera for the people in the
-	      cutscene: letterbox bars slide in, the HUD hides, shift lock lets
-	      go, and shot(t) places the camera every frame. Returns finish().
-	  Cinematic.Night(fadeIn)  night falls: the sky turns to midnight, the
-	      light goes cold and dim. Returns lift(fadeOut).
-	  Cinematic.Dawn(fadeIn)  the Golden Dawn: the sun low and gold, the light
-	      warm. Returns lift(fadeOut). Settings nest (the latest one's light
-	      wins), so overlapping cutscenes don't fight over the lighting.
-	All of them always put everything back, even if the cutscene is cut short.
-]]
+-- Cutscene tools: scripted cameras, letterbox bars and scene settings (night, dawn).
 
 local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
@@ -34,9 +22,7 @@ local function tween(instance: Instance, duration: number, goals: { [string]: an
 	return t
 end
 
----------------------------------------------------------------------------
 -- Camera
----------------------------------------------------------------------------
 
 function Cinematic.Camera(shot: (number) -> (CFrame?, number?), length: number): () -> ()
 	local camera = workspace.CurrentCamera
@@ -126,13 +112,9 @@ function Cinematic.Camera(shot: (number) -> (CFrame?, number?), length: number):
 	return finish
 end
 
----------------------------------------------------------------------------
 -- Settings: the sky and the light change for a cutscene (Night, Dawn)
----------------------------------------------------------------------------
 
 local depth = 0 -- settings in force (they nest: the latest one's light wins)
--- The daylight to go back to. Kept until the fade back has finished, so a
--- setting that starts mid-fade doesn't take the half-changed sky for daylight.
 local saved: { [string]: any }? = nil
 local grade: ColorCorrectionEffect? = nil
 local generation = 0 -- bumped whenever a setting starts or lifts
@@ -157,8 +139,6 @@ local NIGHT: Preset = {
 	grade = { Saturation = -0.2, Contrast = 0.1, Brightness = 0.07, TintColor = Color3.fromRGB(224, 230, 255) },
 }
 
--- The Golden Dawn: the sun low on the horizon, the sky gold over green, the
--- light warm and bright (never dark), the haze glowing.
 local DAWN: Preset = {
 	lighting = {
 		ClockTime = 6.6,
@@ -257,8 +237,6 @@ function Cinematic.Night(fadeIn: number): (fadeOut: number?) -> ()
 	return setting(NIGHT, fadeIn)
 end
 
--- The Golden Dawn (Yuno): the sun comes up gold on the horizon, the light
--- turns warm and green-gold. Returns lift(fadeOut).
 function Cinematic.Dawn(fadeIn: number): (fadeOut: number?) -> ()
 	return setting(DAWN, fadeIn)
 end

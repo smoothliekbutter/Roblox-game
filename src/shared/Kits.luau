@@ -1,26 +1,12 @@
---[[
-	Kits
-	The character roster. Everything both sides need to know about a
-	character lives here: name, colors, M1 tuning, skills (name, cooldown,
-	attack type) and awakening. The server logic for each kit is in
-	ServerScriptService.Server.Kits, the animations and VFX in
-	StarterPlayerScripts.Client.Kits.
-
-	Attack types decide which counters work against what:
-	  Melee | Bolt | Explosion | Swarm | Zone
-]]
+-- The character roster: names, colours, M1 tuning and skills.
 
 export type SkillInfo = {
 	name: string,
 	cooldown: number,
 	type: string,
-	-- Has an air version that holds the player up: the client keeps them in
-	-- the air from the moment of the press (see Input.holdInAir).
 	airHold: boolean?,
 }
 
--- One of a character's weapons (Asta's swords): its name and the moves 1
--- and 2 it gives him while awakened.
 export type SwordInfo = {
 	name: string,
 	skills: { SkillInfo },
@@ -41,8 +27,6 @@ export type KitInfo = {
 	awakenedSkills: { SkillInfo }?,
 	-- A different R while awakened (Asta: swap to another of his swords).
 	awakenedSpecial: SkillInfo?,
-	-- Weapons that change moves 1 and 2 while awakened, by the character's
-	-- "Sword" attribute (see Kits.SkillsOf).
 	swords: { [string]: SwordInfo }?,
 	awakening: {
 		name: string,
@@ -53,11 +37,6 @@ export type KitInfo = {
 	}?,
 	-- Extra jumps in the air (Yuno rides the wind: one more).
 	airJumps: number?,
-	-- A second, stronger stage of the awakening (Yuno: Full-Crown): once
-	-- `charge` is reached in the first stage, G can be pressed again. It
-	-- charges with damage dealt, or, with `chargeByKit`, only when the kit
-	-- says so (Yuno: each landed Tempest Dive is 1). Its own moves and stats,
-	-- and the awakening's timer restarts at `duration`.
 	ascension: {
 		name: string,
 		duration: number,
@@ -106,8 +85,6 @@ Kits.List = {
 			WindUp = 0.11,
 			FinisherWindUp = 0.18,
 		},
-		-- Close-range rushdown, built like Vessel (JJS) / Hero Hunter (TSB):
-		-- rush combo, grab, timing-crit heavy, counter.
 		skills = {
 			{ name = "Bull Thrust", cooldown = 10, type = "Melee", airHold = true },
 			{ name = "Black Meteorite", cooldown = 13, type = "Melee", airHold = true },
@@ -122,9 +99,6 @@ Kits.List = {
 			{ name = "Grand Divider", cooldown = 13, type = "Explosion", airHold = true },
 			{ name = "Black Moon", cooldown = 25, type = "Melee" },
 		},
-		-- In Black Form R draws the next of his three swords from the
-		-- grimoire, in order, with no cooldown; moves 1 and 2 come from the
-		-- sword in his hand.
 		awakenedSpecial = { name = "Swap Sword", cooldown = 0, type = "Melee" },
 		swords = {
 			Slayer = {
@@ -170,9 +144,6 @@ Kits.List = {
 		},
 		-- He rides the wind: one more jump in the air, for chasing air combos.
 		airJumps = 1,
-		-- Mid-range zoner (Asta's opposite): a rain of blades to pin people
-		-- down, a homing hawk, a launcher, a six-arrow volley. Less damage
-		-- per move than Asta's sword, but from where the sword can't reach.
 		skills = {
 			{ name = "Wind Blades Shower", cooldown = 11, type = "Swarm", airHold = true },
 			{ name = "Swift White Hawk", cooldown = 8, type = "Bolt", airHold = true },
@@ -195,8 +166,6 @@ Kits.List = {
 			cooldownMultiplier = 0.85,
 			speedBonus = 4,
 		},
-		-- Full-Crown Spirit of Zephyr: G again once Tempest Dive (Half-Crown
-		-- 2) has landed twice. Stronger than Black Form, but only 30 seconds.
 		ascension = {
 			name = "Full-Crown",
 			duration = 30,

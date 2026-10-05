@@ -1,15 +1,4 @@
---[[
-	The hawk of Swift White Hawk: a bird of wind. A white-hot body in a
-	green glow, a head with a gold hooked beak, a fanned tail, and wings
-	built like a bird's (an arm and a hand, secondaries trailing off the
-	arm, primaries fanned off the hand and splaying at the tip, a bright
-	leading edge). It flaps hard, the beat rolling out to the wingtips, and
-	banks into its turns.
-
-	Laid out in its own space: -Z where it flies, X its right, Y up.
-	Hawk.Pose is plain geometry (where every piece goes); Hawk.new makes
-	the parts and Hawk.Place moves them there.
-]]
+-- Swift White Hawk's bird of wind. Pose is plain geometry (-Z where it flies); new/Place make and move the parts.
 
 local Soft = require(script.Parent.Parent.Parent.Soft)
 
@@ -34,9 +23,6 @@ export type Piece = {
 	transparency: number,
 }
 
--- Feathers on a wing: on the arm (1) or the hand (2), `at` of the way
--- along it, `angle` degrees round from straight back toward the tip;
--- `lift` puts the short coverts over the roots of the rest.
 type Feather = { bone: number, at: number, angle: number, length: number, width: number, lift: number? }
 local WING: { Feather } = {
 	{ bone = 1, at = 0.12, angle = 2, length = 1.05, width = 0.56 },
@@ -57,9 +43,6 @@ local WING: { Feather } = {
 local OUTERMOST = 9 -- (in WING: wind streams off its tip)
 local TAIL = { -28, -14, 0, 14, 28 }
 
--- Everything it's made of, in the order Pose places it: body, glow, head,
--- beak, the tail feathers, then each wing (right, left): its two bones and
--- its feathers.
 local PIECES: { Piece } = {
 	{ shape = "Feather", size = Vector3.new(0.85, 0.75, 2.3), color = WIND_WHITE, transparency = 0.12 },
 	{ shape = "Feather", size = Vector3.new(1.7, 1.5, 3.4), color = WIND, transparency = 0.72 },
@@ -91,11 +74,6 @@ function Hawk.Pieces(): { Piece }
 	return PIECES
 end
 
---[[
-	Fills `frames` (in Pieces' order) for a hawk at `frame` (-Z where it
-	flies), `phase` radians into its wingbeat, banked `bank` radians (its
-	right wing down for negative).
-]]
 function Hawk.Pose(frames: { CFrame }, frame: CFrame, phase: number, bank: number)
 	-- It rises a little on each downstroke.
 	local body = frame * CFrame.new(0, -0.1 * math.sin(phase), 0) * CFrame.Angles(0, 0, bank)
@@ -132,9 +110,7 @@ function Hawk.Pose(frames: { CFrame }, frame: CFrame, phase: number, bank: numbe
 	end
 end
 
----------------------------------------------------------------------------
 -- The parts
----------------------------------------------------------------------------
 
 export type Hawk = {
 	parts: { BasePart },
@@ -166,8 +142,6 @@ function Hawk.new(start: CFrame): Hawk
 		trails = {},
 	}
 	Hawk.Place(hawk, start, 0, 0)
-	-- A long ribbon of wind behind it, and wind off each wingtip (made once
-	-- it's in place, so they start there).
 	table.insert(
 		hawk.trails,
 		Soft.trail(parts[1], Vector3.new(0, 1, 0.4), Vector3.new(0, -1, 0.4), {

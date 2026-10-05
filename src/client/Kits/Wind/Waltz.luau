@@ -1,24 +1,4 @@
---[[
-	Prince of Wind (Yuno): Spirit of Zephyrus (Full-Crown 2), the waltz of
-	the west wind, drawn. The paths are Shared/Zephyrus (the server holds
-	them both on them); this draws it, about 1.3 seconds from the catch:
-
-	  the catch  his lunge runs into them: a ring of wind bursts off them
-	             and the wind lifts them off their feet.
-	  the waltz  he whirls round them twice at a blur, a ring of his ghosts
-	             left behind him all the way round, wind spiralling up round
-	             them; every half turn a cut, his long sword of wind through
-	             them, each cut left hanging in the air round them.
-	  the spear  he swings out in front of them, draws back (the wind pours
-	             into his sword), and runs them through: the sword shoots out
-	             into a spear of wind thirty studs long, spiralling, rings of
-	             wind racing down it; every hanging cut bursts at once and
-	             they're blown away trailing wind.
-
-	Everything is see-through wind and light. The camera (for the two of
-	them) circles the other way round them, low, so the waltz sweeps past
-	it, and comes round behind him for the spear. No shake: eased zooms.
-]]
+-- Yuno's Spirit of Zephyrus waltz (Full-Crown 2), drawn along Shared/Zephyrus's paths.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -127,8 +107,6 @@ function Waltz.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 		end
 	end
 
-	-- The wind round them while he whirls: two rings of wind turning with
-	-- him, ribbons spiralling up round them, a ring of light under them.
 	local rings = {
 		Soft.softRing({
 			color = ColorSequence.new(WIND_WHITE, WIND),
@@ -165,8 +143,6 @@ function Waltz.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 		stopHelix()
 	end)
 
-	-- Whirling round them: his ghosts left behind him all the way round, and
-	-- the wind he trails painting the circle.
 	local torso = character:FindFirstChild("Torso") :: BasePart?
 	if torso then
 		local wake = Soft.trail(torso, Vector3.new(0, 1.4, 0), Vector3.new(0, -1.4, 0), {
@@ -323,12 +299,6 @@ function Waltz.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 	return stop
 end
 
---[[
-	The camera: low, a little way out, going round them the other way to
-	him (so the waltz sweeps past it, fast), then round behind his shoulder
-	for the spear, watching them blown away. Each cut and the spear is an
-	eased zoom in and out; nothing shakes.
-]]
 function Waltz.Camera(plan: WaltzPlan.Plan): () -> ()
 	local times = WaltzPlan.Times
 	local function them(t: number): Vector3

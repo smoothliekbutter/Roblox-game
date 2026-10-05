@@ -1,13 +1,4 @@
---[[
-	CombatService
-	Server-authoritative combat: M1 strings, blocking, perfect blocks, guard
-	breaks, dashes, ragdolls, Evasive, and the character kit layer (skills,
-	cooldowns, counters, awakening, switching characters).
-
-	Players and NPCs go through the same functions, so dummies fight with
-	the real rules. Kit modules (Server/Kits/*) get this module through their
-	context and use its public API to deal hits, move people and fire VFX.
-]]
+-- Server-authoritative combat: M1s, blocking, guard breaks, dashes, ragdolls, Evasive and the kit layer.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -45,16 +36,10 @@ export type CharData = {
 	lastDamaged: number, -- last time this character took damage
 	lastCombat: number, -- last time it dealt or took a hit (blocks character switching)
 	counter: Counter?,
-	-- When each skill key was last pressed while already on cooldown. Lets a
-	-- running skill read follow-up presses (timing inputs like Black Divider).
 	skillInputs: { [number]: number },
 	-- Whether that press was made in the air (the player's own client says).
 	skillInputAir: { [number]: boolean },
-	-- Skill keys being held down right now (press to release), for moves
-	-- that do something different when held (Yuno's Nova Vortex).
 	skillHeld: { [number]: boolean },
-	-- Bumped whenever a skill, special or awakening starts, so a move that
-	-- listens for follow-ups (Anti-Magic Leap) knows another move took over.
 	moveToken: number,
 	grabbedBy: Model?,
 }
@@ -87,8 +72,6 @@ export type Context = {
 	data: CharData,
 	kit: Kits.KitInfo,
 	awakened: boolean,
-	-- In the air when the move was used (the player's own client says so,
-	-- see onAction; the server's view of them is a ping behind).
 	airborne: boolean,
 	combat: any, -- this module
 }
@@ -107,9 +90,7 @@ end
 
 local CombatService = {}
 
----------------------------------------------------------------------------
 -- Helpers
----------------------------------------------------------------------------
 
 local function getRoot(character: Model): BasePart?
 	return character:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -158,8 +139,6 @@ local function pendingAscension(character: Model)
 	return nil
 end
 
--- Charges the second stage for kits that do it themselves (Kits ascension
--- chargeByKit): Yuno's landed Tempest Dives.
 function CombatService.ChargeAscension(character: Model, amount: number)
 	local ascension = pendingAscension(character)
 	if ascension then
@@ -167,8 +146,6 @@ function CombatService.ChargeAscension(character: Model, amount: number)
 	end
 end
 
--- Timed states a move can put on someone (Yuno's Neverland): stronger or
--- weaker hits, slowed down. Server-only, so os.clock() times.
 local function stateActive(character: Model, attribute: string): boolean
 	return (tonumber(character:GetAttribute(attribute)) or 0) > os.clock()
 end
@@ -213,11 +190,6 @@ function CombatService.Notify(character: Model, text: string, color: Color3?)
 	end
 end
 
--- Moves a character, routing to whoever owns its physics.
--- `options.steer` (degrees per second) lets a player curve the push with
--- their camera / movement keys while it lasts (e.g. Bull Thrust).
--- `options.landStop`: a downward push (a dive) turns into a skid once the
--- player touches down, keeping `landKeep` of its speed.
 function CombatService.ApplyVelocity(
 	character: Model,
 	velocity: Vector3,
@@ -230,10 +202,6 @@ function CombatService.ApplyVelocity(
 	end
 	local player = Players:GetPlayerFromCharacter(character)
 	if Ragdoll.IsActive(character) then
-		-- Server owns ragdolls, and a ragdoll has no Humanoid fighting the
-		-- velocity. A gentle push (an air hit holding them up, the hang after
-		-- an uppercut) holds the body there, still turning and limp; anything
-		-- faster throws it.
 		if duration > 0.05 and velocity.Magnitude <= Config.Physics.RagdollHoldSpeed then
 			Impulse.Apply(root, velocity, duration, "Knockback", 0.45)
 		else
@@ -246,8 +214,6 @@ function CombatService.ApplyVelocity(
 	end
 end
 
--- Throws a ragdolled body: velocity plus a head-over-heels spin around the
--- axis across the direction of travel.
 function CombatService.Tumble(root: BasePart, velocity: Vector3)
 	local carry = Config.Physics.RagdollCarry
 	local thrown = Vector3.new(velocity.X * carry, velocity.Y, velocity.Z * carry)
@@ -256,10 +222,6 @@ function CombatService.Tumble(root: BasePart, velocity: Vector3)
 	if across.Magnitude > 0.1 then
 		spin = -across.Unit * math.min(velocity.Magnitude * Config.Physics.TumbleSpin, Config.Physics.MaxTumble)
 	end
-	-- The whole body flies, not just the torso: a ragdoll's limbs are their
-	-- own assemblies, and launching the torso alone gets averaged out over
-	-- the joints into a weak flop. Each part gets the velocity it would have
-	-- if the body were turning as one piece.
 	local character = root.Parent
 	if character then
 		for _, part in character:GetChildren() do
@@ -273,10 +235,6 @@ function CombatService.Tumble(root: BasePart, velocity: Vector3)
 	root.AssemblyAngularVelocity = spin
 end
 
--- Knockback for a hit. Ragdolled victims of heavy hits go limp for a split
--- second first (hit-stop), then fly. (Not by anchoring them: anchoring and
--- releasing a body mid-air restarts its physics replication, which every
--- screen sees as a hitch right as the launch starts.)
 function CombatService.Launch(victim: Model, velocity: Vector3, duration: number, hitStop: number?)
 	local root = getRoot(victim)
 	if not root then
@@ -293,9 +251,6 @@ function CombatService.Launch(victim: Model, velocity: Vector3, duration: number
 	end)
 end
 
--- Heavier gravity on a ragdoll for `duration` (a multiplier on the world's):
--- a snappy launch that goes up fast and comes straight back down. Gone when
--- the time is up or the ragdoll ends.
 function CombatService.HeavyFall(character: Model, multiplier: number, duration: number)
 	local extra = workspace.Gravity * (multiplier - 1)
 	if extra <= 0 then
@@ -341,9 +296,6 @@ function CombatService.IsAirborne(character: Model): boolean
 	return workspace:Raycast(root.Position, Vector3.new(0, -3.6, 0), params) == nil
 end
 
--- In the air: for players, exactly what their own client says (their
--- physics are theirs; the server sees them a ping late both taking off and
--- landing). The server's raycast only decides for NPCs, which send nothing.
 local function inAir(character: Model, clientSaysAirborne: boolean?): boolean
 	if clientSaysAirborne ~= nil then
 		return clientSaysAirborne
@@ -396,9 +348,6 @@ function CombatService.ClearCounter(character: Model)
 	end
 end
 
--- Ki reading (Asta's Zetten): while watching, the first character within
--- `radius` of `character` to start a skill or special calls onStart with
--- them. Fires once, then stops.
 type SkillWatch = { radius: number, untilTime: number, onStart: (user: Model) -> () }
 local skillWatchers: { [Model]: SkillWatch } = {}
 
@@ -426,8 +375,6 @@ local function notifySkillStart(user: Model)
 	end
 end
 
--- True if `slot`'s key was pressed (while on cooldown) after `since`.
--- Whether the last on-cooldown press of `slot` was made in the air.
 function CombatService.PressedAirborne(character: Model, slot: number): boolean
 	local data = registry[character]
 	return data ~= nil and data.skillInputAir[slot] == true
@@ -459,19 +406,6 @@ function CombatService.Heal(character: Model, amount: number)
 	end
 end
 
---[[
-	Grabs: the victim is pinned in front of the attacker (the server takes
-	over its physics) until the returned release() is called or `maxTime`
-	passes. `offset` is relative to the attacker's root. The victim is
-	stunned for the whole grab.
-]]
---[[
-	Holds `victim` at `offset` from the attacker's root (server side: what
-	hitboxes see) for up to `maxTime`. Every client draws them pinned to
-	the attacker's `hand` part instead, playing their "Grabbed" struggle
-	(see Client/Moves), so the hold looks solid at any ping. Returns
-	release() and hold(newOffset) for moves that change grip mid-grab.
-]]
 function CombatService.Grab(
 	attacker: Model,
 	victim: Model,
@@ -535,12 +469,6 @@ function CombatService.Grab(
 	end
 end
 
---[[
-	Cutscenes: holds characters on scripted paths. Each root is anchored and
-	moved every frame to paths[character](t) until `length` (or stop()),
-	then players get their physics back. Clients draw the same paths
-	themselves for smoothness (see Shared/BlackMoon).
-]]
 function CombatService.Cutscene(paths: { [Model]: (number) -> CFrame }, length: number): () -> ()
 	type Held = { character: Model, root: BasePart, path: (number) -> CFrame, player: Player? }
 	local held: { Held } = {}
@@ -612,14 +540,8 @@ local function scheduleCrater(victim: Model, attacker: Model)
 	end)
 end
 
----------------------------------------------------------------------------
 -- Hits
----------------------------------------------------------------------------
 
---[[
-	Lands (or fails to land) a hit. Returns what happened:
-	"Hit" | "Blocked" | "Parried" | "GuardBreak" | "Countered" | "Immune" | "None"
-]]
 function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	local humanoid = victim:FindFirstChildOfClass("Humanoid")
 	local victimRoot = getRoot(victim)
@@ -630,8 +552,6 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	local attackerData = registry[attacker]
 	local victimData = registry[victim]
 	local now = os.clock()
-	-- No hitting people on the floor: stops infinites. A body still in the
-	-- air from an uppercut can be hit for a moment, so the combo carries on.
 	local juggled = victimData ~= nil and now < victimData.juggleUntil and CombatService.IsAirborne(victim)
 	if CombatState.HasIFrames(victim) or (CombatState.IsRagdolled(victim) and not juggled and not hit.hitsDowned) then
 		return "Immune"
@@ -673,8 +593,6 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	if CombatState.IsBlocking(victim) and facing and not hit.unblockable then
 		local blockAge = CombatState.Now() - (tonumber(victim:GetAttribute("BlockStart")) or 0)
 
-		-- A perfect block, when theirs is ready: one every PerfectCooldown
-		-- ("PerfectCD" is the server time it's ready again; HUD icon).
 		local perfectReady = CombatState.Now() >= (tonumber(victim:GetAttribute("PerfectCD")) or 0)
 		if blockAge <= Config.Block.PerfectWindow and perfectReady then
 			victim:SetAttribute("PerfectCD", CombatState.Now() + Config.Block.PerfectCooldown)
@@ -745,9 +663,6 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 			Config.Physics.HitStop
 		)
 	elseif variant == "Uppercut" then
-		-- Knocked off their feet and sent up tumbling, high and fast: about
-		-- 10 studs on heavier gravity, so it snaps up and comes straight back
-		-- down. They can still be hit on the way: jump after them.
 		CombatService.Ragdoll(victim, Config.M1.UppercutRagdoll)
 		if victimData then
 			victimData.juggleUntil = now + Config.M1.JuggleTime
@@ -809,9 +724,7 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	return "Hit"
 end
 
----------------------------------------------------------------------------
 -- Core moves
----------------------------------------------------------------------------
 
 -- One swing of the M1 string. `jump` = jump held, turns the finisher into an uppercut.
 function CombatService.M1(character: Model, jump: boolean?, clientAirborne: boolean?, clientIndex: number?)
@@ -834,10 +747,6 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 	end
 
 	data.combo += 1
-	-- Follow the player's own count of the string (the swing they see),
-	-- so a click dropped on the way or a reset that landed differently
-	-- here can't turn their uppercut into a normal hit and the next swing
-	-- into a downslam. Swing timing is still enforced above.
 	if clientIndex and clientIndex >= 1 and clientIndex <= Config.M1.ComboLength then
 		data.combo = clientIndex
 	end
@@ -850,8 +759,6 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 	if finisher then
 		data.combo = 0
 		data.nextM1 = t + Config.M1.EndLag
-		-- In the air the finisher is always the downslam (holding Space from
-		-- the jump shouldn't turn it into an uppercut).
 		if airborne then
 			variant = "Downslam"
 		elseif jump then
@@ -934,8 +841,6 @@ function CombatService.SetBlock(character: Model, wantBlock: boolean)
 	end
 end
 
--- Movement is client-side (the client owns its character), the server only
--- validates the cooldown and tells everyone else to draw the effect.
 function CombatService.Dash(character: Model, direction: string): boolean
 	local data = registry[character]
 	if
@@ -992,9 +897,7 @@ function CombatService.Evasive(character: Model): boolean
 	return true
 end
 
----------------------------------------------------------------------------
 -- Kits: skills, awakening, switching
----------------------------------------------------------------------------
 
 local function makeContext(character: Model, airborne: boolean?): Context?
 	local data = registry[character]
@@ -1030,8 +933,6 @@ function CombatService.UseSkill(character: Model, slot: number, clientAirborne: 
 	end
 	-- Small tolerance for clients whose clock/ping makes them a hair early.
 	if CombatState.Cooldown(character, slot) > 0.1 then
-		-- Pressing a key that's on cooldown can still matter to the skill
-		-- that's running (e.g. timing the Black Divider).
 		ctx.data.skillInputs[slot] = os.clock()
 		ctx.data.skillInputAir[slot] = ctx.airborne
 		return
@@ -1049,9 +950,6 @@ function CombatService.UseSkill(character: Model, slot: number, clientAirborne: 
 	task.spawn(run, ctx)
 end
 
--- The R special (Kits.special, run by the server kit's Special). Presses
--- while it's on cooldown are recorded like skill presses (PressedSince with
--- CombatState.SpecialSlot), so a special can have a follow-up.
 function CombatService.UseSpecial(character: Model, clientAirborne: boolean?)
 	local ctx = makeContext(character, inAir(character, clientAirborne))
 	if not ctx then
@@ -1111,8 +1009,6 @@ local function endAwakening(character: Model)
 	end
 end
 
--- The meter drains over `duration`, and the awakening ends when it's empty.
--- A new drain (the second stage starting) replaces the old one.
 local function drainAwakening(character: Model, data: CharData, duration: number)
 	data.awakenToken += 1
 	local token = data.awakenToken
@@ -1135,8 +1031,6 @@ local function drainAwakening(character: Model, data: CharData, duration: number
 	end)
 end
 
--- G again while awakened, once the second stage is charged (Kits ascension):
--- its own moves, stats and a fresh timer.
 local function ascend(ctx: Context)
 	local character, data = ctx.character, ctx.data
 	local ascension = pendingAscension(character)
@@ -1201,8 +1095,6 @@ function CombatService.EquipKit(character: Model, kitId: string)
 	CombatState.ResetSpecial(character)
 	CombatService.ClearCounter(character)
 
-	-- Weapon first, then the attribute: clients react to "Kit" by animating
-	-- the weapon, so it should already be there when they see the change.
 	local serverKit = serverKits[kitId]
 	if serverKit and serverKit.Equip then
 		serverKit.Equip(character)
@@ -1215,8 +1107,6 @@ function CombatService.EquipKit(character: Model, kitId: string)
 	end
 end
 
--- A kit's spawn entrance, if it has one. Slightly delayed so clients have
--- the freshly spawned character (and its weapon) before it starts.
 function CombatService.PlayEntrance(character: Model)
 	task.delay(0.35, function()
 		local ctx = makeContext(character)
@@ -1238,8 +1128,6 @@ function CombatService.SelectKit(player: Player, kitId: string)
 		player:SetAttribute("Kit", kitId) -- applies on next spawn
 		return
 	end
-	-- Same character again is allowed: it re-equips in place, which also
-	-- repairs a missing weapon or a half-applied kit.
 	if
 		os.clock() - data.lastCombat < Config.KitSwitchCombatLock
 		or not CombatState.CanAct(character)
@@ -1256,9 +1144,7 @@ function CombatService.SelectKit(player: Player, kitId: string)
 	CombatService.Notify(character, "Now playing: " .. kit.title, kit.color)
 end
 
----------------------------------------------------------------------------
 -- Registration and the main loop
----------------------------------------------------------------------------
 
 function CombatService.Register(character: Model)
 	local humanoid = character:WaitForChild("Humanoid", 10) :: Humanoid?
@@ -1269,12 +1155,8 @@ function CombatService.Register(character: Model)
 
 	CombatState.Setup(character)
 	humanoid.BreakJointsOnDeath = false
-	-- Ragdolls swap the Neck motor for a socket; a player's own client kills
-	-- them the moment their neck "breaks" unless this is off.
 	humanoid.RequiresNeck = false
 	humanoid.UseJumpPower = false
-	-- Only our ragdoll should knock people over. (For players this has to be
-	-- repeated on their client, see Input.)
 	humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
 	humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
 
@@ -1354,8 +1236,6 @@ end
 local lastAirJump: { [Model]: number } = setmetatable({}, { __mode = "k" }) :: any
 
 local function onAction(player: Player, action: unknown, payload: unknown, extra: unknown)
-	-- Moves that have an air version say whether the player was in the air.
-	-- nil when the client didn't say (the server's raycast decides then).
 	local function saysAirborne(value: unknown): boolean?
 		if type(value) ~= "table" or type((value :: any).airborne) ~= "boolean" then
 			return nil
@@ -1400,8 +1280,6 @@ local function onAction(player: Player, action: unknown, payload: unknown, extra
 			end
 		end
 	elseif action == "AirJump" then
-		-- The jump itself is the player's own movement; everyone else just
-		-- sees the gust. Only kits that can (Kits airJumps), not too often.
 		local kit = Kits.Of(character)
 		local now = os.clock()
 		if kit and kit.airJumps and CombatState.IsAlive(character) and now - (lastAirJump[character] or 0) > 0.2 then
@@ -1465,8 +1343,6 @@ end
 function CombatService.Start()
 	Remotes.Action.OnServerEvent:Connect(onAction)
 
-	-- Play testing: infinite awakening keeps the bar full and the second
-	-- stage charged (the form itself never drains, see drainAwakening).
 	if Config.PlayTest.InfiniteAwakening then
 		task.spawn(function()
 			while true do

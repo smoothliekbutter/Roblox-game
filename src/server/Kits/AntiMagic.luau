@@ -1,38 +1,4 @@
---[[
-	Anti-Magic Knight (Asta), server side.
-
-	Built like Vessel (JJS) / Hero Hunter (TSB): a close-range rushdown
-	character with a rush combo, a grab, a timing-based heavy and a counter.
-	Awakening swaps to a whole new move set like Sukuna / Rampage Mode.
-
-	Base
-	  1 Bull Thrust         charge in sword-first; on contact, a five-hit sword combo
-	                        ending in a thrust (in the air: dives diagonally down,
-	                        and if it catches no one he slams the ground, guard break)
-	  2 Black Meteorite     standing anti-magic grab (no dash), carry them up, slam into
-	                        a crater (unblockable)
-	  3 Black Divider       charged cleave. Press 3 again on the red flash for a
-	                        perfect Divider: huge damage, unblockable
-	  4 Anti-Magic Deflect  counters EVERY attack type. Melee attackers get slashed
-	                        aside, ranged attacks are sent back as a Black Slash
-	Black Form (G). R (no cooldown) cycles through his three swords in order;
-	moves 1 and 2 belong to the sword in his hand:
-	  Demon-Slayer Sword    1 Black Hurricane: spinning charge that drags enemies along
-	                        2 Slayer Recall: boomerang throw, press 2 again to call it back
-	  Demon-Destroyer Sword 1 Causality Break: planted blade breaks the magic (counters,
-	                          guard, stances) of the 4 closest enemies
-	                        2 Black Comet: short grab cutscene, flies low hammering
-	                          them along the ground, then throws them
-	  Demon-Slasher Katana  1 Black Ascent: launching cut, two cuts in the air, cut
-	                          back down into the ground
-	                        2 Zetten: ki-reading iai stance, cuts down whoever moves
-	  3 Grand Divider       massive cleave plus a giant slash wave (guard break)
-	  4 Black Moon          cutscene grab: hurls them into the sky, hangs in front
-	                        of a giant moon, flies through them and cuts them down
-
-	All visuals are in StarterPlayerScripts.Client.Kits.AntiMagic, which gets
-	("Skill", {skill, phase, ...}) events from here.
-]]
+-- Anti-Magic Knight (Asta), server side: his skills, Black Form and its swords.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -46,17 +12,12 @@ local Projectile = require(script.Parent.Parent.Projectile)
 local KIT_ID = "AntiMagic"
 local UP = Vector3.yAxis
 
--- Anti-magic cuts through everything.
--- Holds a character in the air (a tiny upward velocity switches on the
--- vertical force, so gravity stops pulling).
 local HOVER = Vector3.new(0, 0.05, 0)
 local ALL_TYPES = { Melee = true, Bolt = true, Explosion = true, Swarm = true, Zone = true }
 
 local Kit = {}
 
----------------------------------------------------------------------------
 -- Demon-Slayer Sword model
----------------------------------------------------------------------------
 
 local function swordPart(
 	name: string,
@@ -87,15 +48,7 @@ type BladeMarks = {
 	point: number, -- the very point
 }
 
--- Joins a sword built around its handle at the origin, marks out its blade
--- for the clients' effects (see alongBlade in the client kit) and gives it a
--- swing trail. Every sword has a "Handle" (gripped) and a "Blade".
 local function assemble(model: Model, handle: BasePart, parts: { BasePart }, marks: BladeMarks): Model
-	-- Plain Welds with the offset written into C0, not WeldConstraints:
-	-- a WeldConstraint works its offset out from where the parts happen to
-	-- be when it switches on, which differs between the server (builds the
-	-- sword) and the client (simulates the character), so pieces ended up
-	-- floating off or falling. C0 replicates, so every machine agrees.
 	for _, part in parts do
 		local weld = Instance.new("Weld")
 		weld.Name = "Join"
@@ -135,13 +88,6 @@ local function assemble(model: Model, handle: BasePart, parts: { BasePart }, mar
 	return model
 end
 
--- The Demon-Slayer Sword, as in the series: a huge, broad black greatsword
--- (about as tall as Asta), battered and stained, with a pointed tip, a faint
--- ridge down the middle and worn edges; a thin bronze crossbar and a long
--- two-handed grip ending in a round pommel. The blade runs along the
--- handle's +Y axis; built around the handle at the origin, then welded.
--- (Only the look: hitboxes don't depend on it. The animation checker in
--- tools/anim/rig.py models the blade from 0.86 to the tip, keep in step.)
 local function buildSlayer(): Model
 	local model = Instance.new("Model")
 	model.Name = "KitWeapon"
@@ -188,10 +134,6 @@ local function buildSlayer(): Model
 		swordPart("GuardCapA", Vector3.new(0.24, 0.22, 0.12), CFrame.new(0, 0.6, 0.94), darkBronze, metal),
 		swordPart("GuardCapB", Vector3.new(0.24, 0.22, 0.12), CFrame.new(0, 0.6, -0.94), darkBronze, metal),
 		swordPart("Collar", Vector3.new(0.26, 0.2, 0.72), CFrame.new(0, 0.77, 0), darkBronze, metal),
-		-- The blade: full width right up to the guard (from 0.86 to 4.6), then
-		-- a triangular point: both edges run in to meet on the centre line at
-		-- 5.8 (two mirrored wedges). The thin side faces forward so swings
-		-- lead with an edge.
 		swordPart("Blade", Vector3.new(0.2, 3.74, 1.4), CFrame.new(0, 2.73, 0), black, metal),
 		swordPart("TipA", Vector3.new(0.2, 1.2, 0.7), CFrame.new(0, 5.2, -0.35), black, metal, "WedgePart"),
 		swordPart(
@@ -239,16 +181,10 @@ local function ball(part: BasePart): BasePart
 	return part
 end
 
--- Where a point given in the handle's space sits along the blade (its local
--- Y), for curved blades whose point isn't on the first piece's axis.
 local function alongBlade(blade: BasePart, point: Vector3): number
 	return blade.CFrame:PointToObjectSpace(point).Y
 end
 
--- The Demon-Destroyer Sword: a single-edged blade that curves back and
--- widens into a broad head with a white clover on its spine end; a short
--- bar guard with a round plate that glows (Asta and Liebe united, as in
--- Black Form). About 4 studs.
 local function buildDestroyer(): Model
 	local model = Instance.new("Model")
 	model.Name = "KitWeapon"
@@ -278,8 +214,6 @@ local function buildDestroyer(): Model
 		swordPart("Guard", Vector3.new(0.18, 0.16, 0.85), CFrame.new(0, 0.55, 0), black, metal),
 		plate,
 	}
-	-- Four pieces, each turned a little further back and a little wider,
-	-- the edge (front, -Z) running along their front faces.
 	local at = CFrame.new(0, 0.63, 0)
 	local blade: BasePart? = nil
 	for i, width in { 0.34, 0.42, 0.52, 0.62 } do
@@ -332,9 +266,6 @@ local function buildDestroyer(): Model
 	})
 end
 
--- The Demon-Slasher Katana: Yami's katana, blackened by anti-magic. A slim,
--- gently curved single-edged blade with a pale edge line, a round guard, a
--- brass collar and a black-wrapped grip with pale diamonds. About 3.4 studs.
 local function buildSlasher(): Model
 	local model = Instance.new("Model")
 	model.Name = "KitWeapon"
@@ -372,8 +303,6 @@ local function buildSlasher(): Model
 			)
 		)
 	end
-	-- Four pieces, each turned a touch further back (the curve), the pale
-	-- edge line along their front.
 	local at = CFrame.new(0, 0.64, 0)
 	local blade: BasePart? = nil
 	for i = 1, 4 do
@@ -413,9 +342,6 @@ local SWORDS: { [string]: () -> Model } = {
 	Slasher = buildSlasher,
 }
 
--- Puts a built sword in his right hand. A Motor6D rather than a Weld so
--- clients can animate it like a wrist (resting it on the shoulder, angling
--- it through swings); the blade sits 35 degrees forward of the arm.
 local function wield(character: Model, sword: Model)
 	local handle = sword.PrimaryPart :: BasePart
 	local weld = Instance.new("Motor6D")
@@ -447,9 +373,6 @@ local function wield(character: Model, sword: Model)
 	attach()
 	sword.Parent = character
 
-	-- Watchdog: if the arm gets rebuilt (avatar changes) or the grip breaks,
-	-- re-grip instead of leaving the sword on the floor. Stops when this
-	-- sword is put away (or swapped for another).
 	task.spawn(function()
 		local warned = false
 		while sword.Parent == character and character.Parent do
@@ -468,9 +391,6 @@ local function wield(character: Model, sword: Model)
 	end)
 end
 
--- Swaps the sword in his hand for another of his swords (see SWORDS). The
--- "Sword" attribute says which he's holding; moves 1 and 2 in Black Form
--- follow it.
 local function setSword(character: Model, kind: string)
 	local build = SWORDS[kind]
 	if not build then
@@ -497,9 +417,7 @@ function Kit.Unequip(character: Model)
 	character:SetAttribute("Sword", nil)
 end
 
----------------------------------------------------------------------------
 -- Helpers
----------------------------------------------------------------------------
 
 local function fx(ctx, skill: string, phase: string, extra: { [string]: any }?)
 	local data: { [string]: any } = { character = ctx.character, kit = KIT_ID, skill = skill, phase = phase }
@@ -521,18 +439,8 @@ local function interrupted(ctx): boolean
 	return not CombatState.IsAlive(character) or CombatState.IsStunned(character) or CombatState.IsRagdolled(character)
 end
 
--- How long the server (a ping behind) gets to see a dive leave the ground.
--- If it never does (a dive from a tiny hop), being on the ground after
--- this counts as having landed.
 local TAKEOFF_GRACE = 0.25
 
--- Charges forward for `duration`, returning the first character caught.
--- With `steer` (degrees per second) the player can curve it as it goes; the
--- hitbox follows their root, so it catches whatever they curve into.
--- A downward lunge (an air version) skids along the ground once it lands
--- instead of pushing into it (the player's client handles that: landStop).
--- With `untilLanded` it stops dead where it lands instead, and ends right
--- there; the second result says it landed.
 local function lunge(
 	ctx,
 	velocity: Vector3,
@@ -568,9 +476,6 @@ local function lunge(
 	return nil, false
 end
 
--- The server sees a player's own movement about a ping late: wait (with a
--- limit) until it has seen them leave the ground before treating "not
--- airborne" as having landed.
 local function waitForTakeoff(ctx, timeout: number)
 	local start = os.clock()
 	while not ctx.combat.IsAirborne(ctx.character) and os.clock() - start < timeout do
@@ -643,22 +548,12 @@ local function blackSlash(
 	})
 end
 
----------------------------------------------------------------------------
 -- Base moves
----------------------------------------------------------------------------
 
--- Bull Thrust: propels himself forward on a burst of anti-magic, catches
--- the first person in the way and cuts them up in a five-hit combo, the
--- last a thrust that leaves them stunned in range so he can M1 straight
--- into a string (a combo starter, like Vessel's Cursed Strikes).
 local PROPEL_SPEED = 85
 local PROPEL_TIME = 0.55 -- the Propel animation holds for this long
 local PROPEL_STEER = 200 -- degrees per second: up to a ~110 degree curve
 
--- The combo. Each hit lands on its strike key in the BullCombo animation
--- (COMBO_STRIKES in tools/anim/asta_anims.py), so keep `at` in step with
--- it. Until the next hit they're held `reach` studs in front of him while
--- he steps on at `drift` studs per second.
 local COMBO = {
 	{ kind = "Rising", at = 0.14, damage = 1.5, reach = 3.8, drift = 5 },
 	{ kind = "Sweep", at = 0.3, damage = 1.5, reach = 3.8, drift = 3 },
@@ -673,11 +568,6 @@ local COMBO = {
 local THRUST_PUSH = 17
 local MAX_PULL = 30 -- fastest (studs per second) they're eased back in front of him
 
--- The air version (the dive) is for real height only: during Anti-Magic
--- Leap (R), or from well above the floor. A plain jump does the ground
--- version. The dive breaks guards; when it catches no one, he drives the
--- sword into the ground where he lands and the blast breaks guards all
--- around him, and if that hits nobody either the sword sticks (end lag).
 local DIVE_HEIGHT = 9 -- root to floor; a jump peaks at about 7.5 (3 + Config JumpHeight)
 local DIVE_AFTER_LEAP = 2.5 -- the leap (R) allows it this long, until he lands
 local leapedAt: { [Model]: number } = setmetatable({}, { __mode = "k" }) :: any
@@ -685,12 +575,8 @@ local SLAM_RADIUS = 11
 local SLAM_DAMAGE = 6
 local SLAM_RECOVERY = 0.45 -- the PlungeImpact stab he lands in
 local SLAM_WHIFF_RECOVERY = 1.1 -- the sword sticks when the slam hits nobody
--- Still falling when the propel runs out (dove from high up): how long he
--- has to reach the ground for the slam to happen.
 local LAND_WINDOW = 0.5
 
--- How fast to move someone so that `time` from now they're `reach` studs in
--- front of him, while he steps on at `drift`. Flat, so gravity still works.
 local function holdInFront(ctx, target: Model, forward: Vector3, reach: number, drift: number, time: number): Vector3
 	local velocity = forward * drift
 	local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -740,8 +626,6 @@ local function landsWithin(ctx, timeout: number): boolean
 	return false
 end
 
--- The air version's landing: the sword goes into the ground and anti-magic
--- blows a crater out around him, throwing everyone in it up and away.
 local function bullSlam(ctx)
 	local c, character = ctx.combat, ctx.character
 	local forward = look(ctx)
@@ -866,21 +750,12 @@ local function bullThrust(ctx)
 	ctx.data.nextM1 = 0
 end
 
--- Where his free (left) hand holds a grabbed victim, in root space and
--- facing him, roughly matching the animations (tools/anim). This is what
--- the server's hitboxes see; every client pins them to the actual hand.
 local FACING = CFrame.Angles(0, math.pi, 0)
 local HOLD_SEIZE = CFrame.new(-1.6, 0.35, -1.75) * FACING
--- Kept level with him server-side so they never end up under the floor on
--- landing; clients show them driven down in front of him.
--- In the head-first dive: out in front of his face, upside down like him.
 local HOLD_DRILL = CFrame.new(-0.6, 0.6, -2.4) * FACING
 -- Held out at arm's length while he spins them round.
 local HOLD_SPIN = CFrame.new(-1.7, 0.5, -2.3) * FACING
 
--- Seizes `target` by the throat with his free hand. Grabs can't be
--- blocked, but counters and i-frames still beat them, and leave him open
--- for a moment. Returns release() and hold() when it lands.
 local function seize(ctx, target: Model, grabTime: number): ((() -> ())?, ((CFrame) -> ())?)
 	local c, character = ctx.combat, ctx.character
 	if c.Hit(character, target, { damage = 1, stun = 2, attackType = "Melee", unblockable = true }) ~= "Hit" then
@@ -892,11 +767,6 @@ local function seize(ctx, target: Model, grabTime: number): ((() -> ())?, ((CFra
 	return c.Grab(character, target, HOLD_SEIZE, grabTime, "Left Arm")
 end
 
--- The grab (Black Meteorite and Black Moon): no dash. He plants (in the air he hangs there)
--- and his free hand shoots out. At full stretch it seizes whoever is right
--- in front of him, for a moment. The startup is the MeteorReach
--- animation's thrust (REACH_AT in tools/anim/asta_anims.py): keep them in
--- step.
 local REACH_STARTUP = 0.16
 local REACH_WINDOW = 0.1 -- the hand stays open this long (slack for ping)
 -- Reaches 5.5 studs out in front of him: catches someone about 6 studs away.
@@ -967,16 +837,8 @@ local function reachGrab(ctx, grabTime: number, skill: string?): (Model?, (() ->
 	return target, release, hold
 end
 
--- The grab. His free hand shoots out (no dash), seizes them by the throat
--- and hoists them up while anti-magic surges through them. Then a vortex:
--- he whirls round with them held out, bobbing up and down as it carries
--- them into the sky (Shared/MeteorVortex), and slams them down like a
--- meteor. In the air: hangs there, seizes whoever is in front of him and
--- does the same from where he is, with a shorter climb.
 local SEIZE_TIME = 0.4 -- the Seize animation's hoist
 local SURGE_AT = 0.2
--- Damage: most of it in the vortex, so the slam (which also hits whoever
--- is round the crater) is the smaller part.
 local METEOR_TICK = 1.5
 local METEOR_SLAM = 4.5
 local METEOR_AIR_SLAM = 2.5
@@ -992,8 +854,6 @@ local function blackMeteorite(ctx)
 	end
 	local forward = look(ctx)
 
-	-- The seize: he plants and hoists them up. In the air he rises a little
-	-- with them, so the spike has somewhere to fall from.
 	fx(ctx, "BlackMeteorite", "Seize", { target = target, airborne = airborne })
 	local seize = if airborne then 0.3 else SEIZE_TIME
 	c.ApplyVelocity(character, if airborne then UP * 10 else Vector3.zero, seize)
@@ -1009,9 +869,6 @@ local function blackMeteorite(ctx)
 		return
 	end
 
-	-- The vortex, the head-first dive and the landing: he's held on the
-	-- shared path (Shared/MeteorVortex) the whole way; every client draws
-	-- the same.
 	hold(HOLD_SPIN)
 	local origin = CFrame.lookAt(ctx.root.Position, ctx.root.Position + forward)
 	local top = if airborne then MeteorVortex.AirTop else MeteorVortex.Top
@@ -1112,8 +969,6 @@ end
 local DIVIDER_CHARGE = 0.62
 local PERFECT_FROM, PERFECT_TO = 0.36, 0.66 -- generous for ping; client shows the flash at 0.38
 
--- In the air he hangs while it charges, then front-flips the blade down
--- onto whatever's below and in front, spiking them into the ground.
 local function blackDivider(ctx)
 	local c, character = ctx.combat, ctx.character
 	local data = ctx.data
@@ -1144,8 +999,6 @@ local function blackDivider(ctx)
 	local forward = look(ctx)
 	fx(ctx, "BlackDivider", "Release", { perfect = perfect, airborne = airborne })
 	if airborne then
-		-- Down onto whoever's below, all the way to the ground, and it hits
-		-- people lying on the floor too (the ground version can't).
 		local params = RaycastParams.new()
 		params.FilterType = Enum.RaycastFilterType.Exclude
 		params.FilterDescendantsInstances = { character }
@@ -1251,9 +1104,7 @@ local function antiMagicDeflect(ctx)
 	end
 end
 
----------------------------------------------------------------------------
 -- Black Form moves
----------------------------------------------------------------------------
 
 -- Black Hurricane. In the air he drills down on them, spinning.
 local function blackHurricane(ctx)
@@ -1305,8 +1156,6 @@ local function blackHurricane(ctx)
 	CombatState.SetCasting(character, 0.3)
 end
 
--- How far a wave can fly along `direction` before it hits the ground (a wave
--- thrown down out of the air stops there instead of tunnelling on).
 local function waveRange(ctx, origin: Vector3, direction: Vector3, maxRange: number): number
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
@@ -1315,8 +1164,6 @@ local function waveRange(ctx, origin: Vector3, direction: Vector3, maxRange: num
 	return if hit then math.max((hit.Position - origin).Magnitude + 2, 8) else maxRange
 end
 
--- Grand Divider. In the air he hangs while it charges, then brings it down
--- on whatever is below and in front, and the wave is driven into the ground.
 local function grandDivider(ctx)
 	local c, character = ctx.combat, ctx.character
 	local airborne = ctx.airborne
@@ -1366,13 +1213,6 @@ local function grandDivider(ctx)
 	CombatState.SetCasting(character, 0.3)
 end
 
---[[
-	Black Moon (Black Form 4): seizes them by the throat and hurls them into
-	the sky. Night falls; he hangs in front of a giant moon, then flies
-	through them, and a beat later the cut lands. A cutscene for the two of
-	them: the timeline is Shared/BlackMoon, the camera work and effects are
-	client side.
-]]
 local MOON_SEIZE = 0.4
 
 local function blackMoon(ctx)
@@ -1434,9 +1274,6 @@ local function blackMoon(ctx)
 	CombatState.SetCasting(character, 0.7)
 end
 
--- Spawn entrance: the grimoire appears, he draws the sword from it, twirls
--- it and slams it into the ground. Untouchable and rooted while it plays;
--- the animation itself is client-side (Client/Kits/AntiMagic).
 local ENTRANCE_TIME = 2.45
 
 function Kit.Entrance(ctx)
@@ -1453,16 +1290,12 @@ function Kit.Entrance(ctx)
 	character:SetAttribute("Rooted", false)
 end
 
----------------------------------------------------------------------------
 -- Special (R): Anti-Magic Leap / Meteor Plunge
----------------------------------------------------------------------------
 
 local SPECIAL = CombatState.SpecialSlot
 local LEAP_TIME = 0.22
 local PLUNGE_HANG = 0.12 -- the Plunge animation's wind-up
 
--- Meteor Plunge: hangs for a beat with the sword raised, dives behind it
--- (steerable) and stabs it into the ground, blasting everyone around away.
 local function plunge(ctx)
 	local c, character = ctx.combat, ctx.character
 	CombatState.SetCasting(character, 1.2)
@@ -1500,9 +1333,6 @@ local function plunge(ctx)
 	CombatState.SetCasting(character, 0.35)
 end
 
--- Anti-Magic Leap: blasts off the ground toward where he's heading
--- (steerable). Press R again in the air to turn it into the plunge. Stops
--- listening as soon as another move starts or he's back on the ground.
 local function leap(ctx)
 	local c, character = ctx.combat, ctx.character
 	local token = c.MoveToken(character)
@@ -1549,21 +1379,12 @@ function Kit.Special(ctx)
 	end
 end
 
----------------------------------------------------------------------------
 -- Sword moves (Black Form 1 and 2 follow the sword in his hand)
----------------------------------------------------------------------------
 
 local function rootOf(character: Model): BasePart?
 	return character:FindFirstChild("HumanoidRootPart") :: BasePart?
 end
 
---[[
-	Slayer Recall (Demon-Slayer Sword 2): hurls the sword like a boomerang.
-	It cuts whoever it passes on the way out, hangs spinning where it stops,
-	and comes back when he presses 2 again (or on its own), cutting through
-	them a second time and dragging them back to him. Unarmed (no M1s) until
-	he catches it.
-]]
 local RECALL_RELEASE = 0.28 -- the RecallThrow animation lets go here
 local RECALL_RANGE = 34
 local RECALL_OUT = 0.42 -- seconds to fly out
@@ -1668,12 +1489,6 @@ local function slayerRecall(ctx)
 	end
 end
 
---[[
-	Causality Break (Demon-Destroyer Sword 1): drives the Destroyer into the
-	ground and its curse-breaking anti-magic runs out through the earth to
-	the four closest enemies around him. It cuts them and wipes out whatever
-	they had going: a counter, their guard, a Zetten stance.
-]]
 local CAUSALITY_STAB = 0.42 -- the CausalityPlant animation's stab
 local CAUSALITY_RADIUS = 18
 local CAUSALITY_TARGETS = 4
@@ -1729,8 +1544,6 @@ local function causalityBreak(ctx)
 	CombatState.SetCasting(character, 0.3)
 end
 
--- What's in the way along `direction` (walls, not people) and where the
--- floor is, ignoring everyone (for the cutscene paths below).
 local function sceneRay(ctx, origin: Vector3, direction: Vector3, ignore: { Instance }): RaycastResult?
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
@@ -1756,14 +1569,6 @@ local function floorAt(ctx, position: Vector3, ignore: { Instance }): number
 	return if hit then hit.Position.Y else position.Y - 3
 end
 
---[[
-	Black Comet (Demon-Destroyer Sword 2): a short grab cutscene (about 1.4
-	seconds). His free hand seizes whoever is in front of him; both wings
-	throw him forward low over the ground, dragging them along on their back
-	at his side, hammering them into it three times; then he lands skidding
-	and heaves them away. Both are held on Shared/BlackComet (they hang from
-	his hand there); the clients draw it, camera and all.
-]]
 local function blackComet(ctx)
 	local c, character = ctx.combat, ctx.character
 	local times = CometPlan.Times
@@ -1846,12 +1651,6 @@ local function blackComet(ctx)
 	CombatState.SetCasting(character, 0.3)
 end
 
---[[
-	Black Ascent (Demon-Slasher Katana 1): a rising cut that launches whoever
-	is in front of him (blockable); he springs up after them, cuts them twice
-	in the air and cuts them back down into the ground. The paths are
-	Shared/BlackAscent.
-]]
 local ASCENT_STARTUP = 0.14 -- the Rising swing's cut
 
 local function blackAscent(ctx)
@@ -1943,12 +1742,6 @@ local function blackAscent(ctx)
 	CombatState.SetCasting(character, 0.25)
 end
 
---[[
-	Zetten (Demon-Slasher Katana 2): an iai stance, reading ki. The first
-	enemy close by to make a move (start a skill, or swing at him) is cut
-	down before it lands: he's past them in a flash. If nobody moves, the
-	stance ends in one quick cut ahead.
-]]
 local ZETTEN_STANCE = 1.0
 local ZETTEN_RADIUS = 20
 
@@ -2033,8 +1826,6 @@ end
 
 Kit.Skills = { bullThrust, blackMeteorite, blackDivider, antiMagicDeflect }
 
--- In Black Form, moves 1 and 2 belong to the sword in his hand (the
--- "Sword" attribute; names and cooldowns in Shared/Kits swords).
 local SWORD_MOVES: { [string]: { (any) -> () } } = {
 	Slayer = { blackHurricane, slayerRecall },
 	Destroyer = { causalityBreak, blackComet },
@@ -2048,9 +1839,6 @@ local function swordMove(slot: number): (any) -> ()
 end
 Kit.AwakenedSkills = { swordMove(1), swordMove(2), grandDivider, blackMoon }
 
--- R in Black Form (no cooldown): the next of his swords, in order, out of
--- the grimoire (Slayer, Destroyer, Slasher, round again). The new one is in
--- his hand when the SwordSwap animation draws it.
 local SWORD_KINDS = { "Slayer", "Destroyer", "Slasher" }
 local SWAP_DRAW = 0.22
 
@@ -2070,13 +1858,8 @@ function Kit.AwakenedSpecial(ctx)
 	end
 end
 
----------------------------------------------------------------------------
 -- Awakening: Black Form (Devil Union)
----------------------------------------------------------------------------
 
--- Matches the client's Awaken animation (tools/anim): anti-magic gathers
--- while he crouches, bursts out on the roar at 0.92s, then he drops into
--- his Black Form stance. Rooted and untouchable the whole time.
 local AWAKEN_BURST = 0.92
 local AWAKEN_TIME = 2.0
 

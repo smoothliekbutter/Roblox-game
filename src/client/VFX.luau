@@ -1,10 +1,4 @@
---[[
-	VFX
-	Every visual effect is drawn on the client. The server only sends
-	("EffectName", data), so effects cost no server performance and stay
-	smooth regardless of ping. Built entirely from parts, beams, particles
-	and lights using textures that ship with Roblox, so no uploads needed.
-]]
+-- Client-side VFX: the server sends ("EffectName", data) and this draws it with parts, beams, particles and lights.
 
 local Debris = game:GetService("Debris")
 local Players = game:GetService("Players")
@@ -32,8 +26,6 @@ local COLORS = {
 	Dust = Color3.fromRGB(150, 145, 135),
 }
 
--- Characters can recolor their hit effects (VFX.SetPalette).
--- `cleanM1`: M1 hits only flash the victim and show damage (no sparks/rings).
 type Palette = { hit: Color3, heavy: Color3, flash: Color3, cleanM1: boolean? }
 local DEFAULT_PALETTE: Palette = { hit = COLORS.Hit, heavy = COLORS.Heavy, flash = Color3.new(1, 1, 1) }
 local palettes: { [string]: Palette } = {}
@@ -51,9 +43,7 @@ fxFolder.Parent = workspace
 local VFX = {}
 local Effects: { [string]: (data: any) -> () } = {}
 
----------------------------------------------------------------------------
 -- Building blocks
----------------------------------------------------------------------------
 
 local function newPart(props: { [string]: any }): Part
 	local part = Instance.new("Part")
@@ -245,9 +235,6 @@ local function light(position: Vector3, color: Color3, brightness: number, range
 	Debris:AddItem(holder, duration + 0.05)
 end
 
--- Body glow on hit: a near-solid flash. `fill` (the fill's transparency)
--- lightens it, for a coat on someone's own character that should leave
--- their avatar showing through.
 local function highlight(character: Model?, color: Color3, duration: number, fill: number?)
 	if not character then
 		return
@@ -480,11 +467,6 @@ local SPARK_COLORS = ColorSequence.new({
 	ColorSequenceKeypoint.new(1, Color3.fromRGB(170, 35, 10)),
 })
 
---[[
-	Molten metal sparks, for sword clashes: hot streaks that fly out along
-	`direction` and arc down under gravity, slower embers that linger, a
-	glint, a flash of orange light and a puff of metal dust.
-]]
 local function sparks(position: Vector3, direction: Vector3, scale: number?)
 	local k = scale or 1
 	local aim = if direction.Magnitude > 1e-3 then direction.Unit else Vector3.yAxis
@@ -545,8 +527,6 @@ local function sparks(position: Vector3, direction: Vector3, scale: number?)
 	Debris:AddItem(holder, 1.2)
 end
 
--- Thin white speed lines rushing past a moving character for `duration`.
--- Without a direction they follow the way it's actually moving (curves).
 local function speedLines(root: BasePart, direction: Vector3?, duration: number, color: Color3?)
 	local start = os.clock()
 	task.spawn(function()
@@ -573,8 +553,6 @@ local function speedLines(root: BasePart, direction: Vector3?, duration: number,
 	end)
 end
 
--- Expanding sphere shell; centered on the ground it reads as a dome.
--- ForceField material gives a shimmering wave, Glass a solid-looking shell.
 local function shockwave(
 	position: Vector3,
 	color: Color3,
@@ -596,11 +574,6 @@ local function shockwave(
 	Debris:AddItem(ball, duration + 0.05)
 end
 
---[[
-	Jagged cracks splitting outward across the ground from `position`. Each
-	crack grows segment by segment, glows `glow` inside for a moment, then
-	stays dark for `duration` before fading.
-]]
 local function groundCracks(position: Vector3, count: number, length: number, glow: Color3?, duration: number?)
 	local ground = groundBelow(position)
 	if not ground then
@@ -657,11 +630,6 @@ local function groundCracks(position: Vector3, count: number, length: number, gl
 	end
 end
 
---[[
-	Chunks of the ground blasted out of `position`: they fly out, fall,
-	bounce once and settle, then sink away. Simulated here (no physics
-	parts), so they never shove characters around.
-]]
 local function debris(position: Vector3, count: number, speed: number, size: number)
 	local ground = groundBelow(position)
 	if not ground then
@@ -764,11 +732,6 @@ local function pillar(
 	Debris:AddItem(column, duration + 0.05)
 end
 
---[[
-	Ribbons spiralling around `anchor` (following it) for `duration`: they
-	climb from `height` below to `height` above (negative height spirals
-	down) while the radius closes in by `tighten` (0 to 1).
-]]
 local function spiral(
 	anchor: BasePart,
 	color: Color3,
@@ -833,11 +796,6 @@ local function spiral(
 	end)
 end
 
---[[
-	A jagged lightning bolt from `from` to `to`: a `color` core inside a
-	wider `glow` sheath (optional), with a side branch, flickering out over
-	`duration`. Dark colors use a matte core so black lightning stays black.
-]]
 local function lightning(
 	from: Vector3,
 	to: Vector3,
@@ -899,12 +857,6 @@ local function lightning(
 	end
 end
 
---[[
-	An impact star: spikes of light shooting out of a point, square to the
-	eye (the radiating lines of a manga impact), sharp and thin, flung out
-	and thinning away. `color` is their glow, `core` (default white) the
-	bright line down each one.
-]]
 local function impactSpikes(
 	position: Vector3,
 	color: Color3,
@@ -949,11 +901,6 @@ local function impactSpikes(
 	end
 end
 
---[[
-	A wave of dust rolling out along the ground from `position` to about
-	`radius` studs: puffs thrown out low all round, swelling as they slow.
-	Coloured like the ground unless `color` says otherwise.
-]]
 local function dustWave(position: Vector3, radius: number, color: Color3?, puffs: number?)
 	local ground = groundBelow(position)
 	if not ground then
@@ -1001,11 +948,6 @@ local function dustWave(position: Vector3, radius: number, color: Color3?, puffs
 	Debris:AddItem(holder, 1.1)
 end
 
---[[
-	A scorch mark on the ground under a big impact: a dark burn (darker in
-	the middle) with a ring glowing `glow` as it cools, left lying there for
-	`duration` before it fades. Lies flat on whatever slope it's on.
-]]
 local function scorch(position: Vector3, radius: number, glow: Color3?, duration: number?)
 	local ground = groundBelow(position)
 	if not ground then
@@ -1046,12 +988,6 @@ local function scorch(position: Vector3, radius: number, glow: Color3?, duration
 	end
 end
 
---[[
-	A groove torn into the ground from `from` to `to`, following the ground
-	(and skipping where it drops away): a dark channel with a core glowing
-	`glow` as it cools, left lying there for `duration`. With `speed` it's
-	torn along at that many studs a second instead of all at once.
-]]
 local function groove(from: Vector3, to: Vector3, width: number, glow: Color3?, duration: number?, speed: number?)
 	local life = duration or 2
 	local span = (to - from).Magnitude
@@ -1098,8 +1034,6 @@ local function groove(from: Vector3, to: Vector3, width: number, glow: Color3?, 
 	end
 end
 
--- A full-screen color grade for the local camera: eases into `goal`
--- (ColorCorrectionEffect properties), holds, then eases back out.
 local function colorGrade(goal: { [string]: any }, fadeIn: number, hold: number, fadeOut: number)
 	local correction = Instance.new("ColorCorrectionEffect")
 	correction.Parent = workspace.CurrentCamera
@@ -1121,9 +1055,7 @@ local function colorGrade(goal: { [string]: any }, fadeIn: number, hold: number,
 	Debris:AddItem(correction, fadeIn + hold + fadeOut + 0.05)
 end
 
----------------------------------------------------------------------------
 -- Effects (names match what the server sends)
----------------------------------------------------------------------------
 
 -- M1 hit for kits with a clean style: a quick body flash and the number.
 local function cleanM1Hit(data, heavy: boolean): boolean
@@ -1392,11 +1324,7 @@ function Effects.Crater(data)
 	end
 end
 
----------------------------------------------------------------------------
-
----------------------------------------------------------------------------
 -- Public helpers used by the move animations
----------------------------------------------------------------------------
 
 -- Streak behind a striking limb (fist or foot) for `duration` seconds.
 function VFX.LimbTrail(character: Model, limbName: string, duration: number, color: Color3?)
@@ -1505,8 +1433,6 @@ function VFX.Register(name: string, effect: (data: any) -> ())
 	Effects[name] = effect
 end
 
--- A character-specific version of an effect (e.g. Asta's own dash). Used
--- when data.character is playing that kit.
 local kitEffects: { [string]: { [string]: (data: any) -> () } } = {}
 function VFX.RegisterKitEffect(kitId: string, name: string, effect: (data: any) -> ())
 	kitEffects[kitId] = kitEffects[kitId] or {}
@@ -1517,10 +1443,6 @@ function VFX.SetPalette(kitId: string, palette: Palette)
 	palettes[kitId] = palette
 end
 
--- Plays an effect locally (used for instant feedback on your own actions).
--- The kit whose version of `name` should play: the attacker's (data.kit),
--- then the acting character's, then the defender's (data.victimKit), so a
--- block against Asta's sword, or by it, makes sword sparks.
 local function overrideFor(name: string, data: any): ((data: any) -> ())?
 	if type(data) ~= "table" then
 		return nil
@@ -1539,8 +1461,6 @@ local function overrideFor(name: string, data: any): ((data: any) -> ())?
 	return nil
 end
 
--- Plays the built-in version of an effect, ignoring kit overrides (lets an
--- override add to the default instead of replacing it).
 function VFX.PlayDefault(name: string, data: any)
 	local effect = Effects[name]
 	if effect then

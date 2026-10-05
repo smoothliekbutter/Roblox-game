@@ -1,13 +1,4 @@
---[[
-	Moves
-	Plays move animations + their VFX on characters, routed to each
-	character's kit (Client/Kits/<KitId>). Characters without a kit (the
-	dummies) use the default fist M1s.
-
-	Your own M1s play instantly when you click (predicted by Input), so they
-	feel responsive at any ping. Everyone else's play when the server's
-	"Swing" event arrives. Skills are driven by the server's "Skill" events.
-]]
+-- Plays move animations and VFX on characters, routed to each character's kit (Client/Kits/<KitId>).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -69,9 +60,7 @@ function Moves.PlayM1(character: Model, index: number, variant: string)
 	end
 end
 
----------------------------------------------------------------------------
 -- Getting hit and blocking
----------------------------------------------------------------------------
 
 -- A character's own reaction (Kit.Reactions) or the default one.
 local function reactionFor(character: Model, name: string): PoseAnimator.Animation?
@@ -143,13 +132,6 @@ local function onLandedHit(name: string, data)
 	react(victim, if side then "FlinchA" else "FlinchB")
 end
 
---[[
-	Grabs. The server holds the victim in place for hitboxes, but its
-	position reaches us a ping late, which looks loose when the grabber is
-	moving fast (Black Meteorite's rise and slam). So every client pins the
-	victim to the grabber's hand itself, every frame: the hand's grip point
-	is at their throat, facing the grabber, never sunk into the floor.
-]]
 local GRAB_NECK = 0.85 -- grip point to the victim's root
 local GRAB_REACH = 0.6 -- the victim's root sits this far past the hand
 local GRAB_FLOOR = 2.6 -- lowest the victim's root goes above the ground
@@ -201,8 +183,6 @@ local function pinGrab(data)
 		local target = attackerRoot.CFrame * offset
 		local hand = if handName then attacker:FindFirstChild(handName) else nil
 		if hand and hand:IsA("BasePart") then
-			-- Hanging from the hand the way the grabber is the right way up:
-			-- if he turns upside down (a head-first dive), so do they.
 			local grip = (hand.CFrame * CFrame.new(0, -1, 0)).Position
 			local up = attackerRoot.CFrame.UpVector
 			local forward = attackerRoot.CFrame.LookVector
@@ -238,8 +218,6 @@ local function watchBlocking(character: Model)
 	end
 end
 
--- Kit stances and Black Form style looks follow the "Kit" and "Awakened"
--- attributes on every player.
 local function watchCharacter(character: Model)
 	-- The character can arrive before its joints have replicated.
 	local torso = character:WaitForChild("Torso", 5)
@@ -276,8 +254,6 @@ end
 function Moves.Start()
 	PoseAnimator.Start()
 
-	-- Heavy hits: the attacker's swing also freezes for the hit-stop, so the
-	-- impact feels like it connected.
 	local HEAVY_EFFECTS = { HeavyHit = true, PerfectDivider = true }
 	Remotes.VFX.OnClientEvent:Connect(function(name, data)
 		if type(data) ~= "table" then

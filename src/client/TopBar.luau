@@ -1,10 +1,4 @@
---[[
-	TopBar
-	Buttons in Roblox's top bar, right next to the menu/chat buttons:
-	  CHARACTERS  opens the character picker
-	  SHIFT LOCK  toggles shift lock (same as LeftShift)
-	  INFINITE AWAKENING  play testing only (Config.PlayTest)
-]]
+-- Buttons in the top bar: the character picker and shift lock.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -241,9 +235,6 @@ function TopBar.Start()
 		then pillButton(row, "INFINITE AWAKENING: OFF", 3)
 		else nil
 
-	-- Line up exactly with Roblox's own buttons: in the 58px top bar they're
-	-- 44px tall and sit 12px from the top (2px from the bottom). Computed from
-	-- the bar's real height so it also lines up on smaller top bars.
 	local rowPadding = Instance.new("UIPadding")
 	rowPadding.PaddingLeft = UDim.new(0, 10) -- small gap after Roblox's chat button
 	rowPadding.Parent = row

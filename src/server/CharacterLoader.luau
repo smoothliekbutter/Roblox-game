@@ -1,14 +1,4 @@
---[[
-	CharacterLoader
-	Puts every player in an R6 body while keeping their own avatar look
-	(skin colors, clothes, face, accessories). Battlegrounds animations and
-	ragdolls are built for R6, and this works without publishing the place
-	or changing Game Settings.
-
-	How: an R6 rig named "StarterCharacter" in StarterPlayer makes Roblox
-	spawn everyone as that rig. We spawn players ourselves and then dress
-	the rig in their avatar.
-]]
+-- Puts every player in an R6 body that keeps their own avatar look.
 
 local Players = game:GetService("Players")
 local StarterPlayer = game:GetService("StarterPlayer")
@@ -51,8 +41,6 @@ local function spawnCharacter(player: Player)
 	if not ok then
 		warn("[CharacterLoader] Couldn't apply avatar for", player.Name, err)
 	end
-	-- Applying the avatar can rebuild body parts, so weapons are only
-	-- attached after this (see CombatService.Register).
 	character:SetAttribute("AvatarLoaded", true)
 
 	humanoid.Died:Connect(function()

@@ -1,18 +1,4 @@
---[[
-	MeteorVortex
-	Black Meteorite after the grab, start to finish:
-	  1. the vortex: holding them out by the throat, Asta whirls round,
-	     bobbing up and down as it carries him into the sky, and finishes
-	     facing the way he started;
-	  2. the flip: he tips forward over the top until he's head-down;
-	  3. the dive: head-first, spinning like a drill (a whole number of
-	     turns, faster as he falls) down into the ground with them;
-	  4. the recovery: the somersault finishes and he lands on his feet.
-
-	Shared so the server (which holds him on the path) and every client
-	(which draws him on it smoothly) agree on where he is. t = 0 is the
-	start of the spin; `origin` is his root then, level.
-]]
+-- Black Meteorite's path after the grab (vortex, flip, dive, landing), shared by the server and clients.
 
 local MeteorVortex = {}
 
@@ -76,8 +62,6 @@ function MeteorVortex.Plan(origin: CFrame, top: number, floorY: number?): Plan
 	}
 end
 
--- How far round he has turned (radians) at fraction a of the spin-up: slow
--- to start, fastest in the middle, easing out facing forward again.
 function MeteorVortex.Angle(a: number): number
 	return MeteorVortex.Turns * 2 * math.pi * smooth(math.clamp(a, 0, 1))
 end
@@ -86,8 +70,6 @@ end
 function MeteorVortex.Spin(origin: CFrame, t: number, top: number?): CFrame
 	local a = math.clamp(t / MeteorVortex.Length, 0, 1)
 	local angle = MeteorVortex.Angle(a)
-	-- Rising overall, bobbing down and up twice on the way (the bobs ease in
-	-- and out, so it starts and ends without a jolt).
 	local height = (top or MeteorVortex.Top) * smooth(a)
 		+ MeteorVortex.Bob * math.sin(a * math.pi * 4) * math.sin(a * math.pi)
 	local circle = (origin.RightVector * math.sin(angle) + origin.LookVector * (math.cos(angle) - 1))
@@ -102,8 +84,6 @@ function MeteorVortex.Spin(origin: CFrame, t: number, top: number?): CFrame
 		* CFrame.Angles(math.rad(10) * pull, 0, -math.rad(12) * pull)
 end
 
--- His root at time t, over the whole move. Each stage starts exactly where
--- the last one left him, so nothing snaps.
 function MeteorVortex.At(plan: Plan, t: number): CFrame
 	if t <= plan.flipAt then
 		return MeteorVortex.Spin(plan.origin, t, plan.top)

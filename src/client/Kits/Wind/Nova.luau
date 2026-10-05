@@ -1,25 +1,4 @@
---[[
-	Prince of Wind (Yuno): Nova Vortex (Half-Crown 4), drawn. The server
-	(Server/Kits/Wind) decides where it goes, how long it turns and who it
-	hits; this draws it:
-
-	  the star    a star forms over his open hand, wind streaming into it,
-	              and he flicks it out: it flies spinning on a low arc,
-	              trailing starlight and wind.
-	  the galaxy  where it lands it opens into a galaxy of wind and stars
-	              turning flat over the ground: four arms of wind and
-	              starlight curling out of a bright core, stars strewn along
-	              them, rings of wind turning round it, a ring of light at
-	              the edge of its pull, wind rushing in across the ground
-	              from all round, and in its eye a column of wind twisting
-	              up. It turns faster the longer it's open.
-	  the nova    it all falls into its eye in a blink, then a pillar of
-	              starlight bursts up into the sky, twisting with wind: a
-	              ring of wind and light races out over the ground, the
-	              ground cracks gold, stars scatter.
-
-	All of it see-through wind and light, so you can see who's caught in it.
-]]
+-- Yuno's Nova Vortex (Half-Crown 4), drawn: the star, the galaxy of wind and the nova.
 
 local RunService = game:GetService("RunService")
 
@@ -59,9 +38,7 @@ local function handOf(character: Model): Vector3?
 	return if arm and arm:IsA("BasePart") then (arm.CFrame * CFrame.new(0, -1.3, 0)).Position else nil
 end
 
----------------------------------------------------------------------------
 -- The star in his hand, and its flight
----------------------------------------------------------------------------
 
 type Forming = { stop: () -> () }
 local forming: { [Model]: Forming } = setmetatable({}, { __mode = "k" }) :: any
@@ -142,9 +119,7 @@ local function throwStar(from: Vector3, eye: Vector3, flight: number)
 	end)
 end
 
----------------------------------------------------------------------------
 -- The galaxy
----------------------------------------------------------------------------
 
 type Galaxy = { collapse: () -> (), fade: () -> () }
 local galaxies: { [Model]: Galaxy } = setmetatable({}, { __mode = "k" }) :: any
@@ -385,9 +360,7 @@ local function openGalaxy(eye: Vector3, ground: Vector3, reach: number): Galaxy
 	return galaxy
 end
 
----------------------------------------------------------------------------
 -- The nova
----------------------------------------------------------------------------
 
 local function nova(eye: Vector3, ground: Vector3)
 	-- A pillar of starlight bursting up into the sky, twisting with wind.
@@ -444,8 +417,6 @@ local function nova(eye: Vector3, ground: Vector3)
 	Soft.windPuff(eye, 6, UP)
 	U.light(eye, STAR, 6, 40, 0.5)
 end
-
----------------------------------------------------------------------------
 
 function Nova.Handle(ctx: Context, data, character: Model, root: BasePart)
 	local phase = data.phase

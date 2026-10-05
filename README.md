@@ -12,6 +12,8 @@ All code lives in `src/` as Luau files and gets synced into Roblox Studio with [
 
 Everyone spawns as R6 wearing their own avatar (`src/server/CharacterLoader.luau`). You don't need to change Game Settings.
 
+The scripts in the place file are a compressed copy of `src/` (see [Building the place file](#building-the-place-file)). They run exactly like the readable code in `src/`, and an error's line number still points to the right line there.
+
 ## Live sync (for development)
 
 With live sync, every code change shows up in Studio instantly, without re-downloading anything.
@@ -112,7 +114,7 @@ All of Asta's animations are generated from `tools/anim/asta_anims.py` and check
 - On grounded animations the body is lowered or raised so his soles rest on the floor. That's what lets lunges sink into their stance and runs bob.
 - The run and walk are smooth loops sampled from curves (no stalling at keyframes). Their speed follows the ground covered: a foot passing under him sweeps back as fast as he moves, about 11 studs a loop for the sprint (the same pace as Roblox's own R6 run), so the legs never scurry. The sprint leans in with a runner's bob: the foot is flat on the floor as each leg passes under him, and he lifts off between steps. His shoulders turn with the pumping free arm while his hips stay square, and his head stays level. The walk stays planted and rides over each step.
 
-Run `python3 tools/anim/asta_anims.py`, then `python3 tools/anim/emit.py src/client/Kits/AntiMagic/Animations.luau`. Yuno's are in `tools/anim/yuno_anims.py`: run it to check them, then `python3 tools/anim/yuno_anims.py src/client/Kits/Wind/Animations.luau` to write them.
+Run `python3 tools/anim/asta_anims.py`, then `python3 tools/anim/emit.py src/client/Kits/AntiMagic/Animations.luau`. The generated files store one line of text per keyframe, decoded when the game starts (see `tools/anim/README.md`). Yuno's are in `tools/anim/yuno_anims.py`: run it to check them, then `python3 tools/anim/yuno_anims.py src/client/Kits/Wind/Animations.luau` to write them.
 
 Grabs pin the victim to the grabber's actual hand on every screen, so the hold looks solid at any ping. The victim plays a struggling "held by the throat" animation.
 
@@ -185,8 +187,15 @@ src/
     Kits/   one module per character: skills, awakening, weapon model
   client/   StarterPlayerScripts.Client: Input, Moves, PoseAnimator, M1Animations, VFX, Soft (the
             soft-light toolkit both kits draw with), CameraShake, HUD, TopBar, ShiftLock
-    Kits/   one module per character: animations and VFX (Wind/Saint: Yuno's Full-Crown
-            ultimate; AntiMagic/Comet and AntiMagic/Ascent: Asta's Black Form cutscenes)
+    Kits/   one folder per character: animations and VFX, split into modules
+      AntiMagic/  init (M1s, skill events, dash / block effects), Fx (shared effects),
+                  Base and Form (the moves), Look (Black Form look, awakening, entrance),
+                  Moon, Comet, Ascent (cutscenes), Animations (generated)
+      Wind/       init, Fx, Base, Half and Full (the moves), Look (Crown looks, entrance),
+                  Saint, Nova, Waltz (big moves), Hawk, Wings, Sword (models), Animations
+tools/
+  build.py  builds the place file from a minified copy of src (below)
+  anim/     the animation generators and the R6 checker
 ```
 
 - **Adding a character:** add an entry to `src/shared/Kits.luau`, a server module in `src/server/Kits/` (`Skills`, `AwakenedSkills`, `Awaken`, `Equip`) and a client module in `src/client/Kits/` (`PlayM1`, `OnSkill`, `SetAwakened`), all named after the kit id.
@@ -194,3 +203,17 @@ src/
 - **Server-authoritative:** the server decides every hit, block and cooldown. Clients only send inputs and draw effects.
 - **Animations are code:** `src/client/M1Animations.luau` holds keyframed R6 poses, played by `PoseAnimator` by overriding Motor6Ds. Nothing needs uploading and there are no animation-permission problems. Uploaded animation IDs can replace them later.
 - **VFX are client-side:** the server sends `("EffectName", data)` and `src/client/VFX.luau` draws it. Effects use only textures built into Roblox, so nothing needs uploading.
+
+## Building the place file
+
+Roblox won't take a script whose source is longer than 200,000 characters (plugins like Rojo and tools that write `Script.Source` hit this limit). So no script in `src/` comes near it (the largest is about 70,000), and the place file ships them compressed:
+
+```
+python3 tools/build.py
+```
+
+1. [darklua](https://github.com/seaofvoices/darklua) writes a minified copy of `src/` to `build/min` (rules in `.darklua.json5`): comments and spacing removed, local names shortened, every line kept in place.
+2. Every minified script is compiled next to its source with `luau-compile -g0` (no debug info, so local names aren't in the output) at `-O1` and `-O2`, and the bytecode must be identical. If one differs, the build stops.
+3. Rojo builds `build/CloverBattlegrounds.rbxlx` from `build/min` (the same layout as `default.project.json`).
+
+It needs `darklua`, `rojo` and `luau-compile` (set `LUAU_COMPILE` if it isn't on your PATH). `python3 tools/build.py --readable` builds from `src/` directly. Live sync (`rojo serve`) always uses the readable `src/`.

@@ -1,19 +1,4 @@
---[[
-	BlackAscent
-	Black Ascent (Black Form, Demon-Slasher Katana 1): a rising cut launches
-	them; he springs up after them, glides across in front of them cutting
-	them from right to left, sweeps back up the other way in a rising cut,
-	comes over the top of them and cuts them straight back down into the
-	ground, landing beside the crater.
-
-	Shared so the server (which holds them both on the paths) and every
-	client (which draws them smoothly) agree on where they are. t = 0 is the
-	launching cut landing. His path is a smooth curve through keyframes
-	(position, facing and lean all ease through each one: nothing jumps);
-	the cuts knock them about with eased shoves, never a jump. In step with
-	the Ascent clip (tools/anim/asta_anims.py: ASCENT_CUTS, ASCENT_SPIKE,
-	ASCENT_LAND).
-]]
+-- Black Ascent's paths (shared, so the server and every client agree).
 
 local BlackAscent = {}
 
@@ -63,8 +48,6 @@ function BlackAscent.Plan(origin: CFrame, victimPosition: Vector3, floorY: numbe
 	local cut1, cut2 = times.Cuts[1], times.Cuts[2]
 	local landed = Vector3.new(start.X, floorY + 3, start.Z) - forward * 3
 	local from = origin.Position
-	-- Yaw: degrees he's turned from facing them square on (positive to his
-	-- right); pitch: how far he leans forward.
 	local keys: { Key } = {
 		{ t = 0, p = from, yaw = 0, pitch = 0 },
 		{ t = 0.1, p = from + forward * 0.5 + UP * 1.2, yaw = -6, pitch = -8 },
@@ -90,8 +73,6 @@ function BlackAscent.Plan(origin: CFrame, victimPosition: Vector3, floorY: numbe
 	}
 end
 
--- Catmull-Rom through the keys (uneven spacing), standing still at both
--- ends: smooth through every one.
 local function slope(keys: { Key }, i: number, get: (Key) -> any): any
 	if i == 1 or i == #keys then
 		return get(keys[i]) * 0

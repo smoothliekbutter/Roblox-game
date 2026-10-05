@@ -1,40 +1,4 @@
---[[
-	Prince of Wind (Yuno): Saint Spirit of Zephyr (Full-Crown 4), drawn.
-	The flight is Shared/SaintZephyr (the server holds them both on it);
-	this draws it, about 6 seconds:
-
-	  the bind    the flicked star strikes them and a seal of starlight
-	              closes on them; a magic circle opens on the ground under
-	              them and a column of wind tears up out of it, carrying them
-	              high into the sky, him flying up beside them.
-	  the stars   eight stars open round them in the sky, joined in one line
-	              of streaming starlight (an eight-pointed star) over turning
-	              rings of light and wind; light pours from each into them.
-	  the dance   from his own star he charges through them, then never
-	              stops: out round a star, back through them, every pass a
-	              cut you see him make (his sword sweeping a sheet of wind,
-	              the cut left hanging in the air), the ribbon of wind he
-	              trails painting a flower of eight petals round them, faster
-	              and faster. Then a rising X.
-	  the blade   up and over to the top: wings of wind open, Sylph dives
-	              into his raised hands and a colossal blade of wind and
-	              starlight grows out of them, wind spiralling up it, the
-	              light of every star in the constellation pouring into it,
-	              a shaft of wind opening into the sky over him.
-	  the strike  one stroke straight down through them: the swing leaves
-	              a crescent of wind the height of the sky and a seam of
-	              light from the heavens to the ground.
-	  the fall    every cut left hanging bursts, one after another, the
-	              stars burst, the rings blow apart; they fall like a meteor,
-	              a comet's tail of wind behind them, into a crater, a
-	              tornado of wind tearing up out of it, starlight falling,
-	              him standing with his back to it.
-
-	Everything is wind and light you can see through, and both of them are
-	outlined through it, so the fight stays readable. The light changes
-	only a little (a touch brighter, greener, a soft bloom). The camera
-	moves smoothly: eased shots and eased blends, no shake.
-]]
+-- Yuno's Saint Spirit of Zephyr (Full-Crown 4) cutscene, drawn along Shared/SaintZephyr's flight.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -94,9 +58,7 @@ local function across(direction: Vector3): (Vector3, Vector3)
 	return side, side:Cross(direction).Unit
 end
 
----------------------------------------------------------------------------
 -- Pieces
----------------------------------------------------------------------------
 
 -- Outlines someone through all of it for the length of the cutscene.
 local function outline(character: Model?, color: Color3, duration: number)
@@ -118,8 +80,6 @@ local function outline(character: Model?, color: Color3, duration: number)
 	end)
 end
 
--- A magic circle on the ground: rings of starlight and wind turning
--- opposite ways, an eight-pointed star drawn in one line inside them.
 local function groundSigil(center: Vector3, radius: number, duration: number)
 	local rings = {
 		softRing({
@@ -193,9 +153,6 @@ local function groundSigil(center: Vector3, radius: number, duration: number)
 	end)
 end
 
--- A column of wind tearing up out of the ground: a broad stream of wind
--- flowing up it round a bright core, ribbons spiralling up round it, gusts
--- and streaks racing up it, and the ground bursting where it comes out.
 local function windColumn(base: Vector3, height: number, radius: number, duration: number)
 	U.pillar(base, WIND, radius, height, duration, Enum.Material.ForceField, 0.55)
 	local foot, head = worldAnchor(base, UP), worldAnchor(base + UP * height, UP)
@@ -286,11 +243,6 @@ local function windColumn(base: Vector3, height: number, radius: number, duratio
 	U.light(base + UP * 4, WIND, 5, 40, duration)
 end
 
--- The constellation's rings, round them and turning: a ring of starlight
--- and a chain of sparkles outside it, a ring of wind turning the other way,
--- a small ring round them, two rings standing up through them crossed at a
--- slant, and twelve spokes of light. They open out of them, and at the end
--- are blown apart.
 type Circle = { update: (number, number) -> (), blowApart: () -> () }
 
 local function skyCircle(center: Vector3, radius: number): Circle
@@ -393,8 +345,6 @@ local function skyCircle(center: Vector3, radius: number): Circle
 	return circle
 end
 
--- Wings of wind: two fans of shimmering, see-through feathers open out of
--- his back for the strike, wind streaming off them, beat slowly and fold.
 local function wingsOfWind(character: Model, duration: number)
 	local torso = character:FindFirstChild("Torso") :: BasePart?
 	if not torso then
@@ -488,10 +438,6 @@ local function wingsOfWind(character: Model, duration: number)
 	end)
 end
 
--- The colossal blade: a white-hot core in a glittering edge inside layers
--- of wind flowing up it, ribbons of wind spiralling up it, wind and
--- sparkles pouring off it, a star at its point. See-through where it's
--- nearest him.
 type Blade = {
 	set: (Vector3, Vector3, number) -> (),
 	tip: Attachment,
@@ -599,8 +545,6 @@ local function windBlade(): Blade
 	return blade
 end
 
--- The strike's seam through the whole sky: a white-hot line, wind racing
--- down it and a broad haze of wind round it, there and gone.
 local function windSeam(top: Vector3, ground: Vector3)
 	local direction = (ground - top).Unit
 	local from, to = top - direction * 90, ground + direction * 2
@@ -704,21 +648,8 @@ local function starfall(center: Vector3, radius: number, duration: number)
 	task.delay(duration + 2.5, sky.Destroy, sky)
 end
 
----------------------------------------------------------------------------
 -- The cutscene
----------------------------------------------------------------------------
 
---[[
-	The Zephyr sky (the Golden Dawn): for anyone near, the light turns to a
-	golden sunrise (Cinematic.Dawn) and the sky over the fight is dressed for
-	Yuno: the low sun haloed in gold with rays of light fanning out of it,
-	stars of his star magic glittering all over the sky, long streams of wind
-	sweeping across it, and right over them a colossal spiral of wind turning
-	slowly round an eight-pointed star of light in its eye, light falling
-	from it onto them. It answers the fight: the star swells as the blade
-	grows (the blade points straight up at it), flares at the strike, and
-	the spiral blows apart when they fall.
-]]
 export type ZephyrSky = {
 	update: (number) -> (), -- (run every frame on its own: seconds since it opened)
 	gather: () -> (),
@@ -746,8 +677,6 @@ local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
 		return attachment
 	end
 
-	-- The sun, low and gold where the dawn puts it: a halo round it and
-	-- rays of light fanning up out of it.
 	local toSun = Cinematic.DawnSun()
 	toSun = Vector3.new(toSun.X, math.max(toSun.Y, 0.1), toSun.Z).Unit
 	local sun = center + toSun * 420
@@ -824,8 +753,6 @@ local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
 		)
 	end
 
-	-- The spiral of wind over them: rings turning round its eye (each
-	-- slower than the one inside it), arms of wind curling in.
 	local eye = center + UP * 92
 	type Swirl = { ring: Soft.Ring, radius: number, height: number, speed: number, tilt: number }
 	local swirls: { Swirl } = {}
@@ -984,15 +911,6 @@ local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
 	return sky
 end
 
---[[
-	Sylph, the spirit of Zephyr, over the fight: a giant figure of wind and
-	light looming behind them (wherever you look from: she's drawn facing
-	you, beyond the fight), her hair and the tail of her dress streaming in
-	the wind, wings of wind open behind her, a halo of light over her head.
-	When he raises his hands for the blade she lifts her arms over her head,
-	then pours herself into him: she shrinks into a stream of wind that runs
-	down to him (the little Sylph that dives into the blade).
-]]
 export type Spirit = { raise: () -> (), dissolve: (BasePart) -> (), close: () -> () }
 
 local SPIRIT_HEIGHT = 84
@@ -1200,12 +1118,8 @@ local function play(data, character: Model, root: BasePart, context: Context)
 	local passes = table.clone(cuts)
 	table.insert(passes, times.Cross)
 
-	-- The path starts where his body is (raised by his hover), so his hover
-	-- goes at the same moment and he doesn't move.
 	PoseAnimator.SettleLift(character, times.Length)
 
-	-- All of it sheer: every piece of wind and light made while it plays is
-	-- that much more see-through, so the two of them show through it.
 	local unsheer = Soft.sheer(SHEER)
 	task.delay(times.Length + 0.3, unsheer)
 
@@ -1213,10 +1127,6 @@ local function play(data, character: Model, root: BasePart, context: Context)
 	outline(character, WIND_WHITE, times.Length)
 	outline(target, STAR, times.Land)
 
-	-- The Golden Dawn: for whoever's near, as he carries them up, the sun
-	-- comes up gold, the light turns warm (never dark), and the Zephyr sky
-	-- opens over the fight; it goes back after they land. A bloom makes the
-	-- wind and starlight glow; for the two of them, depth of field on him.
 	local nearby = mine or (workspace.CurrentCamera.CFrame.Position - plan.center).Magnitude < 180
 	local sky: ZephyrSky? = nil
 	local spirit: Spirit? = nil
@@ -1273,9 +1183,6 @@ local function play(data, character: Model, root: BasePart, context: Context)
 		end
 	end
 
-	-- The seal that binds them: a star on them and rings of starlight and
-	-- wind turning round them (little stars riding them), wind swirling
-	-- round them while they hang there.
 	local seal = Soft.softStar(3)
 	local bindRings = {
 		softRing({
@@ -1320,9 +1227,6 @@ local function play(data, character: Model, root: BasePart, context: Context)
 		Rate = 0,
 	})
 
-	-- The constellation: the eight stars, joined in the order he goes round
-	-- them (one line drawing an eight-pointed star) by streams of sparkles
-	-- over thin lines of light; and his own star where he waits.
 	local stars: { Soft.Star } = {}
 	local starAnchors: { Attachment } = {}
 	local lines: { Beam } = {}
@@ -1451,8 +1355,6 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			local hand, other = handOf(character, "Right"), handOf(character, "Left")
 			local hands = if hand and other then hand:Lerp(other, 0.5) else root.Position + UP * 2.5
 			local grow = easeOut((t - (times.Rise - 0.1)) / 0.35)
-			-- Swung over in front of him (round his right), from straight up
-			-- to down along the strike, at an even sweep of the angle.
 			local down = (plan.ground - (plan.top + UP * SaintPlan.Drift)).Unit
 			local swing = smooth((t - dive) / 0.1)
 			local arc = math.acos(math.clamp(UP:Dot(down), -1, 1))
@@ -1471,9 +1373,6 @@ local function play(data, character: Model, root: BasePart, context: Context)
 		end
 	end)
 
-	-- The bind: the star strikes them, a magic circle opens on the ground
-	-- under them and a column of wind tears up out of it and carries them
-	-- up; he flies up beside them.
 	twinkle(plan.start + UP, 9, STAR, 0.35)
 	U.flash(plan.start + UP, STAR_WHITE, 4, 0.15)
 	lightRing(plan.start + UP, UP, 0.5, 7, 0.35)
@@ -1522,8 +1421,6 @@ local function play(data, character: Model, root: BasePart, context: Context)
 		task.delay(times.Burst - times.Lift + 2, below.Destroy, below)
 	end)
 
-	-- The constellation opens round them; wind swirls round them; light
-	-- pours from every star into them.
 	task.delay(times.Lift, function()
 		swirl.Rate = 22
 		windRing(center, UP, 2, SaintPlan.Ring + 6, 0.5)
@@ -1553,9 +1450,6 @@ local function play(data, character: Model, root: BasePart, context: Context)
 		windRing(plan.hover - UP * 1.4, UP, 0.5, 4, 0.35)
 	end)
 
-	-- The dance: he leaves a ribbon of wind behind him (painting the
-	-- petals round them), his sword sweeps a sheet of wind as it swings and
-	-- sheds starlight, and he glows.
 	local torso = character:FindFirstChild("Torso") :: BasePart?
 	task.delay(charge, function()
 		windPuff(plan.hover, 3, -plan.passes[1])
@@ -1642,9 +1536,6 @@ local function play(data, character: Model, root: BasePart, context: Context)
 		end)
 	end)
 
-	-- Each pass: the swing (just before he's in the middle of them), the cut
-	-- itself (a stroke of light through them, left hanging as a crescent of
-	-- wind), and round each star a kick off it (a ghost of him left there).
 	for i, at in passes do
 		local direction = plan.passes[i]
 		local last = i == #passes
@@ -1766,9 +1657,6 @@ local function play(data, character: Model, root: BasePart, context: Context)
 		end
 	end
 
-	-- High above them: wings of wind open, wind pours in, Sylph dives into
-	-- his hands and the blade grows out of them; the light of every star
-	-- pours into it.
 	task.delay(times.Rise - 0.35, function()
 		if spirit then
 			spirit.raise()
@@ -1900,9 +1788,6 @@ local function play(data, character: Model, root: BasePart, context: Context)
 		table.insert(gatherExtra, from)
 	end)
 
-	-- The strike: the swing leaves a crescent of wind the height of the
-	-- sky, and a seam of light from the heavens to the ground; it goes
-	-- through them (a beat of hit-stop), and he lands.
 	task.delay(dive, function()
 		context.play(character, anims.SaintStrike)
 		fadeBeams(gathering, 0.15, gatherExtra)
@@ -2078,13 +1963,6 @@ local function play(data, character: Model, root: BasePart, context: Context)
 	end)
 	task.delay(times.Length + 0.3, finish)
 
-	-- The camera: every shot moving, smoothly (eased, no shake), him always
-	-- in shot. Pushing in over his shoulder as the star strikes; craning up
-	-- the column with them; behind him at his star as the constellation
-	-- opens (he charges away from us, through them); circling them wide
-	-- through the dance; side-on for the X; from below them up at him and
-	-- the blade; wide for the strike; falling with them; and round him at
-	-- the crater to his face, his back to it.
 	if not mine then
 		return
 	end
@@ -2184,9 +2062,6 @@ local function play(data, character: Model, root: BasePart, context: Context)
 				local e = smooth(u)
 				local angle = rad(-30 + 50 * e)
 				local around = right * math.cos(angle) + forward * math.sin(angle)
-				-- From below them: them hanging close and him high above them,
-				-- then tilting up and pulling back as the blade grows, until
-				-- it's all in shot, him at the foot of it.
 				local reveal = smooth((u - 0.15) / 0.6)
 				local eye = center - UP * 4 + around * (24 + 10 * reveal)
 				local focus = center:Lerp(top + UP * 6, 0.44):Lerp(top + UP * 19, reveal)
@@ -2244,8 +2119,6 @@ local function play(data, character: Model, root: BasePart, context: Context)
 		end
 		return total + blow(t, times.Strike, 8) + blow(t, times.Burst, 4)
 	end
-	-- Where a shot puts the camera at `t` (past its end it carries on as
-	-- it was going, for blending out of it).
 	local function evaluate(shot: Shot, t: number, hold: boolean): (CFrame, number)
 		local u = (t - shot.from) / math.max(shot.to - shot.from, 1e-3)
 		if hold then

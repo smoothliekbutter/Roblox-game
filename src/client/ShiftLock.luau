@@ -1,10 +1,4 @@
---[[
-	ShiftLock
-	Our own shift lock (Roblox's built-in one is turned off in StarterPlayer):
-	LeftShift or the top bar button toggles it. While on, the mouse is locked
-	to the center, the camera sits over the right shoulder and the character
-	always faces where the camera looks, so attacks go where you aim.
-]]
+-- Our own shift lock (LeftShift or the top bar button).
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")

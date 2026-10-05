@@ -1,14 +1,4 @@
---[[
-	Input
-	Keyboard / mouse / gamepad / touch controls.
-	  M1 (click, hold to chain)   basic attack, hold Space on the 4th hit to uppercut
-	  Q                           dash in your movement direction (Evasive when stunned)
-	  F (hold)                    block, press right before a hit to perfect block
-	  1-4                         character skills (sent even on cooldown: some skills
-	                              read follow-up presses, like timing Black Divider)
-	  R                           the character's special (also sent on cooldown)
-	  G                           awaken when the meter is full
-]]
+-- Keyboard / mouse / gamepad / touch controls, sent to the server as actions.
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
@@ -51,20 +41,11 @@ local airJumpsUsed = 0
 local jumpReleasedInAir = false
 local sideDashReadyAt = 0 -- left and right: their own, shorter cooldown
 
--- Mirror of the server's combo counter so our animation plays instantly.
--- The server still decides what actually hits.
 local predictedCombo = 0
 local lastM1 = 0
 local nextM1 = 0
--- Jumping is locked while swinging. The server enforces it too (JumpHeight 0),
--- but locking it here as well means there's no ping delay.
 local noJumpUntil = 0
--- The uppercut is thrown with Space held: that same press mustn't then jump
--- you up after them. Jumping waits until Space has been let go.
 local jumpNeedsRelease = false
--- Space already held when the 3rd hit lands: they're lining up the uppercut,
--- so stay on the ground for the 4th (until it's thrown, the string runs out,
--- or Space is let go: a fresh press then jumps, for the downslam).
 local uppercutPrimedUntil = 0
 local jumpEnabled = true
 
@@ -108,9 +89,6 @@ end
 
 local lastJumpRequest = 0
 
--- In the air, from our own physics (exact; the server sees us a ping
--- late). A jump pressed this very frame counts too: it only lifts off on
--- the next physics step.
 local function airborne(): boolean
 	local _, humanoid = getCharacter()
 	if not humanoid then
@@ -126,11 +104,6 @@ local function airborne(): boolean
 	return jumpEnabled and humanoid.JumpHeight > 0 and os.clock() - lastJumpRequest < 0.06
 end
 
--- The server's hover or dive for an air move reaches us a round trip late,
--- and a jump only lasts ~0.4s, so hold still where the key was pressed
--- until it arrives. Same "Knockback" name as Remotes.Impulse, so the real
--- impulse replaces it. Only for moves that are ready (a rejected press or a
--- follow-up tap, like timing Black Divider, never freezes you).
 local AIR_HOLD = Vector3.new(0, 0.05, 0)
 local AIR_HOLD_TIME = 0.4
 
@@ -202,8 +175,6 @@ local function tryM1()
 	else
 		nextM1 = t + Config.M1.SwingCooldown
 		noJumpUntil = t + (if index == Config.M1.ComboLength - 1 then Config.M1.DownslamJumpAfter else Config.M1.Busy)
-		-- Jumping after the 3rd hit is the downslam (3 hits, jump, hit). But
-		-- Space already held here means the uppercut is coming: no hop.
 		if index == Config.M1.ComboLength - 1 and jumpHeld(humanoid) then
 			uppercutPrimedUntil = t + Config.M1.ResetTime
 		end
@@ -257,8 +228,6 @@ local function performDash(direction: string)
 	connection = RunService.Heartbeat:Connect(function()
 		if not mover.Parent then
 			connection:Disconnect()
-			-- A front dash always ends in an M1, when it runs its course (not
-			-- cut short or knocked out of). Side and back dashes don't.
 			if direction == "Front" and os.clock() - start >= duration - 0.05 then
 				tryM1()
 			end
@@ -322,10 +291,6 @@ local function tryDash()
 	performDash(direction)
 end
 
--- A steerable push from a skill (Bull Thrust): it turns toward where you're
--- heading (movement keys, or the camera when none are held) at up to
--- `turnRate` degrees per second, keeping its speed, and you face the way
--- you're going. Shift lock lets go of your facing meanwhile.
 local function steerImpulse(
 	mover: LinearVelocity,
 	character: Model,
@@ -377,8 +342,6 @@ local function setBlock(held: boolean)
 	Remotes.Action:FireServer("Block", held)
 end
 
--- Server owns ragdoll physics, but the client's Humanoid state must match
--- or it fights the ragdoll / stays floppy after getting up.
 local function onCharacterAdded(character: Model)
 	local humanoid = character:WaitForChild("Humanoid") :: Humanoid
 	jumpEnabled = true
@@ -498,8 +461,6 @@ function Input.Start()
 				jumpEnabled = canJump
 				humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, canJump)
 			end
-			-- The server gives the jump back a ping late after a move ends;
-			-- don't eat a jump pressed in between.
 			if
 				canJump
 				and humanoid.JumpHeight < Config.Movement.JumpHeight
@@ -527,8 +488,6 @@ function Input.Start()
 		local plain = type(options) ~= "table"
 		local mover =
 			Impulse.Apply(root, velocity, math.clamp(duration, 0, 1), "Knockback", if plain then 0.45 else nil)
-		-- Dives (air Bull Thrust, the Meteorite slam, Plunge): once we touch down,
-		-- stop pushing into the floor and carry on as a skid.
 		if type(options) == "table" and options.landStop == true and velocity.Y < 0 then
 			local connection
 			connection = RunService.Heartbeat:Connect(function()

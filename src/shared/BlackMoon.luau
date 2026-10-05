@@ -1,14 +1,4 @@
---[[
-	BlackMoon
-	The timeline of Black Moon (Asta's Black Form 4th move): he hurls them
-	into the sky, night falls, he hangs in front of a giant moon, then flies
-	through them and cuts them down.
-
-	Shared so the server (which holds both fighters on these paths) and
-	every client (which draws them there smoothly, with the camera work and
-	effects) agree on where everyone is at every moment. Everything is
-	worked out from where he stood when he threw them. t = 0 is the throw.
-]]
+-- Black Moon's timeline (shared, so the server and every client agree).
 
 local BlackMoon = {}
 
@@ -111,8 +101,6 @@ function BlackMoon.Attacker(plan: Plan, t: number): CFrame
 	return CFrame.lookAt(plan.beyond, plan.beyond + toVictim)
 end
 
--- Where the victim's root is at time t: hurled up, drifting and tumbling
--- at the top, then frozen still from the cut until it lands.
 function BlackMoon.Victim(plan: Plan, t: number): CFrame
 	local T = BlackMoon.Times
 	local facing = flat(plan.perch - plan.apex, -plan.forward)
@@ -129,15 +117,6 @@ function BlackMoon.Victim(plan: Plan, t: number): CFrame
 	return CFrame.lookAt(p, p + facing) * CFrame.Angles(-tumble, 0, 0)
 end
 
---[[
-	The camera for the two people in the cutscene: (cframe, field of view).
-	Shots: the throw from low behind him; a wide low shot of them rising
-	against the moon as he leaps after them; the moon shot (him a
-	silhouette in front of it, slowly pushing in); a close-up circling him
-	as he levels the sword; the flight straight at the camera through them;
-	the frozen moment after the cut, circling slowly. After the cut lands
-	the client follows them down.
-]]
 local function orbit(center: Vector3, eye: Vector3, degrees: number): Vector3
 	return center + CFrame.Angles(0, math.rad(degrees), 0):VectorToWorldSpace(eye - center)
 end

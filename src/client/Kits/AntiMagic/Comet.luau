@@ -1,25 +1,4 @@
---[[
-	Anti-Magic Knight (Asta): Black Comet (Black Form, Demon-Destroyer 2),
-	drawn. The paths are Shared/BlackComet (the server holds them both on
-	them); this draws it, about 1.4 seconds:
-
-	  take-off  both wings beat once: a ring of black wind bursts off his
-	            back, the ground under him cracks red and blows out, and he
-	            is gone, low and flat, black flame streaming off him.
-	  the drag  they hang from his real hand, dragged along on their back:
-	            the ground tears open under them in a glowing trench, dirt
-	            and sparks spray off it. Three times he hammers them flat
-	            into it, each harder than the last: a crater, rocks, red
-	            cracks, a ring of dust and a ring of red racing out.
-	  the heave he swings his legs down and lands skidding, his feet
-	            ploughing two furrows; hauls them round past his side and
-	            heaves them away: rings of black and red blow out after them
-	            and they fly off as a black comet, red embers streaming.
-
-	The camera (for the two of them) runs low alongside, a touch behind as
-	they tear off, swinging round behind him for the heave. No shake: each
-	blow is an eased zoom.
-]]
+-- Asta's Black Comet (Black Form, Destroyer 2), drawn along Shared/BlackComet's paths.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -76,8 +55,6 @@ local function gripPoint(character: Model): Vector3?
 	return if hand and hand:IsA("BasePart") then (hand.CFrame * CFrame.new(0, -1, 0)).Position else nil
 end
 
--- A flat dark strip laid on the ground from `a` to `b` (both on it), with a
--- glowing red seam down its middle that cools first.
 local function groove(a: Vector3, b: Vector3, width: number, life: number)
 	local length = (b - a).Magnitude
 	if length < 0.05 then
@@ -192,8 +169,6 @@ function Comet.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 		end
 	end
 
-	-- His wings: both out for this, one huge beat to launch him, swept back
-	-- for speed; flared open as he lands; back to normal after.
 	local wings = ctx.wings(character)
 	if wings then
 		if wings.setPair then
@@ -209,8 +184,6 @@ function Comet.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 		end)
 	end
 
-	-- What's sprayed off them as they're dragged: dirt and grit thrown up
-	-- off the back of them, dust clouds rolling behind, red sparks.
 	local dirtHolder, dirt = sprayer({
 		Texture = U.textures.Smoke,
 		Color = ColorSequence.new(Color3.fromRGB(120, 104, 88), Color3.fromRGB(90, 78, 66)),
@@ -252,9 +225,6 @@ function Comet.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 	})
 	local spray = { dirtHolder, cloudHolder, sparkHolder }
 
-	-- Their body, hung from his real hand (it's where the clip puts it, so
-	-- they stay in his grip at any speed), eased in from where the grab
-	-- held them.
 	local body: CometPlan.Body? = nil
 	local heldFrom = if victimRoot then victimRoot.CFrame else nil
 	local lastTrench: Vector3? = nil
@@ -293,8 +263,6 @@ function Comet.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 			end
 			victimRoot.CFrame = frame
 
-			-- Where they meet the ground: along their back when they're
-			-- down flat, their heels when he's lifted them.
 			local feet = (body :: CometPlan.Body).feet
 			local low = math.clamp((frame.Position.Y - floorY - 0.6) / 1.6, 0, 1)
 			local contact = ground(frame.Position:Lerp(feet, 0.35 + 0.65 * low))
@@ -569,12 +537,6 @@ function Comet.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 	return stop
 end
 
---[[
-	The camera: low, at their side (the side he holds them on), riding
-	along a touch behind them so they pull ahead as he tears off, coming
-	round behind his shoulder for the heave and watching them go. Each slam
-	and the heave is an eased zoom in and out; nothing shakes.
-]]
 function Comet.Camera(plan: CometPlan.Plan): () -> ()
 	local times = CometPlan.Times
 	local forward, right = plan.forward, plan.right
@@ -590,8 +552,6 @@ function Comet.Camera(plan: CometPlan.Plan): () -> ()
 		local from = CometPlan.Victim(plan, times.Release).Position
 		return from + forward * 85 * s + UP * (30 * s - 70 * s * s)
 	end
-	-- Steady: their ground track at a fixed height, so the camera doesn't
-	-- bob with every slam (only the dive down from the air, if any).
 	local function level(p: Vector3, height: number, t: number): Vector3
 		return Vector3.new(p.X, plan.floorY + height + plan.above * (1 - smooth(t / 0.2)), p.Z)
 	end

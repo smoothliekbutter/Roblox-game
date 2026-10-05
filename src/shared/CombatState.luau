@@ -1,9 +1,4 @@
---[[
-	CombatState
-	Combat state is stored as attributes on the character model. Attributes
-	replicate, so the server writes them and clients read them to gate input
-	and drive the HUD. Timestamps use server time so both sides agree.
-]]
+-- Combat state as attributes on the character (the server writes, clients read).
 
 local CombatState = {}
 
@@ -21,11 +16,7 @@ local DEFAULTS = {
 	Rooted = false, -- can't move (e.g. during a spawn entrance)
 }
 
--- Skill slots 1-4. "CD<n>" is the server time the skill is ready again,
--- "CDLen<n>" how long that cooldown was (for drawing the HUD sweep).
 CombatState.SkillSlots = 4
--- The R special uses the same attributes as slot 5. It isn't part of the
--- move set, so awakening doesn't reset it.
 CombatState.SpecialSlot = 5
 
 local function now(): number

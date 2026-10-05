@@ -1,30 +1,4 @@
---[[
-	PoseAnimator
-	Keyframe animations defined in code, played by overriding Motor6D.Transform
-	every frame. No uploaded animation assets needed, so they work in any place
-	without animation permissions.
-
-	Runs on every client for every character: the server tells clients
-	"this character swung", each client animates it locally.
-
-	Poses rotate a limb around its joint in the PARENT part's space:
-	  Torso       RootJoint, relative to HumanoidRootPart
-	  Head        Neck, relative to Torso
-	  RightArm    Right Shoulder, relative to Torso
-	  LeftArm     Left Shoulder
-	  RightLeg    Right Hip
-	  LeftLeg     Left Hip
-	  Sword       SwordGrip (a weapon's wrist), relative to the right arm
-	Axes: X = right, Y = up, Z = back. So for a limb hanging down,
-	  +X rotation swings it forward, +Y turns it to the left,
-	  +Z swings it out to the right. For the Torso, +X leans back.
-
-	Two layers per character:
-	  idle   a looping stance, one version for standing still and one for
-	         moving, blended by how fast the character is going
-	  track  one-shot animations (attacks, skills) that blend in from
-	         wherever the body is and back out into the idle
-]]
+-- Keyframe animations defined in code, played by overriding Motor6D.Transform every frame.
 
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
@@ -43,12 +17,7 @@ export type Animation = {
 	fadeIn: number?,
 	fadeOut: number?,
 	loop: boolean?,
-	-- Joints whose pose is layered on top of the layer below instead of
-	-- replacing it (e.g. legs counter-twisting while still walking).
 	additive: { [string]: boolean }?,
-	-- Overlapping action: a joint with a delay follows the animation that
-	-- many seconds late (negative leads), so the body leads and the arm and
-	-- weapon drag behind like in hand-made animation.
 	delays: { [string]: number }?,
 	events: { { time: number, name: string } }?,
 }
@@ -58,13 +27,8 @@ export type IdleSet = {
 	move: Animation?, -- played while moving (a run cycle)
 	walk: Animation?, -- played while moving slowly; blends into `move` as speed picks up
 	air: Animation?, -- played while jumping or falling
-	-- The speeds the run and walk cycles are animated for; they play faster
-	-- or slower with the character's actual speed so feet don't slide.
 	moveSpeed: number?,
 	walkSpeed: number?,
-	-- Better: the ground each cycle covers in one loop (studs). The cycle
-	-- then moves exactly with the distance travelled, so the planted foot
-	-- stays put at any speed.
 	moveStride: number?,
 	walkStride: number?,
 }
@@ -92,8 +56,6 @@ type Track = {
 	length: number,
 	onEvent: ((name: string) -> ())?,
 	firedEvents: { [number]: boolean },
-	-- Where each joint actually was when this track started, so a new swing
-	-- blends from the previous swing's pose instead of snapping to idle.
 	from: { [string]: CFrame },
 	-- Hit-stop: the animation holds still until this time.
 	freezeUntil: number,
@@ -109,11 +71,7 @@ type Idle = {
 	start: number,
 	standWeight: number,
 	airWeight: number,
-	-- Where in the step cycle the legs are (0 to 1), shared by walk and run
-	-- so they blend without the legs fighting.
 	phase: number,
-	-- Movement direction relative to facing (degrees, + is right), folded
-	-- into -75..75; backWeight says it's actually backwards.
 	moveYaw: number,
 	backWeight: number,
 	airborne: boolean,
@@ -124,8 +82,6 @@ type Idle = {
 
 local tracks: { [Model]: Track } = {}
 local idles: { [Model]: Idle } = {}
--- What we wrote to each joint last frame. If the default Animator didn't
--- overwrite it, the joint has no base animation and its base is identity.
 local lastWritten: { [Motor6D]: CFrame } = {}
 local posedCache: { [Animation]: { [string]: boolean } } = setmetatable({}, { __mode = "k" }) :: any
 
@@ -172,8 +128,6 @@ local function posed(animation: Animation): { [string]: boolean }
 	return set
 end
 
--- The animation's pose for one joint at time t (identity if never posed).
--- Applies the joint's delay; looping animations wrap around.
 local function sample(animation: Animation, poseName: string, t: number): CFrame
 	local delays = animation.delays
 	if delays and delays[poseName] then
@@ -211,8 +165,6 @@ local function toJointSpace(joint: Motor6D, pose: CFrame): CFrame
 	return c0:Inverse() * pose * c0
 end
 
--- What the default Animator (walk/idle) set this frame, or identity if
--- nothing but us animates this joint.
 local function animatorBase(joint: Motor6D): CFrame
 	local current = joint.Transform
 	return if lastWritten[joint] == current then CFrame.identity else current
@@ -223,10 +175,6 @@ local function write(joint: Motor6D, value: CFrame)
 	lastWritten[joint] = value
 end
 
--- A lift under everything a character plays (Yuno hovering while awakened):
--- the whole body raised `studs` off its root, eased so it never pops. It
--- settles to nothing while the root is anchored (a cutscene path), so the
--- body stays where the path puts it.
 type Lift = { target: number, current: number, holdUntil: number }
 local lifts: { [Model]: Lift } = setmetatable({}, { __mode = "k" }) :: any
 
@@ -248,9 +196,6 @@ local function liftFor(character: Model, joint: Motor6D, dt: number): CFrame?
 end
 
 local function release(track: Track, character: Model)
-	-- Hand the joints back; the default Animator overwrites them next frame
-	-- if it's animating them. Joints the idle covers stay put, the idle
-	-- takes over next frame.
 	local idle = idles[character]
 	for poseName, joint in track.joints do
 		if idle and idle.joints[poseName] then
@@ -275,8 +220,6 @@ end
 
 -- The idle layer's value for every joint it covers this frame (joint space).
 local function idleValues(character: Model, idle: Idle, now: number, dt: number): { [string]: CFrame }
-	-- Joints can show up late (a weapon replicating after the kit was set)
-	-- or get recreated (avatar applied), so look for missing ones now and then.
 	if now >= idle.nextJointScan then
 		idle.nextJointScan = now + 0.25
 		local fresh: { [string]: Motor6D }? = nil
@@ -295,8 +238,6 @@ local function idleValues(character: Model, idle: Idle, now: number, dt: number)
 	local speed = flat.Magnitude
 	local set = idle.set
 
-	-- Airborne means nothing under the feet. Unlike checking vertical
-	-- speed, this holds through the top of a jump.
 	if root and now >= idle.nextGroundCheck then
 		idle.nextGroundCheck = now + 0.05
 		idle.airborne = workspace:Raycast(root.Position, Vector3.new(0, -AIR_HEIGHT, 0), idle.rayParams) == nil
@@ -307,8 +248,6 @@ local function idleValues(character: Model, idle: Idle, now: number, dt: number)
 	local airTarget = if set.air and idle.airborne then 1 else 0
 	idle.airWeight += (airTarget - idle.airWeight) * math.min(dt * AIR_BLEND, 1)
 
-	-- Which way he's moving compared to where he faces (shift lock strafing,
-	-- backpedalling). Backwards runs the cycle in reverse.
 	local yawTarget, backTarget = 0, 0
 	if root and speed > STAND_SPEED then
 		local direction = root.CFrame:VectorToObjectSpace(flat / speed)
@@ -359,9 +298,6 @@ local function idleValues(character: Model, idle: Idle, now: number, dt: number)
 			else nil
 		local move = if run and walk then walk:Lerp(run, runWeight) else run or walk
 		if move then
-			-- Turn the stride toward the movement direction: hips most, the
-			-- torso a little, the head back to facing forward. Lean back less
-			-- when backpedalling.
 			if poseName == "Torso" then
 				move = CFrame.Angles(0, -yaw * 0.4, 0) * CFrame.Angles(math.rad(14) * back, 0, 0) * move
 			elseif poseName == "Head" then
@@ -446,8 +382,6 @@ local function step(dt: number)
 			local base = (idleValuesNow and idleValuesNow[poseName]) or animatorBase(joint)
 			local local_ = toJointSpace(joint, sample(animation, poseName, clampedTime))
 			local target = if additive[poseName] then base * local_ else local_
-			-- Fading in starts from wherever the joint really was (mid-swing
-			-- from the previous track, for example), not from the base.
 			local lift = if poseName == "Torso" then liftFor(character, joint, dt) else nil
 			local start = base
 			if fadingIn and track.from[poseName] then
@@ -460,8 +394,6 @@ local function step(dt: number)
 	end
 end
 
--- Lifts everything `character` plays `studs` off the ground (0 to settle
--- back down), eased in and out.
 function PoseAnimator.SetLift(character: Model, studs: number)
 	local lift = lifts[character]
 	if lift then
@@ -471,9 +403,6 @@ function PoseAnimator.SetLift(character: Model, studs: number)
 	end
 end
 
--- Drops the lift to nothing at once and holds it there for `duration` (a
--- cutscene that raised his root by as much at the same moment, so his body
--- doesn't move), then it eases back.
 function PoseAnimator.SettleLift(character: Model, duration: number)
 	local lift = lifts[character]
 	if lift then
@@ -543,8 +472,6 @@ function PoseAnimator.FadeOut(character: Model, duration: number?)
 	track.fadeOutOverride = duration
 end
 
--- Hit-stop: holds the character's current animation still for `duration`,
--- then lets it continue from the same point.
 function PoseAnimator.Freeze(character: Model, duration: number)
 	local track = tracks[character]
 	if not track then
@@ -609,8 +536,6 @@ function PoseAnimator.SetIdle(character: Model, set: IdleSet?)
 end
 
 function PoseAnimator.Start()
-	-- PreSimulation runs after the default Animator has written its pose, so
-	-- whatever we set here is what gets rendered.
 	RunService.PreSimulation:Connect(step)
 end
 

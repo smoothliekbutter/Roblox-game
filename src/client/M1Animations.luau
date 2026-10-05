@@ -1,16 +1,4 @@
---[[
-	M1Animations
-	R6 punch/kick animations for the M1 string, built for PoseAnimator.
-
-	The string is: right jab, left cross, right hook, then a finisher:
-	  Knockback  spinning front kick
-	  Uppercut   rising right uppercut (jump held)
-	  Downslam   double-fist hammer (in the air)
-
-	Timing lines up with the server: normal hits land ~0.08s after input
-	(Config.M1.WindUp), finishers ~0.15s (Config.M1.FinisherWindUp).
-	The "Strike" event is when the limb starts moving fast (trails turn on).
-]]
+-- R6 punch / kick animations for the shared M1 string (played by PoseAnimator).
 
 local PoseAnimator = require(script.Parent.PoseAnimator)
 
@@ -23,15 +11,10 @@ local function rot(x: number, y: number?, z: number?): CFrame
 	return CFrame.Angles(rad(x), rad(y or 0), rad(z or 0))
 end
 
--- Arm/leg aim. pitch raises the limb forward (90 = straight ahead, 180 = up),
--- yaw swings it horizontally (+ = toward the left), roll swings it out sideways
--- (+ = to the right).
 local function limb(pitch: number, yaw: number?, roll: number?): CFrame
 	return CFrame.Angles(0, rad(yaw or 0), 0) * CFrame.Angles(0, 0, rad(roll or 0)) * CFrame.Angles(rad(pitch), 0, 0)
 end
 
--- The legs twist against the torso so the feet stay planted. They're
--- additive, so walking still plays underneath.
 local LEGS_ADDITIVE = { RightLeg = true, LeftLeg = true }
 
 local Clips: { [string]: Animation } = {}

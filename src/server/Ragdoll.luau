@@ -1,15 +1,4 @@
---[[
-	Ragdoll
-	Swaps a character's Motor6Ds for BallSocketConstraints so it flops. The
-	server takes network ownership while ragdolled so knockback is smooth and
-	can't be ignored by the client. Works with R6 and R15.
-
-	Physics tuning:
-	  - Per-joint limits so limbs bend like a body, not like rope.
-	  - Joint friction damps flailing without making limbs stiff.
-	  - No bounce and decent friction, so bodies skid and settle.
-	  - Getting up is a short smooth rise instead of a teleport.
-]]
+-- Ragdolls: Motor6Ds swapped for BallSocketConstraints, the server owning the physics meanwhile.
 
 local PhysicsService = game:GetService("PhysicsService")
 local Players = game:GetService("Players")
@@ -30,9 +19,6 @@ local KEEP_JOINTS = {
 
 type JointSettings = { upper: number, twistLower: number, twistUpper: number, friction: number }
 
--- Degrees. The cone (upper) is the forward/back swing, twist the sideways
--- swing for limbs (nod for the neck). Friction is a fraction of what it
--- takes to hold the limb up against gravity, so limbs still fall naturally.
 local JOINT_SETTINGS: { [string]: JointSettings } = {
 	Neck = { upper = 35, twistLower = -30, twistUpper = 30, friction = 15 },
 	["Right Shoulder"] = { upper = 100, twistLower = -55, twistUpper = 55, friction = 25 },
@@ -42,8 +28,6 @@ local JOINT_SETTINGS: { [string]: JointSettings } = {
 }
 local DEFAULT_SETTINGS: JointSettings = { upper = 60, twistLower = -35, twistUpper = 35, friction = 20 }
 
--- Density, friction, elasticity, frictionWeight, elasticityWeight. The huge
--- elasticity weight makes "no bounce" win against whatever the floor is.
 local BODY_PHYSICS = PhysicalProperties.new(0.9, 0.6, 0, 1, 100)
 
 local GET_UP_TIME = 0.25
@@ -65,8 +49,6 @@ local function smooth(x: number): number
 	return x * x * (3 - 2 * x)
 end
 
--- Where the character should stand when it gets up: upright, on the
--- ground, facing the way the body was lying.
 local function standingCFrame(character: Model, humanoid: Humanoid, root: BasePart): CFrame
 	local facing = root.CFrame.LookVector * Vector3.new(1, 0, 1)
 	if facing.Magnitude < 0.2 then
@@ -210,8 +192,6 @@ local function finishGettingUp(character: Model, humanoid: Humanoid, root: BaseP
 	end
 end
 
--- Ends the ragdoll. By default the body rises smoothly to its feet over a
--- quarter second; `instant` snaps upright (used by the Evasive breakout).
 function Ragdoll.Disable(character: Model, instant: boolean?)
 	local record = active[character]
 	if not record then
@@ -251,9 +231,6 @@ function Ragdoll.Disable(character: Model, instant: boolean?)
 		return
 	end
 
-	-- Rise smoothly: the root is held (anchored) and eased from how the
-	-- body was lying to standing. Still counts as ragdolled until done, so
-	-- people can't be hit while getting up.
 	local from = root.CFrame
 	local start = os.clock()
 	root.Anchored = true

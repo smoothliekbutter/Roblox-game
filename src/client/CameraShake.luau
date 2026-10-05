@@ -1,8 +1,4 @@
---[[
-	CameraShake
-	Trauma-based shake: hits add trauma, trauma decays, and the shake is
-	trauma squared so small hits stay subtle and big hits really kick.
-]]
+-- Trauma-based camera shake (shake = trauma squared, so small hits stay subtle) and FOV kicks.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")

@@ -1,8 +1,4 @@
---[[
-	Config
-	Every tunable combat number lives here so balancing never means digging
-	through logic. Times are in seconds, speeds in studs/second.
-]]
+-- Every tunable combat number (times in seconds, speeds in studs a second).
 
 local Config = {}
 
@@ -13,17 +9,12 @@ Config.Debug = {
 
 -- Play-testing helpers. Turn these off (or delete them) before release.
 Config.PlayTest = {
-	-- An "INFINITE AWAKENING" button in the top bar: the bar stays full, the
-	-- form never runs out and the second stage (Yuno's Full-Crown) is
-	-- always ready. Anyone can press it while this is on.
 	InfiniteAwakening = true,
 }
 
 Config.Movement = {
 	WalkSpeed = 16,
 	JumpHeight = 4.5, -- studs (Roblox default is 7.2)
-	-- The air jump some kits get (Yuno, Kits airJumps): a small hop, about
-	-- 4 studs, to pair with air moves rather than replace the jump.
 	AirJumpSpeed = 24,
 	AirJumpTime = 0.1,
 	AttackingSpeed = 10,
@@ -48,13 +39,9 @@ Config.M1 = {
 	InputTolerance = 0.1, -- accept swings this early to absorb network jitter
 
 	HitStun = 0.66, -- longer than SwingCooldown + WindUp (plus slack for ping), so strings are true combos
-	-- The 3rd hit sets up the finisher: long enough to jump and downslam
-	-- (3 hits, jump, hit) on a real player, ping included.
 	SetupStun = 1.0,
 	DownslamJumpAfter = 0.12, -- free to jump this soon after the 3rd hit
 	UppercutStun = 1.1,
-	-- The uppercut is a launcher: short end lag and an early jump, so you
-	-- can go up after them and carry on in the air.
 	UppercutEndLag = 0.4,
 	UppercutJumpAfter = 0.2,
 	UppercutGravity = 1.6, -- the launched body falls this much harder: a snappy arc
@@ -89,8 +76,6 @@ Config.Block = {
 Config.Dash = {
 	Cooldown = 2, -- front and back dashes
 	Duration = 0.28,
-	-- Side dashes are a smaller hop (about 10 studs to the front dash's 19)
-	-- on a cooldown of their own.
 	SideCooldown = 1.5,
 	SideDuration = 0.2,
 	Tolerance = 0.2, -- server allows the client to be this early (latency)
@@ -102,16 +87,12 @@ Config.Dash = {
 	},
 }
 
--- Awakening: fills by dealing (and a bit by taking) damage. G when full.
--- About 90 damage dealt (or 200 taken) fills it: it should take a real fight.
 Config.Awakening = {
 	Max = 100,
 	GainPerDamageDealt = 1.1,
 	GainPerDamageTaken = 0.5,
 }
 
--- Timed states moves can put on people (Yuno's great arrow): PowerUntil hits
--- harder, WeakUntil hits softer, SlowUntil moves slower.
 Config.States = {
 	PowerMultiplier = 1.15,
 	WeakMultiplier = 0.75,
@@ -132,19 +113,13 @@ Config.Physics = {
 	-- Launched ragdolls tumble: spin (rad/s) per stud/s of launch speed.
 	TumbleSpin = 0.12,
 	MaxTumble = 10,
-	-- How much of a launch's sideways speed a ragdoll carries (the height
-	-- is kept exactly), so knockback reads as a throw, not a teleport.
 	RagdollCarry = 0.7,
 	-- Gentler pushes than this on a ragdoll hold it (air hits, hangs);
 	-- faster ones throw it.
 	RagdollHoldSpeed = 20,
-	-- A ragdoll moving at least this fast that suddenly stops (floor, wall)
-	-- kicks up a body impact effect.
 	ImpactSpeed = 35,
 }
 
--- Evasive: fills as you take damage. When full, Q while stunned or
--- ragdolled breaks you out of the combo.
 Config.Evasive = {
 	Max = 100,
 	GainPerDamage = 5,

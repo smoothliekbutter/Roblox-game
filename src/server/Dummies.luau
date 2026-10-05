@@ -1,10 +1,4 @@
---[[
-	Dummies
-	Test NPCs in front of spawn. They use the real combat rules:
-	  Dummy           - stands still, heals after a few seconds
-	  Blocking Dummy  - always blocks and faces you (test guard breaks)
-	  Attacking Dummy - throws full M1 strings at you (test blocks, perfect blocks, Evasive)
-]]
+-- Test dummies in front of spawn (standing, blocking, attacking), on the real combat rules.
 
 local Players = game:GetService("Players")
 

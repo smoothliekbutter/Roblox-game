@@ -1,18 +1,4 @@
---[[
-	Yuno's sword of wind (Full-Crown), in his right hand: a long leaf-shaped
-	blade of wind, swelling toward the point and drawn to a long, fine tip,
-	with a white-hot fuller down its middle and bright edges; a gold diamond
-	set with a green gem where it leaves the guard; a crossguard of small
-	gold wings (three feathers a side fanned up toward the blade, a fourth
-	curling back) round a gold block set with gems; a dark wrapped grip
-	with gold bands; a gold pommel tipped with a green gem. Wind flows up
-	the blade and starlight glitters along it, inside a shimmer the shape
-	of it.
-
-	Laid out in the grip's space: Y up the blade, Z across it (its edges),
-	X through its flats. Sword.Pieces is plain geometry; Sword.new makes the
-	parts and Sword.Place moves them to the grip every frame.
-]]
+-- Yuno's Full-Crown sword of wind, laid out in grip space (Y up the blade, Z across its edges, X through its flats).
 
 local Soft = require(script.Parent.Parent.Parent.Soft)
 
@@ -28,8 +14,6 @@ local GEM = WIND
 
 local Sword = {}
 
--- The blade: from BASE up the grip it widens from BASE_WIDTH to WIDEST at
--- SWELL, then narrows to the point at TIP.
 local BASE, SWELL, TIP = 0.72, 4.6, 6.6
 local BASE_WIDTH, WIDEST = 0.5, 0.86
 local THICK = 0.12
@@ -90,8 +74,6 @@ add({
 for _, x in { -0.12, 0.12 } do
 	add({ shape = "Ball", size = Vector3.one * 0.2, color = GEM, transparency = 0, offset = CFrame.new(x, GUARD, 0) })
 end
--- Each wing: feathers out from the block, `rise` degrees up toward the blade
--- from straight out, and one curling back toward the grip.
 local GUARD_FEATHERS = {
 	{ rise = 10, length = 0.95, width = 0.22 },
 	{ rise = 34, length = 0.76, width = 0.19 },
@@ -126,9 +108,6 @@ for _, x in { -0.07, 0.07 } do
 	add({ shape = "Ball", size = Vector3.one * 0.13, color = GEM, transparency = 0, offset = CFrame.new(x, DIAMOND, 0) })
 end
 
--- The blade: a body as wide as its base, wedges widening it to the swell,
--- and two more drawing it to the point. (A wedge's slope runs from its
--- bottom front edge to its top back edge.)
 local reach = SWELL - BASE
 local flare = (WIDEST - BASE_WIDTH) / 2
 local middle = (BASE + SWELL) / 2
@@ -214,12 +193,8 @@ function Sword.Pieces(): { Piece }
 	return PIECES
 end
 
----------------------------------------------------------------------------
 -- The parts
----------------------------------------------------------------------------
 
--- Makes a part (fading in with the rest of his look): props, its
--- transparency once in, and whether it's a wedge.
 export type Maker = (props: { [string]: any }, base: number, wedge: boolean?) -> BasePart
 
 export type Sword = {
@@ -257,8 +232,6 @@ function Sword.new(make: Maker): Sword
 	end
 	assert(blade, "the sword has no fuller")
 
-	-- Wind flowing up the blade, starlight glittering along its edge, and a
-	-- glint at the point now and then.
 	local low = Instance.new("Attachment")
 	low.Position = Vector3.new(0, -2.6, 0)
 	low.Parent = blade

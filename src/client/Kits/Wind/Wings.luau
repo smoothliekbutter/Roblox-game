@@ -1,30 +1,4 @@
---[[
-	Yuno's wings of wind, worn while he's awakened (Half-Crown: the one on
-	his left; Full-Crown: both). Built like a bird's wing: three bones out of
-	his shoulder blade (the upper arm rising steeply, the forearm out to the
-	wrist at the top of the arch, the hand out and down to the tip) with
-	every feather where a bird's would be:
-
-	  primaries    the long flight feathers off the hand, fanned round to
-	               the tip and splaying apart there like fingers
-	  secondaries  off the forearm, hanging in a scalloped trailing edge
-	  tertials     off the upper arm, closing the gap back to his body
-	  coverts      three rows of shorter feathers layered over their roots,
-	               up to the leading edge (the bones, glowing)
-	  scapulars    over his shoulder blade, where the wing meets his back
-
-	All of it see-through wind, white quills down the flight feathers.
-
-	It beats slowly while he hovers: down and forward, then up and back,
-	the beat rolling out along the wing (the elbow after the shoulder, the
-	wrist after the elbow) with the feathers bending against the air and
-	rippling. When he moves it sweeps back into a glide, beating shallow and
-	quick. Wind streams off the wingtip as it moves and starlight drifts off
-	its edge.
-
-	Wings.Pieces and Wings.Pose are plain geometry (where every piece goes);
-	Wings.new makes the parts and poses them every frame.
-]]
+-- Yuno's wings of wind: a three-bone bird wing that beats while he hovers and lies back into a glide as he moves.
 
 local Soft = require(script.Parent.Parent.Parent.Soft)
 
@@ -41,22 +15,8 @@ local Wings = {}
 local SCALE = 0.92
 local BONES = { 1.3 * SCALE, 1.8 * SCALE, 1.4 * SCALE }
 
--- Where the wing grows from (his shoulder blade, his right; mirrored for
--- his left), in his torso's space.
 local ROOT = Vector3.new(0.45, 0.55, 0.65)
 
---[[
-	How the wing is held (degrees), eased between hovering and gliding:
-	  lift   the upper arm's rise from straight out to his side
-	  elbow  the forearm's bend at the elbow (down from the upper arm)
-	  wrist  the hand's bend at the wrist (down from the forearm)
-	  sweep  how far the whole wing is swept back behind him
-	  twist  how far it's turned about the upper arm, trailing edge back
-	         (gliding, it lies back nearly flat on the air, its top to the
-	         sky, and the elbow and wrist bends fold it back in its plane,
-	         like a falcon's)
-	  beat   how deep it beats, `rate` beats a second
-]]
 export type Hold = {
 	lift: number,
 	elbow: number,
@@ -82,14 +42,6 @@ function Wings.Blend(a: Hold, b: Hold, k: number): Hold
 	}
 end
 
---[[
-	The feathers. Each sits on a bone (1 the upper arm, 2 the forearm, 3 the
-	hand), `at` of the way along it, or on his back where the wing grows
-	from (bone 4, `at` in studs out from there), and hangs off it `angle`
-	degrees round from straight off its trailing side toward its end.
-	`layer` is how far over the flight feathers it lies (the coverts over
-	their roots), `drop` how far below the bone its root is.
-]]
 type Feather = {
 	bone: number,
 	at: number,
@@ -142,8 +94,6 @@ row({ layer = 0.03, drop = 0.1, color = WIND, transparency = 0.56, quill = true,
 	{ 2, 0.81, -26, 2.14, 0.54 },
 	{ 2, 0.95, -22, 2.16, 0.54 },
 })
--- Primaries: off the hand, fanned round from trailing to the tip, the
--- longest near the tip and the outermost splaying apart.
 row({
 	layer = 0.07,
 	drop = 0.08,
@@ -198,15 +148,11 @@ row({ layer = 0.32, drop = -0.06, color = WIND:Lerp(WIND_WHITE, 0.5), transparen
 	{ 3, 0.45, 40, 0.4, 0.26 },
 	{ 3, 0.8, 60, 0.36, 0.24 },
 })
--- Scapulars: over his shoulder blade, hanging down his back (they're his,
--- not the wing's: they stay put as it sweeps).
 row({ layer = 0.12, drop = 0, color = WIND:Lerp(WIND_WHITE, 0.2), transparency = 0.56, flex = 0.3 }, {
 	{ 4, 0, -14, 1.2, 0.44 },
 	{ 4, 0.16, -6, 1.05, 0.42 },
 })
 
--- One piece of a wing: a feather (a flat ellipsoid), a quill, a bone or a
--- joint, with how it looks.
 export type Piece = {
 	shape: "Feather" | "Box" | "Ball",
 	size: Vector3,
@@ -214,9 +160,6 @@ export type Piece = {
 	transparency: number,
 }
 
--- Everything one wing is made of, in the order Pose places it: each
--- feather (then its quill, if it has one), the three bones, the elbow, the
--- wrist and the root.
 local PIECES: { Piece } = {}
 for _, f in FEATHERS do
 	table.insert(PIECES, {
@@ -251,10 +194,6 @@ function Wings.Pieces(): { Piece }
 	return PIECES
 end
 
--- Fixed offsets, worked out once for each side: where the wing grows from,
--- each bone's end (and middle) along the one before it, and each feather's
--- root on its bone. Then, for every feather, where its middle and its
--- quill's sit down it.
 type Offsets = { root: CFrame, bones: { CFrame }, middles: { CFrame }, feathers: { CFrame } }
 local OFFSETS: { [number]: Offsets } = {}
 for _, side in { -1, 1 } do
@@ -283,8 +222,6 @@ end
 local JOINT = CFrame.new(0, 0, 0.12)
 local SHOULDER_GLOW = CFrame.new(0, 0, 0.05)
 
--- The shoulder, elbow and wrist (each frame with its bone running out
--- along X: +X on his right, -X on his left, mirrored) at beat `phase`.
 function Wings.Bones(torso: CFrame, side: number, hold: Hold, phase: number): (CFrame, CFrame, CFrame)
 	local offsets = OFFSETS[side]
 	local beat = hold.beat
@@ -303,12 +240,6 @@ function Wings.Bones(torso: CFrame, side: number, hold: Hold, phase: number): (C
 	return shoulder, elbowFrame, wristFrame
 end
 
---[[
-	Fills `frames` with where every piece goes (in Pieces' order) for the
-	wing on `side` (-1 his left, 1 his right) of a torso at `torso`.
-	`phase` is how far through its beat it is (radians), `flutter` how hard
-	the air's rushing past (0 hovering, 1 gliding fast), `t` the time.
-]]
 function Wings.Pose(
 	frames: { CFrame },
 	torso: CFrame,
@@ -321,9 +252,6 @@ function Wings.Pose(
 	local offsets = OFFSETS[side]
 	local shoulder, elbow, wrist = Wings.Bones(torso, side, hold, phase)
 	local bones = { shoulder, elbow, wrist, torso * offsets.root }
-	-- The feathers bend against the stroke (with the sweep's speed, a
-	-- little after it): their tips trail as it sweeps forward or back, and
-	-- back in the wind as he glides.
 	local bend = 10 * hold.beat * math.cos(phase - 0.9) - flutter * 4
 	local n = 0
 	for i, f in FEATHERS do
@@ -350,12 +278,8 @@ function Wings.Pose(
 	frames[n] = shoulder * SHOULDER_GLOW
 end
 
----------------------------------------------------------------------------
 -- The parts
----------------------------------------------------------------------------
 
--- Makes a part (fading in with the rest of his look): props, its
--- transparency once in, and whether it's a wedge.
 export type Maker = (props: { [string]: any }, base: number, wedge: boolean?) -> BasePart
 
 export type Wing = {
@@ -385,8 +309,6 @@ function Wings.new(make: Maker, side: number): Wing
 	end
 	local frames = table.create(#parts, CFrame.identity)
 
-	-- Wind streaming off the outer primaries' tips as it moves, wisps of
-	-- wind off the outermost, and starlight drifting off the hand.
 	local trails: { Trail } = {}
 	local emitters: { ParticleEmitter } = {}
 	local n = 0

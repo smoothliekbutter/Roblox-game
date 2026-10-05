@@ -1,13 +1,4 @@
---[[
-	Soft light: the soft, see-through pieces effects are drawn with. Beams
-	facing the camera (smoke or sparkles flowing along them), rings and
-	arcs of beams, trails, glows and particles. Solid neon parts are kept
-	for the small hard things (star points, blade edges, sparks).
-
-	Its colours are Yuno's (wind pale green with a white core, star magic
-	gold-white); every piece takes its own colours too. Used by
-	Client/Kits/Wind (and its Saint module) and Client/Kits/AntiMagic.
-]]
+-- Soft, see-through effect pieces (beams, rings, arcs, trails, glows, particles), in Yuno's colours by default.
 
 local RunService = game:GetService("RunService")
 
@@ -31,10 +22,6 @@ Soft.STAR_FIRE = Color3.fromRGB(255, 140, 40)
 Soft.SMOKE = U.textures.Smoke
 Soft.SPARKLE = U.textures.Spark
 
--- Sheer: while one is in force (Soft.sheer(k) until its release), every
--- soft piece made is that much more see-through: what would block a
--- fraction a of the light now blocks a(1 - k). Scoped to whatever wants it
--- (a whole cutscene), so the rest of the time nothing changes.
 local sheers: { number } = {}
 local function sheerness(): number
 	local k = 0
@@ -82,12 +69,8 @@ local SMOKE, SPARKLE = Soft.SMOKE, Soft.SPARKLE
 
 local KAPPA = 0.5523 -- a quarter circle as a cubic curve
 
----------------------------------------------------------------------------
 -- Timing and cleanup
----------------------------------------------------------------------------
 
--- Runs `step(elapsed, dt)` every frame until it returns false or `duration`
--- runs out; then `finish` (if any).
 function Soft.every(duration: number, step: (number, number) -> boolean?, finish: (() -> ())?)
 	local start = os.clock()
 	local connection
@@ -125,9 +108,7 @@ function Soft.quadratic(a: Vector3, b: Vector3, c: Vector3, s: number): Vector3
 end
 local quadratic = Soft.quadratic
 
----------------------------------------------------------------------------
 -- Hard shapes: bars, tubes, wedges, stars
----------------------------------------------------------------------------
 
 -- A straight bar of light or wind between two points.
 function Soft.bar(from: Vector3, to: Vector3, width: number, color: Color3, transparency: number): BasePart
@@ -206,9 +187,6 @@ function Soft.gust(position: Vector3, size: number, direction: Vector3?)
 	U.light(position, WIND, 3, size * 2.5, 0.25)
 end
 
--- A four-pointed star of light (star magic): a white core, a gold cross and
--- a smaller diagonal cross, always turned to face the camera, and a soft
--- glitter of starlight round it.
 export type Star = { place: (Vector3, number) -> (), fade: (number) -> (), parts: { BasePart } }
 
 function Soft.makeStar(size: number, color: Color3?): Star
@@ -294,8 +272,6 @@ function Soft.softStar(size: number, color: Color3?): Star
 	return star
 end
 
--- Sylph: a small spirit of wind, a glowing body with two fluttering wings
--- and a trail of wind behind her.
 export type Sprite = { place: (CFrame, number) -> (), fade: (number) -> () }
 
 function Soft.makeSprite(scale: number): Sprite
@@ -363,9 +339,6 @@ function Soft.makeSprite(scale: number): Sprite
 	return sprite
 end
 
--- An arc of thin segments (a bow, a crescent of wind): points on a circle of
--- `radius` round `center` from angle `from` to `to` (radians) in the plane of
--- `right` and `up`.
 function Soft.arcPoints(
 	center: Vector3,
 	right: Vector3,
@@ -399,12 +372,8 @@ function Soft.poseArc(parts: { BasePart }, points: { Vector3 })
 	end
 end
 
----------------------------------------------------------------------------
 -- Soft shapes: beams, rings, trails, particles
----------------------------------------------------------------------------
 
--- An attachment fixed in the world (on Terrain), its X axis along `axis`
--- (the way a beam leaving it curves).
 function Soft.worldAnchor(position: Vector3, axis: Vector3?): Attachment
 	local x = if axis and axis.Magnitude > 1e-3 then axis.Unit else Vector3.xAxis
 	local y = if math.abs(x.Y) > 0.98 then Vector3.zAxis else UP
@@ -439,8 +408,6 @@ export type BeamStyle = {
 	segments: number?,
 }
 
--- A soft beam between two attachments: facing the camera, glowing, see-
--- through, wind flowing along it when it's textured.
 function Soft.softBeam(a0: Attachment, a1: Attachment, style: BeamStyle, parent: Instance?): Beam
 	local beam = Instance.new("Beam")
 	beam.Attachment0 = a0
@@ -514,9 +481,6 @@ function Soft.widths(beams: { Beam }): { { number } }
 	return base
 end
 
--- A ring of soft light: four quarter-circle beams on an invisible hub, so
--- turning or tilting it is just moving the hub. It lies in the hub's XZ
--- plane.
 export type Ring = { hub: BasePart, beams: { Beam }, set: (CFrame, number) -> (), fade: (number) -> () }
 
 function Soft.softRing(style: BeamStyle): Ring
@@ -604,8 +568,6 @@ function Soft.lightRing(center: Vector3, normal: Vector3, from: number, to: numb
 	ring.fade(duration)
 end
 
--- A soft arc: beams curving round `center` from one angle to another (in
--- the plane of `right` and `up`), re-posed every frame with set().
 export type Arc = {
 	beams: { Beam },
 	set: (Vector3, Vector3, Vector3, number, number, number) -> (),
@@ -661,8 +623,6 @@ function Soft.windEmitter(parent: Instance, props: { [string]: any }): ParticleE
 end
 local windEmitter = Soft.windEmitter
 
--- A soft glow that follows `parent` (a stream of overlapping puffs of
--- light, so it moves with it and fades as soon as it stops).
 function Soft.glow(parent: Instance, color: Color3, size: number, transparency: number?): ParticleEmitter
 	local base = transparency or 0.6
 	return windEmitter(parent, {
@@ -723,8 +683,6 @@ function Soft.streaks(position: Vector3, count: number, speed: number, direction
 	})
 end
 
--- One big glint of starlight: a sparkle that flares and goes (a camera-
--- facing particle, so it's the same from every side).
 function Soft.twinkle(position: Vector3, size: number, color: Color3?, duration: number?)
 	local life = duration or 0.25
 	local holder = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.new(position) })
@@ -799,8 +757,6 @@ function Soft.trail(part: BasePart, a: Vector3, b: Vector3, style: TrailStyle): 
 	return trail
 end
 
--- Starts a trail made switched off, once its part is where it should be
--- (so nothing streaks in from wherever the part was made).
 function Soft.beginTrail(trail: Trail)
 	if not trail.Enabled then
 		trail:Clear()
@@ -814,18 +770,11 @@ function Soft.endTrail(trail: Trail)
 	task.delay(trail.Lifetime + 0.1, trail.Destroy, trail)
 end
 
--- Hides `part` (over `fade`) but keeps it, and whatever trails or
--- particles are on it, until `keep` seconds, so they fade out on their own.
 function Soft.linger(part: BasePart, fade: number, keep: number)
 	U.tween(part, fade, { Transparency = 1 })
 	task.delay(keep, part.Destroy, part)
 end
 
--- Ribbons of wind spiralling up round a moving axis: `axis(t)` gives the
--- foot and the top of it each frame (t: seconds since it started); the
--- ribbons climb it over `climb` seconds, over and over, `turns` times
--- round on the way. Each climb is a fresh ribbon (the last one left to
--- fade at the top), so nothing streaks back down the axis. Returns stop().
 function Soft.helix(
 	axis: (number) -> (Vector3, Vector3),
 	radius: number,
@@ -918,15 +867,8 @@ function Soft.starStream(a0: Attachment, a1: Attachment, width: number, speed: n
 	}, parent)
 end
 
----------------------------------------------------------------------------
 -- Cuts of wind
----------------------------------------------------------------------------
 
--- A cut of wind through the air: a crescent from `from` to `to` bowed out
--- by `bend`. A swipe of wind streaks along it and it's left hanging: a
--- white-hot edge glittering with starlight inside a soft green glow and a
--- broad haze, wind flowing along it and wisps of wind drifting off it.
--- flare() blazes it up (just before it bursts), fade() lets it go.
 export type Slash = {
 	flare: () -> (),
 	fade: (number) -> (),
@@ -1069,8 +1011,6 @@ function Soft.windSlash(from: Vector3, to: Vector3, bend: Vector3, scale: number
 	return slash
 end
 
--- Manga focus lines: thin streaks of light rushing in toward the middle of
--- the screen for a moment (for whoever's watching it from the cutscene).
 function Soft.focusLines(duration: number)
 	local playerGui = game:GetService("Players").LocalPlayer:FindFirstChildOfClass("PlayerGui")
 	if not playerGui then

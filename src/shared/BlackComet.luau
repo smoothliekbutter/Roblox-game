@@ -1,25 +1,4 @@
---[[
-	BlackComet
-	Black Comet (Black Form, Demon-Destroyer Sword 2), a short grab
-	cutscene, about 1.4 seconds. With them by the throat, both wings throw
-	him forward low over the ground. He drives them down onto their back and
-	drags them along at his side, three times lifting them a little and
-	hammering them flat into the ground (his whole body dips into each one),
-	then swings his legs down, lands skidding, hauls them round past his
-	side and heaves them away.
-
-	Shared so the server (which holds them both here) and every client
-	(which draws them smoothly) agree on where they are. t = 0 is the
-	take-off, right after the seize. The times are in step with the Comet
-	clip (tools/anim/asta_anims.py: COMET_SLAMS, COMET_PLANT, COMET_RELEASE).
-
-	They hang from his hand like a body would: a rod from their throat to
-	their feet with its weight swinging under the hand, dragged along the
-	ground (scraping, so it trails), kept out at his side. Clients hang them
-	from his real hand every frame (Body / Step); the server uses where the
-	hand is in the clip's keyframes (Victim), close enough for its hits and
-	for where they fly from when he lets go.
-]]
+-- Black Comet's paths (shared, so the server and every client agree).
 
 local BlackComet = {}
 
@@ -65,8 +44,6 @@ local function smooth(u: number): number
 	return u * u * (3 - 2 * u)
 end
 
--- Ground covered by the take-off: a velocity of (1 - e^(-u/k))(1 - u^2), up
--- to speed almost at once and sliding to a stop, integrated (u = t / Stop).
 local function covered(u: number): number
 	local k = START_TIME
 	local slow = k * ((1 - 2 * k * k) - math.exp(-u / k) * (1 - u * u - 2 * k * u - 2 * k * k))
@@ -74,8 +51,6 @@ local function covered(u: number): number
 end
 local TOTAL = covered(1)
 
--- Height over standing height: cruising low, dipping into each slam, down
--- onto his feet for the landing.
 local function lift(t: number): number
 	local times = BlackComet.Times
 	local cruise = CRUISE * smooth(t / 0.14) * (1 - smooth((t - 0.66) / (times.Plant - 0.66)))
@@ -94,8 +69,6 @@ function BlackComet.Attacker(plan: Plan, t: number): CFrame
 	return CFrame.lookAt(position, position + plan.forward)
 end
 
--- His free hand (root space) at the Comet clip's keyframes, with the
--- easing into each (from forward kinematics of the clip).
 local HAND: { { any } } = {
 	{ 0, Vector3.new(-1.6, 1.18, -1.08) },
 	{ 0.05, Vector3.new(-2.48, 0.73, -0.49), "Quart", "Out" },
@@ -144,8 +117,6 @@ function BlackComet.Hand(plan: Plan, t: number): Vector3
 	return BlackComet.Attacker(plan, t):PointToWorldSpace(offset)
 end
 
--- A body hanging from his hand: where their feet are (and were, a step
--- ago: the speed they swing and slide with), and which way they face.
 export type Body = { feet: Vector3, last: Vector3, look: Vector3, neck: Vector3, t: number }
 
 -- Starts them hanging straight down from `hand`, facing him (as the grab
@@ -157,9 +128,6 @@ function BlackComet.Body(plan: Plan, hand: Vector3): Body
 	return { feet = feet, last = feet, look = look, neck = neck, t = 0 }
 end
 
--- Moves the body on to time `t` with the hand at `hand`, and returns where
--- their root is: the throat in his hand, their weight swinging under it,
--- dragged along the ground, out at his side, never under the floor.
 function BlackComet.Step(plan: Plan, body: Body, hand: Vector3, t: number): CFrame
 	local floor = plan.floorY + 0.5
 	local from, fromTime = body.neck, body.t
@@ -174,9 +142,6 @@ function BlackComet.Step(plan: Plan, body: Body, hand: Vector3, t: number): CFra
 		local velocity = (feet - body.last) * DAMPING
 		body.last = feet
 		feet += velocity + GRAVITY * STEP * STEP
-		-- Pushes that hold them in place (the ground, his side, their own
-		-- neck) move where they were too, so they stop them dead rather
-		-- than throwing them.
 		local function push(by: Vector3)
 			feet += by
 			body.last += by
@@ -202,8 +167,6 @@ function BlackComet.Step(plan: Plan, body: Body, hand: Vector3, t: number): CFra
 	end
 	body.neck, body.t = target, t
 
-	-- They turn with their body (the way they face carried round as it
-	-- tips); lying flat on their back, they settle facing up.
 	local axis = (target - body.feet).Unit
 	local look = body.look - axis * body.look:Dot(axis)
 	look = if look.Magnitude > 1e-3 then look.Unit else (UP - axis * axis.Y).Unit

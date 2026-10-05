@@ -1,11 +1,4 @@
---[[
-	Projectile
-	Server-simulated projectiles: moved every frame, swept hitbox between
-	frames (fast projectiles can't skip past people), stopped by walls.
-	The server only does the hit detection. Clients draw the projectile
-	themselves from (origin, direction, speed, range), so nothing is sent
-	per frame.
-]]
+-- Server-simulated projectiles: moved every frame, swept hitboxes, stopped by walls.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")

@@ -1,18 +1,4 @@
---[[
-	Zephyrus
-	Spirit of Zephyrus (Full-Crown 2), once the lunge has caught them: the
-	waltz of the west wind, about 1.3 seconds. The wind holds them up off
-	the ground while he whirls round them twice at a blur, cutting them
-	every half turn, his ghosts left behind him all the way round; then he
-	swings back out in front of them and runs them through: his sword of
-	wind shoots out into a spear of wind that blows them away.
-
-	Shared so the server (which holds them both here) and every client
-	(which draws them smoothly) agree. t = 0 is the catch. His path is one
-	smooth curve round them (out onto the circle, twice round it speeding up
-	and slowing down, out to the front, in for the thrust), always facing
-	them, leaning into the turn; nothing jumps.
-]]
+-- Spirit of Zephyrus's waltz paths (shared, so the server and every client agree).
 
 local Zephyrus = {}
 
@@ -103,8 +89,6 @@ function Zephyrus.Attacker(plan: Plan, t: number): CFrame
 	local angle = around(t)
 	local radial = plan.out * math.cos(angle) + plan.side * math.sin(angle)
 	local position = plan.center + radial * outward(plan, t) + UP * (plan.height + lifted(t))
-	-- Facing them, looking a little ahead round the turn and leaning in
-	-- toward them with the speed (the turn pulls him in).
 	local spin = 1.5 * TURNS * 2 * math.pi / ORBIT -- the fastest it goes round
 	local speed = if t < ORBIT then (6 * (t / ORBIT) * (1 - t / ORBIT)) * TURNS * 2 * math.pi / ORBIT else 0
 	local pace = speed / spin

@@ -1,18 +1,4 @@
---[[
-	TempestDive
-	Yuno's Half-Crown grab, start to finish:
-	  1. the drag: he flies straight up, dragging them by the collar below
-	     him;
-	  2. the turn: at the top he swings over them, both head-down;
-	  3. the dive: he drives them straight down head-first, spinning, faster
-	     and faster, and a tornado forms behind them on the way down, its
-	     funnel standing over the crater when they hit;
-	  4. he flips back off the crater onto his feet.
-
-	Shared so the server (which holds them both on the paths) and every
-	client (which draws them on it smoothly) agree on where they are.
-	t = 0 is the grab.
-]]
+-- Tempest Dive's paths (shared, so the server and every client agree).
 
 local TempestDive = {}
 
@@ -77,8 +63,6 @@ function TempestDive.DiveAt(plan: Plan, a: number): Vector3
 	return top(plan):Lerp(TempestDive.Impact(plan), a * a)
 end
 
--- How far round they've drilled at fraction a of the dive: from still,
--- winding up as they fall (whole turns, so they land the way they started).
 function TempestDive.Spin(a: number): number
 	return a * a * TempestDive.Spins * 2 * math.pi
 end

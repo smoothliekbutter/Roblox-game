@@ -1,55 +1,4 @@
---[[
-	Prince of Wind (Yuno), server side.
-
-	A mid-range zoner, Asta's opposite: wind spells that pin people down and
-	push them around from where a sword can't reach, star magic to be
-	somewhere else in an instant. Less damage per move than Asta, more
-	range and control. Spells are Bolt / Swarm / Zone attacks, so Asta's
-	Deflect sends them back and his Conquering Eon drinks them in.
-
-	Base: Prince of Wind
-	  1 Wind Blades Shower   a rain of wind blades on whoever he faces (or a
-	                         way ahead): six waves of hits, the last pops them up
-	  2 Swift White Hawk     a hawk of wind that flies at them, curving after
-	                         them, and blows them away
-	  3 Heavenly Wind Ark    a crescent of wind rises out of the ground ahead and
-	                         carries them and him up together, held there for an
-	                         air string that ends in the downslam (air: it sweeps
-	                         down and spikes them); breaks guards, hits people
-	                         who are down
-	  4 Gale White Bow       a great bow of wind; six big arrows, aimed at whoever
-	                         he faces (held on the ground: one great arrow)
-	  R Conjunction          a star goes down where he's moving (ahead if he's
-	                         still); R again within 4s and he's there
-	Half-Crown Spirit of Zephyr (G): Sylph on his left side
-	  1 Spirit Storm         a dense beam of swirling wind out of his palm
-	  2 Tempest Dive         grab: he drags them straight up into the sky, then
-	                         drives them head-first down into the ground, a
-	                         tornado forming behind them on the way down.
-	                         Landing it twice is what unlocks the Full-Crown
-	  3 Quartile Scutum      four stars and the light between them: a wall in
-	                         front that stops everything, melee thrown back off it
-	  4 Nova Vortex          a star flicked out opens into a galaxy of wind that
-	                         drags everyone in, then goes nova: a pillar of
-	                         starlight that throws them up (held: turns longer)
-	Full-Crown Spirit of Zephyr (G again, once Tempest Dive has landed twice)
-	  1 Spirit of Boreas     a great axe of wind; one huge chop bites into the
-	                         ground and splits it in a line ahead, through guards
-	                         and people lying on the ground, launching them
-	  2 Spirit of Zephyrus   his sword of wind grows long and he lunges at them
-	                         (steerable); caught, three cuts and a thrust
-	  3 Spirit of Euros      a recurve bow of wind; one arrow, too fast to see,
-	                         through everything in a line (unblockable)
-	  4 Saint Spirit of      cutscene: a star binds them in the air in a pentagram;
-	    Zephyr               he cuts through them from star to star (Conjunction),
-	                         then splits them with one strike from above
-	Air combos: he can jump again in the air (Kits airJumps), and from the air
-	the hawk holds them up and pulls him in, the blades and arrows keep them
-	up there (the last spikes them down), Tempest Dive takes them both up.
-
-	All visuals are in StarterPlayerScripts.Client.Kits.Wind, which gets
-	("Skill", {skill, phase, ...}) events from here.
-]]
+-- Prince of Wind (Yuno), server side: his spells, the Half-Crown and the Full-Crown.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -61,16 +10,12 @@ local Projectile = require(script.Parent.Parent.Projectile)
 
 local KIT_ID = "Wind"
 local UP = Vector3.yAxis
--- Holds a character in the air (a tiny upward velocity switches on the
--- vertical force, so gravity stops pulling).
 local HOVER = Vector3.new(0, 0.05, 0)
 local ALL_TYPES = { Melee = true, Bolt = true, Explosion = true, Swarm = true, Zone = true }
 
 local Kit = {}
 
----------------------------------------------------------------------------
 -- Helpers
----------------------------------------------------------------------------
 
 local function fx(ctx, skill: string, phase: string, extra: { [string]: any }?)
 	local data: { [string]: any } = { character = ctx.character, kit = KIT_ID, skill = skill, phase = phase }
@@ -108,8 +53,6 @@ local function isCharacterPart(part: Instance): boolean
 	return model ~= nil and model:FindFirstChildOfClass("Humanoid") ~= nil
 end
 
--- How far a spell can go along `direction` before it meets the ground or a
--- wall (people don't stop it).
 local function reach(ctx, origin: Vector3, direction: Vector3, maxRange: number): number
 	local hit = workspace:Raycast(origin, direction * maxRange, rayParams(ctx))
 	if hit and not isCharacterPart(hit.Instance) then
@@ -118,8 +61,6 @@ local function reach(ctx, origin: Vector3, direction: Vector3, maxRange: number)
 	return maxRange
 end
 
--- The floor under a point (or 3 studs under it when there's none in reach),
--- looking past anyone standing there.
 local function floorUnder(ctx, position: Vector3): Vector3
 	local params = rayParams(ctx)
 	local ignore: { Instance } = { ctx.character }
@@ -138,8 +79,6 @@ local function floorUnder(ctx, position: Vector3): Vector3
 	return position - UP * 3
 end
 
--- Who he's most likely aiming at: the closest enemy within `range` studs
--- and `cone` degrees of where he faces.
 local function softTarget(ctx, range: number, cone: number): Model?
 	local forward = look(ctx)
 	local minDot = math.cos(math.rad(cone))
@@ -156,8 +95,6 @@ local function softTarget(ctx, range: number, cone: number): Model?
 	return best
 end
 
--- Where a spell aims: straight at the soft target if there is one, else
--- ahead (and down at an angle from the air).
 local function aimFrom(ctx, origin: Vector3, target: Model?, dip: number): Vector3
 	local targetRoot = target and rootOf(target)
 	if targetRoot then
@@ -173,13 +110,8 @@ local function lineVictims(ctx, origin: Vector3, direction: Vector3, length: num
 	return ctx.combat.Box(ctx.character, box, Vector3.new(width, width + 1, length))
 end
 
----------------------------------------------------------------------------
 -- Base moves: Prince of Wind
----------------------------------------------------------------------------
 
--- Wind Blades Shower: blades of wind form in the sky over whoever he faces
--- (or a way ahead) and rain down in waves. The waves pin them in place; the
--- last one pops them up. The blades keep falling even if he's hit.
 local SHOWER_CAST = 0.6 -- the wind-up: blades gather overhead before the first wave
 local SHOWER_WAVES = 6
 local SHOWER_GAP = 0.15
@@ -213,8 +145,6 @@ local function windBladesShower(ctx)
 			local victimRoot = rootOf(victim)
 			local offset = if victimRoot then victimRoot.Position - center else Vector3.zero
 			if victimRoot and Vector3.new(offset.X, 0, offset.Z).Magnitude <= SHOWER_RADIUS then
-				-- Someone in the air is held up there by the blades, and the
-				-- last wave throws them higher: a juggle.
 				local aloft = c.IsAirborne(victim)
 				c.Hit(character, victim, {
 					damage = if last then 2.5 else 1.4,
@@ -230,8 +160,6 @@ local function windBladesShower(ctx)
 	end
 end
 
--- Swift White Hawk: a hawk of wind that flies at them, curving after whoever
--- he faced when he threw it, and blows them away when it strikes.
 local HAWK_CAST = 0.22
 local HAWK_SPEED = 80
 local HAWK_RANGE = 75
@@ -286,8 +214,6 @@ local function swiftWhiteHawk(ctx)
 		travelled += step
 		local victims = c.Sphere(character, position, 3.5)
 		if #victims > 0 then
-			-- Thrown from the air it holds them up there and pulls him in after
-			-- them, for an air string; from the ground it blows them away.
 			for _, victim in victims do
 				c.Hit(character, victim, {
 					damage = 8,
@@ -314,13 +240,6 @@ local function swiftWhiteHawk(ctx)
 	fx(ctx, "SwiftWhiteHawk", "Burst", { position = position, fade = true })
 end
 
--- Heavenly Wind Ark: a great crescent of wind rises out of the ground in
--- front of him and carries whoever it catches up into the air, and him
--- right behind them; both hang there for an air string (M1s in the air
--- keep them both up, the 4th slams them down). In the air the ark sweeps
--- down beneath him instead and spikes them into the ground. Either way it
--- breaks guards (a broken guard isn't carried up, just left open) and hits
--- people who are down.
 local ARK_CAST = 0.18
 local ARK_RISE = 46 -- studs a second, for ARK_RISE_TIME: about 14 studs up
 local ARK_RISE_TIME = 0.3
@@ -389,12 +308,6 @@ local function heavenlyWindArk(ctx)
 	end
 end
 
--- Gale White Bow: a great bow of wind and six big arrows, one after the
--- other, each aimed at whoever he faces at that moment. The first five keep
--- them stunned, the sixth knocks them back. Held on the ground instead, he
--- keeps drawing: one great arrow that goes through everyone in its path,
--- breaks guards and leaves them slowed for a moment. Light on damage
--- (a little more the longer he draws).
 local BOW_SLOT = 4
 local BOW_DRAW = 0.5
 local BOW_ARROWS = 6
@@ -518,13 +431,8 @@ local function galeWhiteBow(ctx)
 	CombatState.SetCasting(character, 0.2)
 end
 
----------------------------------------------------------------------------
 -- R: Conjunction (star magic)
----------------------------------------------------------------------------
 
--- A star goes down 22 studs the way he's moving (to the side or back for a
--- dodge), or straight ahead when he's standing still. R again within 4s and
--- he's there in an instant. A press while he's stunned does nothing.
 local STAR_DISTANCE = 22
 local STAR_LIFE = 4
 
@@ -559,12 +467,8 @@ function Kit.Special(ctx)
 	fx(ctx, "Conjunction", "Fade", { star = star })
 end
 
----------------------------------------------------------------------------
 -- Half-Crown Spirit of Zephyr
----------------------------------------------------------------------------
 
--- Spirit Storm: mana gathered in his palm, let out as a dense beam of
--- swirling wind that drags them along it; the last of it blows them away.
 local STORM_CHARGE = 0.45
 local STORM_TICKS = 6
 local STORM_TICK = 0.1
@@ -605,14 +509,6 @@ local function spiritStorm(ctx)
 	CombatState.SetCasting(character, 0.25)
 end
 
---[[
-	Tempest Dive (Half-Crown 2): a grab. His hand shoots out; whoever it
-	catches he drags straight up into the sky by the collar, then swings
-	over them and drives them head-first down into the ground, hard enough
-	to bounce them, a tornado forming behind them on the way down (it cuts
-	them twice). The timeline is Shared/TempestDive. Landing it charges the
-	Full-Crown: twice, and G can be pressed again.
-]]
 local DIVE_REACH = 0.16
 
 local function tempestDive(ctx)
@@ -704,10 +600,6 @@ local function tempestDive(ctx)
 	stopHim()
 end
 
--- Quartile Scutum: four stars in a rectangle in front of him and beams of
--- light between them, a wall that stops anything from the front for 2.5s
--- (even moves that break guards); whoever runs into it in melee is thrown
--- back off the light. He can still walk, slowly, but not attack.
 local SCUTUM_TIME = 2.5
 
 local function quartileScutum(ctx)
@@ -722,9 +614,6 @@ local function quartileScutum(ctx)
 		local attackerRoot = rootOf(attacker)
 		return attackerRoot ~= nil and c.Flat(attackerRoot.Position - ctx.root.Position):Dot(look(ctx)) > 0.1
 	end
-	-- Whatever it stops goes back at whoever sent it, twice as hard: straight
-	-- back into them up close, as a bolt of starlight from range. (What it
-	-- sends back is never sent back again, so two barriers can't trade it.)
 	local function absorb(attacker: Model, hit: any)
 		local attackerRoot = rootOf(attacker)
 		fx(ctx, "QuartileScutum", "Block", { from = if attackerRoot then attackerRoot.Position else nil })
@@ -785,17 +674,6 @@ local function quartileScutum(ctx)
 	fx(ctx, "QuartileScutum", "Drop")
 end
 
---[[
-	Nova Vortex (Half-Crown 4): a star forms in his open hand and he flicks it
-	out (at whoever he faces, else ahead of him; from the air, down to the
-	ground ahead). Where it lands it opens into a galaxy of wind and stars
-	turning flat over the ground, and everyone round it is dragged in toward
-	its eye; whoever reaches the eye is held up in it, cut by the wind. He's
-	free the moment the star leaves his hand. It turns for 1.1s (held, as
-	long as the key is down, up to 2.2s), then collapses into its eye and
-	goes nova: a pillar of starlight into the sky that breaks guards and
-	throws whoever is in it straight up, for him to follow.
-]]
 local NOVA_SLOT = 4
 local NOVA_CAST = 0.28 -- the star forms in his hand and he flicks it
 local NOVA_SPEED = 120 -- the star's flight
@@ -825,8 +703,6 @@ local function novaVortex(ctx)
 		return
 	end
 
-	-- Where it goes: whoever he faces, else ahead of him; always to the
-	-- ground there (walls stop it short).
 	local forward = look(ctx)
 	local aimed = softTarget(ctx, NOVA_RANGE, 35)
 	local aimedRoot = aimed and rootOf(aimed)
@@ -904,18 +780,8 @@ local function novaVortex(ctx)
 	c.ShakeArea(eye, 45, 0.35)
 end
 
----------------------------------------------------------------------------
 -- Full-Crown Spirit of Zephyr
----------------------------------------------------------------------------
 
---[[
-	Spirit of Boreas (Full-Crown 1, the north wind): a great axe of wind
-	forms in his hands, raised high, and he brings it down in one huge chop
-	that bites into the ground and splits it in a line ahead of him, through
-	guards, throwing whoever is on it into the air, people lying on the
-	ground too. From the air he chops down at the ground ahead and below,
-	spiking them (and catching anyone down there on the floor).
-]]
 local BOREAS_RAISE = 0.42 -- the axe forms, raised (BoreasForm, then BoreasChop)
 local BOREAS_REACH = 28
 local BOREAS_WIDTH = 7
@@ -955,16 +821,6 @@ local function spiritOfBoreas(ctx)
 	CombatState.SetCasting(character, 0.4)
 end
 
---[[
-	Spirit of Zephyrus (Full-Crown 2, the west wind): his sword of wind grows
-	long and he lunges at whoever he's facing on a burst of wind (steerable).
-	Caught, it's the waltz of the west wind (Shared/Zephyrus, a cutscene for
-	the two of them, about 1.3s): the wind holds them up while he whirls
-	round them twice, cutting them every half turn, then he swings out in
-	front of them and runs them through with a spear of wind that blows
-	them away. From the air the lunge dives at them, and the waltz happens
-	up there.
-]]
 local LUNGE_SPEED = 100
 local LUNGE_TIME = 0.34
 local LUNGE_STEER = 180
@@ -1087,9 +943,6 @@ local function spiritOfZephyrus(ctx)
 	CombatState.SetCasting(character, 0.25)
 end
 
--- Spirit of Euros: a recurve bow of wind, drawn while the wind spirals into
--- the arrow. Loosed, it's too fast to see: everyone along its line is hit
--- at once, through guards and through each other.
 local EUROS_DRAW = 0.8
 local EUROS_RANGE = 120
 
@@ -1127,17 +980,6 @@ local function spiritOfEuros(ctx)
 	c.ShakeArea(origin, 40, 0.35)
 end
 
---[[
-	Saint Spirit of Zephyr (Full-Crown 4): a 6-second cutscene. He flicks a
-	star at whoever is in front of him (about 15 studs); it binds them and a
-	column of wind carries them 32 studs into the sky, him flying up beside
-	them. A constellation of eight stars opens round them and he dashes round
-	them from star to star, cutting straight through them from each, then an X;
-	then he's high above them and splits them with one strike of wind and
-	starlight down through them to the ground. The cuts left hanging in the
-	air detonate and they fall like a meteor into the ground. The timeline
-	is Shared/SaintZephyr, the camera work and effects client side.
-]]
 local SAINT_FLICK = 0.2 -- the star leaves his hand (Conjunction's point)
 local SAINT_BOX = Vector3.new(5, 7, 15)
 
@@ -1245,14 +1087,10 @@ local function saintSpiritOfZephyr(ctx)
 	stopHim()
 end
 
----------------------------------------------------------------------------
 -- Move sets
----------------------------------------------------------------------------
 
 Kit.Skills = { windBladesShower, swiftWhiteHawk, heavenlyWindArk, galeWhiteBow }
 
--- Awakened, the moves follow the stage: Half-Crown, or Full-Crown once he's
--- ascended (the "Ascended" attribute; names and cooldowns in Shared/Kits).
 local HALF_CROWN = { spiritStorm, tempestDive, quartileScutum, novaVortex }
 local FULL_CROWN = { spiritOfBoreas, spiritOfZephyrus, spiritOfEuros, saintSpiritOfZephyr }
 local function stageMove(slot: number): (any) -> ()
@@ -1263,13 +1101,8 @@ local function stageMove(slot: number): (any) -> ()
 end
 Kit.AwakenedSkills = { stageMove(1), stageMove(2), stageMove(3), stageMove(4) }
 
----------------------------------------------------------------------------
 -- Half-Crown / Full-Crown Spirit of Zephyr
----------------------------------------------------------------------------
 
--- The client's Awaken / Ascend animations: wind gathers round him, Sylph
--- merges into him at the burst, and he settles into the new stance. Rooted
--- and untouchable the whole time.
 local TRANSFORM_TIME = 1.5
 local TRANSFORM_BURST = 0.8
 
@@ -1305,10 +1138,6 @@ function Kit.Ascend(ctx)
 	transform(ctx, "Ascend", 18)
 end
 
--- Spawn entrance: wind gathers round him and his grimoire comes down out of
--- the sky to him, Sylph darting round him; he raises a hand, the clover
--- flares and the wind bursts out. Untouchable and rooted while it plays
--- (the animation and effects are client side).
 local ENTRANCE_TIME = 2.2
 
 function Kit.Entrance(ctx)

@@ -2,3 +2,5 @@
 *.rbxlx.lock
 sourcemap.json
 __pycache__/
+build/min/
+build/min.project.json

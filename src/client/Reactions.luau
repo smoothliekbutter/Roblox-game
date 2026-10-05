@@ -1,18 +1,4 @@
---[[
-	Reactions
-	Default getting-hit and blocking animations, used by characters that
-	don't bring their own (the dummies, and characters until they get custom
-	ones). A kit can override any of these by name in Kit.Reactions.
-
-	  FlinchA / FlinchB  hit from the front (alternating sides)
-	  FlinchBack         hit from behind
-	  HitHeavy           big hit that doesn't knock down
-	  Guard              blocking stance, held until the block ends
-	  GuardHit           a blocked hit pushes the guard back
-	  Stagger            guard broken or parried
-	  Grabbed            held up by the throat (faded out on release)
-	  Launched           thrown high into the air, flailing (cutscenes end it)
-]]
+-- Default hit / block reaction animations, for characters that bring none of their own.
 
 local PoseAnimator = require(script.Parent.PoseAnimator)
 
@@ -179,8 +165,6 @@ Reactions.Stagger = clip({
 	{ 1.3, settle(0), SINE, IN_OUT },
 }, { fadeIn = 0.02, fadeOut = 0.25 })
 
--- Held up by the throat: head thrown back, both hands clawing at the grip,
--- legs kicking. Written out long (tracks don't loop); release fades it.
 do
 	local function grabbed(kick: number, arch: number)
 		return {

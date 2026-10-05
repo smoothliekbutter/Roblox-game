@@ -1,22 +1,4 @@
---[[
-	Anti-Magic Knight (Asta): Black Ascent (Black Form, Demon-Slasher 1),
-	drawn. The paths are Shared/BlackAscent (the server holds them both on
-	them); this draws it, about 1.3 seconds:
-
-	  launch    the rising cut throws them up, a black streak trailing off
-	            them, the ground split red under them; he springs up after
-	            them on a beat of his wings.
-	  the cuts  he glides across in front of them cutting right to left,
-	            then sweeps back up the other way: each cut is a crescent of
-	            black and red, and the line it cut through them stays
-	            hanging in the air, the two making an X.
-	  the spike over the top of them, one cut straight down: the X bursts,
-	            they're driven into the ground like a stake, a crater, red
-	            cracks, rocks and a ring of dust, and he lands beside it.
-
-	The camera (for the two of them) circles them up in the air, then
-	cranes down after them as they fall. No shake: eased zooms.
-]]
+-- Asta's Black Ascent (Black Form, Slasher 1), drawn along Shared/BlackAscent's paths.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -196,8 +178,6 @@ function Ascent.Play(ctx: Context, data, character: Model, root: BasePart): (() 
 		end
 	end
 
-	-- The launch: the ground splits under them and they're thrown up, a
-	-- black streak trailing off them.
 	U.groundCracks(floor, 7, 6, RED, 1.6)
 	U.debris(floor, 10, 34, 0.8)
 	U.burst(floor + UP * 0.5, {
@@ -350,12 +330,6 @@ function Ascent.Play(ctx: Context, data, character: Model, root: BasePart): (() 
 	return stop
 end
 
---[[
-	The camera: low behind his shoulder as they're thrown up, rising and
-	circling round them in the air through the cuts, then held and craned
-	down after them as they're driven into the ground, coming to rest low
-	on the crater with him beside it.
-]]
 function Ascent.Camera(plan: AscentPlan.Plan): () -> ()
 	local times = AscentPlan.Times
 	local forward, right, top = plan.forward, plan.right, plan.top
@@ -375,8 +349,6 @@ function Ascent.Camera(plan: AscentPlan.Plan): () -> ()
 	local ground = Vector3.new(plan.start.X, plan.floorY, plan.start.Z)
 	return Cinematic.Camera(function(elapsed)
 		local t = math.min(elapsed, times.Length)
-		-- Up with them behind his right shoulder (the cuts sweep across the
-		-- shot), then round to their side for the cut down.
 		local up = smooth(t / 0.45)
 		local angle = rad(25 + 25 * smooth(t / 0.35) + 50 * smooth((t - 0.6) / 0.35))
 		local around = -forward * math.cos(angle) + right * math.sin(angle)

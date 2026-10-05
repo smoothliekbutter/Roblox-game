@@ -1,8 +1,4 @@
---[[
-	Hitbox
-	Spatial queries that return the characters (anything with a Humanoid)
-	inside a region. Each character is returned at most once.
-]]
+-- Spatial queries that return the characters (anything with a Humanoid) in a region, each once.
 
 local Debris = game:GetService("Debris")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")

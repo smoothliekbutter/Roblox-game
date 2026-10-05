@@ -1,13 +1,4 @@
---[[
-	HUD
-	Top right (in the top bar): small health bar; under it the Evasive bar
-	           and, beside that, a tiny bar for R (the special's cooldown);
-	           under those, a small icon for the perfect block's cooldown.
-	Bottom:    awakening bar over the move icons (skills 1-4) with cooldowns.
-	Right:     combo counter.
-	Top:       toast messages from the server.
-	Built in code so it can be restyled without touching Studio.
-]]
+-- HUD: health, Evasive and R bars (top right), the move bar (bottom) and the awakening meter.
 
 local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
@@ -230,8 +221,6 @@ local function buildStatus(playerGui: Instance)
 	evasiveBack, ui.evasiveFill =
 		bar(panel, UDim2.new(0, 8, 0.5, 6), UDim2.new(1, -36 - SPECIAL_WIDTH, 0, 4), COLORS.Evasive)
 
-	-- R (the special) as a tiny bar at the end of the row: fills back up
-	-- while it's on cooldown, bright when it's ready.
 	ui.special, ui.specialFill =
 		bar(panel, UDim2.new(1, -8 - SPECIAL_WIDTH, 0.5, 6), UDim2.fromOffset(SPECIAL_WIDTH, 4), COLORS.Special)
 	ui.specialKey = label(ui.special, {
@@ -242,9 +231,6 @@ local function buildStatus(playerGui: Instance)
 		Size = UDim2.fromOffset(8, 10),
 		TextXAlignment = Enum.TextXAlignment.Right,
 	})
-	-- The perfect block: a small icon just under the R bar (a diamond that's
-	-- bright when it's ready; dark, filling back up, with the seconds left
-	-- while it's on cooldown).
 	ui.perfect = Instance.new("Frame")
 	ui.perfect.Name = "PerfectBlock"
 	ui.perfect.AnchorPoint = Vector2.new(0.5, 0)

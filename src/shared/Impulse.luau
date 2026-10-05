@@ -1,22 +1,9 @@
---[[
-	Impulse
-	Pushes a character for a short time using a LinearVelocity. A plain
-	AssemblyLinearVelocity gets eaten by the Humanoid's controller, this
-	doesn't. Must run on whoever owns the physics: the client for its own
-	character, the server for NPCs and ragdolled characters.
-]]
+-- Pushes a character for a moment with a LinearVelocity (a plain velocity gets eaten by the Humanoid).
 
 local RunService = game:GetService("RunService")
 
 local Impulse = {}
 
--- Applies `velocity` for `duration` seconds. Only one impulse per `name`
--- exists at a time, so a new dash replaces an old dash. Vertical force is
--- only applied when velocity has a Y component, so gravity still works on
--- flat pushes. `taper` (a fraction of the duration) eases the push out to
--- a stop over its last part instead of cutting it dead, which is what makes
--- knockback feel snappy rather than jerky. Returns the LinearVelocity so
--- callers can steer it (steered pushes shouldn't taper).
 function Impulse.Apply(
 	root: BasePart,
 	velocity: Vector3,
