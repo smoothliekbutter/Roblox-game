@@ -1602,7 +1602,7 @@ Animations.EurosLoose = {
 	},
 }
 
--- Saint Spirit of Zephyr: one two-handed cut through them (each star).
+-- Saint Spirit of Zephyr: one two-handed cut through them (each star), carried past and rebounding.
 Animations.SaintCut = {
 	fadeIn = 0.03,
 	fadeOut = 0.1,
@@ -1610,16 +1610,16 @@ Animations.SaintCut = {
 		{
 			0,
 			{
-				Torso = rot(-8, 40),
-				Head = rot(6, -30),
-				RightArm = limb(110, 50, 10),
-				LeftArm = limb(100, 70, -10),
-				RightLeg = rot(-24, 0, 10),
-				LeftLeg = rot(20, 0, -10),
+				Torso = rot(-8, 24),
+				Head = rot(4, -18),
+				RightArm = limb(104, 30, 10),
+				LeftArm = limb(94, 46, -10),
+				RightLeg = rot(-22, 0, 10),
+				LeftLeg = rot(18, 0, -10),
 			},
 		},
 		{
-			0.06,
+			0.055,
 			{
 				Torso = rot(-14, -45),
 				Head = rot(8, 35),
@@ -1632,14 +1632,40 @@ Animations.SaintCut = {
 			"Out",
 		},
 		{
-			0.25,
+			0.12,
 			{
-				Torso = rot(-14, -45),
-				Head = rot(8, 35),
-				RightArm = limb(80, -60, 10),
-				LeftArm = limb(70, -40, -10),
-				RightLeg = rot(-30, 0, 12),
-				LeftLeg = rot(26, 0, -12),
+				Torso = rot(-18, -60),
+				Head = rot(10, 44),
+				RightArm = limb(76, -82, 12),
+				LeftArm = limb(66, -62, -10),
+				RightLeg = rot(-40, 0, 14),
+				LeftLeg = rot(34, 0, -12),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.24,
+			{
+				Torso = rot(-12, -24),
+				Head = rot(6, 18),
+				RightArm = limb(92, -28, 10),
+				LeftArm = limb(84, -14, -10),
+				RightLeg = rot(-26, 0, 10),
+				LeftLeg = rot(22, 0, -10),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.34,
+			{
+				Torso = rot(-12, -24),
+				Head = rot(6, 18),
+				RightArm = limb(92, -28, 10),
+				LeftArm = limb(84, -14, -10),
+				RightLeg = rot(-26, 0, 10),
+				LeftLeg = rot(22, 0, -10),
 			},
 			"Linear",
 			"Out",
@@ -1647,7 +1673,7 @@ Animations.SaintCut = {
 	},
 }
 
--- Saint Spirit of Zephyr: the backhand cut (every other star).
+-- Saint Spirit of Zephyr: the backhand cut (every other star), carried past and rebounding.
 Animations.SaintCutBack = {
 	fadeIn = 0.03,
 	fadeOut = 0.1,
@@ -1655,16 +1681,16 @@ Animations.SaintCutBack = {
 		{
 			0,
 			{
-				Torso = rot(-14, -45),
-				Head = rot(8, 35),
-				RightArm = limb(80, -60, 10),
-				LeftArm = limb(70, -40, -10),
-				RightLeg = rot(-30, 0, 12),
-				LeftLeg = rot(26, 0, -12),
+				Torso = rot(-12, -24),
+				Head = rot(6, 18),
+				RightArm = limb(92, -28, 10),
+				LeftArm = limb(84, -14, -10),
+				RightLeg = rot(-26, 0, 10),
+				LeftLeg = rot(22, 0, -10),
 			},
 		},
 		{
-			0.06,
+			0.055,
 			{
 				Torso = rot(-8, 40),
 				Head = rot(6, -30),
@@ -1677,14 +1703,40 @@ Animations.SaintCutBack = {
 			"Out",
 		},
 		{
-			0.25,
+			0.12,
 			{
-				Torso = rot(-8, 40),
-				Head = rot(6, -30),
-				RightArm = limb(110, 50, 10),
-				LeftArm = limb(100, 70, -10),
-				RightLeg = rot(-24, 0, 10),
-				LeftLeg = rot(20, 0, -10),
+				Torso = rot(-10, 54),
+				Head = rot(8, -40),
+				RightArm = limb(114, 70, 10),
+				LeftArm = limb(104, 86, -10),
+				RightLeg = rot(-34, 0, 10),
+				LeftLeg = rot(28, 0, -10),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.24,
+			{
+				Torso = rot(-8, 24),
+				Head = rot(4, -18),
+				RightArm = limb(104, 30, 10),
+				LeftArm = limb(94, 46, -10),
+				RightLeg = rot(-22, 0, 10),
+				LeftLeg = rot(18, 0, -10),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.34,
+			{
+				Torso = rot(-8, 24),
+				Head = rot(4, -18),
+				RightArm = limb(104, 30, 10),
+				LeftArm = limb(94, 46, -10),
+				RightLeg = rot(-22, 0, 10),
+				LeftLeg = rot(18, 0, -10),
 			},
 			"Linear",
 			"Out",
@@ -1722,6 +1774,19 @@ Animations.SaintAscend = {
 			"Out",
 		},
 		{
+			0.6,
+			{
+				Torso = rot(18),
+				Head = rot(-28),
+				RightArm = limb(-32, 0, 46),
+				LeftArm = limb(-30, 0, -44),
+				RightLeg = rot(16, 0, 6),
+				LeftLeg = rot(24, 0, -6),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
 			1.2,
 			{
 				Torso = rot(14),
@@ -1731,8 +1796,8 @@ Animations.SaintAscend = {
 				RightLeg = rot(12, 0, 4),
 				LeftLeg = rot(18, 0, -4),
 			},
-			"Linear",
-			"Out",
+			"Sine",
+			"InOut",
 		},
 	},
 }
@@ -1767,14 +1832,27 @@ Animations.SaintPoise = {
 			"Out",
 		},
 		{
+			0.42,
+			{
+				Torso = rot(-20, 50),
+				Head = rot(14, -38),
+				RightArm = limb(116, 62, 12),
+				LeftArm = limb(106, 82, -10),
+				RightLeg = rot(-44, 0, 10),
+				LeftLeg = rot(30, 0, -10),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
 			0.6,
 			{
-				Torso = rot(-14, 42),
-				Head = rot(10, -32),
-				RightArm = limb(112, 52, 10),
-				LeftArm = limb(102, 72, -10),
-				RightLeg = rot(-34, 0, 10),
-				LeftLeg = rot(24, 0, -10),
+				Torso = rot(-20, 50),
+				Head = rot(14, -38),
+				RightArm = limb(116, 62, 12),
+				LeftArm = limb(106, 82, -10),
+				RightLeg = rot(-44, 0, 10),
+				LeftLeg = rot(30, 0, -10),
 			},
 			"Linear",
 			"Out",
@@ -1812,6 +1890,19 @@ Animations.SaintRise = {
 			"Out",
 		},
 		{
+			0.42,
+			{
+				Torso = rot(17),
+				Head = rot(-26),
+				RightArm = limb(178, 6),
+				LeftArm = limb(178, -6),
+				RightLeg = rot(-4, 0, 8),
+				LeftLeg = rot(22, 0, -8),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
 			0.75,
 			{
 				Torso = rot(10),
@@ -1821,8 +1912,8 @@ Animations.SaintRise = {
 				RightLeg = rot(-8, 0, 6),
 				LeftLeg = rot(16, 0, -6),
 			},
-			"Linear",
-			"Out",
+			"Sine",
+			"InOut",
 		},
 	},
 }
@@ -1844,7 +1935,7 @@ Animations.SaintStrike = {
 			},
 		},
 		{
-			0.08,
+			0.07,
 			{
 				Torso = rot(-38),
 				Head = rot(20),
@@ -1857,7 +1948,20 @@ Animations.SaintStrike = {
 			"In",
 		},
 		{
-			0.2,
+			0.13,
+			{
+				Torso = rot(-50),
+				Head = rot(26),
+				RightArm = limb(26, 6),
+				LeftArm = limb(26, -6),
+				RightLeg = rot(-52, 0, 8),
+				LeftLeg = rot(16, 0, -8),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.3,
 			{
 				Torso = rot(-38),
 				Head = rot(20),
@@ -1866,8 +1970,8 @@ Animations.SaintStrike = {
 				RightLeg = rot(-40, 0, 8),
 				LeftLeg = rot(10, 0, -8),
 			},
-			"Linear",
-			"Out",
+			"Sine",
+			"InOut",
 		},
 	},
 }
@@ -1902,12 +2006,25 @@ Animations.SaintLand = {
 			"Out",
 		},
 		{
-			0.6,
+			0.42,
 			{
-				Torso = body(-0.043, -20, 15),
-				Head = rot(12, -10),
-				RightArm = limb(40, 10, 50),
-				LeftArm = limb(25, 0, -25),
+				Torso = body(-0.064, -16, 22),
+				Head = rot(6, 38),
+				RightArm = limb(52, 12, 72),
+				LeftArm = limb(25, 0, -28),
+				RightLeg = rot(-50, 0, 10),
+				LeftLeg = rot(40, 0, -10),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.68,
+			{
+				Torso = body(-0.064, -16, 22),
+				Head = rot(6, 38),
+				RightArm = limb(52, 12, 72),
+				LeftArm = limb(25, 0, -28),
 				RightLeg = rot(-50, 0, 10),
 				LeftLeg = rot(40, 0, -10),
 			},

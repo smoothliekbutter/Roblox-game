@@ -189,28 +189,45 @@ EUROS_DRAW = [(0.0, STANCE), (0.25, BOW_AIM), (0.8, EUROS_FULL), (1.0, EUROS_FUL
 EUROS_LOOSE = [(0.0, EUROS_FULL), (0.05, EUROS_RELEASE), (0.5, EUROS_RELEASE)]
 
 # Saint Spirit of Zephyr (all in the air but the landing). A cut: the sword
-# cocked over his left shoulder, then swept through them two-handed.
+# cocked over his left shoulder, then swept through them two-handed; it
+# carries on past the strike (the follow-through), then he rebounds half
+# way back, coiling for the next cut, so the dance never stops dead.
 SAINT_COCK = pose(R(-8, 40), R(6, -30), L(110, 50, 10), L(100, 70, -10), R(-24, 0, 10), R(20, 0, -10))
 SAINT_SWEEP = pose(R(-14, -45), R(8, 35), L(80, -60, 10), L(70, -40, -10), R(-30, 0, 12), R(26, 0, -12))
-SAINT_CUT = [(0.0, SAINT_COCK), (0.06, SAINT_SWEEP), (0.25, SAINT_SWEEP)]
-# At his own star before the first cut: the sword drawn back, leaning in.
+SAINT_SWEEP_OVER = pose(R(-18, -60), R(10, 44), L(76, -82, 12), L(66, -62, -10), R(-40, 0, 14), R(34, 0, -12))
+SAINT_SWEEP_BACK = pose(R(-12, -24), R(6, 18), L(92, -28, 10), L(84, -14, -10), R(-26, 0, 10), R(22, 0, -10))
+SAINT_COCK_OVER = pose(R(-10, 54), R(8, -40), L(114, 70, 10), L(104, 86, -10), R(-34, 0, 10), R(28, 0, -10))
+SAINT_COCK_BACK = pose(R(-8, 24), R(4, -18), L(104, 30, 10), L(94, 46, -10), R(-22, 0, 10), R(18, 0, -10))
+SAINT_CUT = [(0.0, SAINT_COCK_BACK), (0.055, SAINT_SWEEP), (0.12, SAINT_SWEEP_OVER), (0.24, SAINT_SWEEP_BACK),
+             (0.34, SAINT_SWEEP_BACK)]  # (held till the next cut takes over)
+# At his own star before the first cut: the sword drawn back, leaning in,
+# coiling tighter as the charge builds.
 SAINT_READY = pose(R(-14, 42), R(10, -32), L(112, 52, 10), L(102, 72, -10), R(-34, 0, 10), R(24, 0, -10))
+SAINT_COILED = pose(R(-20, 50), R(14, -38), L(116, 62, 12), L(106, 82, -10), R(-44, 0, 10), R(30, 0, -10))
 # And back the other way (every other cut).
-SAINT_CUT_BACK = [(0.0, SAINT_SWEEP), (0.06, SAINT_COCK), (0.25, SAINT_COCK)]
-# Flying up beside them on the wind: arms back, chin up, legs together.
+SAINT_CUT_BACK = [(0.0, SAINT_SWEEP_BACK), (0.055, SAINT_COCK), (0.12, SAINT_COCK_OVER), (0.24, SAINT_COCK_BACK),
+                  (0.34, SAINT_COCK_BACK)]
+# Flying up beside them on the wind: arms back, chin up, legs together,
+# the updraft lifting his arms and legs a little and letting them settle.
 SAINT_SOAR = pose(R(14), R(-22), L(-20, 0, 35), L(-20, 0, -35), R(12, 0, 4), R(18, 0, -4))
-SAINT_ASCEND = [(0.0, STANCE), (0.15, SAINT_SOAR), (1.2, SAINT_SOAR)]
-SAINT_POISE = [(0.0, SAINT_SOAR), (0.16, SAINT_READY), (0.6, SAINT_READY)]
-# High above them, the blade raised in both hands, legs trailing.
+SAINT_SOAR_LIFT = pose(R(18), R(-28), L(-32, 0, 46), L(-30, 0, -44), R(16, 0, 6), R(24, 0, -6))
+SAINT_ASCEND = [(0.0, STANCE), (0.15, SAINT_SOAR), (0.6, SAINT_SOAR_LIFT), (1.2, SAINT_SOAR)]
+SAINT_POISE = [(0.0, SAINT_SOAR), (0.16, SAINT_READY), (0.42, SAINT_COILED), (0.6, SAINT_COILED)]
+# High above them, the blade raised in both hands, legs trailing; he arches
+# back under its weight as it grows.
 SAINT_RAISE = pose(R(10), R(-18), L(172, 6, 0), L(172, -6, 0), R(-8, 0, 6), R(16, 0, -6))
-SAINT_RISE = [(0.0, SAINT_SWEEP), (0.12, SAINT_RAISE), (0.75, SAINT_RAISE)]
-# The strike: straight down, folding over it.
+SAINT_ARCH = pose(R(17), R(-26), L(178, 6, 0), L(178, -6, 0), R(-4, 0, 8), R(22, 0, -8))
+SAINT_RISE = [(0.0, SAINT_SWEEP), (0.12, SAINT_RAISE), (0.42, SAINT_ARCH), (0.75, SAINT_RAISE)]
+# The strike: straight down, folding over it, past it, and back.
 SAINT_DOWN = pose(R(-38), R(20), L(40, 6, 0), L(40, -6, 0), R(-40, 0, 8), R(10, 0, -8))
-SAINT_STRIKE = [(0.0, SAINT_RAISE), (0.08, SAINT_DOWN), (0.2, SAINT_DOWN)]
-# Landed low, his back to them, the sword out to the side.
+SAINT_DOWN_DEEP = pose(R(-50), R(26), L(26, 6, 0), L(26, -6, 0), R(-52, 0, 8), R(16, 0, -8))
+SAINT_STRIKE = [(0.0, SAINT_RAISE), (0.07, SAINT_DOWN), (0.13, SAINT_DOWN_DEEP), (0.3, SAINT_DOWN)]
+# Landed low, his back to them, the sword out to the side; he flicks the
+# wind off it and glances back over his shoulder at them, then rises.
 SAINT_KNEEL = pose(R(-20, 15), R(12, -10), L(40, 10, 50), L(25, 0, -25), R(-50, 0, 10), R(40, 0, -10))
+SAINT_FLICK = pose(R(-16, 22), R(6, 38), L(52, 12, 72), L(25, 0, -28), R(-50, 0, 10), R(40, 0, -10))
 SAINT_STAND = pose(R(-6, 12), R(4, -12), L(20, 6, 30), L(18, 0, -18), R(-8, 0, 6), R(8, 0, -6))
-SAINT_LAND = [(0.0, SAINT_DOWN), (0.12, SAINT_KNEEL), (0.6, SAINT_KNEEL), (1.0, SAINT_STAND)]
+SAINT_LAND = [(0.0, SAINT_DOWN), (0.12, SAINT_KNEEL), (0.42, SAINT_FLICK), (0.68, SAINT_FLICK), (1.0, SAINT_STAND)]
 
 # Tempest Dive: flying straight up, the right hand down holding them by the
 # collar (they're below him, a little ahead), the left reaching for the sky.
@@ -274,13 +291,13 @@ SPEC = {
     'BoreasChop': dict(keys=BOREAS_CHOP, ease=[None, QUAD_IN, LINEAR], fadeIn=0.01, fadeOut=0.3, doc="Tempest Dive: driving them down into the ground."),
     'EurosDraw': dict(keys=EUROS_DRAW, ease=[None, SINE_OUT, SINE_IO, LINEAR], fadeOut=0.05, doc="Spirit of Euros: drawn deep and held."),
     'EurosLoose': dict(keys=EUROS_LOOSE, ease=[None, QUART_OUT, LINEAR], fadeIn=0.01, fadeOut=0.3, doc="Spirit of Euros: loosed, the drawing hand flies back."),
-    'SaintCut': dict(keys=SAINT_CUT, ease=[None, QUART_OUT, LINEAR], fadeIn=0.03, fadeOut=0.1, doc="Saint Spirit of Zephyr: one two-handed cut through them (each star)."),
-    'SaintCutBack': dict(keys=SAINT_CUT_BACK, ease=[None, QUART_OUT, LINEAR], fadeIn=0.03, fadeOut=0.1, doc="Saint Spirit of Zephyr: the backhand cut (every other star)."),
-    'SaintAscend': dict(keys=SAINT_ASCEND, ease=[None, SINE_OUT, LINEAR], fadeIn=0.05, fadeOut=0.1, doc="Saint Spirit of Zephyr: flying up beside them on the wind."),
-    'SaintPoise': dict(keys=SAINT_POISE, ease=[None, SINE_OUT, LINEAR], fadeIn=0.05, fadeOut=0.1, doc="Saint Spirit of Zephyr: at his star, the sword drawn back, leaning in to charge."),
-    'SaintRise': dict(keys=SAINT_RISE, ease=[None, SINE_OUT, LINEAR], fadeIn=0.03, fadeOut=0.05, doc="Saint Spirit of Zephyr: the blade raised high above them."),
-    'SaintStrike': dict(keys=SAINT_STRIKE, ease=[None, QUAD_IN, LINEAR], fadeIn=0.01, fadeOut=0.1, doc="Saint Spirit of Zephyr: the one strike, straight down."),
-    'SaintLand': dict(keys=SAINT_LAND, ease=[None, QUART_OUT, LINEAR, SINE_IO], fadeIn=0.02, fadeOut=0.3, doc="Saint Spirit of Zephyr: landed low, his back to them, then up."),
+    'SaintCut': dict(keys=SAINT_CUT, ease=[None, QUART_OUT, SINE_OUT, SINE_IO, LINEAR], fadeIn=0.03, fadeOut=0.1, doc="Saint Spirit of Zephyr: one two-handed cut through them (each star), carried past and rebounding."),
+    'SaintCutBack': dict(keys=SAINT_CUT_BACK, ease=[None, QUART_OUT, SINE_OUT, SINE_IO, LINEAR], fadeIn=0.03, fadeOut=0.1, doc="Saint Spirit of Zephyr: the backhand cut (every other star), carried past and rebounding."),
+    'SaintAscend': dict(keys=SAINT_ASCEND, ease=[None, SINE_OUT, SINE_IO, SINE_IO], fadeIn=0.05, fadeOut=0.1, doc="Saint Spirit of Zephyr: flying up beside them on the wind."),
+    'SaintPoise': dict(keys=SAINT_POISE, ease=[None, SINE_OUT, SINE_IO, LINEAR], fadeIn=0.05, fadeOut=0.1, doc="Saint Spirit of Zephyr: at his star, the sword drawn back, leaning in to charge."),
+    'SaintRise': dict(keys=SAINT_RISE, ease=[None, SINE_OUT, SINE_IO, SINE_IO], fadeIn=0.03, fadeOut=0.05, doc="Saint Spirit of Zephyr: the blade raised high above them."),
+    'SaintStrike': dict(keys=SAINT_STRIKE, ease=[None, QUAD_IN, SINE_OUT, SINE_IO], fadeIn=0.01, fadeOut=0.1, doc="Saint Spirit of Zephyr: the one strike, straight down."),
+    'SaintLand': dict(keys=SAINT_LAND, ease=[None, QUART_OUT, SINE_IO, LINEAR, SINE_IO], fadeIn=0.02, fadeOut=0.3, doc="Saint Spirit of Zephyr: landed low, his back to them, then up."),
     'TempestDrag': dict(keys=TEMPEST_DRAG, ease=[None, LINEAR], fadeIn=0.08, fadeOut=0.1, doc="Tempest Dive: flying straight up, dragging them by the collar."),
     'Entrance': dict(keys=ENTRANCE, ease=[None, SINE_IO, SINE_IO, QUART_OUT, LINEAR, SINE_IO], fadeOut=0.25, doc="Spawn entrance: his grimoire comes down to him, he reaches for it, the wind bursts out."),
     'Awaken': dict(keys=AWAKEN, ease=[None, SINE_OUT, BACK_OUT, LINEAR, SINE_IO], fadeOut=0.2, doc="Half-Crown: wind gathers, Sylph merges on the burst."),

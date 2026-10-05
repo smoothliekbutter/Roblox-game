@@ -36,6 +36,7 @@
 	moves smoothly: eased shots and eased blends, no shake.
 ]]
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
@@ -706,6 +707,522 @@ end
 -- The cutscene
 ---------------------------------------------------------------------------
 
+--[[
+	The Zephyr sky (the Golden Dawn): for anyone near, the light turns to a
+	golden sunrise (Cinematic.Dawn) and the sky over the fight is dressed for
+	Yuno: the low sun haloed in gold with rays of light fanning out of it,
+	stars of his star magic glittering all over the sky, long streams of wind
+	sweeping across it, and right over them a colossal spiral of wind turning
+	slowly round an eight-pointed star of light in its eye, light falling
+	from it onto them. It answers the fight: the star swells as the blade
+	grows (the blade points straight up at it), flares at the strike, and
+	the spiral blows apart when they fall.
+]]
+export type ZephyrSky = {
+	update: (number) -> (), -- (run every frame on its own: seconds since it opened)
+	gather: () -> (),
+	flare: () -> (),
+	scatter: () -> (),
+	close: (number) -> (),
+}
+
+local SKY_GOLD = Color3.fromRGB(255, 214, 140)
+local SKY_SUN = Color3.fromRGB(255, 240, 200)
+
+local function zephyrSky(plan: SaintPlan.Plan): ZephyrSky
+	local center = plan.center
+	local made: { Instance } = {}
+	local beams: { { beam: Beam, base: number } } = {}
+	local function track(beam: Beam, base: number): Beam
+		table.insert(beams, { beam = beam, base = base })
+		table.insert(made, beam)
+		beam.Transparency = NumberSequence.new(1)
+		return beam
+	end
+	local function anchor(position: Vector3, axis: Vector3?): Attachment
+		local attachment = worldAnchor(position, axis)
+		table.insert(made, attachment)
+		return attachment
+	end
+
+	-- The sun, low and gold where the dawn puts it: a halo round it and
+	-- rays of light fanning up out of it.
+	local toSun = Cinematic.DawnSun()
+	toSun = Vector3.new(toSun.X, math.max(toSun.Y, 0.1), toSun.Z).Unit
+	local sun = center + toSun * 420
+	local halos: { { part: BasePart, base: number } } = {}
+	for i, layer in { { 46, 0.25, SKY_SUN }, { 110, 0.62, SKY_GOLD }, { 210, 0.82, SKY_GOLD } } do
+		local part = U.newPart({
+			Shape = Enum.PartType.Cylinder,
+			Size = Vector3.new(0.5, layer[1], layer[1]),
+			CFrame = CFrame.lookAt(sun - toSun * i, center) * CFrame.Angles(0, rad(90), 0),
+			Color = layer[3],
+			Transparency = 1,
+		})
+		table.insert(made, part)
+		table.insert(halos, { part = part, base = layer[2] })
+	end
+	local sunAnchor = anchor(sun)
+	local sunUp = (UP - toSun * toSun.Y).Unit
+	local sunSide = toSun:Cross(sunUp).Unit
+	for i = 1, 9 do
+		local angle = rad(-80 + (i - 1) * 20)
+		local out = sunUp * math.cos(angle) + sunSide * math.sin(angle)
+		track(
+			softBeam(sunAnchor, anchor(sun + out * 360 - toSun * 60), {
+				color = ColorSequence.new(SKY_SUN, SKY_GOLD),
+				width0 = 26,
+				width1 = 90,
+				transparency = NumberSequence.new(0),
+				emission = 1,
+			}),
+			0.86
+		)
+	end
+
+	-- Stars of his star magic all over the sky, glittering.
+	type Twinkle = { part: BasePart, phase: number, speed: number }
+	local stars: { Twinkle } = {}
+	for i = 1, 140 do
+		local direction
+		repeat
+			direction = U.randomUnit()
+		until direction.Y > 0.12
+		local part = U.newPart({
+			Shape = Enum.PartType.Ball,
+			Size = Vector3.one * (1 + math.random() * 1.8),
+			CFrame = CFrame.new(center + direction * (280 + math.random() * 40)),
+			Color = if i % 4 == 0 then STAR else STAR_WHITE,
+			Transparency = 1,
+		})
+		table.insert(made, part)
+		table.insert(stars, { part = part, phase = math.random() * 6.28, speed = 2 + math.random() * 4 })
+	end
+
+	-- Streams of wind sweeping across the sky, high over the fight.
+	for i = 1, 6 do
+		local angle = rad(i * 60 + math.random() * 20)
+		local across = Vector3.new(math.cos(angle), 0, math.sin(angle))
+		local side = across:Cross(UP)
+		local height = UP * (36 + i * 8)
+		local from = center + height - across * 260 + side * (i * 14 - 50)
+		local to = center + height + across * 260 + side * (i * 14 - 50)
+		track(
+			softBeam(anchor(from, across + UP * 0.15), anchor(to, across - UP * 0.15), {
+				color = ColorSequence.new(WIND_WHITE, WIND),
+				width0 = 14,
+				width1 = 14,
+				transparency = NumberSequence.new(0),
+				texture = SMOKE,
+				speed = 18 + i * 3,
+				length = 60,
+				curve0 = 40,
+				curve1 = 40,
+			}),
+			0.8
+		)
+	end
+
+	-- The spiral of wind over them: rings turning round its eye (each
+	-- slower than the one inside it), arms of wind curling in.
+	local eye = center + UP * 92
+	type Swirl = { ring: Soft.Ring, radius: number, height: number, speed: number, tilt: number }
+	local swirls: { Swirl } = {}
+	for i, radius in { 34, 62, 95, 132, 175 } do
+		local ring = softRing({
+			color = ColorSequence.new(WIND_WHITE, if i % 2 == 0 then WIND else WIND_DEEP),
+			width0 = 6 + i * 3,
+			width1 = 6 + i * 3,
+			transparency = NumberSequence.new(0),
+			texture = SMOKE,
+			speed = 6,
+			length = 30,
+			segments = 24,
+		})
+		table.insert(made, ring.hub)
+		for _, beam in ring.beams do
+			track(beam, 0.55 + i * 0.05)
+		end
+		table.insert(
+			swirls,
+			{ ring = ring, radius = radius, height = -i * 7, speed = 0.5 - i * 0.07, tilt = (i % 2) * 4 - 2 }
+		)
+	end
+	type Arm = { from: Attachment, to: Attachment, beam: Beam, phase: number }
+	local arms: { Arm } = {}
+	for i = 1, 6 do
+		local from, to = anchor(eye), anchor(eye)
+		local beam = softBeam(from, to, {
+			color = ColorSequence.new(WIND, WIND_WHITE),
+			width0 = 22,
+			width1 = 5,
+			transparency = NumberSequence.new(0),
+			texture = SMOKE,
+			speed = 10,
+			length = 40,
+			segments = 20,
+		})
+		track(beam, 0.6)
+		table.insert(arms, { from = from, to = to, beam = beam, phase = (i - 1) * math.pi / 3 })
+	end
+
+	-- The star in its eye, and light falling from it onto them.
+	local star = Soft.softStar(30)
+	for _, part in star.parts do
+		table.insert(made, part)
+		part.Transparency = 1
+	end
+	local starLight = star.parts[1]:FindFirstChildOfClass("PointLight")
+	if starLight then
+		starLight.Enabled = false
+	end
+	local eyeAnchor = anchor(eye)
+	local fall: { Beam } = {}
+	for i = 1, 6 do
+		local angle = (i - 1) * math.pi / 3
+		local foot = center + Vector3.new(math.cos(angle), 0, math.sin(angle)) * 16 - UP * 6
+		table.insert(
+			fall,
+			track(
+				softBeam(eyeAnchor, anchor(foot), {
+					color = ColorSequence.new(SKY_SUN, STAR),
+					width0 = 16,
+					width1 = 4,
+					transparency = NumberSequence.new(0),
+					emission = 1,
+				}),
+				0.9
+			)
+		)
+	end
+
+	local shown = 0 -- 0 to 1: how far in it's faded
+	local target = 0
+	-- Eased toward their targets every frame (nothing jumps).
+	local scale, scaleTarget = 1, 1 -- the star in the eye
+	local spin, spinTarget = 1, 1
+	local spread, spreadTarget = 1, 1
+	local sky = {} :: ZephyrSky
+	function sky.update(t: number)
+		shown += (target - shown) * 0.08
+		scale += (scaleTarget - scale) * 0.12
+		spin += (spinTarget - spin) * 0.05
+		spread += (spreadTarget - spread) * 0.06
+		local a = smooth(shown)
+		for _, entry in beams do
+			entry.beam.Transparency = NumberSequence.new(1 - (1 - entry.base) * a)
+		end
+		for _, halo in halos do
+			halo.part.Transparency = 1 - (1 - halo.base) * a
+		end
+		for _, twinkle_ in stars do
+			local glint = 0.5 + 0.5 * math.sin(t * twinkle_.speed + twinkle_.phase)
+			twinkle_.part.Transparency = 1 - a * (0.35 + 0.65 * glint)
+		end
+		-- The spiral turns; its arms curl in from the outer ring to the eye.
+		for _, swirl in swirls do
+			swirl.ring.set(
+				CFrame.new(eye + UP * swirl.height) * CFrame.Angles(rad(swirl.tilt), t * swirl.speed * spin, 0),
+				swirl.radius * spread
+			)
+		end
+		for _, arm in arms do
+			local angle = arm.phase + t * 0.35 * spin
+			local outer = Vector3.new(math.cos(angle), 0, math.sin(angle))
+			local inner = Vector3.new(math.cos(angle + 1.6), 0, math.sin(angle + 1.6))
+			local outerAt = eye + outer * 160 * spread - UP * 30
+			local innerAt = eye + inner * 22 * spread
+			-- Leaving the rim along it, arriving round the eye.
+			Soft.aim(arm.from, outerAt, Vector3.new(-outer.Z, 0, outer.X))
+			Soft.aim(arm.to, innerAt, Vector3.new(-inner.Z, 0, inner.X))
+			arm.beam.CurveSize0 = 70 * spread
+			arm.beam.CurveSize1 = 18 * spread
+		end
+		star.place(eye, t * 0.6)
+		local glow = a * (0.25 + 0.15 * math.sin(t * 3))
+		for i, part in star.parts do
+			part.Transparency = if i == 1 then 1 - a * math.min(scale, 1) else 1 - glow * 2.4 * math.min(scale, 1)
+			if i == 1 then
+				part.Size = Vector3.one * 30 * 0.32 * math.max(scale, 0.05)
+			end
+		end
+	end
+	function sky.gather()
+		-- The blade grows toward it: the star swells, the spiral turns faster.
+		scaleTarget, spinTarget = 1.8, 2.2
+	end
+	function sky.flare()
+		-- The strike: the star flares white and the light falls hard.
+		scale, scaleTarget = 2.8, 2.2
+		for _, beam in fall do
+			beam.Width0, beam.Width1 = 30, 10
+			U.tween(beam, 0.5, { Width0 = 16, Width1 = 4 })
+		end
+		twinkle(eye, 60, STAR, 0.45)
+		U.flash(eye, SKY_SUN, 40, 0.3)
+	end
+	function sky.scatter()
+		-- They fall: the spiral blows apart and thins out, the star goes out.
+		spinTarget, spreadTarget, scaleTarget = 3, 1.6, 0
+	end
+	local born = os.clock()
+	local connection = RunService.RenderStepped:Connect(function()
+		sky.update(os.clock() - born)
+	end)
+	function sky.close(duration: number)
+		target = 0
+		task.delay(duration + 0.6, function()
+			connection:Disconnect()
+			for _, instance in made do
+				instance:Destroy()
+			end
+		end)
+	end
+	sky.update(0)
+	target = 1
+	return sky
+end
+
+--[[
+	Sylph, the spirit of Zephyr, over the fight: a giant figure of wind and
+	light looming behind them (wherever you look from: she's drawn facing
+	you, beyond the fight), her hair and the tail of her dress streaming in
+	the wind, wings of wind open behind her, a halo of light over her head.
+	When he raises his hands for the blade she lifts her arms over her head,
+	then pours herself into him: she shrinks into a stream of wind that runs
+	down to him (the little Sylph that dives into the blade).
+]]
+export type Spirit = { raise: () -> (), dissolve: (BasePart) -> (), close: () -> () }
+
+local SPIRIT_HEIGHT = 84
+
+local function sylphSpirit(plan: SaintPlan.Plan): Spirit
+	local made: { Instance } = {}
+	local H = SPIRIT_HEIGHT
+	type Limb = { a: Attachment, b: Attachment, beam: Beam, base: number, curve: number }
+	local limbs: { [string]: Limb } = {}
+	local function limb(name: string, style: Soft.BeamStyle, base: number, curve: number?)
+		local a, b = worldAnchor(plan.center), worldAnchor(plan.center)
+		local beam = softBeam(a, b, style)
+		beam.Transparency = NumberSequence.new(1)
+		table.insert(made, a)
+		table.insert(made, b)
+		table.insert(made, beam)
+		limbs[name] = { a = a, b = b, beam = beam, base = base, curve = curve or 0 }
+	end
+	local wind = ColorSequence.new(WIND_WHITE, WIND)
+	limb("body", {
+		color = ColorSequence.new(WIND_WHITE),
+		width0 = 0.09 * H,
+		width1 = 0.14 * H,
+		transparency = NumberSequence.new(0),
+	}, 0.72)
+	limb("head", {
+		color = ColorSequence.new(WIND_WHITE),
+		width0 = 0.085 * H,
+		width1 = 0.07 * H,
+		transparency = NumberSequence.new(0),
+	}, 0.66)
+	limb("dress", {
+		color = wind,
+		width0 = 0.17 * H,
+		width1 = 0.02 * H,
+		transparency = NumberSequence.new(0),
+		texture = SMOKE,
+		speed = -8,
+		length = 30,
+	}, 0.76, 0.25)
+	for _, side in { "L", "R" } do
+		limb("arm" .. side, {
+			color = ColorSequence.new(WIND_WHITE),
+			width0 = 0.035 * H,
+			width1 = 0.022 * H,
+			transparency = NumberSequence.new(0),
+		}, 0.74, 0.1)
+		limb("wingHigh" .. side, {
+			color = wind,
+			width0 = 0.2 * H,
+			width1 = 0.05 * H,
+			transparency = NumberSequence.new(0),
+			texture = SMOKE,
+			speed = 5,
+			length = 26,
+		}, 0.84, 0.18)
+		limb("wingLow" .. side, {
+			color = wind,
+			width0 = 0.16 * H,
+			width1 = 0.03 * H,
+			transparency = NumberSequence.new(0),
+			texture = SMOKE,
+			speed = 5,
+			length = 26,
+		}, 0.86, 0.15)
+	end
+	for i = 1, 3 do
+		limb("hair" .. i, {
+			color = ColorSequence.new(WIND_WHITE, WIND),
+			width0 = 0.07 * H,
+			width1 = 0.006 * H,
+			transparency = NumberSequence.new(0),
+			texture = SMOKE,
+			speed = 6 + i,
+			length = 18,
+		}, 0.72, 0.14)
+	end
+	local halo = softRing({
+		color = ColorSequence.new(STAR_WHITE, STAR),
+		width0 = 0.012 * H,
+		width1 = 0.012 * H,
+		transparency = NumberSequence.new(0.2),
+	})
+	table.insert(made, halo.hub)
+	local core = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.new(plan.center) })
+	table.insert(made, core)
+	local glow = Soft.glow(core, WIND_WHITE, 0.3 * H, 0.82)
+
+	local shown, target = 0, 1 -- faded in
+	local raise, raiseTarget = 0, 0 -- arms open to arms over her head
+	local shrink = 0 -- pouring herself into him
+	local into: BasePart? = nil
+	local born = os.clock()
+	local function place(t: number)
+		local camera = workspace.CurrentCamera.CFrame.Position
+		local toward = Vector3.new(plan.center.X - camera.X, 0, plan.center.Z - camera.Z)
+		toward = if toward.Magnitude > 1 then toward.Unit else plan.forward
+		local heart = plan.center + toward * 150 + UP * (34 + math.sin(t * 1.2) * 1.5)
+		local look = (heart - camera).Unit
+		local r = look:Cross(UP).Unit
+		local u = r:Cross(look).Unit
+		local size = H * (1 - 0.9 * shrink)
+		if into and shrink > 0 then
+			heart = heart:Lerp(into.Position + UP * 3, shrink * shrink)
+		end
+		local function at(x: number, y: number): Vector3
+			return heart + (r * x + u * y) * size
+		end
+		local function pose(name: string, from: Vector3, to: Vector3, axisFrom: Vector3?, axisTo: Vector3?)
+			local limb_ = limbs[name]
+			Soft.aim(limb_.a, from, axisFrom or (to - from))
+			Soft.aim(limb_.b, to, axisTo or (to - from))
+			limb_.beam.CurveSize0 = limb_.curve * size
+			limb_.beam.CurveSize1 = -limb_.curve * size * 0.5
+		end
+		local sway = math.sin(t * 1.7) * 0.02
+		pose("body", at(0, 0.25), at(0.01, -0.14))
+		pose("head", at(0, 0.285), at(0, 0.375))
+		pose("dress", at(0.01, -0.12), at(0.16 + sway * 3, -0.66), -u, (-u + r * 0.6).Unit)
+		-- Arms: open, palms out, or lifted over her head.
+		for i, side in { "L", "R" } do
+			local s = if i == 1 then -1 else 1
+			local open = Vector3.new(s * 0.4, 0.3 + sway, 0)
+			local up = Vector3.new(s * 0.15, 0.58, 0)
+			local hand = open:Lerp(up, smooth(raise))
+			pose("arm" .. side, at(s * 0.07, 0.22), at(hand.X, hand.Y), r * s + u * 0.4, u)
+			local beat = math.sin(t * 1.4) * 0.04
+			pose("wingHigh" .. side, at(s * 0.04, 0.18), at(s * 0.56, 0.64 + beat), r * s + u * 1.6, r * s + u * 0.4)
+			pose("wingLow" .. side, at(s * 0.04, 0.1), at(s * 0.46, -0.16 + beat * 0.6), r * s - u * 0.2, r * s - u)
+		end
+		-- Hair streaming out in the wind.
+		for i = 1, 3 do
+			local wave = math.sin(t * 2.2 + i) * 0.03
+			local tip = ({ Vector3.new(-0.4, 0.26), Vector3.new(-0.46, 0.36), Vector3.new(-0.34, 0.14) })[i]
+			pose("hair" .. i, at(0, 0.37), at(tip.X, tip.Y + wave), -r + u * 0.3, -r - u * 0.2)
+		end
+		halo.set(CFrame.fromMatrix(at(0, 0.43), r, -look), 0.08 * size)
+		core.CFrame = CFrame.new(at(0, 0.08))
+		local a = smooth(shown) * (1 - shrink)
+		for _, limb_ in limbs do
+			limb_.beam.Transparency =
+				NumberSequence.new({ key(0, 1 - (1 - limb_.base) * a), key(1, 1 - (1 - limb_.base) * a * 0.6) })
+		end
+		for _, beam in halo.beams do
+			beam.Transparency = NumberSequence.new(1 - 0.8 * a)
+		end
+		glow.Enabled = a > 0.05
+	end
+	local connection = RunService.RenderStepped:Connect(function()
+		shown += (target - shown) * 0.06
+		raise += (raiseTarget - raise) * 0.1
+		place(os.clock() - born)
+	end)
+	local closed = false
+	local spirit = {} :: Spirit
+	function spirit.raise()
+		raiseTarget = 1
+	end
+	function spirit.dissolve(root: BasePart)
+		-- Down into him as a stream of wind, getting smaller as she goes.
+		into = root
+		every(0.45, function(elapsed)
+			shrink = smooth(elapsed / 0.45)
+			return true
+		end, function()
+			shrink = 1
+			spirit.close()
+		end)
+		windPuff(root.Position + UP * 3, 6)
+		twinkle(root.Position + UP * 3, 10, STAR, 0.3)
+	end
+	function spirit.close()
+		if closed then
+			return
+		end
+		closed = true
+		target = 0
+		task.delay(0.8, function()
+			connection:Disconnect()
+			glow.Enabled = false
+			for _, instance in made do
+				instance:Destroy()
+			end
+		end)
+	end
+	place(0)
+	return spirit
+end
+
+-- Manga focus lines: thin streaks of light rushing in toward the middle of
+-- the screen for a moment (for whoever's watching it from the cutscene).
+local function focusLines(duration: number)
+	local playerGui = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+	if not playerGui then
+		return
+	end
+	local viewport = workspace.CurrentCamera.ViewportSize
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "FocusLines"
+	gui.IgnoreGuiInset = true
+	gui.ResetOnSpawn = false
+	gui.DisplayOrder = 45 -- under the letterbox bars
+	gui.Parent = playerGui
+	local half = viewport.Magnitude / 2
+	local lines: { Frame } = {}
+	for i = 1, 56 do
+		local angle = (i / 56) * math.pi * 2 + math.random() * 0.08
+		local length = half * (0.55 + math.random() * 0.35)
+		local reach = half * (0.42 + math.random() * 0.2) + length / 2
+		local line = Instance.new("Frame")
+		line.AnchorPoint = Vector2.new(0.5, 0.5)
+		line.Position =
+			UDim2.fromOffset(viewport.X / 2 + math.cos(angle) * reach, viewport.Y / 2 + math.sin(angle) * reach)
+		line.Size = UDim2.fromOffset(length, 1 + math.random() * 3)
+		line.Rotation = math.deg(angle)
+		line.BackgroundColor3 = if i % 7 == 0 then STAR else Color3.new(1, 1, 1)
+		line.BorderSizePixel = 0
+		line.BackgroundTransparency = 0.1
+		local gradient = Instance.new("UIGradient")
+		-- Faint where it starts nearest the middle, solid at the edge.
+		gradient.Transparency = NumberSequence.new({ key(0, 1), key(0.45, 0.4), key(1, 0) })
+		gradient.Parent = line
+		line.Parent = gui
+		table.insert(lines, line)
+	end
+	for _, line in lines do
+		U.tween(line, duration, { BackgroundTransparency = 1 })
+	end
+	task.delay(duration + 0.05, gui.Destroy, gui)
+end
+
 local function play(data, character: Model, root: BasePart, context: Context)
 	local anims = context.anims
 	local target: Model? = data.target
@@ -732,17 +1249,26 @@ local function play(data, character: Model, root: BasePart, context: Context)
 	outline(character, WIND_WHITE, times.Length)
 	outline(target, STAR, times.Land)
 
-	-- For whoever's watching close up, the light shifts ever so slightly
-	-- (a touch brighter, greener and richer, nothing darker) and a bloom
-	-- makes the wind and starlight glow; for the two of them, depth of field
-	-- on him.
-	if mine or near then
-		U.colorGrade(
-			{ TintColor = Color3.fromRGB(238, 255, 244), Saturation = 0.12, Contrast = 0.06, Brightness = 0.03 },
-			0.6,
-			times.Length - 0.5,
-			0.9
-		)
+	-- The Golden Dawn: for whoever's near, as he carries them up, the sun
+	-- comes up gold, the light turns warm (never dark), and the Zephyr sky
+	-- opens over the fight; it goes back after they land. A bloom makes the
+	-- wind and starlight glow; for the two of them, depth of field on him.
+	local nearby = mine or (workspace.CurrentCamera.CFrame.Position - plan.center).Magnitude < 180
+	local sky: ZephyrSky? = nil
+	local spirit: Spirit? = nil
+	if nearby then
+		task.delay(times.Lift - 0.35, function()
+			local lift = Cinematic.Dawn(0.9)
+			local opened = zephyrSky(plan)
+			sky = opened
+			task.delay(0.6, function()
+				spirit = sylphSpirit(plan)
+			end)
+			task.delay(times.Land + 0.6 - (times.Lift - 0.35), function()
+				opened.close(1.2)
+				lift(1.4)
+			end)
+		end)
 	end
 	local bloom: BloomEffect? = nil
 	local depth: DepthOfFieldEffect? = nil
@@ -1279,6 +1805,42 @@ local function play(data, character: Model, root: BasePart, context: Context)
 	-- High above them: wings of wind open, wind pours in, Sylph dives into
 	-- his hands and the blade grows out of them; the light of every star
 	-- pours into it.
+	task.delay(times.Rise - 0.35, function()
+		if spirit then
+			spirit.raise()
+		end
+	end)
+	task.delay(times.Rise + 0.05, function()
+		if spirit then
+			spirit.dissolve(root)
+		end
+	end)
+	task.delay(times.Rise + 0.12, function()
+		if sky then
+			sky.gather()
+		end
+	end)
+	task.delay(times.Strike, function()
+		if sky then
+			sky.flare()
+		end
+		if mine then
+			focusLines(0.35)
+		end
+	end)
+	task.delay(times.Burst, function()
+		if sky then
+			sky.scatter()
+		end
+		if mine then
+			focusLines(0.3)
+		end
+	end)
+	task.delay(times.Length, function()
+		if spirit then
+			spirit.close()
+		end
+	end)
 	task.delay(times.Rise - 0.1, function()
 		context.play(character, anims.SaintRise)
 		local hold = dive - (times.Rise - 0.1)
@@ -1415,10 +1977,7 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			-- An impact frame: a flash of stark black and white.
 			U.colorGrade({ Brightness = 0.25, Contrast = 0.85, Saturation = -1 }, 0, 0.07, 0.22)
 		end
-		if mine then
-			CameraShake.Add(0.18)
-			CameraShake.FovKick(7)
-		end
+		-- (No shake: the cutscene camera's own eased zoom is the blow.)
 	end)
 	task.delay(landed, function()
 		context.play(character, anims.SaintLand)
@@ -1787,7 +2346,10 @@ local function impact(position: Vector3)
 		drag = 3,
 	})
 	U.light(position, STAR, 6, 60, 0.9)
-	if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 80 then
+	-- Bystanders feel it; the cutscene's own camera never shakes.
+	local me = Players.LocalPlayer.Character
+	local watching = me ~= nil and me:GetAttribute("Cinematic") == true
+	if not watching and (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 80 then
 		CameraShake.Add(0.2)
 	end
 end

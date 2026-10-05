@@ -5,9 +5,11 @@
 	      cutscene: letterbox bars slide in, the HUD hides, shift lock lets
 	      go, and shot(t) places the camera every frame. Returns finish().
 	  Cinematic.Night(fadeIn)  night falls: the sky turns to midnight, the
-	      light goes cold and dim. Returns lift(fadeOut). Nested nights are
-	      counted, so overlapping cutscenes don't fight over the lighting.
-	Both always put everything back, even if the cutscene is cut short.
+	      light goes cold and dim. Returns lift(fadeOut).
+	  Cinematic.Dawn(fadeIn)  the Golden Dawn: the sun low and gold, the light
+	      warm. Returns lift(fadeOut). Settings nest (the latest one's light
+	      wins), so overlapping cutscenes don't fight over the lighting.
+	All of them always put everything back, even if the cutscene is cut short.
 ]]
 
 local Lighting = game:GetService("Lighting")
@@ -125,60 +127,89 @@ function Cinematic.Camera(shot: (number) -> (CFrame?, number?), length: number):
 end
 
 ---------------------------------------------------------------------------
--- Night
+-- Settings: the sky and the light change for a cutscene (Night, Dawn)
 ---------------------------------------------------------------------------
 
-local nights = 0
+local depth = 0 -- settings in force (they nest: the latest one's light wins)
 -- The daylight to go back to. Kept until the fade back has finished, so a
--- night that starts mid-fade doesn't take the half-dark sky for daylight.
+-- setting that starts mid-fade doesn't take the half-changed sky for daylight.
 local saved: { [string]: any }? = nil
 local grade: ColorCorrectionEffect? = nil
-local generation = 0 -- bumped whenever a night starts or lifts
+local generation = 0 -- bumped whenever a setting starts or lifts
 
--- Moonlit rather than pitch black: dark sky, but you can still read the fight.
-local NIGHT_LIGHTING = {
-	ClockTime = 23.8,
-	Brightness = 2,
-	Ambient = Color3.fromRGB(72, 72, 98),
-	OutdoorAmbient = Color3.fromRGB(106, 110, 148),
-	ExposureCompensation = 0.3,
+type Preset = {
+	lighting: { [string]: any },
+	atmosphere: { [string]: any },
+	grade: { [string]: any },
 }
 
-function Cinematic.Night(fadeIn: number): (fadeOut: number?) -> ()
-	nights += 1
-	if nights == 1 then
-		generation += 1
-		local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
-		if not saved then
-			local before: { [string]: any } = {
-				ClockTime = Lighting.ClockTime,
-				Brightness = Lighting.Brightness,
-				Ambient = Lighting.Ambient,
-				OutdoorAmbient = Lighting.OutdoorAmbient,
-				ExposureCompensation = Lighting.ExposureCompensation,
-			}
-			if atmosphere then
-				before.atmosphere = { Density = atmosphere.Density, Haze = atmosphere.Haze, Color = atmosphere.Color }
-			end
-			saved = before
-		end
+-- Moonlit rather than pitch black: dark sky, but you can still read the fight.
+local NIGHT: Preset = {
+	lighting = {
+		ClockTime = 23.8,
+		Brightness = 2,
+		Ambient = Color3.fromRGB(72, 72, 98),
+		OutdoorAmbient = Color3.fromRGB(106, 110, 148),
+		ExposureCompensation = 0.3,
+	},
+	-- A clear night: the moon shouldn't fade into the haze.
+	atmosphere = { Density = 0.06, Haze = 0, Color = Color3.fromRGB(82, 90, 132) },
+	grade = { Saturation = -0.2, Contrast = 0.1, Brightness = 0.07, TintColor = Color3.fromRGB(224, 230, 255) },
+}
+
+-- The Golden Dawn: the sun low on the horizon, the sky gold over green, the
+-- light warm and bright (never dark), the haze glowing.
+local DAWN: Preset = {
+	lighting = {
+		ClockTime = 6.6,
+		Brightness = 3.6,
+		Ambient = Color3.fromRGB(104, 112, 98),
+		OutdoorAmbient = Color3.fromRGB(160, 168, 146),
+		ExposureCompensation = 0.4,
+	},
+	atmosphere = {
+		Density = 0.3,
+		Haze = 2,
+		Color = Color3.fromRGB(255, 212, 150),
+		Decay = Color3.fromRGB(96, 168, 140),
+		Glare = 0.7,
+	},
+	grade = { Saturation = 0.16, Contrast = 0.08, Brightness = 0.05, TintColor = Color3.fromRGB(255, 247, 228) },
+}
+
+local ATMOSPHERE_KEYS = { "Density", "Haze", "Color", "Decay", "Glare" }
+
+local function setting(preset: Preset, fadeIn: number): (fadeOut: number?) -> ()
+	depth += 1
+	generation += 1
+	local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
+	if not saved then
+		local before: { [string]: any } = {
+			ClockTime = Lighting.ClockTime,
+			Brightness = Lighting.Brightness,
+			Ambient = Lighting.Ambient,
+			OutdoorAmbient = Lighting.OutdoorAmbient,
+			ExposureCompensation = Lighting.ExposureCompensation,
+		}
 		if atmosphere then
-			-- A clear night: the moon shouldn't fade into the haze.
-			tween(atmosphere, fadeIn, { Density = 0.06, Haze = 0, Color = Color3.fromRGB(82, 90, 132) })
+			local air = {}
+			for _, name in ATMOSPHERE_KEYS do
+				air[name] = (atmosphere :: any)[name]
+			end
+			before.atmosphere = air
 		end
-		tween(Lighting, fadeIn, NIGHT_LIGHTING, Enum.EasingStyle.Sine)
-		-- Still fading out from the last night? Bring the same grade back.
-		local effect = if grade and grade.Parent then grade else Instance.new("ColorCorrectionEffect")
-		effect.Name = "CinematicNight"
-		effect.Parent = Lighting
-		tween(effect, fadeIn, {
-			Saturation = -0.2,
-			Contrast = 0.1,
-			Brightness = 0.07,
-			TintColor = Color3.fromRGB(224, 230, 255),
-		}, Enum.EasingStyle.Sine)
-		grade = effect
+		saved = before
 	end
+	if atmosphere then
+		tween(atmosphere, fadeIn, preset.atmosphere)
+	end
+	tween(Lighting, fadeIn, preset.lighting, Enum.EasingStyle.Sine)
+	-- Still fading back from the last one? Bring the same grade back.
+	local effect = if grade and grade.Parent then grade else Instance.new("ColorCorrectionEffect")
+	effect.Name = "CinematicSetting"
+	effect.Parent = Lighting
+	tween(effect, fadeIn, preset.grade, Enum.EasingStyle.Sine)
+	grade = effect
 
 	local lifted = false
 	return function(fadeOut: number?)
@@ -186,17 +217,17 @@ function Cinematic.Night(fadeIn: number): (fadeOut: number?) -> ()
 			return
 		end
 		lifted = true
-		nights -= 1
-		if nights > 0 or not saved then
+		depth -= 1
+		if depth > 0 or not saved then
 			return
 		end
 		local duration = fadeOut or 1
 		local before = saved
 		generation += 1
 		local lifting = generation
-		local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
-		if atmosphere and before.atmosphere then
-			tween(atmosphere, duration, before.atmosphere)
+		local air = Lighting:FindFirstChildOfClass("Atmosphere")
+		if air and before.atmosphere then
+			tween(air, duration, before.atmosphere)
 		end
 		local restore = table.clone(before)
 		restore.atmosphere = nil
@@ -207,7 +238,7 @@ function Cinematic.Night(fadeIn: number): (fadeOut: number?) -> ()
 		end
 		task.delay(duration + 0.05, function()
 			if generation ~= lifting then
-				return -- another night fell before this one finished lifting
+				return -- another setting started before this one finished lifting
 			end
 			saved = nil
 			if effect then
@@ -218,6 +249,28 @@ function Cinematic.Night(fadeIn: number): (fadeOut: number?) -> ()
 			end
 		end)
 	end
+end
+
+-- Night falls: the sky turns to midnight, the light goes cold and dim.
+-- Returns lift(fadeOut).
+function Cinematic.Night(fadeIn: number): (fadeOut: number?) -> ()
+	return setting(NIGHT, fadeIn)
+end
+
+-- The Golden Dawn (Yuno): the sun comes up gold on the horizon, the light
+-- turns warm and green-gold. Returns lift(fadeOut).
+function Cinematic.Dawn(fadeIn: number): (fadeOut: number?) -> ()
+	return setting(DAWN, fadeIn)
+end
+
+-- Where the sun is in the Dawn (a unit vector toward it), for dressing the
+-- sky round it.
+function Cinematic.DawnSun(): Vector3
+	local before = Lighting.ClockTime
+	Lighting.ClockTime = DAWN.lighting.ClockTime
+	local direction = Lighting:GetSunDirection()
+	Lighting.ClockTime = before
+	return direction
 end
 
 return Cinematic
