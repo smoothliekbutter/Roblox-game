@@ -257,6 +257,11 @@ local function performDash(direction: string)
 	connection = RunService.Heartbeat:Connect(function()
 		if not mover.Parent then
 			connection:Disconnect()
+			-- Every dash but a back dash (that's for getting away) ends in an
+			-- M1, when it runs its course (not cut short or knocked out of).
+			if direction ~= "Back" and os.clock() - start >= duration - 0.05 then
+				tryM1()
+			end
 			return
 		end
 		if direction == "Front" then
