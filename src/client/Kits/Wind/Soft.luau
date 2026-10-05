@@ -212,15 +212,22 @@ function Soft.makeStar(size: number, color: Color3?): Star
 	glitter.Speed = NumberRange.new(0.5, 1.5)
 	glitter.SpreadAngle = Vector2.new(180, 180)
 	glitter.Rotation = NumberRange.new(0, 90)
+	glitter.Enabled = false -- (until it's first placed)
 	glitter.Parent = parts[1]
+	local placed, faded = false, false
 	local star = { parts = parts }
 	function star.place(position: Vector3, spin: number)
 		local base = CFrame.lookAt(position, workspace.CurrentCamera.CFrame.Position) * CFrame.Angles(0, 0, spin)
 		for i, part in parts do
 			part.CFrame = base * offsets[i]
 		end
+		if not placed and not faded then
+			placed = true
+			glitter.Enabled = true
+		end
 	end
 	function star.fade(duration: number)
+		faded = true
 		light.Enabled = false
 		glitter.Enabled = false
 		fadeOut(parts, duration)
@@ -281,12 +288,18 @@ function Soft.makeSprite(scale: number): Sprite
 	trail.LightEmission = 1
 	trail.LightInfluence = 0
 	trail.FaceCamera = true
+	trail.Enabled = false -- (until she's first placed)
 	trail.Parent = body
-	local parts = { body, glow, wings[1], wings[2] }
+	local started = false
 	local sprite = {}
 	function sprite.place(cframe: CFrame, t: number)
 		body.CFrame = cframe
 		glow.CFrame = cframe
+		if not started then
+			started = true
+			trail:Clear()
+			trail.Enabled = true
+		end
 		local flap = math.sin(t * 30) * rad(40)
 		wings[1].CFrame = cframe * CFrame.Angles(0, 0, flap) * CFrame.new(0.45 * scale, 0, 0)
 		wings[2].CFrame = cframe * CFrame.Angles(0, 0, -flap) * CFrame.new(-0.45 * scale, 0, 0)
@@ -294,7 +307,8 @@ function Soft.makeSprite(scale: number): Sprite
 	function sprite.fade(duration: number)
 		light.Enabled = false
 		trail.Enabled = false
-		fadeOut(parts, duration)
+		fadeOut({ glow, wings[1], wings[2] }, duration)
+		Soft.linger(body, duration, trail.Lifetime + 0.15)
 	end
 	return sprite
 end
@@ -390,7 +404,8 @@ function Soft.softBeam(a0: Attachment, a1: Attachment, style: BeamStyle, parent:
 	beam.FaceCamera = true
 	beam.LightEmission = style.emission or 1
 	beam.LightInfluence = 0
-	beam.Segments = style.segments or 24
+	local curved = (style.curve0 or 0) ~= 0 or (style.curve1 or 0) ~= 0
+	beam.Segments = style.segments or (if curved then 20 else 10)
 	if style.texture then
 		beam.Texture = style.texture
 		beam.TextureMode = if style.wrap then Enum.TextureMode.Wrap else Enum.TextureMode.Stretch
@@ -464,7 +479,9 @@ function Soft.softRing(style: BeamStyle): Ring
 	end
 	local beams: { Beam } = {}
 	for i = 1, 4 do
-		table.insert(beams, softBeam(anchors[i], anchors[i % 4 + 1], style, hub))
+		local beam = softBeam(anchors[i], anchors[i % 4 + 1], style, hub)
+		beam.Segments = style.segments or 12
+		table.insert(beams, beam)
 	end
 	local ring = { hub = hub, beams = beams }
 	function ring.set(frame: CFrame, radius: number)
@@ -549,7 +566,9 @@ function Soft.softArc(styles: { BeamStyle }): Arc
 	local a0, a1 = worldAnchor(Vector3.zero), worldAnchor(Vector3.zero)
 	local beams: { Beam } = {}
 	for _, style in styles do
-		table.insert(beams, softBeam(a0, a1, style))
+		local beam = softBeam(a0, a1, style)
+		beam.Segments = style.segments or 16
+		table.insert(beams, beam)
 	end
 	local arc = { beams = beams }
 	function arc.set(center: Vector3, right: Vector3, up: Vector3, radius: number, from: number, to: number)
@@ -694,6 +713,7 @@ export type TrailStyle = {
 	texture: string?,
 	faceCamera: boolean?,
 	emission: number?,
+	off: boolean?, -- made switched off: start it with beginTrail once its part is in place
 }
 
 function Soft.trail(part: BasePart, a: Vector3, b: Vector3, style: TrailStyle): Trail
@@ -714,6 +734,7 @@ function Soft.trail(part: BasePart, a: Vector3, b: Vector3, style: TrailStyle): 
 	trail.LightInfluence = 0
 	trail.FaceCamera = style.faceCamera ~= false
 	trail.MinLength = 0
+	trail.Enabled = not style.off
 	if style.texture then
 		trail.Texture = style.texture
 		trail.TextureMode = Enum.TextureMode.Stretch
@@ -727,16 +748,33 @@ function Soft.trail(part: BasePart, a: Vector3, b: Vector3, style: TrailStyle): 
 	return trail
 end
 
+-- Starts a trail made switched off, once its part is where it should be
+-- (so nothing streaks in from wherever the part was made).
+function Soft.beginTrail(trail: Trail)
+	if not trail.Enabled then
+		trail:Clear()
+		trail.Enabled = true
+	end
+end
+
 -- Stops a trail and removes it once what it left behind has faded.
 function Soft.endTrail(trail: Trail)
 	trail.Enabled = false
 	task.delay(trail.Lifetime + 0.1, trail.Destroy, trail)
 end
 
+-- Hides `part` (over `fade`) but keeps it, and whatever trails or
+-- particles are on it, until `keep` seconds, so they fade out on their own.
+function Soft.linger(part: BasePart, fade: number, keep: number)
+	U.tween(part, fade, { Transparency = 1 })
+	task.delay(keep, part.Destroy, part)
+end
+
 -- Ribbons of wind spiralling up round a moving axis: `axis(t)` gives the
 -- foot and the top of it each frame (t: seconds since it started); the
 -- ribbons climb it over `climb` seconds, over and over, `turns` times
--- round on the way. Returns stop().
+-- round on the way. Each climb is a fresh ribbon (the last one left to
+-- fade at the top), so nothing streaks back down the axis. Returns stop().
 function Soft.helix(
 	axis: (number) -> (Vector3, Vector3),
 	radius: number,
@@ -747,20 +785,22 @@ function Soft.helix(
 	duration: number,
 	color: Color3?
 ): () -> ()
-	local runners: { BasePart } = {}
-	local trails: { Trail } = {}
-	for i = 1, strands do
-		local runner = U.newPart({ Size = Vector3.one * 0.1, Transparency = 1 })
-		table.insert(runners, runner)
-		table.insert(
-			trails,
-			Soft.trail(runner, Vector3.new(0, width / 2, 0), Vector3.new(0, -width / 2, 0), {
-				color = ColorSequence.new(if i % 2 == 0 then WIND_WHITE else color or WIND, color or WIND),
-				transparency = NumberSequence.new({ key(0, 0.25), key(1, 1) }),
-				width = NumberSequence.new({ key(0, 1), key(1, 0.2) }),
-				lifetime = 0.25,
-			})
-		)
+	type Runner = { part: BasePart, trail: Trail, phase: number }
+	local runners: { [number]: Runner } = {}
+	local function retire(runner: Runner)
+		Soft.endTrail(runner.trail)
+		task.delay(runner.trail.Lifetime + 0.2, runner.part.Destroy, runner.part)
+	end
+	local function spawnRunner(i: number, at: Vector3, phase: number): Runner
+		-- Placed before its trail is attached, so the trail starts here.
+		local part = U.newPart({ Size = Vector3.one * 0.1, Transparency = 1, CFrame = CFrame.new(at) })
+		local trail = Soft.trail(part, Vector3.new(0, width / 2, 0), Vector3.new(0, -width / 2, 0), {
+			color = ColorSequence.new(if i % 2 == 0 then WIND_WHITE else color or WIND, color or WIND),
+			transparency = NumberSequence.new({ key(0, 0.25), key(1, 1) }),
+			width = NumberSequence.new({ key(0, 1), key(1, 0.2) }),
+			lifetime = 0.25,
+		})
+		return { part = part, trail = trail, phase = phase }
 	end
 	local stopped = false
 	local function stop()
@@ -768,14 +808,13 @@ function Soft.helix(
 			return
 		end
 		stopped = true
-		for _, trail in trails do
-			Soft.endTrail(trail)
-		end
-		task.delay(0.4, function()
-			for _, runner in runners do
-				runner:Destroy()
+		for i = 1, strands do
+			local runner = runners[i]
+			if runner then
+				runners[i] = nil
+				retire(runner)
 			end
-		end)
+		end
 	end
 	every(duration, function(elapsed)
 		if stopped then
@@ -785,17 +824,28 @@ function Soft.helix(
 		local along = top - foot
 		local length = along.Magnitude
 		if length < 1e-3 then
-			return true
+			return true -- (no axis yet: nothing drawn)
 		end
 		local up = along / length
 		local side = up:Cross(if math.abs(up.Y) > 0.9 then Vector3.xAxis else UP).Unit
 		local other = up:Cross(side)
-		for i, runner in runners do
+		for i = 1, strands do
 			local phase = (elapsed / climb + (i - 1) / strands) % 1
 			local angle = phase * turns * math.pi * 2 + i * 2.1
 			local r = radius * (1 - phase * 0.35)
-			runner.CFrame =
-				CFrame.new(foot + up * (length * phase) + (side * math.cos(angle) + other * math.sin(angle)) * r)
+			local position = foot + up * (length * phase) + (side * math.cos(angle) + other * math.sin(angle)) * r
+			local runner = runners[i]
+			if runner and phase < runner.phase then
+				-- Back to the foot: this ribbon is left to fade at the top.
+				retire(runner)
+				runner = nil
+			end
+			if runner then
+				runner.part.CFrame = CFrame.new(position)
+				runner.phase = phase
+			else
+				runners[i] = spawnRunner(i, position, phase)
+			end
 		end
 		return true
 	end, stop)
@@ -892,7 +942,7 @@ function Soft.windSlash(from: Vector3, to: Vector3, bend: Vector3, scale: number
 				color = green,
 				width0 = w0,
 				width1 = w1,
-				transparency = fadeEnds(first, 0.7, 0.55),
+				transparency = fadeEnds(first, 0.72, 0.6),
 				texture = SMOKE,
 				speed = 1.5,
 				length = 3,
@@ -905,7 +955,7 @@ function Soft.windSlash(from: Vector3, to: Vector3, bend: Vector3, scale: number
 				color = haze,
 				width0 = w0,
 				width1 = w1,
-				transparency = fadeEnds(first, 0.92, 0.84),
+				transparency = fadeEnds(first, 0.94, 0.87),
 				texture = SMOKE,
 				speed = -1,
 				length = 6,

@@ -264,8 +264,15 @@ local function fallingBlade(target: Vector3, formDelay: number, fallAt: number, 
 			U.tween(part, 0.14, { CFrame = part.CFrame + drop }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 		end
 		task.delay(0.14, function()
-			for _, part in parts do
-				part:Destroy()
+			for _, trail in trails do
+				Soft.endTrail(trail)
+			end
+			for i, part in parts do
+				if i == 1 then
+					Soft.linger(part, 0, 0.4) -- (the blade carries the trails)
+				else
+					part:Destroy()
+				end
 			end
 			U.burst(target, {
 				color = WIND_WHITE,
@@ -468,12 +475,16 @@ function handlers.SwiftWhiteHawk(data, character, root)
 			U.newPart({ Size = Vector3.new(3, 0.08, 1.2), Color = WIND, Transparency = 0.2 }),
 		}
 		local tail = U.newPart({ Size = Vector3.new(1.2, 0.06, 1.6), Color = WIND, Transparency = 0.3 })
-		local parts = { body, aura, head, wings[1], wings[2], tail }
 		local light = Instance.new("PointLight")
 		light.Color = WIND
 		light.Range = 14
 		light.Brightness = 3
 		light.Parent = body
+		-- Where it starts (before its trails go on, so they start there).
+		local start = CFrame.lookAt(state.position, state.position + direction)
+		body.CFrame = start
+		wings[1].CFrame = start * CFrame.new(1.5, 0, 0.1)
+		wings[2].CFrame = start * CFrame.new(-1.5, 0, 0.1)
 		-- A long ribbon of wind behind it, and wind off each wingtip.
 		local trails = {
 			Soft.trail(body, Vector3.new(0, 1, 0.4), Vector3.new(0, -1, 0.4), {
@@ -527,7 +538,10 @@ function handlers.SwiftWhiteHawk(data, character, root)
 				Soft.endTrail(trail)
 			end
 			glow.Enabled = false
-			fadeOut(parts, 0.12)
+			fadeOut({ aura, head, tail }, 0.12)
+			Soft.linger(body, 0.12, 0.55)
+			Soft.linger(wings[1], 0.12, 0.35)
+			Soft.linger(wings[2], 0.12, 0.35)
 		end)
 		local hand = handOf(character, "Right")
 		if hand then
@@ -733,6 +747,7 @@ local function makeArrow(scale: number): Arrow
 			color = ColorSequence.new(WIND_WHITE, WIND),
 			transparency = NumberSequence.new(0.15, 1),
 			lifetime = 0.2,
+			off = true,
 		}),
 		Soft.trail(parts[1], Vector3.new(0, 0.7 * s, 1.6 * s), Vector3.new(0, -0.7 * s, 1.6 * s), {
 			color = ColorSequence.new(WIND_WHITE, WIND),
@@ -740,6 +755,7 @@ local function makeArrow(scale: number): Arrow
 			width = NumberSequence.new({ key(0, 0.6), key(0.3, 1), key(1, 0.2) }),
 			lifetime = 0.4,
 			texture = SMOKE,
+			off = true,
 		}),
 	}
 	local glitter = windEmitter(glow, {
@@ -753,10 +769,18 @@ local function makeArrow(scale: number): Arrow
 		SpreadAngle = Vector2.new(180, 180),
 		Rate = 30,
 	})
+	local placed = false
 	local arrow = {}
 	function arrow.place(frame: CFrame)
 		for i, part in parts do
 			part.CFrame = frame * offsets[i]
+		end
+		if not placed then
+			-- (Its trails start here, not wherever it was made.)
+			placed = true
+			for _, trail in trails do
+				Soft.beginTrail(trail)
+			end
 		end
 	end
 	function arrow.destroy(duration: number)
@@ -765,7 +789,17 @@ local function makeArrow(scale: number): Arrow
 		end
 		glitter.Enabled = false
 		light.Enabled = false
-		fadeOut(parts, duration)
+		-- The shaft (its trails) and the head (its glitter) are kept, hidden,
+		-- until what they left behind has faded.
+		local rest = {}
+		for i, part in parts do
+			if i ~= 1 and part ~= glow then
+				table.insert(rest, part)
+			end
+		end
+		fadeOut(rest, duration)
+		Soft.linger(parts[1], duration, 0.55)
+		Soft.linger(glow, duration, 0.5)
 	end
 	return arrow
 end
@@ -997,7 +1031,11 @@ function handlers.GaleWhiteBow(data, character, root)
 			bow.ends = os.clock() + data.max + 0.6
 			bow.glow = U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one, Color = WIND, Transparency = 0.55 })
 			-- Starlight and wind drawn in to its head.
-			local well = U.newPart({ Size = Vector3.one * 7, Transparency = 1 })
+			local well = U.newPart({
+				Size = Vector3.one * 7,
+				Transparency = 1,
+				CFrame = CFrame.new(handOf(character, "Right") or root.Position),
+			})
 			windEmitter(well, {
 				Texture = SPARKLE,
 				Color = ColorSequence.new(STAR_WHITE, WIND_WHITE),
@@ -1256,7 +1294,11 @@ function handlers.SpiritStorm(data, character, root)
 			speed = 4,
 			length = 3,
 		})
-		local well = U.newPart({ Size = Vector3.one * 10, Transparency = 1 })
+		local well = U.newPart({
+			Size = Vector3.one * 10,
+			Transparency = 1,
+			CFrame = CFrame.new(handOf(character, "Right") or root.Position),
+		})
 		local drawn = {
 			windEmitter(well, {
 				Texture = SPARKLE,
@@ -1894,6 +1936,7 @@ function handlers.QuartileScutum(data, character, root)
 		for i = 1, 4 do
 			table.insert(streams, Soft.starStream(anchors[i], anchors[i % 4 + 1], 0.6, 3))
 		end
+		pane.CFrame = root.CFrame * CFrame.new(0, 0.3, -3.2)
 		local shimmer = windEmitter(pane, {
 			Texture = SPARKLE,
 			Color = ColorSequence.new(STAR_WHITE, STAR),
@@ -2273,7 +2316,8 @@ local function starBolt(origin: Vector3, direction: Vector3, speed: number, rang
 		shed.Enabled = false
 		Soft.endTrail(wake)
 		head.fade(0.1)
-		fadeOut({ streak, glow }, 0.12)
+		fadeOut({ glow }, 0.12)
+		Soft.linger(streak, 0.12, 0.5)
 	end)
 end
 
@@ -2281,7 +2325,12 @@ end
 -- flames there.
 local function starFire(from: Vector3, spot: Vector3)
 	local fall = 0.18
-	local head = U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.9, Color = STAR_WHITE })
+	local head = U.newPart({
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.one * 0.9,
+		Color = STAR_WHITE,
+		CFrame = CFrame.new(from),
+	})
 	local glow =
 		U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * 2.2, Color = STAR_FIRE, Transparency = 0.45 })
 	local streak = bar(from, from + UP, 0.35, STAR_WHITE, 0.1)
@@ -2744,7 +2793,11 @@ function handlers.SpiritOfEuros(data, character, root)
 		-- The bow glowing with wind, starlight and wind drawn into the head
 		-- from all round, and ribbons of wind spiralling up the arrow into it.
 		local soft = bowArc()
-		local well = U.newPart({ Size = Vector3.one * 12, Transparency = 1 })
+		local well = U.newPart({
+			Size = Vector3.one * 12,
+			Transparency = 1,
+			CFrame = CFrame.new(handOf(character, "Left") or root.Position),
+		})
 		local drawn = {
 			windEmitter(well, {
 				Texture = SPARKLE,
@@ -2980,6 +3033,7 @@ local function windAxe(character: Model, root: BasePart): Axe
 		Speed = NumberRange.new(2, 6),
 		Drag = 3,
 		Rate = 30,
+		Enabled = false, -- (until the axe is in his hands)
 	})
 	-- Glitter along the edge, a glow round the head, and the head sweeps a
 	-- sheet of wind behind it as it comes down.
@@ -3006,6 +3060,7 @@ local function windAxe(character: Model, root: BasePart): Axe
 		transparency = NumberSequence.new({ key(0, 0.25), key(1, 1) }),
 		lifetime = 0.28,
 		faceCamera = false,
+		off = true,
 	})
 	local light = Instance.new("PointLight")
 	light.Color = WIND
@@ -3029,6 +3084,10 @@ local function windAxe(character: Model, root: BasePart): Axe
 		local haft = raised:Lerp(struck, s).Unit
 		local grow = math.min(elapsed / 0.2, 1)
 		hub.CFrame = CFrame.fromMatrix(hands, side, haft)
+		if alive then
+			Soft.beginTrail(sheet) -- (once it's in his hands)
+			pour.Enabled = true
+		end
 		upper.CFrame = hub.CFrame * CFrame.new(0, h - 1.4, -2)
 		lower.CFrame = hub.CFrame * CFrame.new(0, h - 3.4, -2) * CFrame.Angles(0, 0, math.pi)
 		upper.Size = Vector3.new(0.1, 2 * grow, 4 * grow)
@@ -3661,6 +3720,7 @@ local function buildLook(character: Model, full: boolean): () -> ()
 	local wings: { { side: number, feathers: { Feather } } } = {}
 	local emitters: { ParticleEmitter } = {}
 	local wingTrails: { Trail } = {}
+	local wingsStarted = false
 	for _, side in sides do
 		local feathers: { Feather } = {}
 		for _, layer in WING_LAYERS do
@@ -3692,6 +3752,7 @@ local function buildLook(character: Model, full: boolean): () -> ()
 							transparency = NumberSequence.new({ key(0, 0.55), key(1, 1) }),
 							width = NumberSequence.new({ key(0, 1), key(1, 0.2) }),
 							lifetime = 0.3,
+							off = true,
 						})
 					)
 				end
@@ -3918,6 +3979,9 @@ local function buildLook(character: Model, full: boolean): () -> ()
 		for _, trail in wingTrails do
 			trail.Enabled = false
 		end
+		for _, beam in swordBeams do
+			beam.Enabled = false
+		end
 		task.delay(1, draft.Destroy, draft)
 		for _, emitter in emitters do
 			emitter.Enabled = false
@@ -3970,6 +4034,13 @@ local function buildLook(character: Model, full: boolean): () -> ()
 				end
 				local tipAt = base + direction * feather.length
 				feather.tip.CFrame = CFrame.lookAt(tipAt, tipAt + direction, up) * CFrame.Angles(rad(45), 0, 0)
+			end
+		end
+		if not wingsStarted then
+			-- (The tips are in place now: their trails start here.)
+			wingsStarted = true
+			for _, trail in wingTrails do
+				Soft.beginTrail(trail)
 			end
 		end
 

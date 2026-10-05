@@ -1442,7 +1442,7 @@ function SaintZephyr.Plan(origin: CFrame, victimPosition: Vector3, floorY: numbe
 	-- The strike runs from above them on the far side (where the X carries
 	-- him), down through them, to the floor on his side of them (so he
 	-- lands with his back to them).
-	local reach = 3
+	local reach = 7 -- (he lands well clear of where they hit)
 	plan.top = center + UP * SaintZephyr.Above + forward * reach
 	plan.ground = start - forward * (reach * SaintZephyr.Height / (SaintZephyr.Above + SaintZephyr.Drift))
 	return plan
@@ -21355,8 +21355,15 @@ local function fallingBlade(target: Vector3, formDelay: number, fallAt: number, 
 			U.tween(part, 0.14, { CFrame = part.CFrame + drop }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 		end
 		task.delay(0.14, function()
-			for _, part in parts do
-				part:Destroy()
+			for _, trail in trails do
+				Soft.endTrail(trail)
+			end
+			for i, part in parts do
+				if i == 1 then
+					Soft.linger(part, 0, 0.4) -- (the blade carries the trails)
+				else
+					part:Destroy()
+				end
 			end
 			U.burst(target, {
 				color = WIND_WHITE,
@@ -21559,12 +21566,16 @@ function handlers.SwiftWhiteHawk(data, character, root)
 			U.newPart({ Size = Vector3.new(3, 0.08, 1.2), Color = WIND, Transparency = 0.2 }),
 		}
 		local tail = U.newPart({ Size = Vector3.new(1.2, 0.06, 1.6), Color = WIND, Transparency = 0.3 })
-		local parts = { body, aura, head, wings[1], wings[2], tail }
 		local light = Instance.new("PointLight")
 		light.Color = WIND
 		light.Range = 14
 		light.Brightness = 3
 		light.Parent = body
+		-- Where it starts (before its trails go on, so they start there).
+		local start = CFrame.lookAt(state.position, state.position + direction)
+		body.CFrame = start
+		wings[1].CFrame = start * CFrame.new(1.5, 0, 0.1)
+		wings[2].CFrame = start * CFrame.new(-1.5, 0, 0.1)
 		-- A long ribbon of wind behind it, and wind off each wingtip.
 		local trails = {
 			Soft.trail(body, Vector3.new(0, 1, 0.4), Vector3.new(0, -1, 0.4), {
@@ -21618,7 +21629,10 @@ function handlers.SwiftWhiteHawk(data, character, root)
 				Soft.endTrail(trail)
 			end
 			glow.Enabled = false
-			fadeOut(parts, 0.12)
+			fadeOut({ aura, head, tail }, 0.12)
+			Soft.linger(body, 0.12, 0.55)
+			Soft.linger(wings[1], 0.12, 0.35)
+			Soft.linger(wings[2], 0.12, 0.35)
 		end)
 		local hand = handOf(character, "Right")
 		if hand then
@@ -21824,6 +21838,7 @@ local function makeArrow(scale: number): Arrow
 			color = ColorSequence.new(WIND_WHITE, WIND),
 			transparency = NumberSequence.new(0.15, 1),
 			lifetime = 0.2,
+			off = true,
 		}),
 		Soft.trail(parts[1], Vector3.new(0, 0.7 * s, 1.6 * s), Vector3.new(0, -0.7 * s, 1.6 * s), {
 			color = ColorSequence.new(WIND_WHITE, WIND),
@@ -21831,6 +21846,7 @@ local function makeArrow(scale: number): Arrow
 			width = NumberSequence.new({ key(0, 0.6), key(0.3, 1), key(1, 0.2) }),
 			lifetime = 0.4,
 			texture = SMOKE,
+			off = true,
 		}),
 	}
 	local glitter = windEmitter(glow, {
@@ -21844,10 +21860,18 @@ local function makeArrow(scale: number): Arrow
 		SpreadAngle = Vector2.new(180, 180),
 		Rate = 30,
 	})
+	local placed = false
 	local arrow = {}
 	function arrow.place(frame: CFrame)
 		for i, part in parts do
 			part.CFrame = frame * offsets[i]
+		end
+		if not placed then
+			-- (Its trails start here, not wherever it was made.)
+			placed = true
+			for _, trail in trails do
+				Soft.beginTrail(trail)
+			end
 		end
 	end
 	function arrow.destroy(duration: number)
@@ -21856,7 +21880,17 @@ local function makeArrow(scale: number): Arrow
 		end
 		glitter.Enabled = false
 		light.Enabled = false
-		fadeOut(parts, duration)
+		-- The shaft (its trails) and the head (its glitter) are kept, hidden,
+		-- until what they left behind has faded.
+		local rest = {}
+		for i, part in parts do
+			if i ~= 1 and part ~= glow then
+				table.insert(rest, part)
+			end
+		end
+		fadeOut(rest, duration)
+		Soft.linger(parts[1], duration, 0.55)
+		Soft.linger(glow, duration, 0.5)
 	end
 	return arrow
 end
@@ -22088,7 +22122,11 @@ function handlers.GaleWhiteBow(data, character, root)
 			bow.ends = os.clock() + data.max + 0.6
 			bow.glow = U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one, Color = WIND, Transparency = 0.55 })
 			-- Starlight and wind drawn in to its head.
-			local well = U.newPart({ Size = Vector3.one * 7, Transparency = 1 })
+			local well = U.newPart({
+				Size = Vector3.one * 7,
+				Transparency = 1,
+				CFrame = CFrame.new(handOf(character, "Right") or root.Position),
+			})
 			windEmitter(well, {
 				Texture = SPARKLE,
 				Color = ColorSequence.new(STAR_WHITE, WIND_WHITE),
@@ -22347,7 +22385,11 @@ function handlers.SpiritStorm(data, character, root)
 			speed = 4,
 			length = 3,
 		})
-		local well = U.newPart({ Size = Vector3.one * 10, Transparency = 1 })
+		local well = U.newPart({
+			Size = Vector3.one * 10,
+			Transparency = 1,
+			CFrame = CFrame.new(handOf(character, "Right") or root.Position),
+		})
 		local drawn = {
 			windEmitter(well, {
 				Texture = SPARKLE,
@@ -22985,6 +23027,7 @@ function handlers.QuartileScutum(data, character, root)
 		for i = 1, 4 do
 			table.insert(streams, Soft.starStream(anchors[i], anchors[i % 4 + 1], 0.6, 3))
 		end
+		pane.CFrame = root.CFrame * CFrame.new(0, 0.3, -3.2)
 		local shimmer = windEmitter(pane, {
 			Texture = SPARKLE,
 			Color = ColorSequence.new(STAR_WHITE, STAR),
@@ -23364,7 +23407,8 @@ local function starBolt(origin: Vector3, direction: Vector3, speed: number, rang
 		shed.Enabled = false
 		Soft.endTrail(wake)
 		head.fade(0.1)
-		fadeOut({ streak, glow }, 0.12)
+		fadeOut({ glow }, 0.12)
+		Soft.linger(streak, 0.12, 0.5)
 	end)
 end
 
@@ -23372,7 +23416,12 @@ end
 -- flames there.
 local function starFire(from: Vector3, spot: Vector3)
 	local fall = 0.18
-	local head = U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.9, Color = STAR_WHITE })
+	local head = U.newPart({
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.one * 0.9,
+		Color = STAR_WHITE,
+		CFrame = CFrame.new(from),
+	})
 	local glow =
 		U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * 2.2, Color = STAR_FIRE, Transparency = 0.45 })
 	local streak = bar(from, from + UP, 0.35, STAR_WHITE, 0.1)
@@ -23835,7 +23884,11 @@ function handlers.SpiritOfEuros(data, character, root)
 		-- The bow glowing with wind, starlight and wind drawn into the head
 		-- from all round, and ribbons of wind spiralling up the arrow into it.
 		local soft = bowArc()
-		local well = U.newPart({ Size = Vector3.one * 12, Transparency = 1 })
+		local well = U.newPart({
+			Size = Vector3.one * 12,
+			Transparency = 1,
+			CFrame = CFrame.new(handOf(character, "Left") or root.Position),
+		})
 		local drawn = {
 			windEmitter(well, {
 				Texture = SPARKLE,
@@ -24071,6 +24124,7 @@ local function windAxe(character: Model, root: BasePart): Axe
 		Speed = NumberRange.new(2, 6),
 		Drag = 3,
 		Rate = 30,
+		Enabled = false, -- (until the axe is in his hands)
 	})
 	-- Glitter along the edge, a glow round the head, and the head sweeps a
 	-- sheet of wind behind it as it comes down.
@@ -24097,6 +24151,7 @@ local function windAxe(character: Model, root: BasePart): Axe
 		transparency = NumberSequence.new({ key(0, 0.25), key(1, 1) }),
 		lifetime = 0.28,
 		faceCamera = false,
+		off = true,
 	})
 	local light = Instance.new("PointLight")
 	light.Color = WIND
@@ -24120,6 +24175,10 @@ local function windAxe(character: Model, root: BasePart): Axe
 		local haft = raised:Lerp(struck, s).Unit
 		local grow = math.min(elapsed / 0.2, 1)
 		hub.CFrame = CFrame.fromMatrix(hands, side, haft)
+		if alive then
+			Soft.beginTrail(sheet) -- (once it's in his hands)
+			pour.Enabled = true
+		end
 		upper.CFrame = hub.CFrame * CFrame.new(0, h - 1.4, -2)
 		lower.CFrame = hub.CFrame * CFrame.new(0, h - 3.4, -2) * CFrame.Angles(0, 0, math.pi)
 		upper.Size = Vector3.new(0.1, 2 * grow, 4 * grow)
@@ -24752,6 +24811,7 @@ local function buildLook(character: Model, full: boolean): () -> ()
 	local wings: { { side: number, feathers: { Feather } } } = {}
 	local emitters: { ParticleEmitter } = {}
 	local wingTrails: { Trail } = {}
+	local wingsStarted = false
 	for _, side in sides do
 		local feathers: { Feather } = {}
 		for _, layer in WING_LAYERS do
@@ -24783,6 +24843,7 @@ local function buildLook(character: Model, full: boolean): () -> ()
 							transparency = NumberSequence.new({ key(0, 0.55), key(1, 1) }),
 							width = NumberSequence.new({ key(0, 1), key(1, 0.2) }),
 							lifetime = 0.3,
+							off = true,
 						})
 					)
 				end
@@ -25009,6 +25070,9 @@ local function buildLook(character: Model, full: boolean): () -> ()
 		for _, trail in wingTrails do
 			trail.Enabled = false
 		end
+		for _, beam in swordBeams do
+			beam.Enabled = false
+		end
 		task.delay(1, draft.Destroy, draft)
 		for _, emitter in emitters do
 			emitter.Enabled = false
@@ -25061,6 +25125,13 @@ local function buildLook(character: Model, full: boolean): () -> ()
 				end
 				local tipAt = base + direction * feather.length
 				feather.tip.CFrame = CFrame.lookAt(tipAt, tipAt + direction, up) * CFrame.Angles(rad(45), 0, 0)
+			end
+		end
+		if not wingsStarted then
+			-- (The tips are in place now: their trails start here.)
+			wingsStarted = true
+			for _, trail in wingTrails do
+				Soft.beginTrail(trail)
 			end
 		end
 
@@ -28001,6 +28072,7 @@ local function wingsOfWind(character: Model, duration: number)
 	type WingFeather = { vane: BasePart, glow: BasePart, side: number, index: number, length: number }
 	local feathers: { WingFeather } = {}
 	local trails: { Trail } = {}
+	local shedding: { ParticleEmitter } = {}
 	for side = -1, 1, 2 do
 		for i = 1, 7 do
 			local length = 5 + i * 0.8
@@ -28011,13 +28083,17 @@ local function wingsOfWind(character: Model, duration: number)
 				Transparency = 0.15,
 			})
 			if i >= 5 then
-				windEmitter(vane, {
-					Size = NumberSequence.new({ key(0, 0.8), key(1, 2.4) }),
-					Lifetime = NumberRange.new(0.3, 0.6),
-					Speed = NumberRange.new(2, 6),
-					Drag = 3,
-					Rate = 12,
-				})
+				table.insert(
+					shedding,
+					windEmitter(vane, {
+						Size = NumberSequence.new({ key(0, 0.8), key(1, 2.4) }),
+						Lifetime = NumberRange.new(0.3, 0.6),
+						Speed = NumberRange.new(2, 6),
+						Drag = 3,
+						Rate = 12,
+						Enabled = false, -- (until the wings are posed)
+					})
+				)
 			end
 			local glow = U.newPart({ Size = Vector3.new(0.05, 1.9, length + 0.8), Color = WIND, Transparency = 0.82 })
 			if i % 2 == 1 then
@@ -28032,6 +28108,7 @@ local function wingsOfWind(character: Model, duration: number)
 							color = ColorSequence.new(WIND_WHITE, WIND),
 							transparency = NumberSequence.new({ key(0, 0.45), key(1, 1) }),
 							lifetime = 0.3,
+							off = true,
 						}
 					)
 				)
@@ -28062,6 +28139,12 @@ local function wingsOfWind(character: Model, duration: number)
 			f.vane.CFrame = pose
 			f.glow.Size = Vector3.new(0.05, 1.9, length + 0.8)
 			f.glow.CFrame = pose
+		end
+		for _, trail in trails do
+			Soft.beginTrail(trail)
+		end
+		for _, emitter in shedding do
+			emitter.Enabled = true
 		end
 		return true
 	end, function()
@@ -28541,14 +28624,16 @@ local function play(data, character: Model, root: BasePart, context: Context)
 		end
 
 		-- The blade: up out of his raised hands, then down along the strike.
-		local hand, other = handOf(character, "Right"), handOf(character, "Left")
-		if blade and hand and other then
-			local hands = hand:Lerp(other, 0.5)
+		if blade then
+			local hand, other = handOf(character, "Right"), handOf(character, "Left")
+			local hands = if hand and other then hand:Lerp(other, 0.5) else root.Position + UP * 2.5
 			local grow = easeOut((t - (times.Rise - 0.1)) / 0.35)
+			-- Swung over in front of him (round his right), from straight up
+			-- to down along the strike, at an even sweep of the angle.
 			local down = (plan.ground - (plan.top + UP * SaintPlan.Drift)).Unit
 			local swing = smooth((t - dive) / 0.1)
-			local direction = UP:Lerp(down, swing)
-			direction = if direction.Magnitude > 1e-3 then direction.Unit else down
+			local arc = math.acos(math.clamp(UP:Dot(down), -1, 1))
+			local direction = CFrame.fromAxisAngle(right, swing * arc):VectorToWorldSpace(UP)
 			blade.set(hands, direction, SAINT_BLADE * grow + 0.5)
 		end
 
@@ -28587,6 +28672,32 @@ local function play(data, character: Model, root: BasePart, context: Context)
 	if mine then
 		CameraShake.FovKick(4)
 	end
+
+	-- The ground far below stirs: dust lifting off it in the downdraft of
+	-- the fight over it.
+	task.delay(times.Lift, function()
+		local below = U.newPart({
+			Size = Vector3.new(28, 1, 28),
+			Transparency = 1,
+			CFrame = CFrame.new(ground + UP * 0.5),
+		})
+		local stir = windEmitter(below, {
+			Color = ColorSequence.new(Color3.fromRGB(205, 214, 204), Color3.fromRGB(170, 190, 175)),
+			LightEmission = 0,
+			Transparency = NumberSequence.new({ key(0, 1), key(0.3, 0.82), key(1, 1) }),
+			Size = NumberSequence.new({ key(0, 3), key(1, 7) }),
+			Lifetime = NumberRange.new(1.2, 1.8),
+			Speed = NumberRange.new(2, 5),
+			SpreadAngle = Vector2.new(60, 60),
+			EmissionDirection = Enum.NormalId.Top,
+			Shape = Enum.ParticleEmitterShape.Disc,
+			Rate = 14,
+		})
+		task.delay(times.Burst - times.Lift, function()
+			stir.Enabled = false
+		end)
+		task.delay(times.Burst - times.Lift + 2, below.Destroy, below)
+	end)
 
 	-- The constellation opens round them; wind swirls round them; light
 	-- pours from every star into them.
@@ -28647,6 +28758,12 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			}),
 		}
 		local aura = Soft.glow(torso, WIND, 5, 0.9)
+		local lamp = Instance.new("PointLight")
+		lamp.Color = WIND
+		lamp.Range = 18
+		lamp.Brightness = 3
+		lamp.Shadows = false
+		lamp.Parent = torso
 		local dust = windEmitter(torso, {
 			Texture = SPARKLE,
 			Color = ColorSequence.new(STAR_WHITE, STAR),
@@ -28691,6 +28808,8 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			end
 			aura.Enabled = false
 			dust.Enabled = false
+			U.tween(lamp, 0.3, { Brightness = 0 })
+			task.delay(0.35, lamp.Destroy, lamp)
 			task.delay(1, aura.Destroy, aura)
 			task.delay(1, dust.Destroy, dust)
 			if swordGlitter then
@@ -28786,6 +28905,7 @@ local function play(data, character: Model, root: BasePart, context: Context)
 				end
 				U.afterimage(character, WIND, 0.35)
 				twinkle(star, 3.2, STAR, 0.22)
+				lightRing(star, (center - star).Unit, 0.3, 3, 0.25)
 				windPuff(star, 1.4)
 			end)
 		end
@@ -28798,7 +28918,9 @@ local function play(data, character: Model, root: BasePart, context: Context)
 		context.play(character, anims.SaintRise)
 		local hold = dive - (times.Rise - 0.1)
 		context.hideSword(character, hold + 0.4)
-		blade = windBlade()
+		local made = windBlade()
+		made.set(root.Position + UP * 2.5, UP, 0.5) -- (in his hands from the first frame)
+		blade = made
 		wingsOfWind(character, hold + 0.3)
 		windPuff(plan.top, 5)
 		windRing(plan.top, forward, 2, 16, 0.45)
@@ -29209,11 +29331,31 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			end,
 		},
 	}
-	local current = 0
-	local last: CFrame? = nil
-	local lastFov = 70
-	local blendFrom: CFrame? = nil
-	local blendFov = 70
+	-- A blow's zoom: in fast, eased back out (never a jump).
+	local function blow(t: number, at: number, amount: number): number
+		if t < at then
+			return 0
+		end
+		local u = (t - at) / 0.08
+		return amount * u * math.exp(1 - u)
+	end
+	local function zoom(t: number): number
+		local total = 0
+		for i, at in passes do
+			total += blow(t, at, if i == #passes then 6 else 2)
+		end
+		return total + blow(t, times.Strike, 8) + blow(t, times.Burst, 4)
+	end
+	-- Where a shot puts the camera at `t` (past its end it carries on as
+	-- it was going, for blending out of it).
+	local function evaluate(shot: Shot, t: number, hold: boolean): (CFrame, number)
+		local u = (t - shot.from) / math.max(shot.to - shot.from, 1e-3)
+		if hold then
+			u = math.clamp(u, 0, 1)
+		end
+		local eye, focus, roll, fov = shot.get(u, t)
+		return CFrame.lookAt(eye, focus) * CFrame.Angles(0, 0, rad(roll)), fov
+	end
 	Cinematic.Camera(function(t)
 		local index = #shots
 		for i, shot in shots do
@@ -29223,20 +29365,17 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			end
 		end
 		local shot = shots[index]
-		if index ~= current then
-			current = index
-			blendFrom, blendFov = last, lastFov
-		end
-		local u = math.clamp((t - shot.from) / math.max(shot.to - shot.from, 1e-3), 0, 1)
-		local eye, focus, roll, fov = shot.get(u, t)
-		local cframe = CFrame.lookAt(eye, focus) * CFrame.Angles(0, 0, rad(roll))
-		if shot.blend > 0 and blendFrom and t - shot.from < shot.blend then
-			-- Eased both ways: no jolt starting or finishing the move.
+		local cframe, fov = evaluate(shot, t, true)
+		local previous = shots[index - 1]
+		if shot.blend > 0 and previous and t - shot.from < shot.blend then
+			-- Eased both ways, from where the last shot is now: no jolt
+			-- starting or finishing the move.
 			local b = smooth((t - shot.from) / shot.blend)
-			cframe = blendFrom:Lerp(cframe, b)
-			fov = blendFov + (fov - blendFov) * b
+			local fromFrame, fromFov = evaluate(previous, t, false)
+			cframe = fromFrame:Lerp(cframe, b)
+			fov = fromFov + (fov - fromFov) * b
 		end
-		last, lastFov = cframe, fov
+		fov -= zoom(t)
 		if depth then
 			depth.FocusDistance = (cframe.Position - him(t)).Magnitude
 		end
@@ -29257,7 +29396,7 @@ local function impact(position: Vector3)
 	U.groundCracks(position, 14, 16, WIND, 2.5)
 	U.groundRocks(position, 14, 10, 2.2)
 	U.debris(position, 26, 60, 1.2)
-	windColumn(position, 70, 6, 1.2)
+	windColumn(position, 70, 4.5, 1.2) -- (narrow enough to stand clear of him)
 	starfall(position, 18, 1.4)
 	U.burst(position + UP, {
 		texture = SMOKE,
@@ -29532,15 +29671,22 @@ function Soft.makeStar(size: number, color: Color3?): Star
 	glitter.Speed = NumberRange.new(0.5, 1.5)
 	glitter.SpreadAngle = Vector2.new(180, 180)
 	glitter.Rotation = NumberRange.new(0, 90)
+	glitter.Enabled = false -- (until it's first placed)
 	glitter.Parent = parts[1]
+	local placed, faded = false, false
 	local star = { parts = parts }
 	function star.place(position: Vector3, spin: number)
 		local base = CFrame.lookAt(position, workspace.CurrentCamera.CFrame.Position) * CFrame.Angles(0, 0, spin)
 		for i, part in parts do
 			part.CFrame = base * offsets[i]
 		end
+		if not placed and not faded then
+			placed = true
+			glitter.Enabled = true
+		end
 	end
 	function star.fade(duration: number)
+		faded = true
 		light.Enabled = false
 		glitter.Enabled = false
 		fadeOut(parts, duration)
@@ -29601,12 +29747,18 @@ function Soft.makeSprite(scale: number): Sprite
 	trail.LightEmission = 1
 	trail.LightInfluence = 0
 	trail.FaceCamera = true
+	trail.Enabled = false -- (until she's first placed)
 	trail.Parent = body
-	local parts = { body, glow, wings[1], wings[2] }
+	local started = false
 	local sprite = {}
 	function sprite.place(cframe: CFrame, t: number)
 		body.CFrame = cframe
 		glow.CFrame = cframe
+		if not started then
+			started = true
+			trail:Clear()
+			trail.Enabled = true
+		end
 		local flap = math.sin(t * 30) * rad(40)
 		wings[1].CFrame = cframe * CFrame.Angles(0, 0, flap) * CFrame.new(0.45 * scale, 0, 0)
 		wings[2].CFrame = cframe * CFrame.Angles(0, 0, -flap) * CFrame.new(-0.45 * scale, 0, 0)
@@ -29614,7 +29766,8 @@ function Soft.makeSprite(scale: number): Sprite
 	function sprite.fade(duration: number)
 		light.Enabled = false
 		trail.Enabled = false
-		fadeOut(parts, duration)
+		fadeOut({ glow, wings[1], wings[2] }, duration)
+		Soft.linger(body, duration, trail.Lifetime + 0.15)
 	end
 	return sprite
 end
@@ -29710,7 +29863,8 @@ function Soft.softBeam(a0: Attachment, a1: Attachment, style: BeamStyle, parent:
 	beam.FaceCamera = true
 	beam.LightEmission = style.emission or 1
 	beam.LightInfluence = 0
-	beam.Segments = style.segments or 24
+	local curved = (style.curve0 or 0) ~= 0 or (style.curve1 or 0) ~= 0
+	beam.Segments = style.segments or (if curved then 20 else 10)
 	if style.texture then
 		beam.Texture = style.texture
 		beam.TextureMode = if style.wrap then Enum.TextureMode.Wrap else Enum.TextureMode.Stretch
@@ -29784,7 +29938,9 @@ function Soft.softRing(style: BeamStyle): Ring
 	end
 	local beams: { Beam } = {}
 	for i = 1, 4 do
-		table.insert(beams, softBeam(anchors[i], anchors[i % 4 + 1], style, hub))
+		local beam = softBeam(anchors[i], anchors[i % 4 + 1], style, hub)
+		beam.Segments = style.segments or 12
+		table.insert(beams, beam)
 	end
 	local ring = { hub = hub, beams = beams }
 	function ring.set(frame: CFrame, radius: number)
@@ -29869,7 +30025,9 @@ function Soft.softArc(styles: { BeamStyle }): Arc
 	local a0, a1 = worldAnchor(Vector3.zero), worldAnchor(Vector3.zero)
 	local beams: { Beam } = {}
 	for _, style in styles do
-		table.insert(beams, softBeam(a0, a1, style))
+		local beam = softBeam(a0, a1, style)
+		beam.Segments = style.segments or 16
+		table.insert(beams, beam)
 	end
 	local arc = { beams = beams }
 	function arc.set(center: Vector3, right: Vector3, up: Vector3, radius: number, from: number, to: number)
@@ -30014,6 +30172,7 @@ export type TrailStyle = {
 	texture: string?,
 	faceCamera: boolean?,
 	emission: number?,
+	off: boolean?, -- made switched off: start it with beginTrail once its part is in place
 }
 
 function Soft.trail(part: BasePart, a: Vector3, b: Vector3, style: TrailStyle): Trail
@@ -30034,6 +30193,7 @@ function Soft.trail(part: BasePart, a: Vector3, b: Vector3, style: TrailStyle): 
 	trail.LightInfluence = 0
 	trail.FaceCamera = style.faceCamera ~= false
 	trail.MinLength = 0
+	trail.Enabled = not style.off
 	if style.texture then
 		trail.Texture = style.texture
 		trail.TextureMode = Enum.TextureMode.Stretch
@@ -30047,16 +30207,33 @@ function Soft.trail(part: BasePart, a: Vector3, b: Vector3, style: TrailStyle): 
 	return trail
 end
 
+-- Starts a trail made switched off, once its part is where it should be
+-- (so nothing streaks in from wherever the part was made).
+function Soft.beginTrail(trail: Trail)
+	if not trail.Enabled then
+		trail:Clear()
+		trail.Enabled = true
+	end
+end
+
 -- Stops a trail and removes it once what it left behind has faded.
 function Soft.endTrail(trail: Trail)
 	trail.Enabled = false
 	task.delay(trail.Lifetime + 0.1, trail.Destroy, trail)
 end
 
+-- Hides `part` (over `fade`) but keeps it, and whatever trails or
+-- particles are on it, until `keep` seconds, so they fade out on their own.
+function Soft.linger(part: BasePart, fade: number, keep: number)
+	U.tween(part, fade, { Transparency = 1 })
+	task.delay(keep, part.Destroy, part)
+end
+
 -- Ribbons of wind spiralling up round a moving axis: `axis(t)` gives the
 -- foot and the top of it each frame (t: seconds since it started); the
 -- ribbons climb it over `climb` seconds, over and over, `turns` times
--- round on the way. Returns stop().
+-- round on the way. Each climb is a fresh ribbon (the last one left to
+-- fade at the top), so nothing streaks back down the axis. Returns stop().
 function Soft.helix(
 	axis: (number) -> (Vector3, Vector3),
 	radius: number,
@@ -30067,20 +30244,22 @@ function Soft.helix(
 	duration: number,
 	color: Color3?
 ): () -> ()
-	local runners: { BasePart } = {}
-	local trails: { Trail } = {}
-	for i = 1, strands do
-		local runner = U.newPart({ Size = Vector3.one * 0.1, Transparency = 1 })
-		table.insert(runners, runner)
-		table.insert(
-			trails,
-			Soft.trail(runner, Vector3.new(0, width / 2, 0), Vector3.new(0, -width / 2, 0), {
-				color = ColorSequence.new(if i % 2 == 0 then WIND_WHITE else color or WIND, color or WIND),
-				transparency = NumberSequence.new({ key(0, 0.25), key(1, 1) }),
-				width = NumberSequence.new({ key(0, 1), key(1, 0.2) }),
-				lifetime = 0.25,
-			})
-		)
+	type Runner = { part: BasePart, trail: Trail, phase: number }
+	local runners: { [number]: Runner } = {}
+	local function retire(runner: Runner)
+		Soft.endTrail(runner.trail)
+		task.delay(runner.trail.Lifetime + 0.2, runner.part.Destroy, runner.part)
+	end
+	local function spawnRunner(i: number, at: Vector3, phase: number): Runner
+		-- Placed before its trail is attached, so the trail starts here.
+		local part = U.newPart({ Size = Vector3.one * 0.1, Transparency = 1, CFrame = CFrame.new(at) })
+		local trail = Soft.trail(part, Vector3.new(0, width / 2, 0), Vector3.new(0, -width / 2, 0), {
+			color = ColorSequence.new(if i % 2 == 0 then WIND_WHITE else color or WIND, color or WIND),
+			transparency = NumberSequence.new({ key(0, 0.25), key(1, 1) }),
+			width = NumberSequence.new({ key(0, 1), key(1, 0.2) }),
+			lifetime = 0.25,
+		})
+		return { part = part, trail = trail, phase = phase }
 	end
 	local stopped = false
 	local function stop()
@@ -30088,14 +30267,13 @@ function Soft.helix(
 			return
 		end
 		stopped = true
-		for _, trail in trails do
-			Soft.endTrail(trail)
-		end
-		task.delay(0.4, function()
-			for _, runner in runners do
-				runner:Destroy()
+		for i = 1, strands do
+			local runner = runners[i]
+			if runner then
+				runners[i] = nil
+				retire(runner)
 			end
-		end)
+		end
 	end
 	every(duration, function(elapsed)
 		if stopped then
@@ -30105,17 +30283,28 @@ function Soft.helix(
 		local along = top - foot
 		local length = along.Magnitude
 		if length < 1e-3 then
-			return true
+			return true -- (no axis yet: nothing drawn)
 		end
 		local up = along / length
 		local side = up:Cross(if math.abs(up.Y) > 0.9 then Vector3.xAxis else UP).Unit
 		local other = up:Cross(side)
-		for i, runner in runners do
+		for i = 1, strands do
 			local phase = (elapsed / climb + (i - 1) / strands) % 1
 			local angle = phase * turns * math.pi * 2 + i * 2.1
 			local r = radius * (1 - phase * 0.35)
-			runner.CFrame =
-				CFrame.new(foot + up * (length * phase) + (side * math.cos(angle) + other * math.sin(angle)) * r)
+			local position = foot + up * (length * phase) + (side * math.cos(angle) + other * math.sin(angle)) * r
+			local runner = runners[i]
+			if runner and phase < runner.phase then
+				-- Back to the foot: this ribbon is left to fade at the top.
+				retire(runner)
+				runner = nil
+			end
+			if runner then
+				runner.part.CFrame = CFrame.new(position)
+				runner.phase = phase
+			else
+				runners[i] = spawnRunner(i, position, phase)
+			end
 		end
 		return true
 	end, stop)
@@ -30212,7 +30401,7 @@ function Soft.windSlash(from: Vector3, to: Vector3, bend: Vector3, scale: number
 				color = green,
 				width0 = w0,
 				width1 = w1,
-				transparency = fadeEnds(first, 0.7, 0.55),
+				transparency = fadeEnds(first, 0.72, 0.6),
 				texture = SMOKE,
 				speed = 1.5,
 				length = 3,
@@ -30225,7 +30414,7 @@ function Soft.windSlash(from: Vector3, to: Vector3, bend: Vector3, scale: number
 				color = haze,
 				width0 = w0,
 				width1 = w1,
-				transparency = fadeEnds(first, 0.92, 0.84),
+				transparency = fadeEnds(first, 0.94, 0.87),
 				texture = SMOKE,
 				speed = -1,
 				length = 6,

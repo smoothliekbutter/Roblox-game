@@ -401,6 +401,7 @@ local function wingsOfWind(character: Model, duration: number)
 	type WingFeather = { vane: BasePart, glow: BasePart, side: number, index: number, length: number }
 	local feathers: { WingFeather } = {}
 	local trails: { Trail } = {}
+	local shedding: { ParticleEmitter } = {}
 	for side = -1, 1, 2 do
 		for i = 1, 7 do
 			local length = 5 + i * 0.8
@@ -411,13 +412,17 @@ local function wingsOfWind(character: Model, duration: number)
 				Transparency = 0.15,
 			})
 			if i >= 5 then
-				windEmitter(vane, {
-					Size = NumberSequence.new({ key(0, 0.8), key(1, 2.4) }),
-					Lifetime = NumberRange.new(0.3, 0.6),
-					Speed = NumberRange.new(2, 6),
-					Drag = 3,
-					Rate = 12,
-				})
+				table.insert(
+					shedding,
+					windEmitter(vane, {
+						Size = NumberSequence.new({ key(0, 0.8), key(1, 2.4) }),
+						Lifetime = NumberRange.new(0.3, 0.6),
+						Speed = NumberRange.new(2, 6),
+						Drag = 3,
+						Rate = 12,
+						Enabled = false, -- (until the wings are posed)
+					})
+				)
 			end
 			local glow = U.newPart({ Size = Vector3.new(0.05, 1.9, length + 0.8), Color = WIND, Transparency = 0.82 })
 			if i % 2 == 1 then
@@ -432,6 +437,7 @@ local function wingsOfWind(character: Model, duration: number)
 							color = ColorSequence.new(WIND_WHITE, WIND),
 							transparency = NumberSequence.new({ key(0, 0.45), key(1, 1) }),
 							lifetime = 0.3,
+							off = true,
 						}
 					)
 				)
@@ -462,6 +468,12 @@ local function wingsOfWind(character: Model, duration: number)
 			f.vane.CFrame = pose
 			f.glow.Size = Vector3.new(0.05, 1.9, length + 0.8)
 			f.glow.CFrame = pose
+		end
+		for _, trail in trails do
+			Soft.beginTrail(trail)
+		end
+		for _, emitter in shedding do
+			emitter.Enabled = true
 		end
 		return true
 	end, function()
@@ -941,14 +953,16 @@ local function play(data, character: Model, root: BasePart, context: Context)
 		end
 
 		-- The blade: up out of his raised hands, then down along the strike.
-		local hand, other = handOf(character, "Right"), handOf(character, "Left")
-		if blade and hand and other then
-			local hands = hand:Lerp(other, 0.5)
+		if blade then
+			local hand, other = handOf(character, "Right"), handOf(character, "Left")
+			local hands = if hand and other then hand:Lerp(other, 0.5) else root.Position + UP * 2.5
 			local grow = easeOut((t - (times.Rise - 0.1)) / 0.35)
+			-- Swung over in front of him (round his right), from straight up
+			-- to down along the strike, at an even sweep of the angle.
 			local down = (plan.ground - (plan.top + UP * SaintPlan.Drift)).Unit
 			local swing = smooth((t - dive) / 0.1)
-			local direction = UP:Lerp(down, swing)
-			direction = if direction.Magnitude > 1e-3 then direction.Unit else down
+			local arc = math.acos(math.clamp(UP:Dot(down), -1, 1))
+			local direction = CFrame.fromAxisAngle(right, swing * arc):VectorToWorldSpace(UP)
 			blade.set(hands, direction, SAINT_BLADE * grow + 0.5)
 		end
 
@@ -987,6 +1001,32 @@ local function play(data, character: Model, root: BasePart, context: Context)
 	if mine then
 		CameraShake.FovKick(4)
 	end
+
+	-- The ground far below stirs: dust lifting off it in the downdraft of
+	-- the fight over it.
+	task.delay(times.Lift, function()
+		local below = U.newPart({
+			Size = Vector3.new(28, 1, 28),
+			Transparency = 1,
+			CFrame = CFrame.new(ground + UP * 0.5),
+		})
+		local stir = windEmitter(below, {
+			Color = ColorSequence.new(Color3.fromRGB(205, 214, 204), Color3.fromRGB(170, 190, 175)),
+			LightEmission = 0,
+			Transparency = NumberSequence.new({ key(0, 1), key(0.3, 0.82), key(1, 1) }),
+			Size = NumberSequence.new({ key(0, 3), key(1, 7) }),
+			Lifetime = NumberRange.new(1.2, 1.8),
+			Speed = NumberRange.new(2, 5),
+			SpreadAngle = Vector2.new(60, 60),
+			EmissionDirection = Enum.NormalId.Top,
+			Shape = Enum.ParticleEmitterShape.Disc,
+			Rate = 14,
+		})
+		task.delay(times.Burst - times.Lift, function()
+			stir.Enabled = false
+		end)
+		task.delay(times.Burst - times.Lift + 2, below.Destroy, below)
+	end)
 
 	-- The constellation opens round them; wind swirls round them; light
 	-- pours from every star into them.
@@ -1047,6 +1087,12 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			}),
 		}
 		local aura = Soft.glow(torso, WIND, 5, 0.9)
+		local lamp = Instance.new("PointLight")
+		lamp.Color = WIND
+		lamp.Range = 18
+		lamp.Brightness = 3
+		lamp.Shadows = false
+		lamp.Parent = torso
 		local dust = windEmitter(torso, {
 			Texture = SPARKLE,
 			Color = ColorSequence.new(STAR_WHITE, STAR),
@@ -1091,6 +1137,8 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			end
 			aura.Enabled = false
 			dust.Enabled = false
+			U.tween(lamp, 0.3, { Brightness = 0 })
+			task.delay(0.35, lamp.Destroy, lamp)
 			task.delay(1, aura.Destroy, aura)
 			task.delay(1, dust.Destroy, dust)
 			if swordGlitter then
@@ -1186,6 +1234,7 @@ local function play(data, character: Model, root: BasePart, context: Context)
 				end
 				U.afterimage(character, WIND, 0.35)
 				twinkle(star, 3.2, STAR, 0.22)
+				lightRing(star, (center - star).Unit, 0.3, 3, 0.25)
 				windPuff(star, 1.4)
 			end)
 		end
@@ -1198,7 +1247,9 @@ local function play(data, character: Model, root: BasePart, context: Context)
 		context.play(character, anims.SaintRise)
 		local hold = dive - (times.Rise - 0.1)
 		context.hideSword(character, hold + 0.4)
-		blade = windBlade()
+		local made = windBlade()
+		made.set(root.Position + UP * 2.5, UP, 0.5) -- (in his hands from the first frame)
+		blade = made
 		wingsOfWind(character, hold + 0.3)
 		windPuff(plan.top, 5)
 		windRing(plan.top, forward, 2, 16, 0.45)
@@ -1609,11 +1660,31 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			end,
 		},
 	}
-	local current = 0
-	local last: CFrame? = nil
-	local lastFov = 70
-	local blendFrom: CFrame? = nil
-	local blendFov = 70
+	-- A blow's zoom: in fast, eased back out (never a jump).
+	local function blow(t: number, at: number, amount: number): number
+		if t < at then
+			return 0
+		end
+		local u = (t - at) / 0.08
+		return amount * u * math.exp(1 - u)
+	end
+	local function zoom(t: number): number
+		local total = 0
+		for i, at in passes do
+			total += blow(t, at, if i == #passes then 6 else 2)
+		end
+		return total + blow(t, times.Strike, 8) + blow(t, times.Burst, 4)
+	end
+	-- Where a shot puts the camera at `t` (past its end it carries on as
+	-- it was going, for blending out of it).
+	local function evaluate(shot: Shot, t: number, hold: boolean): (CFrame, number)
+		local u = (t - shot.from) / math.max(shot.to - shot.from, 1e-3)
+		if hold then
+			u = math.clamp(u, 0, 1)
+		end
+		local eye, focus, roll, fov = shot.get(u, t)
+		return CFrame.lookAt(eye, focus) * CFrame.Angles(0, 0, rad(roll)), fov
+	end
 	Cinematic.Camera(function(t)
 		local index = #shots
 		for i, shot in shots do
@@ -1623,20 +1694,17 @@ local function play(data, character: Model, root: BasePart, context: Context)
 			end
 		end
 		local shot = shots[index]
-		if index ~= current then
-			current = index
-			blendFrom, blendFov = last, lastFov
-		end
-		local u = math.clamp((t - shot.from) / math.max(shot.to - shot.from, 1e-3), 0, 1)
-		local eye, focus, roll, fov = shot.get(u, t)
-		local cframe = CFrame.lookAt(eye, focus) * CFrame.Angles(0, 0, rad(roll))
-		if shot.blend > 0 and blendFrom and t - shot.from < shot.blend then
-			-- Eased both ways: no jolt starting or finishing the move.
+		local cframe, fov = evaluate(shot, t, true)
+		local previous = shots[index - 1]
+		if shot.blend > 0 and previous and t - shot.from < shot.blend then
+			-- Eased both ways, from where the last shot is now: no jolt
+			-- starting or finishing the move.
 			local b = smooth((t - shot.from) / shot.blend)
-			cframe = blendFrom:Lerp(cframe, b)
-			fov = blendFov + (fov - blendFov) * b
+			local fromFrame, fromFov = evaluate(previous, t, false)
+			cframe = fromFrame:Lerp(cframe, b)
+			fov = fromFov + (fov - fromFov) * b
 		end
-		last, lastFov = cframe, fov
+		fov -= zoom(t)
 		if depth then
 			depth.FocusDistance = (cframe.Position - him(t)).Magnitude
 		end
@@ -1657,7 +1725,7 @@ local function impact(position: Vector3)
 	U.groundCracks(position, 14, 16, WIND, 2.5)
 	U.groundRocks(position, 14, 10, 2.2)
 	U.debris(position, 26, 60, 1.2)
-	windColumn(position, 70, 6, 1.2)
+	windColumn(position, 70, 4.5, 1.2) -- (narrow enough to stand clear of him)
 	starfall(position, 18, 1.4)
 	U.burst(position + UP, {
 		texture = SMOKE,

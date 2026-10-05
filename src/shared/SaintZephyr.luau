@@ -171,7 +171,7 @@ function SaintZephyr.Plan(origin: CFrame, victimPosition: Vector3, floorY: numbe
 	-- The strike runs from above them on the far side (where the X carries
 	-- him), down through them, to the floor on his side of them (so he
 	-- lands with his back to them).
-	local reach = 3
+	local reach = 7 -- (he lands well clear of where they hit)
 	plan.top = center + UP * SaintZephyr.Above + forward * reach
 	plan.ground = start - forward * (reach * SaintZephyr.Height / (SaintZephyr.Above + SaintZephyr.Drift))
 	return plan
