@@ -264,8 +264,8 @@ local function highlight(character: Model?, color: Color3, duration: number, fil
 	Debris:AddItem(h, duration + 0.05)
 end
 
--- Neon ghost copy of a character that fades out.
-local function afterimage(character: Model, color: Color3, duration: number)
+-- Neon ghost copy of a character that fades out (`offset` from where he is).
+local function afterimage(character: Model, color: Color3, duration: number, offset: Vector3?)
 	for _, part in character:GetChildren() do
 		if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" and part.Transparency < 1 then
 			local ghost = part:Clone()
@@ -281,6 +281,9 @@ local function afterimage(character: Model, color: Color3, duration: number)
 				ghost.CanTouch = false
 				ghost.CastShadow = false
 				ghost.Massless = true
+				if offset then
+					ghost.CFrame = part.CFrame + offset
+				end
 				ghost.Material = Enum.Material.Neon
 				ghost.Color = color
 				ghost.Transparency = 0.35
@@ -896,6 +899,205 @@ local function lightning(
 	end
 end
 
+--[[
+	An impact star: spikes of light shooting out of a point, square to the
+	eye (the radiating lines of a manga impact), sharp and thin, flung out
+	and thinning away. `color` is their glow, `core` (default white) the
+	bright line down each one.
+]]
+local function impactSpikes(
+	position: Vector3,
+	color: Color3,
+	count: number,
+	length: number,
+	duration: number,
+	core: Color3?
+)
+	local camera = workspace.CurrentCamera
+	local facing = CFrame.lookAt(position, camera.CFrame.Position)
+	local slice = math.pi * 2 / count
+	local grow = math.min(0.05, duration * 0.3)
+	for i = 1, count do
+		local angle = i * slice + (math.random() - 0.5) * slice * 0.7
+		local reach = length * (0.45 + math.random() * 0.55)
+		local start = length * 0.12
+		local spoke = facing * CFrame.Angles(0, 0, angle)
+		local width = 0.12 + reach * 0.035
+		for layer = 1, 2 do
+			local w = if layer == 1 then width * 2.6 else width
+			-- (the bright line just in front of its glow, toward the eye)
+			local z = if layer == 1 then 0 else -0.02
+			local spike = newPart({
+				Size = Vector3.new(0.05, w, 0.03),
+				CFrame = spoke * CFrame.new(start, 0, z),
+				Color = if layer == 1 then color else core or Color3.new(1, 1, 1),
+				Transparency = if layer == 1 then 0.35 else 0,
+			})
+			tween(spike, grow, {
+				Size = Vector3.new(reach, w, 0.03),
+				CFrame = spoke * CFrame.new(start + reach / 2, 0, z),
+			}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+			task.delay(grow, function()
+				tween(spike, duration - grow, {
+					Size = Vector3.new(reach * 1.1, 0.02, 0.02),
+					CFrame = spoke * CFrame.new(start + reach * 0.85, 0, z),
+					Transparency = 1,
+				}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+			end)
+			Debris:AddItem(spike, duration + 0.05)
+		end
+	end
+end
+
+--[[
+	A wave of dust rolling out along the ground from `position` to about
+	`radius` studs: puffs thrown out low all round, swelling as they slow.
+	Coloured like the ground unless `color` says otherwise.
+]]
+local function dustWave(position: Vector3, radius: number, color: Color3?, puffs: number?)
+	local ground = groundBelow(position)
+	if not ground then
+		return
+	end
+	local floor = ground.Position + Vector3.new(0, 0.5, 0)
+	local dust = color
+		or (if ground.Instance:IsA("BasePart") then ground.Instance.Color else COLORS.Dust):Lerp(
+			Color3.new(1, 1, 1),
+			0.35
+		)
+	local holder = newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.new(floor) })
+	local n = puffs or 14
+	for i = 1, n do
+		local angle = (i / n) * math.pi * 2 + math.random() * 0.4
+		local out = Vector3.new(math.cos(angle), 0.08, math.sin(angle)).Unit
+		local attachment = Instance.new("Attachment")
+		attachment.CFrame = CFrame.lookAt(Vector3.zero, out)
+		attachment.Parent = holder
+		local emitter = Instance.new("ParticleEmitter")
+		emitter.Texture = TEXTURES.Smoke
+		emitter.Color = ColorSequence.new(dust)
+		emitter.LightEmission = 0
+		emitter.LightInfluence = 0.6
+		emitter.Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, radius * 0.12 + 0.6),
+			NumberSequenceKeypoint.new(1, radius * 0.32 + 1.5),
+		})
+		emitter.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.45),
+			NumberSequenceKeypoint.new(0.6, 0.7),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		emitter.Lifetime = NumberRange.new(0.6, 1)
+		emitter.Speed = NumberRange.new(radius * 2.2, radius * 3.2)
+		emitter.Drag = 3
+		emitter.SpreadAngle = Vector2.new(10, 4)
+		emitter.EmissionDirection = Enum.NormalId.Front
+		emitter.Rotation = NumberRange.new(0, 360)
+		emitter.RotSpeed = NumberRange.new(-60, 60)
+		emitter.Enabled = false
+		emitter.Parent = attachment
+		emitter:Emit(2)
+	end
+	Debris:AddItem(holder, 1.1)
+end
+
+--[[
+	A scorch mark on the ground under a big impact: a dark burn (darker in
+	the middle) with a ring glowing `glow` as it cools, left lying there for
+	`duration` before it fades. Lies flat on whatever slope it's on.
+]]
+local function scorch(position: Vector3, radius: number, glow: Color3?, duration: number?)
+	local ground = groundBelow(position)
+	if not ground then
+		return
+	end
+	local life = duration or 2.5
+	-- Cylinders run along X: X along the ground's normal.
+	local frame = CFrame.lookAt(ground.Position, ground.Position + ground.Normal) * CFrame.Angles(0, math.rad(90), 0)
+	local marks = {
+		{ radius = radius, color = Color3.fromRGB(22, 20, 20), transparency = 0.45, lift = 0.03 },
+		{ radius = radius * 0.6, color = Color3.fromRGB(10, 9, 9), transparency = 0.25, lift = 0.045 },
+	}
+	for _, mark in marks do
+		local disc = newPart({
+			Shape = Enum.PartType.Cylinder,
+			Size = Vector3.new(0.02, mark.radius * 1.3, mark.radius * 1.3),
+			CFrame = frame * CFrame.new(mark.lift, 0, 0),
+			Color = mark.color,
+			Material = Enum.Material.SmoothPlastic,
+			Transparency = mark.transparency,
+		})
+		tween(disc, 0.12, { Size = Vector3.new(0.02, mark.radius * 2, mark.radius * 2) })
+		task.delay(life, function()
+			tween(disc, 0.8, { Transparency = 1 })
+		end)
+		Debris:AddItem(disc, life + 0.85)
+	end
+	if glow then
+		local ember = newPart({
+			Shape = Enum.PartType.Cylinder,
+			Size = Vector3.new(0.02, radius * 1.4, radius * 1.4),
+			CFrame = frame * CFrame.new(0.06, 0, 0),
+			Color = glow,
+			Transparency = 0.3,
+		})
+		tween(ember, 0.9, { Size = Vector3.new(0.02, radius * 0.6, radius * 0.6), Transparency = 1 })
+		Debris:AddItem(ember, 0.95)
+	end
+end
+
+--[[
+	A groove torn into the ground from `from` to `to`, following the ground
+	(and skipping where it drops away): a dark channel with a core glowing
+	`glow` as it cools, left lying there for `duration`. With `speed` it's
+	torn along at that many studs a second instead of all at once.
+]]
+local function groove(from: Vector3, to: Vector3, width: number, glow: Color3?, duration: number?, speed: number?)
+	local life = duration or 2
+	local span = (to - from).Magnitude
+	local steps = math.max(math.ceil(span / 2.5), 1)
+	local up = Vector3.new(0, 0.05, 0)
+	local floors: { Vector3 | false } = {}
+	for i = 0, steps do
+		local ground = groundBelow(from:Lerp(to, i / steps), nil, 10)
+		floors[i + 1] = if ground then ground.Position else false
+	end
+	for i = 1, steps do
+		local a, b = floors[i], floors[i + 1]
+		if a and b and math.abs(a.Y - b.Y) < 2.5 then
+			local function cut()
+				local length = (b - a).Magnitude
+				local look = CFrame.lookAt((a + b) / 2 + up, b + up)
+				local channel = newPart({
+					Size = Vector3.new(width, 0.07, length + width * 0.4),
+					CFrame = look,
+					Color = Color3.fromRGB(14, 13, 13),
+					Material = Enum.Material.SmoothPlastic,
+				})
+				task.delay(life, function()
+					tween(channel, 0.6, { Transparency = 1 })
+				end)
+				Debris:AddItem(channel, life + 0.65)
+				if glow then
+					local hot = newPart({
+						Size = Vector3.new(width * 0.4, 0.09, length + width * 0.3),
+						CFrame = look + Vector3.new(0, 0.01, 0),
+						Color = glow,
+						Transparency = 0.05,
+					})
+					tween(hot, 0.9, { Transparency = 1, Size = Vector3.new(0.04, 0.09, length) })
+					Debris:AddItem(hot, 0.95)
+				end
+			end
+			if speed then
+				task.delay(span * (i - 1) / steps / speed, cut)
+			else
+				cut()
+			end
+		end
+	end
+end
+
 -- A full-screen color grade for the local camera: eases into `goal`
 -- (ColorCorrectionEffect properties), holds, then eases back out.
 local function colorGrade(goal: { [string]: any }, fadeIn: number, hold: number, fadeOut: number)
@@ -1292,6 +1494,10 @@ VFX.Util = {
 	spiral = spiral,
 	lightning = lightning,
 	colorGrade = colorGrade,
+	impactSpikes = impactSpikes,
+	dustWave = dustWave,
+	scorch = scorch,
+	groove = groove,
 }
 
 -- Adds (or replaces) a named effect the server can trigger.

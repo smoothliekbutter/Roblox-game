@@ -33,8 +33,9 @@
 	                         drags everyone in, then goes nova: a pillar of
 	                         starlight that throws them up (held: turns longer)
 	Full-Crown Spirit of Zephyr (G again, once Tempest Dive has landed twice)
-	  1 Spirit of Boreas     a great axe of wind; one huge chop splits the ground in
-	                         a line ahead, through guards, launching them
+	  1 Spirit of Boreas     a great axe of wind; one huge chop bites into the
+	                         ground and splits it in a line ahead, through guards
+	                         and people lying on the ground, launching them
 	  2 Spirit of Zephyrus   his sword of wind grows long and he lunges at them
 	                         (steerable); caught, three cuts and a thrust
 	  3 Spirit of Euros      a recurve bow of wind; one arrow, too fast to see,
@@ -910,9 +911,10 @@ end
 --[[
 	Spirit of Boreas (Full-Crown 1, the north wind): a great axe of wind
 	forms in his hands, raised high, and he brings it down in one huge chop
-	that splits the ground in a line ahead of him, through guards, throwing
-	whoever is on it into the air. From the air he chops down at the ground
-	ahead and below, spiking them.
+	that bites into the ground and splits it in a line ahead of him, through
+	guards, throwing whoever is on it into the air, people lying on the
+	ground too. From the air he chops down at the ground ahead and below,
+	spiking them (and catching anyone down there on the floor).
 ]]
 local BOREAS_RAISE = 0.42 -- the axe forms, raised (BoreasForm, then BoreasChop)
 local BOREAS_REACH = 28
@@ -942,6 +944,7 @@ local function spiritOfBoreas(ctx)
 			stun = 1.2,
 			attackType = "Melee",
 			guardBreak = true,
+			hitsDowned = true, -- the split runs under people lying on the ground too
 			heavy = true,
 			ragdoll = 1,
 			velocity = if airborne then forward * 10 + UP * -45 else forward * 8 + UP * 38,

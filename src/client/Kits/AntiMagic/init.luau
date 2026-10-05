@@ -1204,6 +1204,7 @@ local function comboImpact(data, character: Model, root: BasePart)
 	local cut = root.CFrame:VectorToWorldSpace(how.cut).Unit
 	local toward = towardTarget(root, targetRoot)
 	slashMark(center, markAngle(center, cut), 4 + 1.6 * k, 0.2 + 0.05 * k)
+	U.impactSpikes(center, RED, math.floor(6 + 2 * k), 4 + 2 * k, 0.2, WHITE_HOT)
 	U.flash(center, WHITE, 1.6 * k, 0.07)
 	U.flash(center, BLACK, 3 * k, 0.16)
 	glowBurst(center, 2.2 * k, 0.22)
@@ -1262,6 +1263,7 @@ local function comboFinisher(data, character: Model, root: BasePart)
 	local toward = towardTarget(root, targetRoot)
 	local center = targetRoot.Position + UP * 0.2
 	pierce(center - toward * 1.2, toward, 8)
+	U.impactSpikes(center, RED, 14, 10, 0.3, WHITE_HOT)
 	U.flash(center, WHITE, 5, 0.1)
 	U.flash(center, BLACK, 9, 0.24)
 	U.flash(center, RED, 6, 0.18)
@@ -1288,9 +1290,11 @@ local function comboFinisher(data, character: Model, root: BasePart)
 	U.light(center, RED, 12, 22, 0.35)
 	U.highlight(target, RED, 0.25)
 	U.bodyTrail(target, DARK_RED, 0.35)
-	-- They skid back across the ground.
+	-- They skid back across the ground, tearing a groove in it.
 	local feet = feetOf(target, targetRoot)
 	U.ringBurst(CFrame.new(feet + UP * 0.1), BLACK, 1, 8, 0.3, 0.3)
+	U.groove(feet, feet + toward * 9, 0.8, RED, 1.8, 40)
+	U.dustWave(feet, 8)
 	U.burst(feet, {
 		texture = U.textures.Smoke,
 		color = Color3.fromRGB(150, 140, 130),
@@ -1324,6 +1328,9 @@ local function bullSlam(data, character: Model)
 	U.flash(center, WHITE, 6, 0.08)
 	U.flash(center, BLACK, 15, 0.32)
 	U.flash(center, RED, 10, 0.24)
+	U.impactSpikes(center + UP, RED, 16, 14, 0.32, WHITE_HOT)
+	U.scorch(position, 7, RED, 3)
+	U.dustWave(position, 16)
 	glowBurst(center, 9, 0.45)
 	bloomPulse(center, 1, 0.3)
 	U.shockwave(position, BLACK, 4, 26, 0.45, Enum.Material.Glass, 0.4)
@@ -1488,6 +1495,7 @@ function handlers.BullThrust(data, character, root)
 		}, duration)
 		U.bodyTrail(character, BLACK, duration + 0.05)
 		U.speedLines(root, if air then direction else nil, duration)
+		local trench: Vector3? = if air then nil else feetOf(character, root)
 		for i = 0, math.floor(duration / 0.06) do
 			task.delay(i * 0.06, function()
 				if character.Parent then
@@ -1496,7 +1504,13 @@ function handlers.BullThrust(data, character, root)
 						blackLightning(root.Position, 1, 2.2, 0.12) -- anti-magic crackling off him
 					end
 					if not air then
-						blackSmoke(feetOf(character, root) + UP * 0.3, 2, 1.6, 4)
+						local feet = feetOf(character, root)
+						blackSmoke(feet + UP * 0.3, 2, 1.6, 4)
+						local from = trench
+						if from and (feet - from).Magnitude > 0.5 and (feet - from).Magnitude < 14 then
+							U.groove(from, feet, 0.7, RED, 1.6)
+						end
+						trench = feet
 					end
 				end
 			end)
@@ -1508,6 +1522,7 @@ function handlers.BullThrust(data, character, root)
 	elseif phase == "Catch" then
 		local position: Vector3 = data.position
 		local direction = root.CFrame.LookVector
+		U.impactSpikes(position, RED, 10, 7, 0.24, WHITE_HOT)
 		U.flash(position, BLACK, 5, 0.15)
 		U.flash(position, WHITE, 3, 0.08)
 		U.impactRing(position, direction, RED, 0.6, 4.5, 0.22)
@@ -1645,6 +1660,7 @@ local function grasp(character: Model, root: BasePart, air: boolean)
 		return
 	end
 	local forward = root.CFrame.LookVector
+	U.impactSpikes(at, RED, 8, 4, 0.2, WHITE_HOT)
 	U.flash(at, WHITE, 2, 0.06)
 	U.flash(at, BLACK, 4.5, 0.2)
 	U.flash(at, RED, 2.6, 0.12)
@@ -1770,6 +1786,7 @@ function handlers.BlackMeteorite(data, character, root)
 			end
 			U.flash(at, WHITE, 3, 0.08)
 			U.flash(at, BLACK, 5, 0.18)
+			U.impactSpikes(at, RED, 10, 6, 0.24, WHITE_HOT)
 			U.impactRing(at, root.CFrame.LookVector, RED, 0.4, 3.5, 0.2)
 			redSparks(at, 12, 0.7)
 			U.highlight(target, BLACK, 0.3)
@@ -1838,6 +1855,8 @@ function handlers.BlackMeteorite(data, character, root)
 			U.groundCracks(feet, 8, 6, RED, 2)
 			U.groundRocks(feet, 8, 3, 1.6)
 			U.debris(feet, 8, 38, 1)
+			U.scorch(feet, 4.5, RED, 2.5)
+			U.dustWave(feet, 14)
 			blackSmoke(feet + UP * 0.5, 16, 3.5, 18)
 			U.light(feet, RED, 8, 18, 0.35)
 		else
@@ -1998,6 +2017,9 @@ function handlers.BlackMeteorite(data, character, root)
 		U.flash(position + UP, WHITE, 6, 0.08)
 		U.flash(position + UP, BLACK, 16, 0.35)
 		U.flash(position + UP, RED, 10, 0.25)
+		U.impactSpikes(position + UP * 2, RED, 18, 16, 0.36, WHITE_HOT)
+		U.scorch(position, 9, RED, 3.5)
+		U.dustWave(position, 22)
 		U.shockwave(position, BLACK, 4, 30, 0.5, Enum.Material.Glass, 0.35)
 		U.shockwave(position, RED, 3, 24, 0.45)
 		U.ringBurst(CFrame.new(position + UP * 0.2), BLACK, 1.5, 20, 0.5, 0.7)
@@ -2170,6 +2192,9 @@ function handlers.BlackDivider(data, character, root)
 			end
 			local spot = ground.Position
 			U.flash(spot + UP, BLACK, if perfect then 12 else 7, 0.25)
+			U.impactSpikes(spot + UP, RED, if perfect then 14 else 10, if perfect then 12 else 8, 0.28, WHITE_HOT)
+			U.scorch(spot, if perfect then 6 else 4, RED, 2.5)
+			U.dustWave(spot, if perfect then 14 else 10)
 			U.ringBurst(CFrame.new(spot + UP * 0.2), BLACK, 1, if perfect then 14 else 9, 0.35, 0.4)
 			task.delay(0.04, U.ringBurst, CFrame.new(spot + UP * 0.3), RED, 0.8, if perfect then 10 else 6, 0.3, 0.2)
 			U.groundCracks(spot, if perfect then 10 else 6, if perfect then 9 else 5, RED, 2)
@@ -2234,6 +2259,18 @@ function handlers.BlackDivider(data, character, root)
 
 		local front = root.Position + look * 5
 		local feet = feetOf(character, root)
+		U.impactSpikes(front, RED, if perfect then 14 else 10, if perfect then 11 else 8, 0.28, WHITE_HOT)
+		U.dustWave(feet, if perfect then 14 else 10)
+		-- The crescent it burns into the ground in front of him, as it sweeps.
+		local reach = if perfect then 6.6 else 5.8
+		local arc: { Vector3 } = {}
+		for i = 0, 8 do
+			local angle = rad(70 - 140 * i / 8)
+			arc[i + 1] = feet + (root.CFrame.RightVector * math.sin(angle) + look * math.cos(angle)) * reach
+		end
+		for i = 1, 8 do
+			task.delay(0.1 * (i - 1) / 8, U.groove, arc[i], arc[i + 1], if perfect then 0.8 else 0.6, RED, 1.8)
+		end
 		-- The cut's wind: rings, dust and a cone of sparks.
 		U.ringBurst(CFrame.new(root.Position + UP * 0.2), WHITE, 2, if perfect then 16 else 10, 0.3, 0.12)
 		U.ringBurst(CFrame.new(root.Position + UP * 0.2), BLACK, 2, if perfect then 20 else 12, 0.4, 0.35)
@@ -2412,6 +2449,22 @@ local function openBarrier(character: Model, root: BasePart, duration: number)
 	end
 	barriers[character] = close
 	task.delay(duration, close, false)
+	crackle(disc, duration, 0.1, radius * 0.9)
+	partEmitter(disc, {
+		Texture = U.textures.Smoke,
+		Color = ColorSequence.new(BLACK),
+		LightEmission = 0,
+		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.8), NumberSequenceKeypoint.new(1, 2) }),
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.35),
+			NumberSequenceKeypoint.new(1, 1),
+		}),
+		Lifetime = NumberRange.new(0.25, 0.45),
+		Rate = 30,
+		Speed = NumberRange.new(1, 3),
+		SpreadAngle = Vector2.new(180, 180),
+		Drag = 2,
+	}, duration)
 end
 
 local function closeBarrier(character: Model, shatter: boolean)
@@ -2465,6 +2518,7 @@ function handlers.Deflect(data, character, root)
 
 		-- Their attack lands on the anti-magic blade.
 		U.sparks(contact, (flat + UP * 0.6).Unit, 1.6)
+		U.impactSpikes(contact, RED, 14, 10, 0.3, WHITE_HOT)
 		U.flash(contact, WHITE, 6, 0.12)
 		glowBurst(contact, 5, 0.3)
 		bloomPulse(contact, 1, 0.3)
@@ -2500,6 +2554,7 @@ function handlers.Deflect(data, character, root)
 			local p = targetRoot.Position + UP * 0.5
 			local side = root.CFrame.RightVector
 			slashMark(p, -0.6, 8, 0.35)
+			U.impactSpikes(p, RED, 10, 8, 0.26, WHITE_HOT)
 			task.delay(0.03, slashMark, p, -0.52, 6, 0.3)
 			blackLightning(p, 6, 4.5)
 			U.impactRing(p, side, RED, 0.8, 7, 0.3)
@@ -2541,6 +2596,7 @@ function handlers.Deflect(data, character, root)
 		task.delay(0.15, blackLightning, front, 4, 3.5, 0.2)
 		task.delay(0.15, U.flash, front, RED, 4, 0.12)
 		U.sparks(front, direction, 1.3)
+		U.impactSpikes(front, RED, 12, 8, 0.26, WHITE_HOT)
 		U.flash(front, BLACK, 8, 0.2)
 		U.impactRing(front, direction, RED, 0.6, 6, 0.25)
 		task.delay(0.05, U.impactRing, front + direction, direction, BLACK, 0.5, 5, 0.25)
@@ -3023,6 +3079,8 @@ function handlers.Special(data, character, root)
 		task.delay(0.04, U.ringBurst, CFrame.new(feet + UP * 0.2), RED, 0.8, 6, 0.28, 0.18)
 		U.groundCracks(feet, 6, 4.5, RED, 1.6)
 		U.debris(feet, 7, 34, 0.9)
+		U.scorch(feet, 3.5, RED, 2)
+		U.dustWave(feet, 12)
 		blackSmoke(feet + UP * 0.4, 14, 3.2, 16)
 		U.burst(feet, {
 			texture = U.textures.Smoke,
@@ -3077,6 +3135,9 @@ function handlers.Special(data, character, root)
 		U.flash(position + UP, WHITE, 4, 0.07)
 		U.flash(position + UP, BLACK, 11, 0.28)
 		U.flash(position + UP, RED, 7, 0.2)
+		U.impactSpikes(position + UP * 1.5, RED, 14, 12, 0.3, WHITE_HOT)
+		U.scorch(position, 6, RED, 3)
+		U.dustWave(position, 16)
 		U.shockwave(position, RED, 2, 17, 0.35)
 		U.shockwave(position, BLACK, 3, 20, 0.4, Enum.Material.Glass, 0.45)
 		U.ringBurst(CFrame.new(position + UP * 0.2), BLACK, 1, 13, 0.4, 0.5)
@@ -5899,6 +5960,9 @@ VFX.RegisterKitEffect("AntiMagic", "Dash", function(data)
 	local feet = if ground then ground.Position else root.Position - UP * 3
 	blackSmoke(feet + UP * 0.4, 6, 2.2, 7)
 	U.ringBurst(CFrame.new(feet + UP * 0.1), BLACK, 0.6, 3.5, 0.25, 0.14)
+	if ground then
+		U.dustWave(feet, 4, nil, 8)
+	end
 
 	-- Sparks fly off opposite to the dash.
 	local away = -(root.CFrame:VectorToWorldSpace(DASH_DIRECTIONS[direction] or DASH_DIRECTIONS.Front))

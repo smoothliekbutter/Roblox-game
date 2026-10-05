@@ -19,6 +19,7 @@ local Cinematic = require(script.Parent.Parent.Cinematic)
 local M1Animations = require(script.Parent.Parent.M1Animations)
 local PoseAnimator = require(script.Parent.Parent.PoseAnimator)
 local VFX = require(script.Parent.Parent.VFX)
+local Hawk = require(script.Hawk)
 local Saint = require(script.Saint)
 local Soft = require(script.Parent.Parent.Soft)
 local Nova = require(script.Nova)
@@ -217,6 +218,55 @@ local function featherBurst(position: Vector3, count: number, speed: number)
 	end
 end
 
+-- A feather of wind drifting in to a point from round it, turning as it
+-- comes and fading as it gets there (something of wind taking shape).
+local function featherIn(target: Vector3, radius: number)
+	local from = target + U.randomUnit() * radius
+	local feather = newWedge({
+		Size = Vector3.new(0.05, 0.28, 0.9),
+		Color = WIND_WHITE,
+		Material = Enum.Material.ForceField,
+		Transparency = 0.15,
+		CFrame = CFrame.new(from) * U.randomAngles(),
+	})
+	U.tween(
+		feather,
+		0.22,
+		{ CFrame = CFrame.new(target) * U.randomAngles(), Transparency = 1 },
+		Enum.EasingStyle.Quad,
+		Enum.EasingDirection.In
+	)
+	task.delay(0.25, feather.Destroy, feather)
+end
+
+-- Feathers of wind left drifting down after a burst, rocking and turning
+-- as they fall, fading away.
+local function featherDrift(position: Vector3, count: number)
+	for _ = 1, count do
+		local start = position + U.randomUnit() * 2.5
+		local feather = newWedge({
+			Size = Vector3.new(0.05, 0.28, 0.9),
+			Color = WIND_WHITE,
+			Material = Enum.Material.ForceField,
+			Transparency = 0.15,
+			CFrame = CFrame.new(start),
+		})
+		local life = 1 + math.random() * 0.6
+		local turn = (math.random() - 0.5) * 3
+		local seed = math.random() * math.pi * 2
+		every(life, function(elapsed)
+			local drift =
+				Vector3.new(math.sin(elapsed * 4 + seed) * 0.8, -elapsed * 2.2, math.cos(elapsed * 3 + seed) * 0.5)
+			feather.CFrame = CFrame.new(start + drift)
+				* CFrame.Angles(math.sin(elapsed * 5 + seed) * 0.6, seed + elapsed * turn, math.cos(elapsed * 4) * 0.5)
+			feather.Transparency = 0.15 + 0.85 * (elapsed / life) ^ 2
+			return true
+		end, function()
+			feather:Destroy()
+		end)
+	end
+end
+
 -- Wind Blades Shower: a vortex of wind forms over the spot (rings of wind
 -- turning, wind and glitter pouring down out of it) and a circle of wind
 -- marks the ground under it; blades fill the sky in it (white blades with
@@ -260,6 +310,9 @@ local function fallingBlade(target: Vector3, formDelay: number, fallAt: number, 
 		for i, part in parts do
 			U.tween(part, 0.2, { Transparency = shown[i] })
 		end
+		if alive() then
+			twinkle(start, 1.4, WIND, 0.2)
+		end
 	end)
 	task.delay(fallAt, function()
 		if not alive() then
@@ -294,6 +347,11 @@ local function fallingBlade(target: Vector3, formDelay: number, fallAt: number, 
 				streaks = true,
 				spread = 70,
 			})
+			-- The cut it left in the ground, glowing as it cools.
+			local across = cframe.UpVector
+			across = Vector3.new(across.X, 0, across.Z)
+			across = if across.Magnitude > 0.1 then across.Unit else Vector3.xAxis
+			U.groove(target - across * 0.9, target + across * 0.9, 0.3, WIND_WHITE, 1.2)
 			windPuff(target + UP * 0.3, 1.2, UP)
 			lightRing(target + UP * 0.15, UP, 0.3, 2.6, 0.22, WIND_WHITE)
 			U.ringBurst(CFrame.new(target + UP * 0.1), WIND, 0.4, 2.4, 0.22, 0.08)
@@ -318,6 +376,7 @@ function handlers.WindBladesShower(data, character, root)
 		local radius: number = data.radius
 		local delay: number = data.delay
 		local length = delay + data.waves * data.gap
+		local start = os.clock()
 		-- Where it will fall: a circle of wind on the ground, and a vortex of
 		-- wind in the sky over it, wind and glitter pouring down out of it.
 		local sky = center + UP * 22
@@ -414,6 +473,16 @@ function handlers.WindBladesShower(data, character, root)
 		end)
 		windRing(sky, UP, 1, radius + 4, 0.4)
 		U.light(sky, WIND, 3, radius * 3, length)
+		-- Ribbons of wind spiralling down out of the vortex to the ground.
+		local pouring = Soft.helix(function()
+			return sky, center + UP * 0.5
+		end, radius * 0.8, 4, 0.55, 1.4, 0.55, length, WIND)
+		task.spawn(function()
+			while alive() and os.clock() - start < length do
+				task.wait(0.05)
+			end
+			pouring()
+		end)
 		local hand = handOf(character, "Right")
 		if hand then
 			gust(hand, 3, UP)
@@ -443,6 +512,22 @@ function handlers.WindBladesShower(data, character, root)
 			windRing(center + UP * 0.3, UP, 1, radius + 5, 0.45)
 			lightRing(center + UP * 0.2, UP, 1, radius + 3, 0.35, WIND_WHITE)
 			U.groundCracks(center, 6, radius * 0.7, WIND, 1)
+			-- The last blades throw it all up: a burst of wind up the middle.
+			U.impactSpikes(center + UP * 1.5, WIND, 12, 9, 0.28, STAR_WHITE)
+			U.dustWave(center, radius + 3)
+			featherBurst(center + UP, 10, 16)
+			local foot, top = worldAnchor(center, UP), worldAnchor(center + UP * 16, UP)
+			fadeBeams({
+				softBeam(foot, top, {
+					color = ColorSequence.new(WIND_WHITE, WIND),
+					width0 = radius * 0.9,
+					width1 = radius * 1.3,
+					transparency = NumberSequence.new({ key(0, 0.85), key(0.2, 0.55), key(1, 1) }),
+					texture = SMOKE,
+					speed = 10,
+					length = 8,
+				}),
+			}, 0.5, { foot, top })
 			if (workspace.CurrentCamera.CFrame.Position - center).Magnitude < 40 then
 				CameraShake.Add(0.12)
 			end
@@ -452,10 +537,12 @@ function handlers.WindBladesShower(data, character, root)
 	end
 end
 
--- Swift White Hawk: a hawk of wind (white core, green wings beating, wind
--- streaming off its wingtips, a long ribbon of wind behind it) flies out
--- and curves after its target, bursting into feathers of wind when it
--- strikes.
+-- Swift White Hawk: a hawk of wind (see Hawk: a white-hot body, feathered
+-- wings beating, a gold beak, wind streaming off its wingtips and a long
+-- ribbon of wind behind it) takes shape in his hand out of feathers of wind,
+-- bursts out of it and flies, banking as it curves after its target, and
+-- bursts into feathers of wind when it strikes: a star of light, rings and
+-- a dome of wind, wind swirling where it was, feathers drifting down.
 local hawks: { [Model]: { done: boolean, position: Vector3, direction: Vector3 } } = {}
 
 function handlers.SwiftWhiteHawk(data, character, root)
@@ -468,60 +555,35 @@ function handlers.SwiftWhiteHawk(data, character, root)
 			end
 			twinkle(hand, 2, WIND, 0.2)
 		end
+		-- Feathers of wind swirling in to his hand as it takes shape.
+		for i = 0, 7 do
+			task.delay(i * 0.025, function()
+				local palm = handOf(character, "Right")
+				if palm then
+					featherIn(palm, 3.5)
+				end
+			end)
+		end
 	elseif data.phase == "Fly" then
 		local direction: Vector3 = data.direction
 		local state = { done = false, position = data.origin :: Vector3, direction = direction }
 		hawks[character] = state
 		local target: Model? = data.target
-		local body = U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.new(1, 1, 1), Color = WIND_WHITE })
-		local aura = U.newPart({
-			Shape = Enum.PartType.Ball,
-			Size = Vector3.new(2.2, 2.2, 2.2),
-			Color = WIND,
-			Transparency = 0.65,
-		})
-		local head = U.newPart({ Size = Vector3.new(0.6, 0.6, 0.9), Color = WIND_WHITE })
-		local wings = {
-			U.newPart({ Size = Vector3.new(3, 0.08, 1.2), Color = WIND, Transparency = 0.2 }),
-			U.newPart({ Size = Vector3.new(3, 0.08, 1.2), Color = WIND, Transparency = 0.2 }),
-		}
-		local tail = U.newPart({ Size = Vector3.new(1.2, 0.06, 1.6), Color = WIND, Transparency = 0.3 })
+		local hawk = Hawk.new(CFrame.lookAt(state.position, state.position + direction))
+		local glow = Soft.glow(hawk.body, WIND, 4.5, 0.86)
 		local light = Instance.new("PointLight")
 		light.Color = WIND
 		light.Range = 14
 		light.Brightness = 3
-		light.Parent = body
-		-- Where it starts (before its trails go on, so they start there).
-		local start = CFrame.lookAt(state.position, state.position + direction)
-		body.CFrame = start
-		wings[1].CFrame = start * CFrame.new(1.5, 0, 0.1)
-		wings[2].CFrame = start * CFrame.new(-1.5, 0, 0.1)
-		-- A long ribbon of wind behind it, and wind off each wingtip.
-		local trails = {
-			Soft.trail(body, Vector3.new(0, 1, 0.4), Vector3.new(0, -1, 0.4), {
-				color = ColorSequence.new(WIND_WHITE, WIND),
-				transparency = NumberSequence.new({ key(0, 0.35), key(1, 1) }),
-				width = NumberSequence.new({ key(0, 1), key(1, 0.2) }),
-				lifetime = 0.4,
-				texture = SMOKE,
-			}),
-			Soft.trail(wings[1], Vector3.new(1.4, 0, -0.4), Vector3.new(1.4, 0, 0.4), {
-				color = ColorSequence.new(WIND_WHITE, WIND),
-				transparency = NumberSequence.new({ key(0, 0.3), key(1, 1) }),
-				lifetime = 0.2,
-			}),
-			Soft.trail(wings[2], Vector3.new(-1.4, 0, -0.4), Vector3.new(-1.4, 0, 0.4), {
-				color = ColorSequence.new(WIND_WHITE, WIND),
-				transparency = NumberSequence.new({ key(0, 0.3), key(1, 1) }),
-				lifetime = 0.2,
-			}),
-		}
-		local glow = Soft.glow(body, WIND, 4.5, 0.86)
+		light.Parent = hawk.body
 		local travelled = 0
-		every(data.range / data.speed + 0.3, function(elapsed, dt)
+		local beat = 0
+		local bank = 0
+		every(data.range / data.speed + 0.3, function(_, dt)
 			if state.done then
 				return false
 			end
+			local before = direction
 			local targetRoot = target and U.getRoot(target)
 			if targetRoot then
 				local want = (targetRoot.Position - state.position).Unit
@@ -534,30 +596,26 @@ function handlers.SwiftWhiteHawk(data, character, root)
 			local step = data.speed * dt
 			state.position += direction * step
 			travelled += step
-			local frame = CFrame.lookAt(state.position, state.position + direction)
-			body.CFrame = frame
-			aura.CFrame = frame
-			head.CFrame = frame * CFrame.new(0, 0.15, -0.8)
-			local flap = math.sin(elapsed * 22) * rad(35)
-			wings[1].CFrame = frame * CFrame.Angles(0, 0, flap) * CFrame.new(1.5, 0, 0.1)
-			wings[2].CFrame = frame * CFrame.Angles(0, 0, -flap) * CFrame.new(-1.5, 0, 0.1)
-			tail.CFrame = frame * CFrame.new(0, 0, 1.1)
+			-- Banking into its turns (the wing on the inside of the turn down).
+			local turning = if dt > 0 then before:Cross(direction).Y / dt else 0
+			bank += (math.clamp(turning * 0.35, -0.9, 0.9) - bank) * math.min(dt * 10, 1)
+			beat += dt * 22
+			Hawk.Place(hawk, CFrame.lookAt(state.position, state.position + direction), beat, bank)
 			return travelled < data.range
 		end, function()
 			hawks[character] = nil
-			for _, trail in trails do
-				Soft.endTrail(trail)
-			end
 			glow.Enabled = false
-			fadeOut({ aura, head, tail }, 0.12)
-			Soft.linger(body, 0.12, 0.55)
-			Soft.linger(wings[1], 0.12, 0.35)
-			Soft.linger(wings[2], 0.12, 0.35)
+			light.Enabled = false
+			Hawk.Release(hawk, 0.12)
 		end)
 		local hand = handOf(character, "Right")
 		if hand then
+			-- It bursts out of his hand.
+			U.flash(hand, WIND_WHITE, 2.6, 0.12)
 			gust(hand, 3, direction)
 			windRing(hand, direction, 0.4, 4, 0.25)
+			lightRing(hand, direction, 0.2, 2.6, 0.18, WIND_WHITE)
+			featherBurst(hand, 6, 9)
 		end
 	elseif data.phase == "Burst" then
 		local state = hawks[character]
@@ -569,14 +627,20 @@ function handlers.SwiftWhiteHawk(data, character, root)
 		if data.fade then
 			gust(position, 3)
 			featherBurst(position, 6, 10)
+			featherDrift(position, 3)
 			return
 		end
+		U.flash(position, WIND_WHITE, 5, 0.12)
+		U.impactSpikes(position, WIND, 10, 7, 0.26, STAR_WHITE)
+		twinkle(position, 4, WIND, 0.25)
 		gust(position, 7)
 		U.shockwave(position, WIND, 2, 9, 0.3)
 		windRing(position, direction, 1, 9, 0.3)
+		task.delay(0.05, windRing, position, direction, 0.5, 6, 0.28)
 		lightRing(position, direction, 0.5, 6, 0.22, WIND_WHITE)
 		windPuff(position, 3, direction)
 		featherBurst(position, 14, 18)
+		featherDrift(position, 7)
 		U.burst(position, {
 			color = WIND,
 			count = 18,
@@ -586,6 +650,11 @@ function handlers.SwiftWhiteHawk(data, character, root)
 			spread = 180,
 			drag = 3,
 		})
+		-- Wind left swirling where it burst.
+		Soft.helix(function()
+			return position - UP * 1.5, position + UP * 2.5
+		end, 2.2, 3, 0.3, 1.2, 0.45, 0.4, WIND)
+		U.light(position, WIND, 5, 16, 0.3)
 		if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 30 then
 			CameraShake.Add(0.15)
 		end
@@ -634,10 +703,17 @@ function handlers.HeavenlyWindArk(data, character, root)
 				part:Destroy()
 			end
 		end)
-		-- The soft crescent over the arc, carried with it.
+		-- The soft crescent over the arc, carried with it, and a fainter one
+		-- just behind it.
 		local crescent = windSlash(points[1], points[#points], (if air then -UP else UP) * 6, 1.3, 0.08)
 		crescent.move(shift, 0.45)
 		task.delay(0.15, crescent.fade, 0.35)
+		task.delay(0.05, function()
+			local echo = windSlash(points[1], points[#points], (if air then -UP else UP) * 5, 0.8, 0.08)
+			echo.move(shift * 0.8, 0.45)
+			task.delay(0.1, echo.fade, 0.3)
+		end)
+		U.impactSpikes(center + (if air then -UP else UP) * 1.5, WIND, 10, 8, 0.26, STAR_WHITE)
 		if air then
 			U.burst(center, {
 				color = WIND_WHITE,
@@ -651,6 +727,20 @@ function handlers.HeavenlyWindArk(data, character, root)
 			})
 			windRing(center, UP, 1, 10, 0.35)
 			windPuff(center, 3, -UP)
+			-- It comes down on the ground below.
+			local below = U.groundBelow(center, { character }, 16)
+			if below then
+				local at = below.Position
+				task.delay(0.12, function()
+					U.flash(at + UP, WIND_WHITE, 6, 0.14)
+					windRing(at + UP * 0.3, UP, 1, 12, 0.4)
+					lightRing(at + UP * 0.2, UP, 0.5, 9, 0.3, WIND_WHITE)
+					U.dustWave(at, 10)
+					U.groundCracks(at, 6, 5, WIND, 1)
+					U.debris(at, 8, 34, 0.7)
+					gust(at + UP, 5, UP)
+				end)
+			end
 		else
 			U.pillar(center, WIND, 3.5, 14, 0.4, Enum.Material.ForceField, 0.3)
 			-- A column of wind carrying it up.
@@ -688,6 +778,12 @@ function handlers.HeavenlyWindArk(data, character, root)
 			windPuff(center + UP, 3, UP)
 			U.groundCracks(center, 4, 5, WIND, 0.8)
 			U.debris(center, 6, 30, 0.6)
+			U.dustWave(center, 10)
+			featherBurst(center + UP * 2, 8, 14)
+			-- Ribbons of wind spiralling up the column.
+			Soft.helix(function()
+				return center, center + UP * 16
+			end, 4.5, 3, 0.35, 1.2, 0.7, 0.45, WIND)
 		end
 		U.light(center, WIND, 4, 18, 0.35)
 		if U.isLocal(character) then
@@ -929,9 +1025,24 @@ function handlers.GaleWhiteBow(data, character, root)
 		local core = arcParts(table.create(segments + 1, Vector3.zero), 0.08, WIND_WHITE, 0)
 		local strings = { bar(Vector3.zero, UP, 0.05, WIND_WHITE, 0.2), bar(Vector3.zero, UP, 0.05, WIND_WHITE, 0.2) }
 		local soft = bowArc()
+		-- A small wing of wind at each tip: two feathers flicking out past it.
+		local tips: { BasePart } = {}
+		for i = 1, 4 do
+			local long = i % 2 == 1
+			local feather = U.newPart({
+				Size = Vector3.new(0.05, if long then 0.34 else 0.28, if long then 1.15 else 0.8),
+				Color = if long then WIND_WHITE else WIND,
+				Transparency = if long then 0.2 else 0.3,
+			})
+			local mesh = Instance.new("SpecialMesh")
+			mesh.MeshType = Enum.MeshType.Sphere
+			mesh.Parent = feather
+			table.insert(tips, feather)
+		end
 		local all = table.clone(limbs)
 		table.move(core, 1, #core, #all + 1, all)
 		table.move(strings, 1, 2, #all + 1, all)
+		table.move(tips, 1, #tips, #all + 1, all)
 		local bow: Bow = {
 			stop = function() end,
 			nocked = makeArrow(1),
@@ -979,6 +1090,18 @@ function handlers.GaleWhiteBow(data, character, root)
 			poseArc(limbs, points)
 			poseArc(core, points)
 			soft.set(center, forward, UP, radius, -1.1, 1.1)
+			for i, feather in tips do
+				local top = i <= 2
+				local long = i % 2 == 1
+				local tip = if top then points[#points] else points[1]
+				local before = if top then points[#points - 1] else points[2]
+				local out = (tip - before).Unit
+				-- (the long one leaning out ahead of the bow, the short one back)
+				local along = (out + forward * (if long then 0.35 else -0.2)).Unit
+				local length = (if long then 1.15 else 0.8) * grow + 0.05
+				feather.Size = Vector3.new(0.05, (if long then 0.34 else 0.28) * grow + 0.02, length)
+				feather.CFrame = CFrame.fromMatrix(tip + along * (length / 2 - 0.1), right, (-along):Cross(right))
+			end
 			local nock = pull + right * 0.1
 			strings[1].Size = Vector3.new(0.05, 0.05, (points[1] - nock).Magnitude)
 			strings[1].CFrame = CFrame.lookAt(points[1]:Lerp(nock, 0.5), nock)
@@ -1022,6 +1145,8 @@ function handlers.GaleWhiteBow(data, character, root)
 			bow.nocked = nil
 		end
 		flyingArrow(origin, direction, data.speed, data.range, if data.last then 1.4 else 1, nocked)
+		-- The string snaps: a star of light off the bow.
+		U.impactSpikes(origin, WIND, if data.last then 10 else 6, if data.last then 6 else 3.5, 0.18, STAR_WHITE)
 		gust(origin, if data.last then 4 else 2, direction)
 		U.impactRing(origin, direction, WIND_WHITE, 0.4, if data.last then 4 else 2.4, 0.18)
 		windRing(origin, direction, 0.4, if data.last then 5 else 3, 0.22)
@@ -1087,6 +1212,34 @@ function handlers.GaleWhiteBow(data, character, root)
 		end
 		flyingArrow(origin, direction, data.speed, data.range, 1.8, drawn)
 		U.flash(origin, WIND_WHITE, 7, 0.18)
+		U.impactSpikes(origin, WIND, 14, 11, 0.3, STAR_WHITE)
+		-- Wind spiralling down its line, and a wake of dust kicked up off the
+		-- ground under it as it goes.
+		Soft.helix(function()
+			return origin, origin + direction * 40
+		end, 1.6, 3, 0.22, 3, 0.5, 0.4, WIND)
+		for i = 1, 7 do
+			local at = origin + direction * (4 + i * 6)
+			task.delay((4 + i * 6) / data.speed, function()
+				local below = U.groundBelow(at, { character }, 6)
+				if below then
+					windPuff(below.Position + UP * 0.5, 2, UP)
+					U.burst(below.Position, {
+						texture = SMOKE,
+						color = Color3.fromRGB(190, 198, 188),
+						count = 3,
+						size = 2.5,
+						speed = NumberRange.new(6, 12),
+						lifetime = NumberRange.new(0.4, 0.7),
+						lightEmission = 0,
+						transparency = 0.5,
+						spread = 50,
+						direction = UP,
+						drag = 3,
+					})
+				end
+			end)
+		end
 		twinkle(origin, 7, STAR, 0.3)
 		gust(origin, 7, direction)
 		U.shockwave(origin, WIND, 2, 12, 0.3)
@@ -1210,6 +1363,11 @@ function handlers.Conjunction(data, character, root)
 		local line = bar(from, spot, 0.25, STAR_WHITE, 0.1)
 		local glow = bar(from, spot, 0.9, STAR, 0.6)
 		fadeOut({ line, glow }, 0.25)
+		-- A ghost of him left standing where he was, dissolving into starlight.
+		U.afterimage(character, STAR, 0.45, from - root.Position)
+		starDust(from, 16, 14)
+		featherBurst(spot, 6, 10)
+		U.impactSpikes(spot, STAR, 10, 6, 0.24, STAR_WHITE)
 		local a0, a1 = worldAnchor(from, spot - from), worldAnchor(spot, spot - from)
 		fadeBeams({
 			Soft.starStream(a0, a1, 1.2, 14),
@@ -2280,13 +2438,57 @@ end
 
 -- Spirit of Boreas: a great axe of wind forms in his raised hands (a haft
 -- of light and a crescent head: a white-hot edge round a see-through blade
--- of wind, wind pouring off it), comes down in one chop, and the ground
--- splits in a line ahead: the earth bursting up along it in a wave, a seam
--- of wind down it, cracks and rocks. From the air it chops down at the
--- ground ahead and below.
+-- of wind, wind pouring off it) and comes down in one chop, gathering speed
+-- all the way, until its edge bites into the ground in front of him. It
+-- stops dead there, buried, shudders, and breaks up into wind. Where it
+-- bit, the ground is cut open (a flash and a star of light, a gash, rocks
+-- and dust thrown up, a dome of wind) and it splits on ahead in a line: a
+-- seam torn along the ground glowing as it cools, the earth bursting up in
+-- a wave, blades of wind out of the split, cracks and rocks. From the air
+-- it chops at the ground ahead and below and throws a cut of wind down
+-- onto it.
 local AXE_HAFT = 7
-type Axe = { swing: (number) -> (), stop: () -> () }
+-- The middle of the head's edge, in the axe's space (the haft runs up +Y).
+local AXE_EDGE = Vector3.new(0, AXE_HAFT - 2.4, -4)
+local AXE_RAISED = -18 -- degrees round from straight up toward his front: over his head
+local AXE_DOWN = 122 -- as far round as it comes (with nothing in reach to bite)
+local AXE_BITE = 1 -- studs the edge bites into the ground
+local AXE_SWING = 0.1 -- seconds from raised to the bite (BoreasChop's strike)
+
+type Axe = {
+	-- Brings it down over `duration`: round until its edge is AXE_BITE into
+	-- the floor at height `floorY` (then it stays there, buried), or all the
+	-- way round if that's out of reach (or there's no floor: nil). Calls
+	-- `bite(edge, buried)` when it gets there.
+	chop: (duration: number, floorY: number?, bite: (Vector3, boolean) -> ()) -> (),
+	stop: () -> (),
+}
 local axes: { [Model]: Axe } = {}
+
+-- How far below his hands the edge is with the haft `angle` degrees round
+-- from straight up toward his front (lower the further round it comes).
+local function edgeDrop(angle: number): number
+	local a = rad(angle)
+	return -(AXE_EDGE.Y * math.cos(a) + AXE_EDGE.Z * math.sin(a))
+end
+
+-- How far round the haft has to come for the edge to be `drop` below his
+-- hands (AXE_DOWN when it can't reach that far).
+local function biteAngle(drop: number): number
+	local lo, hi = 20, AXE_DOWN
+	if edgeDrop(hi) <= drop then
+		return hi
+	end
+	for _ = 1, 24 do
+		local mid = (lo + hi) / 2
+		if edgeDrop(mid) < drop then
+			lo = mid
+		else
+			hi = mid
+		end
+	end
+	return (lo + hi) / 2
+end
 
 local function windAxe(character: Model, root: BasePart): Axe
 	local hub = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1 })
@@ -2419,27 +2621,47 @@ local function windAxe(character: Model, root: BasePart): Axe
 	light.Range = 22
 	light.Brightness = 3
 	light.Parent = hub
-	local swing = 0
+	-- Raised over his head until chop(); then round, faster and faster, to
+	-- the bite; then it stays where it bit.
+	local chopStart: number? = nil
+	local chopTime = AXE_SWING
+	local floor: number? = nil
+	local onBite: ((Vector3, boolean) -> ())? = nil
+	local planted: CFrame? = nil
+	local bitAt = 0
 	local alive = true
 	every(4, function(elapsed)
 		if not alive or not root.Parent then
 			return false
 		end
-		local right, left = handOf(character, "Right"), handOf(character, "Left")
-		local hands = if right and left then right:Lerp(left, 0.5) else root.Position + UP * 3
-		local forward = root.CFrame.LookVector
-		local side = root.CFrame.RightVector
-		-- Raised over his head, then down at the ground ahead.
-		local raised = (UP * 0.92 - forward * 0.3).Unit
-		local struck = (forward * 0.85 - UP * 0.5).Unit
-		local s = swing * swing * (3 - 2 * swing)
-		local haft = raised:Lerp(struck, s).Unit
-		local grow = math.min(elapsed / 0.2, 1)
-		hub.CFrame = CFrame.fromMatrix(hands, side, haft)
-		if alive then
-			Soft.beginTrail(sheet) -- (once it's in his hands)
-			pour.Enabled = true
+		if planted then
+			-- Buried: the haft shudders from the blow (about the buried edge).
+			local since = os.clock() - bitAt
+			local shudder = math.sin(since * 70) * math.exp(-since * 16) * rad(3)
+			hub.CFrame = planted * CFrame.new(AXE_EDGE) * CFrame.Angles(shudder, 0, 0) * CFrame.new(-AXE_EDGE)
+		else
+			local right, left = handOf(character, "Right"), handOf(character, "Left")
+			local hands = if right and left then right:Lerp(left, 0.5) else root.Position + UP * 3
+			local forward = root.CFrame.LookVector
+			local side = root.CFrame.RightVector
+			local swing = if chopStart then math.min((os.clock() - chopStart) / chopTime, 1) else 0
+			local target = if floor then biteAngle(hands.Y - floor + AXE_BITE) else AXE_DOWN
+			local angle = rad(AXE_RAISED + (target - AXE_RAISED) * swing * swing)
+			hub.CFrame = CFrame.fromMatrix(hands, side, UP * math.cos(angle) + forward * math.sin(angle))
+			local bite = onBite
+			if swing >= 1 and bite then
+				onBite = nil
+				local buried = floor ~= nil and target < AXE_DOWN
+				if buried then
+					planted = hub.CFrame
+					bitAt = os.clock()
+				end
+				bite(hub.CFrame * AXE_EDGE, buried)
+			end
 		end
+		Soft.beginTrail(sheet) -- (once it's in his hands)
+		pour.Enabled = true
+		local grow = math.min(elapsed / 0.2, 1)
 		upper.CFrame = hub.CFrame * CFrame.new(0, h - 1.4, -2)
 		lower.CFrame = hub.CFrame * CFrame.new(0, h - 3.4, -2) * CFrame.Angles(0, 0, math.pi)
 		upper.Size = Vector3.new(0.1, 2 * grow, 4 * grow)
@@ -2447,8 +2669,11 @@ local function windAxe(character: Model, root: BasePart): Axe
 		return true
 	end)
 	local axe = {}
-	function axe.swing(value: number)
-		swing = value
+	function axe.chop(duration: number, floorY: number?, bite: (Vector3, boolean) -> ())
+		chopStart = os.clock()
+		chopTime = duration
+		floor = floorY
+		onBite = bite
 	end
 	function axe.stop()
 		if not alive then
@@ -2459,11 +2684,133 @@ local function windAxe(character: Model, root: BasePart): Axe
 		glow.Enabled = false
 		light.Enabled = false
 		Soft.endTrail(sheet)
+		-- It breaks up into wind, head first.
+		windPuff((hub.CFrame * CFrame.new(0, h - 2.4, -2)).Position, 3)
+		for i = 1, 3 do
+			windPuff((hub.CFrame * CFrame.new(0, h * i / 4, 0)).Position, 1.4)
+		end
+		twinkle((hub.CFrame * CFrame.new(0, h - 2.4, -3)).Position, 3, WIND, 0.2)
 		fadeOut({ upper, lower }, 0.25)
 		fadeBeams(beams, 0.25)
 		task.delay(0.6, hub.Destroy, hub) -- (after the sheet it swept has gone)
 	end
 	return axe
+end
+
+-- Where the axe bites into the ground: a flash and a star of light, the
+-- ground cut open along the blade and thrown up round it, a dome of wind,
+-- rings racing out and dust rolling away.
+local function axeBite(at: Vector3, forward: Vector3)
+	U.flash(at + UP * 0.6, STAR_WHITE, 7, 0.14)
+	U.flash(at + UP * 0.6, WIND, 12, 0.3)
+	U.impactSpikes(at + UP * 1.4, WIND, 12, 10, 0.3, STAR_WHITE)
+	twinkle(at + UP * 1.2, 8, WIND, 0.3)
+	lightRing(at + UP * 0.2, UP, 0.5, 13, 0.35, WIND_WHITE)
+	windRing(at + UP * 0.3, UP, 1, 15, 0.45)
+	task.delay(0.06, windRing, at + UP * 0.5, UP, 1, 9, 0.35)
+	U.shockwave(at, WIND, 2, 20, 0.45)
+	U.groove(at - forward * 1.6, at + forward * 2.2, 1.1, WIND_WHITE, 2.4)
+	U.groundRocks(at, 7, 1.4, 1.3)
+	U.debris(at, 14, 46, 0.8)
+	U.groundCracks(at, 8, 7, WIND, 1.6)
+	U.dustWave(at, 12)
+	gust(at + UP, 7, UP)
+	windPuff(at + UP * 0.5, 3.5, UP)
+	starDust(at + UP, 14, 26, UP)
+	U.light(at + UP * 2, WIND, 7, 36, 0.5)
+	if (workspace.CurrentCamera.CFrame.Position - at).Magnitude < 50 then
+		CameraShake.Add(0.3)
+	end
+end
+
+-- A cut of wind thrown from the axe down onto the ground (nothing there to
+-- bite: from the air, or over a drop).
+local function cleaveDown(from: Vector3, to: Vector3, side: Vector3)
+	local travel = to - from
+	if travel.Magnitude < 1 then
+		return
+	end
+	local along = travel.Unit
+	local cut = windSlash(from - side * 3.2, from + side * 3.2, along * 2.4, 1.1, 0.04)
+	cut.move(travel, 0.1)
+	task.delay(0.1, cut.fade, 0.25)
+	local a0, a1 = worldAnchor(from, along), worldAnchor(to, along)
+	fadeBeams({
+		softBeam(a0, a1, {
+			color = ColorSequence.new(WIND_WHITE, WIND),
+			width0 = 3,
+			width1 = 6,
+			transparency = NumberSequence.new({ key(0, 0.5), key(1, 0.8) }),
+			texture = SMOKE,
+			speed = 8,
+			length = 6,
+		}),
+	}, 0.35, { a0, a1 })
+end
+
+-- The ground splitting on from the bite to `last` in a wave: a seam torn
+-- along it glowing as it cools, the earth bursting up with blades of wind
+-- out of the split, cracks and rocks, a seam of wind down it and dust.
+local function groundSplit(first: Vector3, last: Vector3, side: Vector3)
+	local span = (last - first).Magnitude
+	if span < 2 then
+		return
+	end
+	local steps = math.max(math.floor(span / 3), 1)
+	local pace = 0.018 -- seconds a step
+	U.groove(first, last, 0.8, WIND_WHITE, 2.4, span / (steps * pace))
+	for i = 0, steps do
+		local point = first:Lerp(last, i / steps)
+		task.delay(i * pace, function()
+			windPuff(point + UP * 0.6, 2.4, UP)
+			if i % 2 == 0 then
+				U.groundRocks(point, 3, 2.2, 0.9)
+				-- A blade of wind bursting up out of the split.
+				local blade =
+					windSlash(point - side * 1.8 + UP * 0.2, point + side * 1.8 + UP * 0.2, UP * 2.8, 0.55, 0.04)
+				blade.move(UP * 4.5, 0.35)
+				task.delay(0.1, blade.fade, 0.3)
+			end
+			if i % 3 == 0 then
+				U.groundCracks(point, 3, 3.5, WIND, 1.2)
+			end
+			if i % 4 == 2 then
+				U.debris(point, 4, 30, 0.6)
+			end
+		end)
+	end
+	local a, b = worldAnchor(first + UP * 0.2, last - first), worldAnchor(last + UP * 0.2, last - first)
+	local seam = {
+		softBeam(a, b, {
+			color = ColorSequence.new(STAR_WHITE, WIND_WHITE),
+			width0 = 0.9,
+			width1 = 0.3,
+			transparency = NumberSequence.new({ key(0, 0.1), key(1, 0.5) }),
+		}),
+		softBeam(a, b, {
+			color = ColorSequence.new(WIND_WHITE, WIND),
+			width0 = 6,
+			width1 = 3,
+			transparency = NumberSequence.new({ key(0, 0.5), key(1, 0.8) }),
+			texture = SMOKE,
+			speed = 6,
+			length = 10,
+		}),
+	}
+	task.delay(0.3, fadeBeams, seam, 0.5, { a, b })
+	U.burst(first:Lerp(last, 0.5) + UP, {
+		texture = SMOKE,
+		color = Color3.fromRGB(190, 198, 188),
+		count = 16,
+		size = 4,
+		speed = NumberRange.new(10, 26),
+		lifetime = NumberRange.new(0.5, 0.9),
+		lightEmission = 0,
+		transparency = 0.5,
+		spread = 70,
+		direction = UP,
+		drag = 3,
+	})
 end
 
 function handlers.SpiritOfBoreas(data, character, root)
@@ -2491,106 +2838,57 @@ function handlers.SpiritOfBoreas(data, character, root)
 		end
 	elseif phase == "Chop" then
 		play(character, ANIMS.BoreasChop)
-		local axe = axes[character]
-		if axe then
-			every(0.1, function(elapsed)
-				axe.swing(elapsed / 0.1)
-				return true
-			end, function()
-				axe.swing(1)
-			end)
-		end
 		local origin: Vector3 = data.origin
 		local direction: Vector3 = data.direction
 		local length: number = data.length
+		local air = data.airborne == true
 		local forward = Vector3.new(direction.X, 0, direction.Z)
 		forward = if forward.Magnitude > 1e-3 then forward.Unit else root.CFrame.LookVector
-		task.delay(0.08, function()
-			-- Where the axe bites, and the line it splits along the ground.
-			local function floorAt(point: Vector3): Vector3
-				local hit = U.groundBelow(point, { character }, 30)
-				return if hit then hit.Position else point - UP * 3
+		local side = forward:Cross(UP).Unit
+		local function floorAt(point: Vector3): Vector3
+			local hit = U.groundBelow(point, { character }, 30)
+			return if hit then hit.Position else point - UP * 3
+		end
+		-- Where the split runs to (from the air: where the chop comes down),
+		-- and the floor in front of him for the axe to bite.
+		local last = if air then floorAt(origin + direction * length) else floorAt(origin + forward * length)
+		local ahead = if air then nil else U.groundBelow(root.Position + forward * 5, { character }, 12)
+		local struck = false
+		local function strike(edge: Vector3, buried: boolean)
+			if struck then
+				return
 			end
-			local first = floorAt(origin + forward * 2)
-			local last = if data.airborne
-				then floorAt(origin + direction * length)
-				else floorAt(origin + forward * length)
-			if data.airborne then
-				first = last
+			struck = true
+			if buried then
+				local bite = floorAt(edge + UP * (AXE_BITE + 1))
+				axeBite(bite, forward)
+				groundSplit(bite, last, side)
+				return
 			end
-			U.flash(first + UP, WIND_WHITE, 5, 0.15)
-			twinkle(first + UP, 6, WIND, 0.25)
-			lightRing(first + UP * 0.2, UP, 0.5, 10, 0.3, WIND_WHITE)
-			windRing(first + UP * 0.3, UP, 1, 12, 0.4)
-			U.shockwave(first, WIND, 2, 18, 0.4)
-			U.debris(first, 10, 40, 0.7)
-			gust(first + UP, 6, UP)
-			-- The ground splitting in a wave along the line.
-			local span = (last - first).Magnitude
-			local steps = math.max(math.floor(span / 3), 1)
-			local side = (last - first):Cross(UP)
-			side = if side.Magnitude > 1e-3 then side.Unit else root.CFrame.RightVector
-			for i = 0, steps do
-				local point = first:Lerp(last, i / steps)
-				task.delay(i * 0.018, function()
-					windPuff(point + UP * 0.6, 2.4, UP)
-					if i % 2 == 0 then
-						U.groundRocks(point, 3, 2.2, 0.9)
-						-- A blade of wind bursting up out of the split.
-						local blade = windSlash(
-							point - side * 1.8 + UP * 0.2,
-							point + side * 1.8 + UP * 0.2,
-							UP * 2.8,
-							0.55,
-							0.04
-						)
-						blade.move(UP * 4.5, 0.35)
-						task.delay(0.1, blade.fade, 0.3)
-					end
-					if i % 3 == 0 then
-						U.groundCracks(point, 3, 3.5, WIND, 1.2)
-					end
-				end)
-			end
-			if span > 1 then
-				local a, b = worldAnchor(first + UP * 0.2, last - first), worldAnchor(last + UP * 0.2, last - first)
-				local seam = {
-					softBeam(a, b, {
-						color = ColorSequence.new(STAR_WHITE, WIND_WHITE),
-						width0 = 0.9,
-						width1 = 0.3,
-						transparency = NumberSequence.new({ key(0, 0.1), key(1, 0.5) }),
-					}),
-					softBeam(a, b, {
-						color = ColorSequence.new(WIND_WHITE, WIND),
-						width0 = 6,
-						width1 = 3,
-						transparency = NumberSequence.new({ key(0, 0.5), key(1, 0.8) }),
-						texture = SMOKE,
-						speed = 6,
-						length = 10,
-					}),
-				}
-				task.delay(0.3, fadeBeams, seam, 0.5, { a, b })
-			end
-			U.burst(first:Lerp(last, 0.5) + UP, {
-				texture = SMOKE,
-				color = Color3.fromRGB(190, 198, 188),
-				count = 16,
-				size = 4,
-				speed = NumberRange.new(10, 26),
-				lifetime = NumberRange.new(0.5, 0.9),
-				lightEmission = 0,
-				transparency = 0.5,
-				spread = 70,
-				direction = UP,
-				drag = 3,
-			})
-			U.light(first, WIND, 5, 30, 0.4)
-			if (workspace.CurrentCamera.CFrame.Position - first).Magnitude < 50 then
-				CameraShake.Add(0.25)
-			end
-		end)
+			-- Nothing in reach to bite: a cut of wind thrown down onto the
+			-- ground (where the chop comes down from the air, else just ahead).
+			local bite = if air then last else floorAt(origin + forward * 5)
+			cleaveDown(edge, bite, side)
+			task.delay(0.08, function()
+				axeBite(bite, forward)
+				if not air then
+					groundSplit(bite, last, side)
+				end
+			end)
+		end
+		local axe = axes[character]
+		if axe then
+			axe.chop(AXE_SWING, if ahead then ahead.Position.Y else nil, strike)
+			-- It stays buried a beat, then breaks up into wind.
+			task.delay(AXE_SWING + 0.4, function()
+				if axes[character] == axe then
+					axes[character] = nil
+					axe.stop()
+				end
+			end)
+		else
+			task.delay(AXE_SWING, strike, floorAt(origin + forward * 5) - UP * AXE_BITE, false)
+		end
 		if U.isLocal(character) then
 			CameraShake.FovKick(8)
 		end
@@ -3559,6 +3857,7 @@ VFX.RegisterKitEffect("Wind", "Dash", function(data)
 	local ground = U.groundBelow(root.Position, { character })
 	local feet = if ground then ground.Position else root.Position - UP * 3
 	U.ringBurst(CFrame.new(feet + UP * 0.1), WIND, 0.6, 3.8, 0.25, 0.14)
+	featherBurst(root.Position, 3, 7)
 	local away = -(root.CFrame:VectorToWorldSpace(DASH_VECTORS[direction] or DASH_VECTORS.Front))
 	windRing(feet + UP * 0.2, UP, 0.6, 4.5, 0.3)
 	windPuff(root.Position - UP * 1.5, 1.6, away)
@@ -3573,6 +3872,33 @@ VFX.RegisterKitEffect("Wind", "Dash", function(data)
 		direction = away,
 	})
 	U.light(root.Position, WIND, 2, 10, 0.25)
+end)
+
+-- His hits land as wind: feathers and rings of it, a star of light on the
+-- heavy ones. (Only his: the Hit override is also asked when he's the one
+-- being hit.)
+VFX.RegisterKitEffect("Wind", "Hit", function(data)
+	VFX.PlayDefault("Hit", data)
+	if data.kit ~= "Wind" or typeof(data.position) ~= "Vector3" then
+		return
+	end
+	local position: Vector3 = data.position
+	local direction: Vector3 = if typeof(data.direction) == "Vector3" then data.direction else UP
+	featherBurst(position, 2, 8)
+	lightRing(position, direction, 0.3, 2.4, 0.15, WIND_WHITE)
+end)
+
+VFX.RegisterKitEffect("Wind", "HeavyHit", function(data)
+	VFX.PlayDefault("HeavyHit", data)
+	if data.kit ~= "Wind" or typeof(data.position) ~= "Vector3" then
+		return
+	end
+	local position: Vector3 = data.position
+	local direction: Vector3 = if typeof(data.direction) == "Vector3" then data.direction else UP
+	U.impactSpikes(position, WIND, 8, 5, 0.22, STAR_WHITE)
+	featherBurst(position, 6, 14)
+	windRing(position, direction, 0.5, 5, 0.25)
+	twinkle(position, 2.5, WIND, 0.2)
 end)
 
 VFX.RegisterKitEffect("Wind", "AirJump", function(data)
@@ -3596,6 +3922,7 @@ VFX.RegisterKitEffect("Wind", "AirJump", function(data)
 		direction = -UP,
 	})
 	U.afterimage(character, WIND, 0.2)
+	featherBurst(feet, 3, 6)
 end)
 
 function Kit.OnSkill(data)
