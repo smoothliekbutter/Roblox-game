@@ -22,8 +22,9 @@
 	                         still); R again within 4s and he's there
 	Half-Crown Spirit of Zephyr (G): Sylph on his left side
 	  1 Spirit Storm         a dense beam of swirling wind out of his palm
-	  2 Tempest Dive         grab: a tornado tears them up into the sky with him,
-	                         and he drives them head-first down into the ground.
+	  2 Tempest Dive         grab: he drags them straight up into the sky, then
+	                         drives them head-first down into the ground, a
+	                         tornado forming behind them on the way down.
 	                         Landing it twice is what unlocks the Full-Crown
 	  3 Quartile Scutum      four stars and the light between them: a wall in
 	                         front that stops everything, melee thrown back off it
@@ -31,8 +32,8 @@
 	Full-Crown Spirit of Zephyr (G again, once Tempest Dive has landed twice)
 	  1 Spirit of Notos      the south wind bursts out of him, and blows spells
 	                         thrown at him back where they came from
-	  2 Spirit of Zephyrus   he leaps into the sky and rains a barrage of wind
-	                         arrows down on them
+	  2 Spirit of Zephyrus   he leaps into the sky, wind arrows form floating round
+	                         him, then rain down on them
 	  3 Spirit of Euros      a recurve bow of wind; one arrow, too fast to see,
 	                         through everything in a line (unblockable)
 	  4 Neverland            cutscene grab: in the stopped time of the star dome he
@@ -523,10 +524,10 @@ end
 
 --[[
 	Tempest Dive (Half-Crown 2): a grab. His hand shoots out; whoever it
-	catches is torn up into the sky on a tornado with him (cut twice on the
-	way), and at the top he swings over them and drives them head-first
-	down through three rings of wind into the ground, hard enough to bounce
-	them. The timeline is Shared/TempestDive. Landing it charges the
+	catches he drags straight up into the sky by the collar, then swings
+	over them and drives them head-first down into the ground, hard enough
+	to bounce them, a tornado forming behind them on the way down (it cuts
+	them twice). The timeline is Shared/TempestDive. Landing it charges the
 	Full-Crown: twice, and G can be pressed again.
 ]]
 local DIVE_REACH = 0.16
@@ -588,7 +589,11 @@ local function tempestDive(ctx)
 	for _, at in times.Ticks do
 		waitUntil(at)
 		if CombatState.IsAlive(target) then
-			c.Hit(character, target, { damage = 2, stun = 3, attackType = "Melee", unblockable = true, noShake = true })
+			c.Hit(
+				character,
+				target,
+				{ damage = 1.4, stun = 3, attackType = "Melee", unblockable = true, noShake = true }
+			)
 		end
 	end
 
@@ -761,12 +766,23 @@ local function spiritOfNotos(ctx)
 end
 
 -- Spirit of Zephyrus (the west wind): he leaps into the sky on a burst of
--- wind and, hanging there, looses a barrage of wind arrows down on whoever
--- is nearest below: they keep them pinned, the last one knocks them down.
--- Then he glides back down. From the air he leaps less high.
+-- wind; hanging there, wind arrows form one by one in a ring floating
+-- round him, then rain down one after another on whoever is nearest
+-- below: they keep them pinned, the last one knocks them down. Then he
+-- glides back down. From the air he leaps less high.
 local ZEPHYRUS_RISE = 0.35
+local ZEPHYRUS_GATHER = 0.6
 local ZEPHYRUS_ARROWS = 14
-local ZEPHYRUS_GAP = 0.08
+local ZEPHYRUS_GAP = 0.06
+local ZEPHYRUS_RING = 4.5
+
+-- Where floating arrow i is, `t` seconds after they start forming (the
+-- client draws them with the same numbers).
+local function floatingArrow(root: BasePart, i: number, t: number): Vector3
+	local angle = i / ZEPHYRUS_ARROWS * math.pi * 2 + t * 1.5
+	return root.Position
+		+ Vector3.new(math.cos(angle) * ZEPHYRUS_RING, 1.2 + math.sin(angle * 2) * 0.6, math.sin(angle) * ZEPHYRUS_RING)
+end
 
 local function nearestEnemy(ctx, radius: number): Model?
 	local best, bestDistance = nil, math.huge
@@ -782,16 +798,18 @@ end
 
 local function spiritOfZephyrus(ctx)
 	local c, character = ctx.combat, ctx.character
-	local barrage = ZEPHYRUS_ARROWS * ZEPHYRUS_GAP
-	CombatState.SetCasting(character, ZEPHYRUS_RISE + barrage + 0.4)
+	local hang = ZEPHYRUS_GATHER + ZEPHYRUS_ARROWS * ZEPHYRUS_GAP
+	CombatState.SetCasting(character, ZEPHYRUS_RISE + hang + 0.4)
 	fx(ctx, "SpiritOfZephyrus", "Leap", { rise = ZEPHYRUS_RISE })
 	c.ApplyVelocity(character, UP * (if ctx.airborne then 30 else 62), ZEPHYRUS_RISE)
 	task.wait(ZEPHYRUS_RISE)
 	if interrupted(ctx) then
 		return
 	end
-	c.ApplyVelocity(character, HOVER, barrage + 0.2)
-	fx(ctx, "SpiritOfZephyrus", "Barrage", { duration = barrage })
+	c.ApplyVelocity(character, HOVER, hang + 0.2)
+	fx(ctx, "SpiritOfZephyrus", "Gather", { gather = ZEPHYRUS_GATHER, arrows = ZEPHYRUS_ARROWS })
+	local started = os.clock()
+	task.wait(ZEPHYRUS_GATHER)
 	for i = 1, ZEPHYRUS_ARROWS do
 		if interrupted(ctx) then
 			fx(ctx, "SpiritOfZephyrus", "Cancel")
@@ -804,20 +822,14 @@ local function spiritOfZephyrus(ctx)
 		local scatter = if last then 0 else 3 * (1 - i / ZEPHYRUS_ARROWS) + 0.5
 		local aim = if targetRoot then targetRoot.Position else ctx.root.Position + look(ctx) * 16 - UP * 20
 		aim += Vector3.new(math.random(-10, 10) / 10, 0, math.random(-10, 10) / 10) * scatter
-		local origin = ctx.root.Position
-			+ Vector3.new(math.random(-15, 15) / 10, 1 + math.random() * 1.5, math.random(-15, 15) / 10)
+		local origin = floatingArrow(ctx.root, i, os.clock() - started)
 		local direction = (aim - origin).Unit
-		fx(
-			ctx,
-			"SpiritOfZephyrus",
-			"Arrow",
-			{ origin = origin, direction = direction, speed = 150, range = 90, last = last }
-		)
+		fx(ctx, "SpiritOfZephyrus", "Arrow", { index = i, aim = aim, speed = 160, range = 90, last = last })
 		Projectile.Fire({
 			owner = character,
 			origin = origin,
 			direction = direction,
-			speed = 150,
+			speed = 160,
 			range = 90,
 			size = Vector3.new(2, 2, 4),
 			onHit = function(victim)
@@ -1046,6 +1058,24 @@ end
 
 function Kit.Ascend(ctx)
 	transform(ctx, "Ascend", 18)
+end
+
+-- Spawn entrance: wind gathers round him and his grimoire comes down out of
+-- the sky to him, Sylph darting round him; he raises a hand, the clover
+-- flares and the wind bursts out. Untouchable and rooted while it plays
+-- (the animation and effects are client side).
+local ENTRANCE_TIME = 2.2
+
+function Kit.Entrance(ctx)
+	local character = ctx.character
+	CombatState.SetCasting(character, ENTRANCE_TIME)
+	CombatState.GiveIFrames(character, ENTRANCE_TIME + 0.1)
+	character:SetAttribute("Rooted", true)
+	fx(ctx, "Entrance", "Start")
+	task.wait(ENTRANCE_TIME)
+	if character.Parent then
+		character:SetAttribute("Rooted", false)
+	end
 end
 
 function Kit.AwakenEnd(ctx)

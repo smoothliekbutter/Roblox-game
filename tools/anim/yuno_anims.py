@@ -160,6 +160,19 @@ EUROS_LOOSE = [(0.0, EUROS_FULL), (0.05, EUROS_RELEASE), (0.5, EUROS_RELEASE)]
 NEVER_RAISE = pose(R(8), R(24), L(160, 0, 26), L(160, 0, -26), R(-10, 0, 6), R(10, 0, -6))
 NEVERLAND = [(0.0, STANCE), (0.3, NEVER_RAISE), (1.2, NEVER_RAISE)]
 
+# Tempest Dive: flying straight up, the right hand down holding them by the
+# collar (they're below him, a little ahead), the left reaching for the sky.
+DRAG = pose(R(4), R(22), L(15, 0, 4), L(172, -6, -10), R(-4), R(6))
+TEMPEST_DRAG = [(0.0, DRAG), (0.75, DRAG)]
+
+# Entrance: watching his grimoire come down to him (0.5), reaching up for it
+# (1.0), then flinging his arm up as the wind bursts out (1.2), and settling
+# into his stance.
+ENTRANCE_LOOK = pose(R(4, 10), R(18, -10), L(20, 4, 10), L(100, 26, -6))
+ENTRANCE_REACH = pose(R(6, 16), R(14, -16), L(16, 4, 12), L(130, 30, -10))
+ENTRANCE_BURST = pose(R(10, -6), R(20, 6), L(168, -6, 14), L(60, 0, -60), R(-16, 0, 8), R(16, 0, -8))
+ENTRANCE = [(0.0, STANCE), (0.5, ENTRANCE_LOOK), (1.0, ENTRANCE_REACH), (1.2, ENTRANCE_BURST), (1.6, ENTRANCE_BURST), (2.2, STANCE)]
+
 # ---------------- Transformations ----------------
 # Wind gathers as he draws in (0.3), Sylph merges into him on the burst
 # (0.8), then he settles into his stance.
@@ -202,12 +215,14 @@ SPEC = {
     'EurosDraw': dict(keys=EUROS_DRAW, ease=[None, SINE_OUT, SINE_IO, LINEAR], fadeOut=0.05, doc="Spirit of Euros: drawn deep and held."),
     'EurosLoose': dict(keys=EUROS_LOOSE, ease=[None, QUART_OUT, LINEAR], fadeIn=0.01, fadeOut=0.3, doc="Spirit of Euros: loosed, the drawing hand flies back."),
     'Neverland': dict(keys=NEVERLAND, ease=[None, SINE_OUT, LINEAR], fadeOut=0.3, doc="Neverland: arms raised to the sky."),
+    'TempestDrag': dict(keys=TEMPEST_DRAG, ease=[None, LINEAR], fadeIn=0.08, fadeOut=0.1, doc="Tempest Dive: flying straight up, dragging them by the collar."),
+    'Entrance': dict(keys=ENTRANCE, ease=[None, SINE_IO, SINE_IO, QUART_OUT, LINEAR, SINE_IO], fadeOut=0.25, doc="Spawn entrance: his grimoire comes down to him, he reaches for it, the wind bursts out."),
     'Awaken': dict(keys=AWAKEN, ease=[None, SINE_OUT, BACK_OUT, LINEAR, SINE_IO], fadeOut=0.2, doc="Half-Crown: wind gathers, Sylph merges on the burst."),
     'Ascend': dict(keys=ASCEND, ease=[None, SINE_OUT, BACK_OUT, LINEAR, SINE_IO], fadeOut=0.2, doc="Full-Crown: the same, arms thrown to the sky."),
 }
 
 # Played in the air (not planted, feet not checked); the run sets its own height.
-AIRBORNE = {'Air', 'AirArk'}
+AIRBORNE = {'Air', 'AirArk', 'TempestDrag'}
 OWN_HEIGHT = {'Run'}
 ALL = {name: spec['keys'] if name in AIRBORNE or name in OWN_HEIGHT else plant(spec['keys']) for name, spec in SPEC.items()}
 

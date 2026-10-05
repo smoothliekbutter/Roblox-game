@@ -1366,6 +1366,121 @@ Animations.Neverland = {
 	},
 }
 
+-- Tempest Dive: flying straight up, dragging them by the collar.
+Animations.TempestDrag = {
+	fadeIn = 0.08,
+	fadeOut = 0.1,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(4),
+				Head = rot(22),
+				RightArm = limb(15, 0, 4),
+				LeftArm = limb(172, -6, -10),
+				RightLeg = rot(-4),
+				LeftLeg = rot(6),
+			},
+		},
+		{
+			0.75,
+			{
+				Torso = rot(4),
+				Head = rot(22),
+				RightArm = limb(15, 0, 4),
+				LeftArm = limb(172, -6, -10),
+				RightLeg = rot(-4),
+				LeftLeg = rot(6),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Spawn entrance: his grimoire comes down to him, he reaches for it, the wind bursts out.
+Animations.Entrance = {
+	fadeOut = 0.25,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+		},
+		{
+			0.5,
+			{
+				Torso = body(0.108, 4, 10),
+				Head = rot(18, -10),
+				RightArm = limb(20, 4, 10),
+				LeftArm = limb(100, 26, -6),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			1,
+			{
+				Torso = body(0.12, 6, 16),
+				Head = rot(14, -16),
+				RightArm = limb(16, 4, 12),
+				LeftArm = limb(130, 30, -10),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			1.2,
+			{
+				Torso = body(0.09, 10, -6),
+				Head = rot(20, 6),
+				RightArm = limb(168, -6, 14),
+				LeftArm = limb(60, 0, -60),
+				RightLeg = rot(-16, 0, 8),
+				LeftLeg = rot(16, 0, -8),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			1.6,
+			{
+				Torso = body(0.09, 10, -6),
+				Head = rot(20, 6),
+				RightArm = limb(168, -6, 14),
+				LeftArm = limb(60, 0, -60),
+				RightLeg = rot(-16, 0, 8),
+				LeftLeg = rot(16, 0, -8),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			2.2,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
 -- Half-Crown: wind gathers, Sylph merges on the burst.
 Animations.Awaken = {
 	fadeOut = 0.2,
