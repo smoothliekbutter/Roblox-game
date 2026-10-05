@@ -11,6 +11,14 @@ Config.Debug = {
 	ShowHitboxes = false,
 }
 
+-- Play-testing helpers. Turn these off (or delete them) before release.
+Config.PlayTest = {
+	-- An "INFINITE AWAKENING" button in the top bar: the bar stays full, the
+	-- form never runs out and the second stage (Yuno's Full-Crown) is
+	-- always ready. Anyone can press it while this is on.
+	InfiniteAwakening = true,
+}
+
 Config.Movement = {
 	WalkSpeed = 16,
 	JumpHeight = 4.5, -- studs (Roblox default is 7.2)

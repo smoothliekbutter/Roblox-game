@@ -405,6 +405,14 @@ Config.Debug = {
 	ShowHitboxes = false,
 }
 
+-- Play-testing helpers. Turn these off (or delete them) before release.
+Config.PlayTest = {
+	-- An "INFINITE AWAKENING" button in the top bar: the bar stays full, the
+	-- form never runs out and the second stage (Yuno's Full-Crown) is
+	-- always ready. Anyone can press it while this is on.
+	InfiniteAwakening = true,
+}
+
 Config.Movement = {
 	WalkSpeed = 16,
 	JumpHeight = 4.5, -- studs (Roblox default is 7.2)
@@ -1203,7 +1211,7 @@ return Neverland
 
 	Action       client -> server   ("M1", {jump, airborne}) | ("Block", bool) | ("Dash", dir) | ("Evasive") | ("AirJump") | ("SkillRelease", slot)
 	                                | ("Skill", slot, {airborne}) | ("Special", {airborne}) | ("Awaken")
-	                                | ("SelectKit", kitId)
+	                                | ("SelectKit", kitId) | ("InfiniteAwakening", on) (play testing)
 	VFX          server -> clients  (effectName, data)
 	CameraShake  server -> client   (intensity 0-1)
 	Impulse      server -> client   (velocity, duration, {steer?}) applied to your own character
@@ -2599,6 +2607,15 @@ function CombatService.UseSpecial(character: Model, clientAirborne: boolean?)
 	task.spawn(run, ctx)
 end
 
+-- Play testing: the player turned on infinite awakening (Config.PlayTest).
+local function infiniteAwakening(character: Model): boolean
+	if not Config.PlayTest.InfiniteAwakening then
+		return false
+	end
+	local player = Players:GetPlayerFromCharacter(character)
+	return player ~= nil and player:GetAttribute("InfiniteAwakening") == true
+end
+
 local function endAwakening(character: Model)
 	local data = registry[character]
 	if data then
@@ -2627,6 +2644,9 @@ local function drainAwakening(character: Model, data: CharData, duration: number
 	task.spawn(function()
 		local start = os.clock()
 		while data.awakenToken == token and registry[character] == data do
+			if infiniteAwakening(character) then
+				start = os.clock() -- (play testing) never runs out
+			end
 			local remaining = 1 - (os.clock() - start) / duration
 			if remaining <= 0 then
 				character:SetAttribute("Awakening", 0)
@@ -2712,6 +2732,11 @@ function CombatService.EquipKit(character: Model, kitId: string)
 		serverKit.Equip(character)
 	end
 	character:SetAttribute("Kit", kitId)
+	-- Players come back as this character when they respawn.
+	local player = Players:GetPlayerFromCharacter(character)
+	if player then
+		player:SetAttribute("Kit", kitId)
+	end
 end
 
 -- A kit's spawn entrance, if it has one. Slightly delayed so clients have
@@ -2801,6 +2826,13 @@ function CombatService.Register(character: Model)
 
 	humanoid.Died:Connect(function()
 		data.ragdollToken += 1 -- stop any pending get-up
+		-- They respawn as the same character with the awakening bar where it
+		-- was (see below).
+		local owner = Players:GetPlayerFromCharacter(character)
+		if owner then
+			owner:SetAttribute("SavedAwakening", tonumber(character:GetAttribute("Awakening")) or 0)
+			owner:SetAttribute("SavedAwakeningKit", character:GetAttribute("Kit"))
+		end
 		endAwakening(character)
 		Ragdoll.Enable(character)
 	end)
@@ -2831,6 +2863,14 @@ function CombatService.Register(character: Model)
 			player:SetAttribute("Kit", kitId)
 		end
 		CombatService.EquipKit(character, kitId :: string)
+		-- Back after dying as the same character: the awakening bar is where
+		-- it was.
+		local saved = player:GetAttribute("SavedAwakening")
+		if type(saved) == "number" and player:GetAttribute("SavedAwakeningKit") == kitId then
+			character:SetAttribute("Awakening", math.clamp(saved, 0, Config.Awakening.Max))
+		end
+		player:SetAttribute("SavedAwakening", nil)
+		player:SetAttribute("SavedAwakeningKit", nil)
 		CombatService.PlayEntrance(character)
 	end
 end
@@ -2853,6 +2893,12 @@ local function onAction(player: Player, action: unknown, payload: unknown, extra
 	if action == "SelectKit" then
 		if type(payload) == "string" then
 			CombatService.SelectKit(player, payload)
+		end
+		return
+	end
+	if action == "InfiniteAwakening" then
+		if Config.PlayTest.InfiniteAwakening and type(payload) == "boolean" then
+			player:SetAttribute("InfiniteAwakening", payload)
 		end
 		return
 	end
@@ -2942,6 +2988,28 @@ end
 
 function CombatService.Start()
 	Remotes.Action.OnServerEvent:Connect(onAction)
+
+	-- Play testing: infinite awakening keeps the bar full and the second
+	-- stage charged (the form itself never drains, see drainAwakening).
+	if Config.PlayTest.InfiniteAwakening then
+		task.spawn(function()
+			while true do
+				for _, player in Players:GetPlayers() do
+					local character = player.Character
+					if character and registry[character] and infiniteAwakening(character) then
+						if not CombatState.IsAwakened(character) then
+							character:SetAttribute("Awakening", Config.Awakening.Max)
+						end
+						local ascension = pendingAscension(character)
+						if ascension then
+							character:SetAttribute("Ascension", ascension.charge)
+						end
+					end
+				end
+				task.wait(0.25)
+			end
+		end)
+	end
 
 	-- Body impacts: a fast ragdoll that suddenly stops hit the floor or a wall.
 	local lastVelocity: { [Model]: Vector3 } = {}
@@ -7894,7 +7962,10 @@ end
 
 -- Kit-dependent labels (skill names, colors) only change on switch/awaken.
 local function refreshKit(character: Model?)
-	local kitId = if character then character:GetAttribute("Kit") :: string? else nil
+	-- Just after a respawn the kit is still going on: show the one they play.
+	local kitId = if character
+		then (character:GetAttribute("Kit") or localPlayer:GetAttribute("Kit")) :: string?
+		else nil
 	local awakened = character ~= nil and CombatState.IsAwakened(character)
 	local sword = if character then character:GetAttribute("Sword") :: string? else nil
 	local ascended = character ~= nil and character:GetAttribute("Ascended") == true
@@ -27530,6 +27601,7 @@ return ShiftLock
 	Buttons in Roblox's top bar, right next to the menu/chat buttons:
 	  CHARACTERS  opens the character picker
 	  SHIFT LOCK  toggles shift lock (same as LeftShift)
+	  INFINITE AWAKENING  play testing only (Config.PlayTest)
 ]]
 
 local Players = game:GetService("Players")
@@ -27537,6 +27609,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared.Config)
 local Kits = require(Shared.Kits)
 local Remotes = require(Shared.Remotes)
 
@@ -27762,6 +27835,9 @@ function TopBar.Start()
 
 	local charactersButton = pillButton(row, "CHARACTERS", 1)
 	local shiftLockButton = pillButton(row, "SHIFT LOCK: OFF", 2)
+	local infiniteButton = if Config.PlayTest.InfiniteAwakening
+		then pillButton(row, "INFINITE AWAKENING: OFF", 3)
+		else nil
 
 	-- Line up exactly with Roblox's own buttons: in the 58px top bar they're
 	-- 44px tall and sit 12px from the top (2px from the bottom). Computed from
@@ -27775,6 +27851,9 @@ function TopBar.Start()
 		rowPadding.PaddingTop = UDim.new(0, math.max(barHeight - buttonHeight - 2, 0))
 		charactersButton.Size = UDim2.fromOffset(0, buttonHeight)
 		shiftLockButton.Size = UDim2.fromOffset(0, buttonHeight)
+		if infiniteButton then
+			infiniteButton.Size = UDim2.fromOffset(0, buttonHeight)
+		end
 	end
 	row:GetPropertyChangedSignal("AbsoluteSize"):Connect(align)
 	align()
@@ -27792,6 +27871,20 @@ function TopBar.Start()
 	end)
 
 	shiftLockButton.Activated:Connect(ShiftLock.Toggle)
+
+	-- Play testing: the server keeps the state (the player's attribute).
+	if infiniteButton then
+		local function show()
+			local on = localPlayer:GetAttribute("InfiniteAwakening") == true
+			infiniteButton.Text = if on then "INFINITE AWAKENING: ON" else "INFINITE AWAKENING: OFF"
+			infiniteButton.TextColor3 = if on then COLORS.On else COLORS.Text
+		end
+		infiniteButton.Activated:Connect(function()
+			Remotes.Action:FireServer("InfiniteAwakening", localPlayer:GetAttribute("InfiniteAwakening") ~= true)
+		end)
+		localPlayer:GetAttributeChangedSignal("InfiniteAwakening"):Connect(show)
+		show()
+	end
 	ShiftLock.OnChanged(function(on)
 		shiftLockButton.Text = if on then "SHIFT LOCK: ON" else "SHIFT LOCK: OFF"
 		shiftLockButton.TextColor3 = if on then COLORS.On else COLORS.Text

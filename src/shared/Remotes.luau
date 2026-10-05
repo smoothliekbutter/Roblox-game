@@ -4,7 +4,7 @@
 
 	Action       client -> server   ("M1", {jump, airborne}) | ("Block", bool) | ("Dash", dir) | ("Evasive") | ("AirJump") | ("SkillRelease", slot)
 	                                | ("Skill", slot, {airborne}) | ("Special", {airborne}) | ("Awaken")
-	                                | ("SelectKit", kitId)
+	                                | ("SelectKit", kitId) | ("InfiniteAwakening", on) (play testing)
 	VFX          server -> clients  (effectName, data)
 	CameraShake  server -> client   (intensity 0-1)
 	Impulse      server -> client   (velocity, duration, {steer?}) applied to your own character

@@ -48,7 +48,9 @@ With live sync, every code change shows up in Studio instantly, without re-downl
 | **Q** while stunned or ragdolled | Evasive breakout (needs a full cyan bar) |
 | **LeftShift** | Toggle shift lock (or the SHIFT LOCK button in the top bar) |
 
-The **CHARACTERS** button in the top bar, next to chat, opens the character picker. Switching is blocked for 5 seconds after combat.
+The **CHARACTERS** button in the top bar, next to chat, opens the character picker. Switching is blocked for 5 seconds after combat. When you die you respawn as the same character, with your awakening bar where it was. If you died while awakened, the bar keeps what was left of the form, but you come back unawakened. Picking a different character while dead starts the bar from empty.
+
+**Play testing:** the **INFINITE AWAKENING** button in the top bar keeps your awakening bar full. Awakened forms never run out, and the second stage (Yuno's Full-Crown) is always ready, so you can press G again straight away. Anyone in the server can press it. Turn it off before release by setting `Config.PlayTest.InfiniteAwakening = false` in `src/shared/Config.luau`, which hides the button and disables it on the server.
 
 ## Characters
 

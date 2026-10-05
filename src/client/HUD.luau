@@ -351,7 +351,10 @@ end
 
 -- Kit-dependent labels (skill names, colors) only change on switch/awaken.
 local function refreshKit(character: Model?)
-	local kitId = if character then character:GetAttribute("Kit") :: string? else nil
+	-- Just after a respawn the kit is still going on: show the one they play.
+	local kitId = if character
+		then (character:GetAttribute("Kit") or localPlayer:GetAttribute("Kit")) :: string?
+		else nil
 	local awakened = character ~= nil and CombatState.IsAwakened(character)
 	local sword = if character then character:GetAttribute("Sword") :: string? else nil
 	local ascended = character ~= nil and character:GetAttribute("Ascended") == true

@@ -1077,6 +1077,15 @@ function CombatService.UseSpecial(character: Model, clientAirborne: boolean?)
 	task.spawn(run, ctx)
 end
 
+-- Play testing: the player turned on infinite awakening (Config.PlayTest).
+local function infiniteAwakening(character: Model): boolean
+	if not Config.PlayTest.InfiniteAwakening then
+		return false
+	end
+	local player = Players:GetPlayerFromCharacter(character)
+	return player ~= nil and player:GetAttribute("InfiniteAwakening") == true
+end
+
 local function endAwakening(character: Model)
 	local data = registry[character]
 	if data then
@@ -1105,6 +1114,9 @@ local function drainAwakening(character: Model, data: CharData, duration: number
 	task.spawn(function()
 		local start = os.clock()
 		while data.awakenToken == token and registry[character] == data do
+			if infiniteAwakening(character) then
+				start = os.clock() -- (play testing) never runs out
+			end
 			local remaining = 1 - (os.clock() - start) / duration
 			if remaining <= 0 then
 				character:SetAttribute("Awakening", 0)
@@ -1190,6 +1202,11 @@ function CombatService.EquipKit(character: Model, kitId: string)
 		serverKit.Equip(character)
 	end
 	character:SetAttribute("Kit", kitId)
+	-- Players come back as this character when they respawn.
+	local player = Players:GetPlayerFromCharacter(character)
+	if player then
+		player:SetAttribute("Kit", kitId)
+	end
 end
 
 -- A kit's spawn entrance, if it has one. Slightly delayed so clients have
@@ -1279,6 +1296,13 @@ function CombatService.Register(character: Model)
 
 	humanoid.Died:Connect(function()
 		data.ragdollToken += 1 -- stop any pending get-up
+		-- They respawn as the same character with the awakening bar where it
+		-- was (see below).
+		local owner = Players:GetPlayerFromCharacter(character)
+		if owner then
+			owner:SetAttribute("SavedAwakening", tonumber(character:GetAttribute("Awakening")) or 0)
+			owner:SetAttribute("SavedAwakeningKit", character:GetAttribute("Kit"))
+		end
 		endAwakening(character)
 		Ragdoll.Enable(character)
 	end)
@@ -1309,6 +1333,14 @@ function CombatService.Register(character: Model)
 			player:SetAttribute("Kit", kitId)
 		end
 		CombatService.EquipKit(character, kitId :: string)
+		-- Back after dying as the same character: the awakening bar is where
+		-- it was.
+		local saved = player:GetAttribute("SavedAwakening")
+		if type(saved) == "number" and player:GetAttribute("SavedAwakeningKit") == kitId then
+			character:SetAttribute("Awakening", math.clamp(saved, 0, Config.Awakening.Max))
+		end
+		player:SetAttribute("SavedAwakening", nil)
+		player:SetAttribute("SavedAwakeningKit", nil)
 		CombatService.PlayEntrance(character)
 	end
 end
@@ -1331,6 +1363,12 @@ local function onAction(player: Player, action: unknown, payload: unknown, extra
 	if action == "SelectKit" then
 		if type(payload) == "string" then
 			CombatService.SelectKit(player, payload)
+		end
+		return
+	end
+	if action == "InfiniteAwakening" then
+		if Config.PlayTest.InfiniteAwakening and type(payload) == "boolean" then
+			player:SetAttribute("InfiniteAwakening", payload)
 		end
 		return
 	end
@@ -1420,6 +1458,28 @@ end
 
 function CombatService.Start()
 	Remotes.Action.OnServerEvent:Connect(onAction)
+
+	-- Play testing: infinite awakening keeps the bar full and the second
+	-- stage charged (the form itself never drains, see drainAwakening).
+	if Config.PlayTest.InfiniteAwakening then
+		task.spawn(function()
+			while true do
+				for _, player in Players:GetPlayers() do
+					local character = player.Character
+					if character and registry[character] and infiniteAwakening(character) then
+						if not CombatState.IsAwakened(character) then
+							character:SetAttribute("Awakening", Config.Awakening.Max)
+						end
+						local ascension = pendingAscension(character)
+						if ascension then
+							character:SetAttribute("Ascension", ascension.charge)
+						end
+					end
+				end
+				task.wait(0.25)
+			end
+		end)
+	end
 
 	-- Body impacts: a fast ragdoll that suddenly stops hit the floor or a wall.
 	local lastVelocity: { [Model]: Vector3 } = {}

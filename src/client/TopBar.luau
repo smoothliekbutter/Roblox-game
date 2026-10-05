@@ -3,6 +3,7 @@
 	Buttons in Roblox's top bar, right next to the menu/chat buttons:
 	  CHARACTERS  opens the character picker
 	  SHIFT LOCK  toggles shift lock (same as LeftShift)
+	  INFINITE AWAKENING  play testing only (Config.PlayTest)
 ]]
 
 local Players = game:GetService("Players")
@@ -10,6 +11,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared.Config)
 local Kits = require(Shared.Kits)
 local Remotes = require(Shared.Remotes)
 
@@ -235,6 +237,9 @@ function TopBar.Start()
 
 	local charactersButton = pillButton(row, "CHARACTERS", 1)
 	local shiftLockButton = pillButton(row, "SHIFT LOCK: OFF", 2)
+	local infiniteButton = if Config.PlayTest.InfiniteAwakening
+		then pillButton(row, "INFINITE AWAKENING: OFF", 3)
+		else nil
 
 	-- Line up exactly with Roblox's own buttons: in the 58px top bar they're
 	-- 44px tall and sit 12px from the top (2px from the bottom). Computed from
@@ -248,6 +253,9 @@ function TopBar.Start()
 		rowPadding.PaddingTop = UDim.new(0, math.max(barHeight - buttonHeight - 2, 0))
 		charactersButton.Size = UDim2.fromOffset(0, buttonHeight)
 		shiftLockButton.Size = UDim2.fromOffset(0, buttonHeight)
+		if infiniteButton then
+			infiniteButton.Size = UDim2.fromOffset(0, buttonHeight)
+		end
 	end
 	row:GetPropertyChangedSignal("AbsoluteSize"):Connect(align)
 	align()
@@ -265,6 +273,20 @@ function TopBar.Start()
 	end)
 
 	shiftLockButton.Activated:Connect(ShiftLock.Toggle)
+
+	-- Play testing: the server keeps the state (the player's attribute).
+	if infiniteButton then
+		local function show()
+			local on = localPlayer:GetAttribute("InfiniteAwakening") == true
+			infiniteButton.Text = if on then "INFINITE AWAKENING: ON" else "INFINITE AWAKENING: OFF"
+			infiniteButton.TextColor3 = if on then COLORS.On else COLORS.Text
+		end
+		infiniteButton.Activated:Connect(function()
+			Remotes.Action:FireServer("InfiniteAwakening", localPlayer:GetAttribute("InfiniteAwakening") ~= true)
+		end)
+		localPlayer:GetAttributeChangedSignal("InfiniteAwakening"):Connect(show)
+		show()
+	end
 	ShiftLock.OnChanged(function(on)
 		shiftLockButton.Text = if on then "SHIFT LOCK: ON" else "SHIFT LOCK: OFF"
 		shiftLockButton.TextColor3 = if on then COLORS.On else COLORS.Text
