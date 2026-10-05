@@ -31,6 +31,22 @@ IDLE = [
     (2.8, STANCE),
 ]
 
+# ---------------- Hovering (Half-Crown and Full-Crown) ----------------
+# Carried on the wind about 1.8 studs off the ground (the torso lifted; his
+# root stays where it is), rising and settling slowly, legs loose and
+# trailing, arms drifting out from his sides in the updraft. Moving, he
+# leans into it and glides: legs swept back, arms back like wings, chin up.
+def hover(lift, lean, turn, rarm, larm, rleg, lleg, head):
+    return {'Torso': ('body', lift, lean, turn, 0), 'Head': head, 'RightArm': rarm, 'LeftArm': larm,
+            'RightLeg': rleg, 'LeftLeg': lleg}
+
+HOVER_LOW = hover(1.75, 3, 12, L(16, 4, 24), L(24, -4, -28), L(10, 0, 4), L(-14, 0, -4), R(-5, -10))
+HOVER_HIGH = hover(2.1, 1, 14, L(22, 4, 32), L(30, -4, -36), L(6, 0, 6), L(-18, 0, -6), R(-8, -12))
+HOVER_IDLE = [(0.0, HOVER_LOW), (1.6, HOVER_HIGH), (3.2, HOVER_LOW)]
+GLIDE_A = hover(1.6, -24, 0, L(-28, 6, 24), L(-28, -6, -24), L(-22, 0, 3), L(-34, 0, -3), R(22))
+GLIDE_B = hover(1.85, -26, 0, L(-34, 6, 30), L(-34, -6, -30), L(-30, 0, 3), L(-26, 0, -3), R(24))
+HOVER_MOVE = [(0.0, GLIDE_A), (0.8, GLIDE_B), (1.6, GLIDE_A)]
+
 # ---------------- Locomotion ----------------
 # Built like Asta's (see asta_anims.py): smooth curves sampled densely, the
 # cadence set by the swing so a foot passing under him doesn't slide, a
@@ -229,6 +245,10 @@ SPEC = {
     'Walk': dict(keys=WALK, ease=[None] + [LINEAR] * (len(WALK) - 1), loop=True, delays={'Head': 0.03, 'RightArm': 0.03, 'LeftArm': 0.03},
                  doc="Moving slowly (casting, blocking): an easy walk, same phase as the run."),
     'Air': dict(keys=AIR, ease=[None], loop=True, doc="Jumping or falling: arms out on the wind, one knee up."),
+    'HoverIdle': dict(keys=HOVER_IDLE, ease=[None, SINE_IO, SINE_IO], loop=True,
+                      doc="Awakened: hovering on the wind, rising and settling slowly."),
+    'HoverMove': dict(keys=HOVER_MOVE, ease=[None, SINE_IO, SINE_IO], loop=True,
+                      doc="Awakened: gliding on the wind, leaning into it, legs swept back."),
     'Shower': dict(keys=SHOWER, ease=[None, SINE_OUT, SINE_IO, QUART_OUT, SINE_IO], fadeOut=0.25, doc="Wind Blades Shower: hand to the sky, then down to send the blades."),
     'Hawk': dict(keys=HAWK, ease=snap(4), fadeOut=0.25, doc="Swift White Hawk: wound back, then the palm thrust out."),
     'Ark': dict(keys=ARK, ease=snap(4), fadeOut=0.3, doc="Heavenly Wind Ark: low and wide, then both arms sweep up."),
@@ -263,7 +283,7 @@ SPEC = {
 }
 
 # Played in the air (not planted, feet not checked); the run sets its own height.
-AIRBORNE = {'Air', 'AirArk', 'TempestDrag', 'HastaRain', 'SaintCut', 'SaintCutBack', 'SaintAscend', 'SaintRise', 'SaintStrike'}
+AIRBORNE = {'Air', 'AirArk', 'TempestDrag', 'HastaRain', 'HoverIdle', 'HoverMove', 'SaintCut', 'SaintCutBack', 'SaintAscend', 'SaintRise', 'SaintStrike'}
 OWN_HEIGHT = {'Run'}
 ALL = {name: spec['keys'] if name in AIRBORNE or name in OWN_HEIGHT else plant(spec['keys']) for name, spec in SPEC.items()}
 

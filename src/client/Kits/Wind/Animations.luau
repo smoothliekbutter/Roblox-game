@@ -492,6 +492,94 @@ Animations.Air = {
 	},
 }
 
+-- Awakened: hovering on the wind, rising and settling slowly.
+Animations.HoverIdle = {
+	loop = true,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(1.75, 3, 12),
+				Head = rot(-5, -10),
+				RightArm = limb(16, 4, 24),
+				LeftArm = limb(24, -4, -28),
+				RightLeg = limb(10, 0, 4),
+				LeftLeg = limb(-14, 0, -4),
+			},
+		},
+		{
+			1.6,
+			{
+				Torso = body(2.1, 1, 14),
+				Head = rot(-8, -12),
+				RightArm = limb(22, 4, 32),
+				LeftArm = limb(30, -4, -36),
+				RightLeg = limb(6, 0, 6),
+				LeftLeg = limb(-18, 0, -6),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			3.2,
+			{
+				Torso = body(1.75, 3, 12),
+				Head = rot(-5, -10),
+				RightArm = limb(16, 4, 24),
+				LeftArm = limb(24, -4, -28),
+				RightLeg = limb(10, 0, 4),
+				LeftLeg = limb(-14, 0, -4),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
+-- Awakened: gliding on the wind, leaning into it, legs swept back.
+Animations.HoverMove = {
+	loop = true,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(1.6, -24),
+				Head = rot(22),
+				RightArm = limb(-28, 6, 24),
+				LeftArm = limb(-28, -6, -24),
+				RightLeg = limb(-22, 0, 3),
+				LeftLeg = limb(-34, 0, -3),
+			},
+		},
+		{
+			0.8,
+			{
+				Torso = body(1.85, -26),
+				Head = rot(24),
+				RightArm = limb(-34, 6, 30),
+				LeftArm = limb(-34, -6, -30),
+				RightLeg = limb(-30, 0, 3),
+				LeftLeg = limb(-26, 0, -3),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			1.6,
+			{
+				Torso = body(1.6, -24),
+				Head = rot(22),
+				RightArm = limb(-28, 6, 24),
+				LeftArm = limb(-28, -6, -24),
+				RightLeg = limb(-22, 0, 3),
+				LeftLeg = limb(-34, 0, -3),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
 -- Wind Blades Shower: hand to the sky, then down to send the blades.
 Animations.Shower = {
 	fadeOut = 0.25,

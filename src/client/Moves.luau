@@ -255,7 +255,9 @@ local function watchCharacter(character: Model)
 	end
 	local function updateKit()
 		local kit = kitOf(character)
-		PoseAnimator.SetIdle(character, if kit then kit.Idle else nil)
+		-- A kit can choose its idle by state (Yuno hovers when awakened).
+		local set = if kit and kit.IdleFor then kit.IdleFor(character) elseif kit then kit.Idle else nil
+		PoseAnimator.SetIdle(character, set)
 	end
 	character:GetAttributeChangedSignal("Awakened"):Connect(updateAwakened)
 	character:GetAttributeChangedSignal("Kit"):Connect(updateKit)

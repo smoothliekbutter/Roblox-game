@@ -78,6 +78,20 @@ Kit.Idle = {
 	walkStride = 6.13,
 }
 
+-- Awakened (Half-Crown and Full-Crown) he doesn't walk: he hovers on the
+-- wind, rising and settling, and glides when he moves.
+local HOVER = {
+	stand = ANIMS.HoverIdle,
+	move = ANIMS.HoverMove,
+	air = ANIMS.HoverIdle, -- still carried on the wind (so a jump doesn't drop him)
+	moveSpeed = 16,
+}
+
+-- The idle set for him right now (Moves asks when the kit is put on).
+function Kit.IdleFor(character: Model): PoseAnimator.IdleSet
+	return if character:GetAttribute("Awakened") == true then HOVER else Kit.Idle
+end
+
 local function play(character: Model, animation: Animation, onEvent: ((string) -> ())?)
 	PoseAnimator.Play(character, animation, onEvent)
 end
@@ -4546,6 +4560,33 @@ local function buildLook(character: Model, full: boolean): () -> ()
 		}
 	end
 
+	-- Hovering: a ring of wind turning on the ground under him and a soft
+	-- downdraft off his feet.
+	local hoverRing = softRing({
+		color = ColorSequence.new(WIND_WHITE, WIND),
+		width0 = 0.9,
+		width1 = 0.9,
+		transparency = NumberSequence.new(0.6),
+		texture = U.textures.Smoke,
+		speed = 2,
+		length = 4,
+	})
+	local draft = U.newPart({ Size = Vector3.new(1.6, 0.2, 1.6), Transparency = 1 })
+	local downdraft = windEmitter(draft, {
+		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 3.2) }),
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.25, 0.78),
+			NumberSequenceKeypoint.new(1, 1),
+		}),
+		Lifetime = NumberRange.new(0.4, 0.7),
+		Speed = NumberRange.new(5, 9),
+		SpreadAngle = Vector2.new(35, 35),
+		EmissionDirection = Enum.NormalId.Bottom,
+		Drag = 2,
+		Rate = 14,
+	})
+
 	local start = os.clock()
 	local connection: RBXScriptConnection
 	local function destroy()
@@ -4553,6 +4594,9 @@ local function buildLook(character: Model, full: boolean): () -> ()
 		if looks[character] == look then
 			looks[character] = nil
 		end
+		hoverRing.fade(0.3)
+		downdraft.Enabled = false
+		task.delay(1, draft.Destroy, draft)
 		for _, emitter in emitters do
 			emitter.Enabled = false
 			task.delay(1, emitter.Destroy, emitter)
@@ -4574,6 +4618,11 @@ local function buildLook(character: Model, full: boolean): () -> ()
 		for _, entry in entries do
 			entry.part.Transparency = 1 - (1 - entry.base) * alpha
 		end
+		hoverRing.set(
+			CFrame.new(root.Position - UP * 2.95) * CFrame.Angles(0, t * 1.2, 0),
+			(2.2 + 0.25 * math.sin(t * 2)) * alpha + 0.05
+		)
+		draft.CFrame = root.CFrame * CFrame.new(0, -1.1, 0)
 
 		-- Wings: each feather fanned out from the shoulder blade, a slow
 		-- beat rippling out along the wing (the tips move most).
@@ -4686,6 +4735,7 @@ function Kit.SetAwakened(character: Model, on: boolean)
 		destroyLook[character] = nil
 		destroy()
 	end
+	PoseAnimator.SetIdle(character, if on then HOVER else Kit.Idle)
 	if not on then
 		return
 	end
