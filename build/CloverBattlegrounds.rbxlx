@@ -1317,6 +1317,10 @@ SaintZephyr.Above = 22 -- how far above them he raises the blade
 SaintZephyr.Charge = 0.26 -- from his star to the first cut
 SaintZephyr.Drift = 2 -- how far he rises above the top while the blade grows
 SaintZephyr.Dive = 0.18 -- the strike, from the top to the floor
+-- How high his body hovers over his root in the Full-Crown (the client's
+-- lift, Client/Kits/Wind). The server starts the path that much higher and
+-- the client drops the lift at the same moment, so his body doesn't move.
+SaintZephyr.Lift = 1.8
 
 -- How far each star sits above (or below) them, degrees, in the order he
 -- goes round them. High and low by turns, so the cuts cross each other.
@@ -6569,7 +6573,9 @@ local function tempestDive(ctx)
 		return
 	end
 
-	local plan = DivePlan.Plan(ctx.root.CFrame, targetRoot.Position, floorUnder(ctx, targetRoot.Position).Y)
+	-- (From where his body is: he hovers over his root while awakened.)
+	local origin = ctx.root.CFrame + UP * SaintPlan.Lift
+	local plan = DivePlan.Plan(origin, targetRoot.Position, floorUnder(ctx, targetRoot.Position).Y)
 	local times = DivePlan.Times
 	CombatState.SetCasting(character, times.Length + 0.25)
 	CombatState.GiveIFrames(character, times.Length + 0.15)
@@ -7118,7 +7124,9 @@ local function saintSpiritOfZephyr(ctx)
 		return
 	end
 
-	local plan = SaintPlan.Plan(ctx.root.CFrame, targetRoot.Position, floorUnder(ctx, targetRoot.Position).Y)
+	-- (From where his body is: he hovers over his root in the Full-Crown.)
+	local origin = ctx.root.CFrame + UP * SaintPlan.Lift
+	local plan = SaintPlan.Plan(origin, targetRoot.Position, floorUnder(ctx, targetRoot.Position).Y)
 	local times = SaintPlan.Times
 	CombatState.SetCasting(character, times.Length + 0.3)
 	CombatState.GiveIFrames(character, times.Length + 0.2)
@@ -21111,6 +21119,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local DivePlan = require(ReplicatedStorage:WaitForChild("Shared").TempestDive)
+local SaintPlan = require(ReplicatedStorage:WaitForChild("Shared").SaintZephyr)
 local CameraShake = require(script.Parent.Parent.CameraShake)
 local Cinematic = require(script.Parent.Parent.Cinematic)
 local M1Animations = require(script.Parent.Parent.M1Animations)
@@ -22812,6 +22821,9 @@ local function playTempestDive(data, character: Model, root: BasePart)
 	local target: Model? = data.target
 	local targetRoot = target and U.getRoot(target)
 	local plan = DivePlan.Plan(data.origin, data.start, data.floorY)
+	-- The path starts where his body is (raised by his hover), so his hover
+	-- goes at the same moment and he doesn't move.
+	PoseAnimator.SettleLift(character, DivePlan.Times.Length)
 	local times = DivePlan.Times
 	local started = os.clock()
 	local mine = involves(data, character)
@@ -25243,7 +25255,7 @@ function Kit.SetAwakened(character: Model, on: boolean)
 	end
 	PoseAnimator.SetIdle(character, if on then HOVER else Kit.Idle)
 	-- Hovering under everything he does (attacks too), not only standing.
-	PoseAnimator.SetLift(character, if on then 1.8 else 0)
+	PoseAnimator.SetLift(character, if on then SaintPlan.Lift else 0)
 	if not on then
 		return
 	end
@@ -28413,6 +28425,10 @@ local function play(data, character: Model, root: BasePart, context: Context)
 	local passes = table.clone(cuts)
 	table.insert(passes, times.Cross)
 
+	-- The path starts where his body is (raised by his hover), so his hover
+	-- goes at the same moment and he doesn't move.
+	PoseAnimator.SettleLift(character, times.Length)
+
 	-- Both of them stay readable through everything.
 	outline(character, WIND_WHITE, times.Length)
 	outline(target, STAR, times.Land)
@@ -31544,7 +31560,7 @@ end
 -- the whole body raised `studs` off its root, eased so it never pops. It
 -- settles to nothing while the root is anchored (a cutscene path), so the
 -- body stays where the path puts it.
-type Lift = { target: number, current: number }
+type Lift = { target: number, current: number, holdUntil: number }
 local lifts: { [Model]: Lift } = setmetatable({}, { __mode = "k" }) :: any
 
 local function liftFor(character: Model, joint: Motor6D, dt: number): CFrame?
@@ -31553,7 +31569,8 @@ local function liftFor(character: Model, joint: Motor6D, dt: number): CFrame?
 		return nil
 	end
 	local root = joint.Part0
-	local target = if root and root.Anchored then 0 else lift.target
+	local held = (root and root.Anchored) or os.clock() < lift.holdUntil
+	local target = if held then 0 else lift.target
 	lift.current += (target - lift.current) * math.min(dt * 6, 1)
 	if lift.current < 0.005 and target == 0 then
 		lift.current = 0
@@ -31783,7 +31800,18 @@ function PoseAnimator.SetLift(character: Model, studs: number)
 	if lift then
 		lift.target = studs
 	else
-		lifts[character] = { target = studs, current = 0 }
+		lifts[character] = { target = studs, current = 0, holdUntil = 0 }
+	end
+end
+
+-- Drops the lift to nothing at once and holds it there for `duration` (a
+-- cutscene that raised his root by as much at the same moment, so his body
+-- doesn't move), then it eases back.
+function PoseAnimator.SettleLift(character: Model, duration: number)
+	local lift = lifts[character]
+	if lift then
+		lift.current = 0
+		lift.holdUntil = os.clock() + duration
 	end
 end
 

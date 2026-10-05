@@ -724,6 +724,10 @@ local function play(data, character: Model, root: BasePart, context: Context)
 	local passes = table.clone(cuts)
 	table.insert(passes, times.Cross)
 
+	-- The path starts where his body is (raised by his hover), so his hover
+	-- goes at the same moment and he doesn't move.
+	PoseAnimator.SettleLift(character, times.Length)
+
 	-- Both of them stay readable through everything.
 	outline(character, WIND_WHITE, times.Length)
 	outline(target, STAR, times.Land)

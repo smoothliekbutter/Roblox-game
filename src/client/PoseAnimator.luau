@@ -227,7 +227,7 @@ end
 -- the whole body raised `studs` off its root, eased so it never pops. It
 -- settles to nothing while the root is anchored (a cutscene path), so the
 -- body stays where the path puts it.
-type Lift = { target: number, current: number }
+type Lift = { target: number, current: number, holdUntil: number }
 local lifts: { [Model]: Lift } = setmetatable({}, { __mode = "k" }) :: any
 
 local function liftFor(character: Model, joint: Motor6D, dt: number): CFrame?
@@ -236,7 +236,8 @@ local function liftFor(character: Model, joint: Motor6D, dt: number): CFrame?
 		return nil
 	end
 	local root = joint.Part0
-	local target = if root and root.Anchored then 0 else lift.target
+	local held = (root and root.Anchored) or os.clock() < lift.holdUntil
+	local target = if held then 0 else lift.target
 	lift.current += (target - lift.current) * math.min(dt * 6, 1)
 	if lift.current < 0.005 and target == 0 then
 		lift.current = 0
@@ -466,7 +467,18 @@ function PoseAnimator.SetLift(character: Model, studs: number)
 	if lift then
 		lift.target = studs
 	else
-		lifts[character] = { target = studs, current = 0 }
+		lifts[character] = { target = studs, current = 0, holdUntil = 0 }
+	end
+end
+
+-- Drops the lift to nothing at once and holds it there for `duration` (a
+-- cutscene that raised his root by as much at the same moment, so his body
+-- doesn't move), then it eases back.
+function PoseAnimator.SettleLift(character: Model, duration: number)
+	local lift = lifts[character]
+	if lift then
+		lift.current = 0
+		lift.holdUntil = os.clock() + duration
 	end
 end
 

@@ -46,6 +46,10 @@ SaintZephyr.Above = 22 -- how far above them he raises the blade
 SaintZephyr.Charge = 0.26 -- from his star to the first cut
 SaintZephyr.Drift = 2 -- how far he rises above the top while the blade grows
 SaintZephyr.Dive = 0.18 -- the strike, from the top to the floor
+-- How high his body hovers over his root in the Full-Crown (the client's
+-- lift, Client/Kits/Wind). The server starts the path that much higher and
+-- the client drops the lift at the same moment, so his body doesn't move.
+SaintZephyr.Lift = 1.8
 
 -- How far each star sits above (or below) them, degrees, in the order he
 -- goes round them. High and low by turns, so the cuts cross each other.

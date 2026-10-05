@@ -647,7 +647,9 @@ local function tempestDive(ctx)
 		return
 	end
 
-	local plan = DivePlan.Plan(ctx.root.CFrame, targetRoot.Position, floorUnder(ctx, targetRoot.Position).Y)
+	-- (From where his body is: he hovers over his root while awakened.)
+	local origin = ctx.root.CFrame + UP * SaintPlan.Lift
+	local plan = DivePlan.Plan(origin, targetRoot.Position, floorUnder(ctx, targetRoot.Position).Y)
 	local times = DivePlan.Times
 	CombatState.SetCasting(character, times.Length + 0.25)
 	CombatState.GiveIFrames(character, times.Length + 0.15)
@@ -1196,7 +1198,9 @@ local function saintSpiritOfZephyr(ctx)
 		return
 	end
 
-	local plan = SaintPlan.Plan(ctx.root.CFrame, targetRoot.Position, floorUnder(ctx, targetRoot.Position).Y)
+	-- (From where his body is: he hovers over his root in the Full-Crown.)
+	local origin = ctx.root.CFrame + UP * SaintPlan.Lift
+	local plan = SaintPlan.Plan(origin, targetRoot.Position, floorUnder(ctx, targetRoot.Position).Y)
 	local times = SaintPlan.Times
 	CombatState.SetCasting(character, times.Length + 0.3)
 	CombatState.GiveIFrames(character, times.Length + 0.2)

@@ -13,6 +13,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local DivePlan = require(ReplicatedStorage:WaitForChild("Shared").TempestDive)
+local SaintPlan = require(ReplicatedStorage:WaitForChild("Shared").SaintZephyr)
 local CameraShake = require(script.Parent.Parent.CameraShake)
 local Cinematic = require(script.Parent.Parent.Cinematic)
 local M1Animations = require(script.Parent.Parent.M1Animations)
@@ -1714,6 +1715,9 @@ local function playTempestDive(data, character: Model, root: BasePart)
 	local target: Model? = data.target
 	local targetRoot = target and U.getRoot(target)
 	local plan = DivePlan.Plan(data.origin, data.start, data.floorY)
+	-- The path starts where his body is (raised by his hover), so his hover
+	-- goes at the same moment and he doesn't move.
+	PoseAnimator.SettleLift(character, DivePlan.Times.Length)
 	local times = DivePlan.Times
 	local started = os.clock()
 	local mine = involves(data, character)
@@ -4145,7 +4149,7 @@ function Kit.SetAwakened(character: Model, on: boolean)
 	end
 	PoseAnimator.SetIdle(character, if on then HOVER else Kit.Idle)
 	-- Hovering under everything he does (attacks too), not only standing.
-	PoseAnimator.SetLift(character, if on then 1.8 else 0)
+	PoseAnimator.SetLift(character, if on then SaintPlan.Lift else 0)
 	if not on then
 		return
 	end
