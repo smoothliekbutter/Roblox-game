@@ -304,6 +304,63 @@ SPEC = {
     'Ascend': dict(keys=ASCEND, ease=[None, SINE_OUT, BACK_OUT, LINEAR, SINE_IO], fadeOut=0.2, doc="Full-Crown: the same, arms thrown to the sky."),
 }
 
+# Life for the spell casts: past each pose a little (the follow-through),
+# eased back onto it, and through a long hold a slow breath, so nothing
+# arrives dead and nothing stands frozen. Overshoot is a fraction of the
+# move into the pose, carried on the same way.
+def _beyond(a, b, k):
+    out = {}
+    for joint, value in b.items():
+        prev = a.get(joint, value)
+        if prev[0] != value[0] or len(prev) != len(value):
+            out[joint] = value
+            continue
+        out[joint] = (value[0],) + tuple(_r(v + (v - p) * k) for p, v in zip(prev[1:], value[1:]))
+    return out
+
+def _breath(pose_, k):
+    out = dict(pose_)
+    for joint, (dx, dp) in {'Torso': (2, 0), 'Head': (-2, 0), 'RightArm': (0, 3), 'LeftArm': (0, 3)}.items():
+        value = out.get(joint)
+        if value and value[0] == 'rot':
+            out[joint] = ('rot', _r(value[1] + dx * k), value[2], value[3])
+        elif value and value[0] == 'limb':
+            out[joint] = ('limb', _r(value[1] + dp * k), value[2], value[3])
+    return out
+
+SINE_IO_ = ('Sine', 'InOut'); SINE_OUT_ = ('Sine', 'Out')
+def lively(spec, k=0.14):
+    keys, ease = list(spec['keys']), list(spec['ease'])
+    # The pose it settles in: the last one before the final hold.
+    last = len(keys) - 1
+    held = last > 0 and keys[last][1] == keys[last - 1][1]
+    i = last - 1 if held else last
+    if i < 1:
+        return
+    t, pose_ = keys[i][0], keys[i][1]
+    end = keys[last][0]
+    room = end - t
+    over = _beyond(keys[i - 1][1], pose_, k)
+    added = []
+    if room >= 0.12:
+        added.append((t + min(0.07, room * 0.3), over, SINE_OUT_))
+        added.append((t + min(0.2, room * 0.7), pose_, SINE_IO_))
+    if held and room >= 0.6:
+        mid = t + 0.2 + (room - 0.2) / 2
+        added.append((mid, _breath(pose_, 1), SINE_IO_))
+    if not added:
+        return
+    tail = keys[i + 1:]
+    tail_ease = ease[i + 1:]
+    keys = keys[:i + 1] + [(a[0], a[1]) for a in added] + tail
+    ease = ease[:i + 1] + [a[2] for a in added] + [SINE_IO_ if held else e for e in tail_ease]
+    spec['keys'], spec['ease'] = keys, ease
+
+for _name in ('Shower', 'Hawk', 'Ark', 'AirArk', 'Bow', 'Conjunction', 'Warp', 'StormCharge', 'StormFire', 'Scutum',
+              'HastaStars', 'HastaBeam', 'HastaRain', 'HastaFire', 'Notos', 'ZephyrusLunge', 'ZephyrusThrust',
+              'BoreasForm', 'BoreasChop', 'EurosDraw', 'EurosLoose', 'TempestDrag'):
+    lively(SPEC[_name])
+
 # Played in the air (not planted, feet not checked); the run sets its own height.
 AIRBORNE = {'Air', 'AirArk', 'TempestDrag', 'HastaRain', 'HoverIdle', 'HoverMove', 'SaintCut', 'SaintCutBack', 'SaintAscend', 'SaintPoise', 'SaintRise', 'SaintStrike'}
 OWN_HEIGHT = {'Run'}
