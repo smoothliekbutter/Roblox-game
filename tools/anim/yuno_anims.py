@@ -193,11 +193,14 @@ EUROS_LOOSE = [(0.0, EUROS_FULL), (0.05, EUROS_RELEASE), (0.5, EUROS_RELEASE)]
 SAINT_COCK = pose(R(-8, 40), R(6, -30), L(110, 50, 10), L(100, 70, -10), R(-24, 0, 10), R(20, 0, -10))
 SAINT_SWEEP = pose(R(-14, -45), R(8, 35), L(80, -60, 10), L(70, -40, -10), R(-30, 0, 12), R(26, 0, -12))
 SAINT_CUT = [(0.0, SAINT_COCK), (0.06, SAINT_SWEEP), (0.25, SAINT_SWEEP)]
+# At his own star before the first cut: the sword drawn back, leaning in.
+SAINT_READY = pose(R(-14, 42), R(10, -32), L(112, 52, 10), L(102, 72, -10), R(-34, 0, 10), R(24, 0, -10))
 # And back the other way (every other cut).
 SAINT_CUT_BACK = [(0.0, SAINT_SWEEP), (0.06, SAINT_COCK), (0.25, SAINT_COCK)]
 # Flying up beside them on the wind: arms back, chin up, legs together.
 SAINT_SOAR = pose(R(14), R(-22), L(-20, 0, 35), L(-20, 0, -35), R(12, 0, 4), R(18, 0, -4))
 SAINT_ASCEND = [(0.0, STANCE), (0.15, SAINT_SOAR), (1.2, SAINT_SOAR)]
+SAINT_POISE = [(0.0, SAINT_SOAR), (0.16, SAINT_READY), (0.6, SAINT_READY)]
 # High above them, the blade raised in both hands, legs trailing.
 SAINT_RAISE = pose(R(10), R(-18), L(172, 6, 0), L(172, -6, 0), R(-8, 0, 6), R(16, 0, -6))
 SAINT_RISE = [(0.0, SAINT_SWEEP), (0.12, SAINT_RAISE), (0.75, SAINT_RAISE)]
@@ -274,6 +277,7 @@ SPEC = {
     'SaintCut': dict(keys=SAINT_CUT, ease=[None, QUART_OUT, LINEAR], fadeIn=0.03, fadeOut=0.1, doc="Saint Spirit of Zephyr: one two-handed cut through them (each star)."),
     'SaintCutBack': dict(keys=SAINT_CUT_BACK, ease=[None, QUART_OUT, LINEAR], fadeIn=0.03, fadeOut=0.1, doc="Saint Spirit of Zephyr: the backhand cut (every other star)."),
     'SaintAscend': dict(keys=SAINT_ASCEND, ease=[None, SINE_OUT, LINEAR], fadeIn=0.05, fadeOut=0.1, doc="Saint Spirit of Zephyr: flying up beside them on the wind."),
+    'SaintPoise': dict(keys=SAINT_POISE, ease=[None, SINE_OUT, LINEAR], fadeIn=0.05, fadeOut=0.1, doc="Saint Spirit of Zephyr: at his star, the sword drawn back, leaning in to charge."),
     'SaintRise': dict(keys=SAINT_RISE, ease=[None, SINE_OUT, LINEAR], fadeIn=0.03, fadeOut=0.05, doc="Saint Spirit of Zephyr: the blade raised high above them."),
     'SaintStrike': dict(keys=SAINT_STRIKE, ease=[None, QUAD_IN, LINEAR], fadeIn=0.01, fadeOut=0.1, doc="Saint Spirit of Zephyr: the one strike, straight down."),
     'SaintLand': dict(keys=SAINT_LAND, ease=[None, QUART_OUT, LINEAR, SINE_IO], fadeIn=0.02, fadeOut=0.3, doc="Saint Spirit of Zephyr: landed low, his back to them, then up."),
@@ -284,7 +288,7 @@ SPEC = {
 }
 
 # Played in the air (not planted, feet not checked); the run sets its own height.
-AIRBORNE = {'Air', 'AirArk', 'TempestDrag', 'HastaRain', 'HoverIdle', 'HoverMove', 'SaintCut', 'SaintCutBack', 'SaintAscend', 'SaintRise', 'SaintStrike'}
+AIRBORNE = {'Air', 'AirArk', 'TempestDrag', 'HastaRain', 'HoverIdle', 'HoverMove', 'SaintCut', 'SaintCutBack', 'SaintAscend', 'SaintPoise', 'SaintRise', 'SaintStrike'}
 OWN_HEIGHT = {'Run'}
 ALL = {name: spec['keys'] if name in AIRBORNE or name in OWN_HEIGHT else plant(spec['keys']) for name, spec in SPEC.items()}
 

@@ -1737,6 +1737,51 @@ Animations.SaintAscend = {
 	},
 }
 
+-- Saint Spirit of Zephyr: at his star, the sword drawn back, leaning in to charge.
+Animations.SaintPoise = {
+	fadeIn = 0.05,
+	fadeOut = 0.1,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(14),
+				Head = rot(-22),
+				RightArm = limb(-20, 0, 35),
+				LeftArm = limb(-20, 0, -35),
+				RightLeg = rot(12, 0, 4),
+				LeftLeg = rot(18, 0, -4),
+			},
+		},
+		{
+			0.16,
+			{
+				Torso = rot(-14, 42),
+				Head = rot(10, -32),
+				RightArm = limb(112, 52, 10),
+				LeftArm = limb(102, 72, -10),
+				RightLeg = rot(-34, 0, 10),
+				LeftLeg = rot(24, 0, -10),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.6,
+			{
+				Torso = rot(-14, 42),
+				Head = rot(10, -32),
+				RightArm = limb(112, 52, 10),
+				LeftArm = limb(102, 72, -10),
+				RightLeg = rot(-34, 0, 10),
+				LeftLeg = rot(24, 0, -10),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
 -- Saint Spirit of Zephyr: the blade raised high above them.
 Animations.SaintRise = {
 	fadeIn = 0.03,
