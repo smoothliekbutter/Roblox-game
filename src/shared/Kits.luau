@@ -144,13 +144,13 @@ Kits.List = {
 				name = "Demon-Destroyer Sword",
 				skills = {
 					{ name = "Causality Break", cooldown = 15, type = "Zone", airHold = true },
-					{ name = "Severance", cooldown = 12, type = "Melee", airHold = true },
+					{ name = "Black Comet", cooldown = 14, type = "Melee", airHold = true },
 				},
 			},
 			Slasher = {
 				name = "Demon-Slasher Katana",
 				skills = {
-					{ name = "Infinite Slash", cooldown = 13, type = "Melee", airHold = true },
+					{ name = "Black Ascent", cooldown = 12, type = "Melee", airHold = true },
 					{ name = "Zetten", cooldown = 16, type = "Counter", airHold = true },
 				},
 			},
@@ -215,7 +215,7 @@ Kits.List = {
 				{ name = "Spirit of Notos", cooldown = 12, type = "Counter" },
 				{ name = "Spirit of Zephyrus", cooldown = 13, type = "Bolt", airHold = true },
 				{ name = "Spirit of Euros", cooldown = 18, type = "Bolt", airHold = true },
-				{ name = "Neverland", cooldown = 30, type = "Melee" },
+				{ name = "Saint Spirit of Zephyr", cooldown = 30, type = "Melee" },
 			},
 		},
 	} :: KitInfo,

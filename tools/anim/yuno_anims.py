@@ -164,9 +164,21 @@ EUROS_RELEASE = pose(R(-4, -74), R(6, 68), L(84, 120, -6), L(92, 72, 0), R(-20, 
 EUROS_DRAW = [(0.0, STANCE), (0.25, BOW_AIM), (0.8, EUROS_FULL), (1.0, EUROS_FULL)]
 EUROS_LOOSE = [(0.0, EUROS_FULL), (0.05, EUROS_RELEASE), (0.5, EUROS_RELEASE)]
 
-# Neverland: arms raised to the sky as Sylph's horn sounds and the stars turn.
-NEVER_RAISE = pose(R(8), R(24), L(160, 0, 26), L(160, 0, -26), R(-10, 0, 6), R(10, 0, -6))
-NEVERLAND = [(0.0, STANCE), (0.3, NEVER_RAISE), (1.2, NEVER_RAISE)]
+# Saint Spirit of Zephyr (all in the air but the landing). A cut: the sword
+# cocked over his left shoulder, then swept through them two-handed.
+SAINT_COCK = pose(R(-8, 40), R(6, -30), L(110, 50, 10), L(100, 70, -10), R(-24, 0, 10), R(20, 0, -10))
+SAINT_SWEEP = pose(R(-14, -45), R(8, 35), L(80, -60, 10), L(70, -40, -10), R(-30, 0, 12), R(26, 0, -12))
+SAINT_CUT = [(0.0, SAINT_COCK), (0.06, SAINT_SWEEP), (0.25, SAINT_SWEEP)]
+# High above them, the blade raised in both hands, legs trailing.
+SAINT_RAISE = pose(R(10), R(-18), L(172, 6, 0), L(172, -6, 0), R(-8, 0, 6), R(16, 0, -6))
+SAINT_RISE = [(0.0, SAINT_SWEEP), (0.12, SAINT_RAISE), (0.75, SAINT_RAISE)]
+# The strike: straight down, folding over it.
+SAINT_DOWN = pose(R(-38), R(20), L(40, 6, 0), L(40, -6, 0), R(-40, 0, 8), R(10, 0, -8))
+SAINT_STRIKE = [(0.0, SAINT_RAISE), (0.08, SAINT_DOWN), (0.2, SAINT_DOWN)]
+# Landed low, his back to them, the sword out to the side.
+SAINT_KNEEL = pose(R(-20, 15), R(12, -10), L(40, 10, 50), L(25, 0, -25), R(-50, 0, 10), R(40, 0, -10))
+SAINT_STAND = pose(R(-6, 12), R(4, -12), L(20, 6, 30), L(18, 0, -18), R(-8, 0, 6), R(8, 0, -6))
+SAINT_LAND = [(0.0, SAINT_DOWN), (0.12, SAINT_KNEEL), (0.6, SAINT_KNEEL), (1.0, SAINT_STAND)]
 
 # Tempest Dive: flying straight up, the right hand down holding them by the
 # collar (they're below him, a little ahead), the left reaching for the sky.
@@ -224,7 +236,10 @@ SPEC = {
     'BoreasChop': dict(keys=BOREAS_CHOP, ease=[None, QUAD_IN, LINEAR], fadeIn=0.01, fadeOut=0.3, doc="Tempest Dive: driving them down into the ground."),
     'EurosDraw': dict(keys=EUROS_DRAW, ease=[None, SINE_OUT, SINE_IO, LINEAR], fadeOut=0.05, doc="Spirit of Euros: drawn deep and held."),
     'EurosLoose': dict(keys=EUROS_LOOSE, ease=[None, QUART_OUT, LINEAR], fadeIn=0.01, fadeOut=0.3, doc="Spirit of Euros: loosed, the drawing hand flies back."),
-    'Neverland': dict(keys=NEVERLAND, ease=[None, SINE_OUT, LINEAR], fadeOut=0.3, doc="Neverland: arms raised to the sky."),
+    'SaintCut': dict(keys=SAINT_CUT, ease=[None, QUART_OUT, LINEAR], fadeIn=0.03, fadeOut=0.1, doc="Saint Spirit of Zephyr: one two-handed cut through them (each star)."),
+    'SaintRise': dict(keys=SAINT_RISE, ease=[None, SINE_OUT, LINEAR], fadeIn=0.03, fadeOut=0.05, doc="Saint Spirit of Zephyr: the blade raised high above them."),
+    'SaintStrike': dict(keys=SAINT_STRIKE, ease=[None, QUAD_IN, LINEAR], fadeIn=0.01, fadeOut=0.1, doc="Saint Spirit of Zephyr: the one strike, straight down."),
+    'SaintLand': dict(keys=SAINT_LAND, ease=[None, QUART_OUT, LINEAR, SINE_IO], fadeIn=0.02, fadeOut=0.3, doc="Saint Spirit of Zephyr: landed low, his back to them, then up."),
     'TempestDrag': dict(keys=TEMPEST_DRAG, ease=[None, LINEAR], fadeIn=0.08, fadeOut=0.1, doc="Tempest Dive: flying straight up, dragging them by the collar."),
     'Entrance': dict(keys=ENTRANCE, ease=[None, SINE_IO, SINE_IO, QUART_OUT, LINEAR, SINE_IO], fadeOut=0.25, doc="Spawn entrance: his grimoire comes down to him, he reaches for it, the wind bursts out."),
     'Awaken': dict(keys=AWAKEN, ease=[None, SINE_OUT, BACK_OUT, LINEAR, SINE_IO], fadeOut=0.2, doc="Half-Crown: wind gathers, Sylph merges on the burst."),
@@ -232,7 +247,7 @@ SPEC = {
 }
 
 # Played in the air (not planted, feet not checked); the run sets its own height.
-AIRBORNE = {'Air', 'AirArk', 'TempestDrag', 'HastaRain'}
+AIRBORNE = {'Air', 'AirArk', 'TempestDrag', 'HastaRain', 'SaintCut', 'SaintRise', 'SaintStrike'}
 OWN_HEIGHT = {'Run'}
 ALL = {name: spec['keys'] if name in AIRBORNE or name in OWN_HEIGHT else plant(spec['keys']) for name, spec in SPEC.items()}
 

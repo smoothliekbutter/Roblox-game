@@ -12,7 +12,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local NeverlandPlan = require(ReplicatedStorage:WaitForChild("Shared").Neverland)
+local SaintPlan = require(ReplicatedStorage:WaitForChild("Shared").SaintZephyr)
 local DivePlan = require(ReplicatedStorage:WaitForChild("Shared").TempestDive)
 local CameraShake = require(script.Parent.Parent.CameraShake)
 local Cinematic = require(script.Parent.Parent.Cinematic)
@@ -31,7 +31,6 @@ local WIND_DEEP = Color3.fromRGB(35, 170, 110)
 local WIND_WHITE = Color3.fromRGB(228, 255, 240)
 local STAR = Color3.fromRGB(255, 226, 130)
 local STAR_WHITE = Color3.fromRGB(255, 250, 228)
-local TIME_STOP = Color3.fromRGB(200, 236, 255)
 
 local Kit = {}
 
@@ -2490,69 +2489,66 @@ function handlers.SpiritOfEuros(data, character, root)
 	end
 end
 
--- Neverland: his hand shoots out; whoever it catches is caught in stopped
--- time, a dome of pale light with the world drained of colour. Three stars
--- stand round them joined by beams, a triangle that rises with them; he
--- flashes from star to star punching them up through it, then hammers them
--- down from above, through a great triangle of stars, into the ground.
--- Afterwards the dome lingers over the crater, stars turning on its rim.
-local domes: { [Model]: { close: () -> () } } = {}
+-- Saint Spirit of Zephyr: he flicks a star at them; it binds them and lifts
+-- them into the air, night falls for whoever is watching and five stars open
+-- round them in a pentagram. Conjunction takes him from star to star, each
+-- time straight through them, every cut left hanging in the air. Then he's
+-- high above them, a great blade of wind and starlight raised in both
+-- hands, and splits them with one strike straight down to the ground: a
+-- line cut through the whole sky. Every hanging cut bursts, driving them
+-- into the ground behind him, his back to them.
+local SAINT_BLADE = 24
 
-local function triangleBeams(width: number): { BasePart }
-	local beams = {}
-	for _ = 1, 3 do
-		table.insert(beams, bar(Vector3.zero, UP, width, STAR_WHITE, 0.1))
-	end
-	return beams
+-- A cut left hanging in the air: a white-hot line in a glow of wind.
+local function hangingCut(from: Vector3, to: Vector3): { BasePart }
+	local core = bar(from, to, 0.34, STAR_WHITE, 0)
+	local glow = bar(from, to, 1.5, WIND, 0.45)
+	U.tween(core, 0.1, { Size = Vector3.new(0.16, 0.16, core.Size.Z) })
+	return { core, glow }
 end
 
-local function poseTriangle(beams: { BasePart }, corners: { Vector3 })
-	for i, beam in beams do
-		local a, b = corners[i], corners[i % 3 + 1]
-		beam.Size = Vector3.new(beam.Size.X, beam.Size.Y, (b - a).Magnitude + 0.05)
-		beam.CFrame = CFrame.lookAt(a:Lerp(b, 0.5), b)
-	end
-end
-
-local function punchClip(index: number, variant: string): Animation?
-	return M1Animations.Clips[M1Animations.NameFor(index, variant)]
-end
-
-local function playNeverland(data, character: Model, root: BasePart)
+local function playSaintZephyr(data, character: Model, root: BasePart)
 	local target: Model? = data.target
 	local targetRoot = target and U.getRoot(target)
-	local plan = NeverlandPlan.Plan(data.origin, data.start, data.floorY)
-	local times = NeverlandPlan.Times
+	local plan = SaintPlan.Plan(data.origin, data.start, data.floorY)
+	local times = SaintPlan.Times
 	local started = os.clock()
 	local mine = involves(data, character)
-	local near = (workspace.CurrentCamera.CFrame.Position - plan.start).Magnitude < 70
+	local near = (workspace.CurrentCamera.CFrame.Position - plan.center).Magnitude < 80
+	local restoreNight = if mine or near then Cinematic.Night(0.35) else nil
 
-	-- Time stops: a dome of pale light round them, the world drained.
-	local dome = U.newPart({
-		Shape = Enum.PartType.Ball,
-		Size = Vector3.one * 2,
-		CFrame = CFrame.new(plan.start),
-		Color = TIME_STOP,
-		Material = Enum.Material.ForceField,
-		Transparency = 0.1,
-	})
-	U.tween(dome, 0.35, { Size = Vector3.one * 34 }, Enum.EasingStyle.Quart)
-	U.ringBurst(CFrame.new(plan.start), TIME_STOP, 1, 17, 0.35, 0.2)
-	if mine or near then
-		U.colorGrade({ Saturation = -0.75, Contrast = 0.15, TintColor = TIME_STOP }, 0.15, times.Land - 0.2, 0.5)
+	-- The star that binds them, two rings of starlight turning round them,
+	-- and the pentagram.
+	local seal = makeStar(3.2)
+	local rings = {
+		arcParts(arcPoints(Vector3.zero, Vector3.xAxis, Vector3.zAxis, 1, 0, math.pi * 2, 18), 0.14, STAR, 0.15),
+		arcParts(arcPoints(Vector3.zero, Vector3.xAxis, Vector3.zAxis, 1, 0, math.pi * 2, 18), 0.1, STAR_WHITE, 0.3),
+	}
+	local stars: { Star } = {}
+	local lines: { BasePart } = {}
+	for _ = 1, #plan.stars do
+		table.insert(stars, makeStar(2.6))
+		table.insert(lines, bar(plan.center, plan.center + UP, 0.12, STAR_WHITE, 0.25))
 	end
+	local cuts: { BasePart } = {}
+	local blade = {
+		core = tube(plan.top, plan.top + UP, 1.2, STAR_WHITE, 0),
+		glow = tube(plan.top, plan.top + UP, 4, WIND, 0.5),
+		sheath = tube(plan.top, plan.top + UP, 6.5, WIND, 0),
+	}
+	blade.sheath.Material = Enum.Material.ForceField
+	for _, part in blade do
+		part.Transparency = 1
+	end
+	local tip = makeStar(4)
+	local bladeLight = Instance.new("PointLight")
+	bladeLight.Color = STAR
+	bladeLight.Range = 40
+	bladeLight.Brightness = 0
+	bladeLight.Parent = blade.core
+	local burst = false
 
-	-- The triangle of stars and the light between them.
-	local stars = { makeStar(2.2), makeStar(2.2), makeStar(2.2) }
-	local beams = triangleBeams(0.22)
-	local bigStars: { Star } = {}
-	local bigBeams: { BasePart } = {}
-	local struck = 0
-	local hammered = false
-
-	-- Both of them on the paths, drawn here every frame for smoothness (the
-	-- server holds them there too).
-	local bind = "CloverNeverland" .. tostring(started)
+	local bind = "CloverSaintZephyr" .. tostring(started)
 	local function finish()
 		pcall(function()
 			RunService:UnbindFromRenderStep(bind)
@@ -2565,120 +2561,272 @@ local function playNeverland(data, character: Model, root: BasePart)
 			return
 		end
 		if root.Parent then
-			root.CFrame = NeverlandPlan.Attacker(plan, t)
+			root.CFrame = SaintPlan.Attacker(plan, t)
 		end
+		local victim = SaintPlan.Victim(plan, math.min(t, times.Land))
 		if targetRoot and targetRoot.Parent and t <= times.Land then
-			targetRoot.CFrame = NeverlandPlan.Victim(plan, t)
+			targetRoot.CFrame = victim
 		end
-
-		local height = NeverlandPlan.Height(math.min(t, times.Apex)) - 0.5
-		local corners = {
-			NeverlandPlan.Corner(plan, 1, height),
-			NeverlandPlan.Corner(plan, 2, height),
-			NeverlandPlan.Corner(plan, 3, height),
-		}
-		if not hammered then
-			local grow = math.min(t / 0.4, 1)
+		if not burst then
+			local grow = math.min(t / 0.2, 1)
+			seal.place(victim.Position + victim.LookVector * 0.9 + UP * 0.4, t * 4)
+			for k, ring in rings do
+				local spin = t * (if k == 1 then 3 else -4)
+				local height = if k == 1 then 0.9 else -0.6
+				poseArc(
+					ring,
+					arcPoints(
+						victim.Position + UP * height,
+						Vector3.new(math.cos(spin), 0, math.sin(spin)),
+						Vector3.new(-math.sin(spin), 0, math.cos(spin)),
+						(2.2 + 0.3 * k) * grow + 0.05,
+						0,
+						math.pi * 2,
+						18
+					)
+				)
+			end
+			-- The stars open out of them one by one, joined in a pentagram.
+			local placed: { Vector3 } = {}
 			for i, star in stars do
-				star.place(plan.start + UP * height + (corners[i] - (plan.start + UP * height)) * grow, t * 3 + i)
+				local open = math.clamp((t - 0.1 - i * 0.05) / 0.15, 0, 1)
+				placed[i] = plan.center:Lerp(plan.stars[i], 1 - (1 - open) ^ 2)
+				star.place(placed[i], t * 2 + i)
 			end
-			poseTriangle(beams, corners)
+			for i, line in lines do
+				stretch(line, placed[i], placed[i % #placed + 1])
+			end
 		end
-
-		-- Each punch: a flash of starlight where he appears, then the hit.
-		local strike = NeverlandPlan.StrikeAt(t)
-		if strike and strike > struck then
-			struck = strike
-			local at = times.Strikes[strike]
-			U.flash(corners[((strike - 1) % 3) + 1], STAR_WHITE, 4, 0.15)
-			task.delay(math.max(at - t, 0), function()
-				local clip = punchClip(((strike - 1) % 3) + 1, "Normal")
-				if clip then
-					play(character, clip)
-				end
-				local victim = plan.start + UP * NeverlandPlan.Height(at)
-				U.shockwave(victim, STAR, 1, 7, 0.2)
-				gust(victim, 4)
-				U.burst(victim, {
-					color = STAR,
-					count = 10,
-					size = 0.35,
-					speed = NumberRange.new(14, 30),
-					lifetime = NumberRange.new(0.15, 0.3),
-					streaks = true,
-					spread = 180,
-				})
-				if mine then
-					CameraShake.Add(0.12)
-				end
-			end)
+		-- The blade, from Rise to the strike: up out of his raised hands,
+		-- then straight down along the strike.
+		local right, left = handOf(character, "Right"), handOf(character, "Left")
+		if t >= times.Rise - 0.1 and t < times.Strike + 0.12 and right and left then
+			local hands = right:Lerp(left, 0.5)
+			local length = SAINT_BLADE * math.min((t - (times.Rise - 0.1)) / 0.3, 1) + 0.1
+			local down = (plan.ground - plan.top).Unit
+			local swing = math.clamp((t - (times.Strike - 0.06)) / 0.1, 0, 1)
+			local direction = UP:Lerp(down, swing)
+			direction = if direction.Magnitude > 1e-3 then direction.Unit else down
+			local tipAt = hands + direction * length
+			local pulse = 1 + 0.08 * math.sin(t * 40)
+			for name, part in blade do
+				local width = if name == "core" then 1.2 elseif name == "glow" then 4 else 6.5
+				part.Size = Vector3.new(length, width * pulse, width * pulse)
+				part.CFrame = CFrame.lookAt(hands:Lerp(tipAt, 0.5), tipAt) * CFrame.Angles(0, rad(90), 0)
+				part.Transparency = if name == "core" then 0 elseif name == "glow" then 0.5 else 0
+			end
+			bladeLight.Brightness = 6
+			tip.place(tipAt, t * 6)
+		else
+			for _, part in blade do
+				part.Transparency = 1
+			end
+			bladeLight.Brightness = 0
+			tip.place(plan.top + UP * 500, 0)
 		end
+	end)
 
-		-- The hammer, from above, and a great triangle halfway down for them
-		-- to fall through.
-		if not hammered and t >= times.Apex then
-			hammered = true
-			for _, star in stars do
-				star.fade(0.2)
+	-- The star flies from his hand and binds them.
+	U.flash(plan.center, STAR_WHITE, 6, 0.2)
+	U.ringBurst(CFrame.new(plan.start - UP * 2.8), STAR, 1, 9, 0.4, 0.25)
+	U.light(plan.center, STAR, 5, 30, times.Strike)
+	if mine then
+		CameraShake.Add(0.1)
+	end
+
+	-- Conjunction: star to star, straight through them each time.
+	for i, at in times.Cuts do
+		local star, exit = plan.stars[i], SaintPlan.Exit(plan, i)
+		task.delay(at - SaintPlan.Appear, function()
+			U.afterimage(character, WIND, 0.25)
+			U.flash(star, STAR_WHITE, 4, 0.15)
+			play(character, ANIMS.SaintCut)
+		end)
+		task.delay(at, function()
+			if burst then
+				return
 			end
-			fadeOut(beams, 0.2)
-			local clip = punchClip(4, "Downslam")
-			if clip then
-				play(character, clip)
+			for _, part in hangingCut(star - (exit - star).Unit * 2, exit + (exit - star).Unit * 2) do
+				table.insert(cuts, part)
 			end
-			local middle = plan.start + UP * (NeverlandPlan.Height(times.Slam) * 0.5)
-			local big = {}
-			for i = 1, 3 do
-				big[i] = middle + (NeverlandPlan.Corner(plan, i, 0) - plan.start) * 1.9
-				local star = makeStar(3.4)
-				star.place(big[i], i)
-				table.insert(bigStars, star)
+			local along = (exit - star).Unit
+			U.flash(plan.center, WIND_WHITE, 3.5, 0.1)
+			U.impactRing(plan.center, along, STAR_WHITE, 1, 6, 0.2)
+			U.burst(plan.center, {
+				color = WIND_WHITE,
+				count = 12,
+				size = 0.4,
+				speed = NumberRange.new(30, 60),
+				lifetime = NumberRange.new(0.12, 0.3),
+				streaks = true,
+				spread = 30,
+				direction = along,
+			})
+			if target then
+				U.highlight(target, WIND_WHITE, 0.15)
 			end
-			bigBeams = triangleBeams(0.5)
-			poseTriangle(bigBeams, big)
-			U.flash(plan.start + UP * NeverlandPlan.Height(times.Slam), STAR_WHITE, 9, 0.2)
 			if mine then
-				CameraShake.Add(0.3)
-				CameraShake.FovKick(10)
+				CameraShake.Add(0.08)
+				CameraShake.FovKick(3)
 			end
+		end)
+	end
+
+	-- High above them, the blade raised.
+	task.delay(times.Rise - 0.1, function()
+		play(character, ANIMS.SaintRise)
+		U.flash(plan.top, STAR_WHITE, 6, 0.2)
+		U.ringBurst(CFrame.new(plan.top), STAR, 2, 14, 0.5, 0.3)
+		U.shockwave(plan.top, WIND, 2, 14, 0.4)
+		for _ = 1, 10 do
+			inflow(plan.top + UP * 6, 10, STAR)
 		end
-	end)
-	task.delay(times.Length + 0.5, function()
-		finish()
-		for _, star in bigStars do
-			star.fade(0.4)
+		if mine then
+			CameraShake.Add(0.12)
 		end
-		fadeOut(bigBeams, 0.4)
-		U.tween(dome, 0.5, { Transparency = 1 })
-		task.delay(0.55, dome.Destroy, dome)
 	end)
 
-	-- The camera, for the two of them: round them as they rise, after them
-	-- on the way down.
+	-- The strike, and the line it leaves through the whole sky.
+	task.delay(times.Strike - 0.05, function()
+		play(character, ANIMS.SaintStrike)
+	end)
+	task.delay(times.Strike, function()
+		local direction = (plan.ground - plan.top).Unit
+		local from, to = plan.top - direction * 60, plan.ground + direction * 3
+		local splitCore = bar(from, to, 0.5, STAR_WHITE, 0)
+		local splitGlow = bar(from, to, 3.5, WIND, 0.4)
+		local splitStar = bar(from, to, 1.4, STAR, 0.2)
+		task.delay(0.35, function()
+			U.tween(splitCore, 0.4, { Size = Vector3.new(0.04, 0.04, splitCore.Size.Z) })
+			U.tween(splitStar, 0.4, { Size = Vector3.new(0.04, 0.04, splitStar.Size.Z) })
+			fadeOut({ splitCore, splitGlow, splitStar }, 0.45)
+		end)
+		U.flash(plan.center, STAR_WHITE, 14, 0.3)
+		U.impactRing(plan.center, direction, STAR_WHITE, 2, 16, 0.35)
+		U.light(plan.center, STAR_WHITE, 9, 60, 0.4)
+		if mine or near then
+			U.colorGrade({ Brightness = 0.4, Contrast = 0.35, Saturation = -0.4 }, 0, 0.06, 0.35)
+		end
+		if mine then
+			CameraShake.Add(0.35)
+			CameraShake.FovKick(12)
+		end
+	end)
+
+	-- Every hanging cut bursts.
+	task.delay(times.Burst, function()
+		burst = true
+		for _, part in cuts do
+			U.burst(part.Position, {
+				color = STAR,
+				count = 10,
+				size = 0.5,
+				speed = NumberRange.new(10, 30),
+				lifetime = NumberRange.new(0.2, 0.45),
+				streaks = true,
+				spread = 180,
+			})
+		end
+		fadeOut(cuts, 0.2)
+		for i, star in stars do
+			U.flash(plan.stars[i], STAR_WHITE, 5, 0.18)
+			star.fade(0.2)
+		end
+		fadeOut(lines, 0.2)
+		seal.fade(0.15)
+		for _, ring in rings do
+			fadeOut(ring, 0.15)
+		end
+		local nova = makeStar(8)
+		nova.place(plan.center, 0)
+		task.delay(0.08, nova.fade, 0.4)
+		U.shockwave(plan.center, STAR, 2, 28, 0.45)
+		U.burst(plan.center, {
+			color = STAR,
+			count = 40,
+			size = 0.6,
+			speed = NumberRange.new(40, 90),
+			lifetime = NumberRange.new(0.25, 0.5),
+			streaks = true,
+			spread = 180,
+		})
+		if mine then
+			CameraShake.Add(0.3)
+			CameraShake.FovKick(8)
+		end
+	end)
+
+	-- Landed with his back to them.
+	task.delay(times.Strike + 0.1, function()
+		play(character, ANIMS.SaintLand)
+		gust(plan.ground - UP * 2.5, 6, UP)
+	end)
+	task.delay(times.Length + 0.3, function()
+		finish()
+		for _, part in blade do
+			part:Destroy()
+		end
+		tip.fade(0.1)
+		if restoreNight then
+			restoreNight(0.9)
+		end
+	end)
+
+	-- The camera: over his shoulder as the star binds them, round them
+	-- through the cuts, from below them up at the raised blade, wide across
+	-- the strike, then low behind the crater looking back at him.
 	if mine then
 		Cinematic.Camera(function(t)
-			local focus = NeverlandPlan.Victim(plan, math.min(t, times.Land)).Position
-			local right = plan.forward:Cross(UP)
-			local angle = 0.6 + t * 0.45
-			local offset = (right * math.cos(angle) - plan.forward * math.sin(angle)) * 17
-				+ UP * (3 + math.min(t, times.Apex) * 1.2)
-			return CFrame.lookAt(focus + offset, focus), if t > times.Apex then 80 else 70
+			local forward, right = plan.forward, plan.right
+			if t < times.Cuts[1] - 0.15 then
+				local eye = plan.origin.Position - forward * 7 + right * 3 + UP * 3
+				return CFrame.lookAt(eye, plan.center:Lerp(plan.start, 0.4)), 70
+			elseif t < times.Rise - 0.1 then
+				local angle = t * 2.4
+				local eye = plan.center + (forward * math.cos(angle) + right * math.sin(angle)) * 18 + UP * 3
+				return CFrame.lookAt(eye, plan.center), 75
+			elseif t < times.Strike then
+				local eye = plan.center - UP * 5 + right * 10 - forward * 3
+				return CFrame.lookAt(eye, plan.top + UP * 4), 80
+			elseif t < times.Land then
+				local eye = plan.center + right * 30 + UP * 3
+				return CFrame.lookAt(eye, plan.center - UP * 3), 72
+			end
+			local eye = plan.start + forward * 10 + right * 3 + UP * 2
+			return CFrame.lookAt(eye, plan.ground + UP), 70
 		end, times.Length + 0.3)
 	end
 end
 
-function handlers.Neverland(data, character, root)
+function handlers.SaintSpiritOfZephyr(data, character, root)
 	local phase = data.phase
-	if phase == "Reach" then
-		play(character, ANIMS.Hawk)
-		local hand = handOf(character, "Right")
-		if hand then
-			gust(hand, 3, root.CFrame.LookVector)
-		end
+	if phase == "Flick" then
+		-- The star flies out ahead of him.
+		play(character, ANIMS.Conjunction)
+		local hand = handOf(character, "Right") or root.Position
+		local forward = root.CFrame.LookVector
+		local range: number = data.range or 15
+		local star = makeStar(1.2)
+		U.flash(hand, STAR_WHITE, 2, 0.12)
+		every(0.2, function(elapsed)
+			star.place(hand + forward * range * (elapsed / 0.2), elapsed * 20)
+			return true
+		end, function()
+			star.fade(0.15)
+		end)
 	elseif phase == "Whiff" then
-		gust(root.Position + root.CFrame.LookVector * 4, 2)
+		local at = root.Position + root.CFrame.LookVector * 15
+		U.flash(at, STAR, 2.5, 0.15)
+		U.burst(at, {
+			color = STAR,
+			count = 8,
+			size = 0.3,
+			speed = NumberRange.new(6, 14),
+			lifetime = NumberRange.new(0.2, 0.4),
+			spread = 180,
+		})
 	elseif phase == "Begin" then
-		playNeverland(data, character, root)
+		playSaintZephyr(data, character, root)
 	elseif phase == "Impact" then
 		local position: Vector3 = data.position
 		U.shockwave(position, STAR, 3, 30, 0.5)
@@ -2692,58 +2840,6 @@ function handlers.Neverland(data, character, root)
 		if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 60 then
 			CameraShake.Add(0.4)
 		end
-	elseif phase == "Dome" then
-		local center: Vector3 = data.center
-		local radius: number = data.radius
-		local old = domes[character]
-		if old then
-			old.close()
-		end
-		local dome = U.newPart({
-			Shape = Enum.PartType.Ball,
-			Size = Vector3.one * radius * 2,
-			CFrame = CFrame.new(center),
-			Color = WIND,
-			Material = Enum.Material.ForceField,
-			Transparency = 1,
-		})
-		U.tween(dome, 0.4, { Transparency = 0.25 })
-		local rim: { Star } = {}
-		for _ = 1, 10 do
-			table.insert(rim, makeStar(1.6))
-		end
-		local closed = false
-		local function close()
-			if closed then
-				return
-			end
-			closed = true
-			domes[character] = nil
-			U.tween(dome, 0.5, { Transparency = 1 })
-			task.delay(0.55, dome.Destroy, dome)
-			for _, star in rim do
-				star.fade(0.4)
-			end
-		end
-		domes[character] = { close = close }
-		every(data.duration, function(elapsed)
-			if closed then
-				return false
-			end
-			for i, star in rim do
-				local angle = i / #rim * math.pi * 2 + elapsed * 0.4
-				star.place(
-					center
-						+ Vector3.new(
-							math.cos(angle) * radius,
-							1.5 + math.sin(elapsed * 2 + i) * 0.5,
-							math.sin(angle) * radius
-						),
-					elapsed * 2
-				)
-			end
-			return true
-		end, close)
 	end
 end
 

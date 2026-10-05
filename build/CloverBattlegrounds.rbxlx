@@ -60,6 +60,175 @@
       </Properties>
       <Item class="ModuleScript" referent="7">
         <Properties>
+          <string name="Name">BlackAscent</string>
+          <string name="Source"><![CDATA[--[[
+	BlackAscent
+	Black Ascent (Black Form, Demon-Slasher Katana 1): a rising cut launches
+	them; he springs up after them, cuts them twice in the air, from one
+	side then the other, and cuts them back down into the ground.
+
+	Shared so the server (which holds them both on the paths) and every
+	client (which draws them on it smoothly) agree on where they are.
+	t = 0 is the launching cut landing.
+]]
+
+local BlackAscent = {}
+
+local UP = Vector3.yAxis
+
+BlackAscent.Times = {
+	Rise = 0.3, -- they're carried up
+	Cuts = { 0.38, 0.56 }, -- the two cuts in the air
+	Spike = 0.78, -- the cut back down
+	Land = 0.95, -- they hit the ground
+	Length = 1.1, -- he's landed
+}
+BlackAscent.Height = 11
+
+export type Plan = {
+	origin: CFrame,
+	start: Vector3,
+	forward: Vector3,
+	right: Vector3,
+	floorY: number,
+	top: Vector3,
+}
+
+local function smooth(a: number): number
+	a = math.clamp(a, 0, 1)
+	return a * a * (3 - 2 * a)
+end
+
+function BlackAscent.Plan(origin: CFrame, victimPosition: Vector3, floorY: number): Plan
+	local toward = victimPosition - origin.Position
+	local flat = Vector3.new(toward.X, 0, toward.Z)
+	if flat.Magnitude < 1e-3 then
+		flat = Vector3.new(origin.LookVector.X, 0, origin.LookVector.Z)
+	end
+	local forward = if flat.Magnitude > 1e-3 then flat.Unit else Vector3.new(0, 0, -1)
+	local start = Vector3.new(victimPosition.X, floorY + 3, victimPosition.Z)
+	return {
+		origin = origin,
+		start = start,
+		forward = forward,
+		right = forward:Cross(UP),
+		floorY = floorY,
+		top = start + UP * BlackAscent.Height,
+	}
+end
+
+function BlackAscent.Victim(plan: Plan, t: number): CFrame
+	local times = BlackAscent.Times
+	local toward = CFrame.lookAt(Vector3.zero, -plan.forward).Rotation
+	if t <= times.Rise then
+		local a = 1 - (1 - t / times.Rise) ^ 2
+		return CFrame.new(plan.start:Lerp(plan.top, a)) * toward * CFrame.Angles(math.rad(-50) * a, 0, 0)
+	end
+	if t <= times.Spike then
+		-- Knocked one way, then the other, by the cuts.
+		local offset = Vector3.zero
+		for i, at in times.Cuts do
+			if t >= at then
+				local side = if i % 2 == 1 then -1 else 1
+				offset += plan.right * side * 0.8 * math.exp(-(t - at) * 12)
+			end
+		end
+		return CFrame.new(plan.top + offset) * toward * CFrame.Angles(math.rad(-50), 0, 0)
+	end
+	local a = math.clamp((t - times.Spike) / (times.Land - times.Spike), 0, 1)
+	local floor = Vector3.new(plan.start.X, plan.floorY + 1.5, plan.start.Z)
+	return CFrame.new(plan.top:Lerp(floor, a * a)) * toward * CFrame.Angles(math.rad(-50 - 40 * a), 0, 0)
+end
+
+function BlackAscent.Attacker(plan: Plan, t: number): CFrame
+	local times = BlackAscent.Times
+	local look = CFrame.lookAt(Vector3.zero, plan.forward).Rotation
+	local front = plan.top - plan.forward * 3 -- in front of them, up there
+	if t < 0.08 then
+		return plan.origin
+	end
+	if t < times.Cuts[1] - 0.05 then
+		-- Springing up after them.
+		local a = smooth((t - 0.08) / (times.Cuts[1] - 0.13))
+		local from = plan.origin.Position
+		return CFrame.new(from:Lerp(front, a) + UP * math.sin(a * math.pi) * 1.5) * look
+	end
+	if t < times.Cuts[2] - 0.05 then
+		-- From his right side...
+		local at = front + plan.right * 2.5
+		return CFrame.lookAt(at, plan.top)
+	end
+	if t < times.Spike - 0.08 then
+		-- ...then his left.
+		local at = front - plan.right * 2.5
+		return CFrame.lookAt(at, plan.top)
+	end
+	local above = plan.top + UP * 3.5 - plan.forward * 1.5
+	local landed = Vector3.new(plan.start.X, plan.floorY + 3, plan.start.Z) - plan.forward * 3
+	if t < times.Spike then
+		return CFrame.new(above) * look * CFrame.Angles(math.rad(-30), 0, 0)
+	end
+	-- Down with them, landing just short of where they hit.
+	local a = math.clamp((t - times.Spike) / (times.Land - times.Spike), 0, 1)
+	return CFrame.new(above:Lerp(landed, a * a)) * look
+end
+
+return BlackAscent
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="8">
+        <Properties>
+          <string name="Name">BlackComet</string>
+          <string name="Source"><![CDATA[--[[
+	BlackComet
+	Black Comet (Black Form, Demon-Destroyer Sword 2), a short grab
+	cutscene: with them by the throat, his wings throw him forward low over
+	the ground and he hammers them into it again and again as they streak
+	along, then he plants and heaves them away.
+
+	Shared so the server (which holds him on the path; they hang from his
+	hand) and every client (which draws it smoothly) agree on where he is.
+	t = 0 is the take-off, right after the seize.
+]]
+
+local BlackComet = {}
+
+local UP = Vector3.yAxis
+
+BlackComet.Times = {
+	Slams = { 0.22, 0.47, 0.72 }, -- into the ground as his arm comes down
+	Drag = 0.9, -- along the ground
+	Throw = 0.14, -- the heave lets go of them
+	Length = 1.25,
+}
+BlackComet.Distance = 30 -- the most he covers (walls cut it short)
+BlackComet.Low = 1.2 -- how far above standing height he flies
+
+export type Plan = { origin: Vector3, forward: Vector3, distance: number, floorY: number }
+
+function BlackComet.Plan(origin: Vector3, forward: Vector3, distance: number, floorY: number): Plan
+	return { origin = origin, forward = forward, distance = distance, floorY = floorY }
+end
+
+function BlackComet.At(plan: Plan, t: number): CFrame
+	local times = BlackComet.Times
+	local base = Vector3.new(plan.origin.X, plan.floorY + 3, plan.origin.Z)
+	local a = math.clamp(t / times.Drag, 0, 1)
+	-- Off fast, slowing to a stop; up off the ground at once, back down
+	-- for the heave.
+	local along = plan.distance * (1 - (1 - a) ^ 2)
+	local lift = BlackComet.Low * math.min(a / 0.15, 1) * (1 - math.clamp((a - 0.85) / 0.15, 0, 1))
+	local position = base + plan.forward * along + UP * lift
+	return CFrame.lookAt(position, position + plan.forward)
+end
+
+return BlackComet
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="9">
+        <Properties>
           <string name="Name">BlackMoon</string>
           <string name="Source"><![CDATA[--[[
 	BlackMoon
@@ -237,7 +406,7 @@ return BlackMoon
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="8">
+      <Item class="ModuleScript" referent="10">
         <Properties>
           <string name="Name">CombatState</string>
           <string name="Source"><![CDATA[--[[
@@ -389,7 +558,7 @@ return CombatState
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="9">
+      <Item class="ModuleScript" referent="11">
         <Properties>
           <string name="Name">Config</string>
           <string name="Source"><![CDATA[--[[
@@ -503,7 +672,7 @@ Config.Awakening = {
 	GainPerDamageTaken = 0.5,
 }
 
--- Timed states moves can put on people (Yuno's Neverland): PowerUntil hits
+-- Timed states moves can put on people (Yuno's great arrow): PowerUntil hits
 -- harder, WeakUntil hits softer, SlowUntil moves slower.
 Config.States = {
 	PowerMultiplier = 1.15,
@@ -550,7 +719,7 @@ return Config
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="10">
+      <Item class="ModuleScript" referent="12">
         <Properties>
           <string name="Name">Impulse</string>
           <string name="Source"><![CDATA[--[[
@@ -638,7 +807,7 @@ return Impulse
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="11">
+      <Item class="ModuleScript" referent="13">
         <Properties>
           <string name="Name">Kits</string>
           <string name="Source"><![CDATA[--[[
@@ -787,13 +956,13 @@ Kits.List = {
 				name = "Demon-Destroyer Sword",
 				skills = {
 					{ name = "Causality Break", cooldown = 15, type = "Zone", airHold = true },
-					{ name = "Severance", cooldown = 12, type = "Melee", airHold = true },
+					{ name = "Black Comet", cooldown = 14, type = "Melee", airHold = true },
 				},
 			},
 			Slasher = {
 				name = "Demon-Slasher Katana",
 				skills = {
-					{ name = "Infinite Slash", cooldown = 13, type = "Melee", airHold = true },
+					{ name = "Black Ascent", cooldown = 12, type = "Melee", airHold = true },
 					{ name = "Zetten", cooldown = 16, type = "Counter", airHold = true },
 				},
 			},
@@ -858,7 +1027,7 @@ Kits.List = {
 				{ name = "Spirit of Notos", cooldown = 12, type = "Counter" },
 				{ name = "Spirit of Zephyrus", cooldown = 13, type = "Bolt", airHold = true },
 				{ name = "Spirit of Euros", cooldown = 18, type = "Bolt", airHold = true },
-				{ name = "Neverland", cooldown = 30, type = "Melee" },
+				{ name = "Saint Spirit of Zephyr", cooldown = 30, type = "Melee" },
 			},
 		},
 	} :: KitInfo,
@@ -909,7 +1078,7 @@ return Kits
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="12">
+      <Item class="ModuleScript" referent="14">
         <Properties>
           <string name="Name">MeteorVortex</string>
           <string name="Source"><![CDATA[--[[
@@ -1052,157 +1221,7 @@ return MeteorVortex
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="13">
-        <Properties>
-          <string name="Name">Neverland</string>
-          <string name="Source"><![CDATA[--[[
-	Neverland
-	Yuno's Full-Crown cutscene, start to finish:
-	  1. time stops: the star dome flashes over them and the victim is
-	     lifted off the ground, frozen;
-	  2. the triangle: three stars stand round them, and he warps from star
-	     to star, punching them up each time (two laps, six punches), the
-	     triangle rising with them;
-	  3. the hammer: he's above them at the top and brings both fists down;
-	  4. they fall through the middle of it all into the ground, and he
-	     glides down after them.
-
-	Shared so the server (which holds them both on the paths) and every
-	client (which draws them on it smoothly) agree on where they are.
-	t = 0 is the grab.
-]]
-
-local Neverland = {}
-
-local UP = Vector3.yAxis
-
-Neverland.Times = {
-	Freeze = 0.45, -- time has stopped; they're lifted
-	Strikes = { 0.55, 0.85, 1.15, 1.45, 1.75, 2.05 },
-	Apex = 2.3, -- he's above them
-	Slam = 2.45, -- the hammer lands
-	Land = 2.8, -- they hit the ground
-	Length = 3.25, -- he's down too
-}
-Neverland.Warp = 0.08 -- he appears at the next star this long before each punch
-Neverland.Rise = 4.2 -- how far each punch knocks them up
-Neverland.Lift = 2 -- lifted off the ground as time stops
-Neverland.Radius = 4.6 -- the triangle round them
-Neverland.Above = 3.5 -- how far above them he is for the hammer
-
-export type Plan = {
-	origin: CFrame, -- him at the grab
-	start: Vector3, -- them at the grab
-	forward: Vector3, -- flat, from him to them
-	floorY: number,
-}
-
-local function smooth(a: number): number
-	a = math.clamp(a, 0, 1)
-	return a * a * (3 - 2 * a)
-end
-
-function Neverland.Plan(origin: CFrame, victimPosition: Vector3, floorY: number): Plan
-	local toward = victimPosition - origin.Position
-	local forward = Vector3.new(toward.X, 0, toward.Z)
-	if forward.Magnitude < 1e-3 then
-		forward = Vector3.new(origin.LookVector.X, 0, origin.LookVector.Z)
-	end
-	return {
-		origin = origin,
-		start = victimPosition,
-		forward = if forward.Magnitude > 1e-3 then forward.Unit else Vector3.new(0, 0, -1),
-		floorY = floorY,
-	}
-end
-
--- How high they are above where they started at time t.
-function Neverland.Height(t: number): number
-	local times = Neverland.Times
-	local height = Neverland.Lift * smooth(t / times.Freeze)
-	for _, at in times.Strikes do
-		height += Neverland.Rise * smooth((t - at) / 0.16)
-	end
-	return height
-end
-
--- Corner `index` (1 to 3) of the triangle of stars round them, at height
--- `height` above where they started.
-function Neverland.Corner(plan: Plan, index: number, height: number): Vector3
-	local right = plan.forward:Cross(UP)
-	local angle = math.pi + (index - 1) * (math.pi * 2 / 3)
-	local direction = plan.forward * math.cos(angle) + right * math.sin(angle)
-	return plan.start + UP * height + direction * Neverland.Radius
-end
-
--- Which punch (1 to 6) he's on at time t, if any.
-function Neverland.StrikeAt(t: number): number?
-	local times = Neverland.Times
-	local current = nil
-	for i, at in times.Strikes do
-		if t >= at - Neverland.Warp then
-			current = i
-		end
-	end
-	return if current and t < times.Apex - 0.05 then current else nil
-end
-
-local function top(plan: Plan): Vector3
-	return plan.start + UP * Neverland.Height(Neverland.Times.Slam)
-end
-
-local function landing(plan: Plan): Vector3
-	return Vector3.new(plan.start.X, plan.floorY + 3, plan.start.Z)
-end
-
-function Neverland.Victim(plan: Plan, t: number): CFrame
-	local times = Neverland.Times
-	local facing = -plan.forward
-	if t <= times.Slam then
-		local position = plan.start + UP * Neverland.Height(t)
-		-- Tipping back as they're knocked up.
-		local tip = math.rad(55) * smooth((t - times.Strikes[1]) / (times.Slam - times.Strikes[1]))
-		return CFrame.lookAt(position, position + facing) * CFrame.Angles(tip, 0, 0)
-	end
-	-- Down, faster and faster, turning over onto their back.
-	local a = math.clamp((t - times.Slam) / (times.Land - times.Slam), 0, 1)
-	local position = top(plan):Lerp(landing(plan), a * a)
-	return CFrame.lookAt(position, position + facing) * CFrame.Angles(math.rad(55) + math.rad(35) * a, 0, 0)
-end
-
-function Neverland.Attacker(plan: Plan, t: number): CFrame
-	local times = Neverland.Times
-	local strike = Neverland.StrikeAt(t)
-	if t < times.Strikes[1] - Neverland.Warp then
-		return plan.origin
-	end
-	if strike then
-		-- At the star for this punch, punching in; he rises a little with
-		-- them after it.
-		local at = times.Strikes[strike]
-		local height = Neverland.Height(at)
-		local follow = Neverland.Rise * 0.6 * smooth((t - at) / 0.2)
-		local corner = Neverland.Corner(plan, ((strike - 1) % 3) + 1, height - 0.5) + UP * follow
-		local target = plan.start + UP * (height + follow)
-		return CFrame.lookAt(corner, Vector3.new(target.X, corner.Y, target.Z))
-	end
-	local above = top(plan) + UP * Neverland.Above
-	if t < times.Slam then
-		return CFrame.lookAt(above, above + plan.forward)
-	end
-	-- Gliding down after them, landing just short of the crater.
-	local a = math.clamp((t - times.Slam) / (times.Length - times.Slam), 0, 1)
-	local eased = 1 - (1 - a) * (1 - a)
-	local down = landing(plan) - plan.forward * 4
-	local position = above:Lerp(down, eased)
-	return CFrame.lookAt(position, position + plan.forward)
-end
-
-return Neverland
-]]></string>
-        </Properties>
-      </Item>
-      <Item class="ModuleScript" referent="14">
+      <Item class="ModuleScript" referent="15">
         <Properties>
           <string name="Name">Remotes</string>
           <string name="Source"><![CDATA[--[[
@@ -1252,7 +1271,180 @@ return Remotes
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="15">
+      <Item class="ModuleScript" referent="16">
+        <Properties>
+          <string name="Name">SaintZephyr</string>
+          <string name="Source"><![CDATA[--[[
+	SaintZephyr
+	Yuno's Full-Crown 4, the blow that cut Zenon in half: Saint Spirit of
+	Zephyr. A star flicked onto whoever is in front of him binds them and
+	lifts them into the air, and five stars open round them in a pentagram.
+	Conjunction takes him from star to star, each time straight through
+	them (every cut hangs in the air). Then he's high above them with a blade
+	of wind and starlight, and splits them with one strike straight down
+	through them to the ground. The hanging cuts burst and they're driven
+	into the ground behind him, his back to them.
+
+	Shared so the server (which holds them both on the paths) and every
+	client (which draws them on it smoothly) agree on where they are.
+	t = 0 is the star binding them.
+]]
+
+local SaintZephyr = {}
+
+local UP = Vector3.yAxis
+
+SaintZephyr.Times = {
+	Lift = 0.45, -- bound by the star and lifted
+	Cuts = { 0.6, 0.8, 1.0, 1.2, 1.4 }, -- through them from each star
+	Rise = 1.6, -- high above them, the blade raised
+	Strike = 2.25, -- the one strike, straight down through them
+	Burst = 2.45, -- every cut left hanging in the air bursts
+	Land = 2.75, -- they hit the ground
+	Length = 3.3, -- he's standing, his back to them
+}
+SaintZephyr.Height = 8 -- how high the star lifts them
+SaintZephyr.Ring = 8.5 -- the pentagram's radius round them
+SaintZephyr.Above = 12 -- how far above them he raises the blade
+SaintZephyr.Appear = 0.12 -- he appears at a star this long before cutting
+SaintZephyr.Through = 0.08 -- the cut itself, star to star through them
+
+export type Plan = {
+	origin: CFrame,
+	start: Vector3,
+	forward: Vector3,
+	right: Vector3,
+	floorY: number,
+	center: Vector3, -- where they hang
+	stars: { Vector3 }, -- in the order he cuts from them
+	top: Vector3, -- where he raises the blade
+	ground: Vector3, -- where the strike ends, his feet on the floor
+}
+
+local function smooth(a: number): number
+	a = math.clamp(a, 0, 1)
+	return a * a * (3 - 2 * a)
+end
+
+function SaintZephyr.Plan(origin: CFrame, victimPosition: Vector3, floorY: number): Plan
+	local toward = victimPosition - origin.Position
+	local flat = Vector3.new(toward.X, 0, toward.Z)
+	if flat.Magnitude < 1e-3 then
+		flat = Vector3.new(origin.LookVector.X, 0, origin.LookVector.Z)
+	end
+	local forward = if flat.Magnitude > 1e-3 then flat.Unit else Vector3.new(0, 0, -1)
+	local right = forward:Cross(UP)
+	local start = Vector3.new(victimPosition.X, floorY + 3, victimPosition.Z)
+	local center = start + UP * SaintZephyr.Height
+	-- A pentagram: the first star on his side of them, each next one two
+	-- points on (144 degrees), alternately a little above and below them.
+	local stars = {}
+	for i = 1, #SaintZephyr.Times.Cuts do
+		local angle = math.pi + (i - 1) * math.pi * 4 / 5
+		local lift = if i % 2 == 0 then 2.5 else -1.5
+		table.insert(
+			stars,
+			center + (forward * math.cos(angle) + right * math.sin(angle)) * SaintZephyr.Ring + UP * lift
+		)
+	end
+	-- The strike runs from above them, through them, to the floor on his
+	-- side of them.
+	local reach = 3
+	local top = center + UP * SaintZephyr.Above + forward * reach
+	local ground = start - forward * (reach * SaintZephyr.Height / SaintZephyr.Above)
+	return {
+		origin = origin,
+		start = start,
+		forward = forward,
+		right = right,
+		floorY = floorY,
+		center = center,
+		stars = stars,
+		top = top,
+		ground = ground,
+	}
+end
+
+-- Out the far side of them from star i.
+function SaintZephyr.Exit(plan: Plan, i: number): Vector3
+	return plan.center + (plan.center - plan.stars[i])
+end
+
+local function facing(from: Vector3, to: Vector3, fallback: Vector3): CFrame
+	local look = to - from
+	if look.Magnitude < 1e-3 then
+		look = fallback
+	end
+	return CFrame.lookAt(from, from + look)
+end
+
+function SaintZephyr.Attacker(plan: Plan, t: number): CFrame
+	local times = SaintZephyr.Times
+	local cuts = times.Cuts
+	if t < cuts[1] - SaintZephyr.Appear then
+		return plan.origin
+	end
+	if t < times.Rise - 0.1 then
+		-- From star to star, through them each time.
+		local index = 1
+		for i, at in cuts do
+			if t >= at - SaintZephyr.Appear then
+				index = i
+			end
+		end
+		local at = cuts[index]
+		local star, exit = plan.stars[index], SaintZephyr.Exit(plan, index)
+		local half = SaintZephyr.Through / 2
+		if t < at - half then
+			return facing(star, plan.center, plan.forward)
+		end
+		local a = math.clamp((t - (at - half)) / SaintZephyr.Through, 0, 1)
+		return facing(star:Lerp(exit, a), exit + (exit - star), plan.forward)
+	end
+	if t < times.Strike - 0.04 then
+		-- High above them, looking down at them, the blade raised.
+		return CFrame.new(plan.top)
+			* CFrame.lookAt(Vector3.zero, plan.forward).Rotation
+			* CFrame.Angles(math.rad(-25), 0, 0)
+	end
+	if t < times.Strike + 0.1 then
+		local a = smooth((t - (times.Strike - 0.04)) / 0.14)
+		return CFrame.new(plan.top:Lerp(plan.ground, a)) * CFrame.lookAt(Vector3.zero, plan.forward).Rotation
+	end
+	-- Landed, turned away from them.
+	return CFrame.lookAt(plan.ground, plan.ground - plan.forward)
+end
+
+function SaintZephyr.Victim(plan: Plan, t: number): CFrame
+	local times = SaintZephyr.Times
+	local toward = CFrame.lookAt(Vector3.zero, -plan.forward).Rotation -- facing him
+	if t <= times.Lift then
+		local a = smooth(t / times.Lift)
+		return CFrame.new(plan.start:Lerp(plan.center, a)) * toward * CFrame.Angles(math.rad(-20) * a, 0, 0)
+	end
+	if t <= times.Burst then
+		-- Hung there, knocked about by each cut.
+		local offset = Vector3.zero
+		for i, at in times.Cuts do
+			if t >= at then
+				local push = SaintZephyr.Exit(plan, i) - plan.stars[i]
+				offset += push.Unit * 0.7 * math.exp(-(t - at) * 14)
+			end
+		end
+		local sway = math.sin(t * 9) * math.rad(8)
+		return CFrame.new(plan.center + offset) * toward * CFrame.Angles(math.rad(-20), sway, 0)
+	end
+	-- Driven into the ground, faster and faster.
+	local a = math.clamp((t - times.Burst) / (times.Land - times.Burst), 0, 1)
+	local floor = Vector3.new(plan.start.X, plan.floorY + 1.5, plan.start.Z)
+	return CFrame.new(plan.center:Lerp(floor, a * a)) * toward * CFrame.Angles(math.rad(-20 - 60 * a), 0, 0)
+end
+
+return SaintZephyr
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="17">
         <Properties>
           <string name="Name">TempestDive</string>
           <string name="Source"><![CDATA[--[[
@@ -1392,11 +1584,11 @@ return TempestDive
       </Item>
     </Item>
   </Item>
-  <Item class="ServerScriptService" referent="16">
+  <Item class="ServerScriptService" referent="18">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Script" referent="17">
+    <Item class="Script" referent="19">
       <Properties>
         <string name="Name">Server</string>
         <token name="RunContext">0</token>
@@ -1430,7 +1622,7 @@ CharacterLoader.Start()
 Dummies.Start()
 ]]></string>
       </Properties>
-      <Item class="ModuleScript" referent="18">
+      <Item class="ModuleScript" referent="20">
         <Properties>
           <string name="Name">CharacterLoader</string>
           <string name="Source"><![CDATA[--[[
@@ -1525,7 +1717,7 @@ return CharacterLoader
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="19">
+      <Item class="ModuleScript" referent="21">
         <Properties>
           <string name="Name">CombatService</string>
           <string name="Source"><![CDATA[--[[
@@ -3067,7 +3259,7 @@ return CombatService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="20">
+      <Item class="ModuleScript" referent="22">
         <Properties>
           <string name="Name">Dummies</string>
           <string name="Source"><![CDATA[--[[
@@ -3225,7 +3417,7 @@ return Dummies
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="21">
+      <Item class="ModuleScript" referent="23">
         <Properties>
           <string name="Name">Hitbox</string>
           <string name="Source"><![CDATA[--[[
@@ -3326,11 +3518,11 @@ return Hitbox
 ]]></string>
         </Properties>
       </Item>
-      <Item class="Folder" referent="22">
+      <Item class="Folder" referent="24">
         <Properties>
           <string name="Name">Kits</string>
         </Properties>
-        <Item class="ModuleScript" referent="23">
+        <Item class="ModuleScript" referent="25">
           <Properties>
             <string name="Name">AntiMagic</string>
             <string name="Source"><![CDATA[--[[
@@ -3356,11 +3548,13 @@ return Hitbox
 	                        2 Slayer Recall: boomerang throw, press 2 again to call it back
 	  Demon-Dweller Sword   1 Black Slash: piercing anti-magic slash wave
 	                        2 Conquering Eon: absorbs spells and siphons mana, then
-	                          releases it all as one huge slash
+	                          lets it all out in a dome of anti-magic round him
 	  Demon-Destroyer Sword 1 Causality Break: planted blade breaks the magic (counters,
 	                          guard, stances) of the 4 closest enemies
-	                        2 Severance: dash-through draw cut that seals their moves
-	  Demon-Slasher Katana  1 Infinite Slash: unblockable cut along a straight line
+	                        2 Black Comet: short grab cutscene, flies low hammering
+	                          them along the ground, then throws them
+	  Demon-Slasher Katana  1 Black Ascent: launching cut, two cuts in the air, cut
+	                          back down into the ground
 	                        2 Zetten: ki-reading iai stance, cuts down whoever moves
 	  3 Grand Divider       massive cleave plus a giant slash wave (guard break)
 	  4 Black Moon          cutscene grab: hurls them into the sky, hangs in front
@@ -3374,6 +3568,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BlackMoon = require(ReplicatedStorage:WaitForChild("Shared").BlackMoon)
 local MeteorVortex = require(ReplicatedStorage:WaitForChild("Shared").MeteorVortex)
+local CometPlan = require(ReplicatedStorage:WaitForChild("Shared").BlackComet)
+local AscentPlan = require(ReplicatedStorage:WaitForChild("Shared").BlackAscent)
 local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
 local Projectile = require(script.Parent.Parent.Projectile)
 
@@ -4993,8 +5189,6 @@ end
 -- Sword moves (Black Form 1 and 2 follow the sword in his hand)
 ---------------------------------------------------------------------------
 
-local SEAL_COLOR = Color3.fromRGB(200, 25, 35)
-
 local function rootOf(character: Model): BasePart?
 	return character:FindFirstChild("HumanoidRootPart") :: BasePart?
 end
@@ -5113,8 +5307,9 @@ end
 --[[
 	Conquering Eon (Demon-Dweller Sword 2): raises the Dweller and it drinks
 	in the magic around him. Spells that hit him are swallowed by the blade,
-	and the mana of everyone close by is siphoned off. Each charge (up to 4)
-	makes the slash he lets it all out in bigger; from 3 it breaks guards.
+	and the mana of everyone close by is siphoned off. Then it lets it all
+	out at once in a dome of anti-magic round him, bigger and harder with
+	each charge (up to 4); from 2 it knocks them down, from 3 it breaks guards.
 ]]
 local EON_CHARGE = 0.6
 local EON_RADIUS = 18
@@ -5169,18 +5364,28 @@ local function conqueringEon(ctx)
 		return
 	end
 
-	local forward = look(ctx)
-	local direction = if airborne then (forward + UP * -0.5).Unit else forward
-	local origin = ctx.root.Position + direction * 3 + UP * 0.8
-	fx(ctx, "ConqueringEon", "Release", { airborne = airborne, charges = charges })
-	blackSlash(ctx, origin, direction, {
-		damage = 8 + 2 * charges,
-		size = Vector3.new(10 + 2.5 * charges, 5 + charges, 3),
-		speed = 105,
-		range = if airborne then waveRange(ctx, origin, direction, 70) else 70,
-		grand = charges >= 3,
-	})
-	c.ShakeArea(ctx.root.Position, 40 + 8 * charges, 0.3 + 0.1 * charges)
+	-- Everything it drank bursts out of the blade at once: a dome of
+	-- anti-magic round him, bigger with every charge.
+	local center = ctx.root.Position
+	local radius = 10 + 2 * charges
+	fx(ctx, "ConqueringEon", "Release", { airborne = airborne, charges = charges, radius = radius })
+	for _, victim in c.Sphere(character, center, radius) do
+		local victimRoot = rootOf(victim)
+		if victimRoot then
+			local away = victimRoot.Position - center
+			local out = if Vector3.new(away.X, 0, away.Z).Magnitude > 0.5 then c.Flat(away) else look(ctx)
+			c.Hit(character, victim, {
+				damage = 6 + 2 * charges,
+				stun = 1,
+				attackType = "Melee",
+				guardBreak = charges >= 3,
+				heavy = true,
+				ragdoll = if charges >= 2 then 1 else nil,
+				velocity = out * (40 + 5 * charges) + UP * 22,
+			})
+		end
+	end
+	c.ShakeArea(center, 40 + 8 * charges, 0.3 + 0.1 * charges)
 	task.wait(0.3)
 	CombatState.SetCasting(character, 0.25)
 end
@@ -5246,113 +5451,202 @@ local function causalityBreak(ctx)
 	CombatState.SetCasting(character, 0.3)
 end
 
---[[
-	Severance (Demon-Destroyer Sword 2): one draw-cut as he dashes straight
-	through them. A beat later the cut lands, and whoever it cut is severed
-	from their magic: every move they have is sealed for a few seconds.
-]]
-local SEVER_DASH_AT = 0.12 -- the Severance animation's crouch
-local SEVER_DASH = 0.2
-local SEVER_SPEED = 95
-local SEVER_DELAY = 0.35
-local SEAL_TIME = 3
+-- What's in the way along `direction` (walls, not people) and where the
+-- floor is, ignoring everyone (for the cutscene paths below).
+local function sceneRay(ctx, origin: Vector3, direction: Vector3, ignore: { Instance }): RaycastResult?
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local skip = table.clone(ignore)
+	table.insert(skip, ctx.character)
+	for _ = 1, 4 do
+		params.FilterDescendantsInstances = skip
+		local hit = workspace:Raycast(origin, direction, params)
+		if not hit then
+			return nil
+		end
+		local model = hit.Instance:FindFirstAncestorWhichIsA("Model")
+		if not (model and model:FindFirstChildOfClass("Humanoid")) then
+			return hit
+		end
+		table.insert(skip, model)
+	end
+	return nil
+end
 
-local function severance(ctx)
-	local c, character = ctx.combat, ctx.character
-	CombatState.SetCasting(character, 0.75)
-	fx(ctx, "Severance", "Draw", { airborne = ctx.airborne })
-	task.wait(SEVER_DASH_AT)
-	if interrupted(ctx) then
-		fx(ctx, "Severance", "Cancel")
-		return
-	end
-	local forward = look(ctx)
-	local from = ctx.root.Position
-	CombatState.GiveIFrames(character, SEVER_DASH + 0.1)
-	c.ApplyVelocity(character, forward * SEVER_SPEED + (if ctx.airborne then HOVER else Vector3.zero), SEVER_DASH)
-	fx(ctx, "Severance", "Dash", { from = from, direction = forward })
-	local cut: { Model } = {}
-	local seen: { [Model]: boolean } = {}
-	local start = os.clock()
-	while os.clock() - start < SEVER_DASH + 0.03 do
-		for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -1), Vector3.new(6, 7, 7)) do
-			if not seen[victim] then
-				seen[victim] = true
-				table.insert(cut, victim)
-			end
-		end
-		task.wait()
-	end
-	c.ApplyVelocity(character, forward * 8, 0.1)
-	fx(ctx, "Severance", "Sheathe", { from = from, to = ctx.root.Position, targets = cut })
-	task.wait(SEVER_DELAY)
-	for _, victim in cut do
-		if
-			CombatState.IsAlive(victim)
-			and c.Hit(character, victim, {
-					damage = 11,
-					stun = 1.1,
-					attackType = "Melee",
-					heavy = true,
-					velocity = forward * 10 + UP * 8,
-					velocityTime = 0.15,
-				})
-				== "Hit"
-		then
-			for _, slot in { 1, 2, 3, 4, CombatState.SpecialSlot } do
-				if CombatState.Cooldown(victim, slot) < SEAL_TIME then
-					CombatState.StartCooldown(victim, slot, SEAL_TIME)
-				end
-			end
-			fx(ctx, "Severance", "Seal", { target = victim, duration = SEAL_TIME })
-			c.Notify(victim, "SEVERED: moves sealed", SEAL_COLOR)
-		end
-	end
-	CombatState.SetCasting(character, 0.2)
+local function floorAt(ctx, position: Vector3, ignore: { Instance }): number
+	local hit = sceneRay(ctx, position + UP * 2, UP * -60, ignore)
+	return if hit then hit.Position.Y else position.Y - 3
 end
 
 --[[
-	Infinite Slash (Demon-Slasher Katana 1): Yami's move. The katana raised
-	overhead comes down once, and a cut opens along everything in a straight
-	line ahead of him, as far as it goes. It cuts only what he means to cut:
-	nothing blocks it.
+	Black Comet (Demon-Destroyer Sword 2): a short grab cutscene. His free
+	hand seizes whoever is in front of him; his wings throw him forward low
+	over the ground and he hammers them into it three times as they streak
+	along, then he plants and heaves them away. The path is Shared/BlackComet.
 ]]
-local INFINITE_RAISE = 0.55
-local INFINITE_RANGE = 60
+local HOLD_COMET = CFrame.new(-1, -1.6, -3) * FACING -- low in front of him
 
-local function infiniteSlash(ctx)
+local function blackComet(ctx)
 	local c, character = ctx.combat, ctx.character
-	local airborne = ctx.airborne
-	CombatState.SetCasting(character, INFINITE_RAISE + 0.45)
-	if airborne then
-		c.ApplyVelocity(character, HOVER, INFINITE_RAISE + 0.25)
-	end
-	fx(ctx, "InfiniteSlash", "Raise", { airborne = airborne, duration = INFINITE_RAISE })
-	task.wait(INFINITE_RAISE)
-	if interrupted(ctx) then
-		fx(ctx, "InfiniteSlash", "Cancel")
+	local times = CometPlan.Times
+	local target, release, hold = reachGrab(ctx, times.Length + 0.4, "BlackComet")
+	if not target or not release or not hold then
 		return
 	end
 	local forward = look(ctx)
-	local direction = if airborne then (forward + UP * -0.35).Unit else forward
-	local origin = ctx.root.Position + direction * 1.5
-	local length = waveRange(ctx, origin, direction, INFINITE_RANGE)
-	fx(ctx, "InfiniteSlash", "Cut", { origin = origin, direction = direction, length = length })
-	local box = CFrame.lookAt(origin + direction * (length / 2), origin + direction * length)
-	for _, victim in c.Box(character, box, Vector3.new(3.5, 7, length)) do
-		c.Hit(character, victim, {
-			damage = 11,
-			stun = 1.1,
+	local origin = ctx.root.Position
+	local wall = sceneRay(ctx, origin + UP, forward * (CometPlan.Distance + 4), { target })
+	local distance = if wall then math.max((wall.Position - (origin + UP)).Magnitude - 4, 4) else CometPlan.Distance
+	local plan = CometPlan.Plan(origin, forward, distance, floorAt(ctx, origin, { target }))
+	hold(HOLD_COMET)
+	CombatState.SetCasting(character, times.Length + 0.3)
+	fx(ctx, "BlackComet", "Drag", {
+		target = target,
+		origin = origin,
+		forward = forward,
+		distance = distance,
+		floorY = plan.floorY,
+	})
+	local stop = c.Cutscene({
+		[character] = function(t)
+			return CometPlan.At(plan, t)
+		end,
+	}, times.Length)
+	local started = os.clock()
+	local function waitUntil(at: number): boolean
+		task.wait(math.max(at - (os.clock() - started), 0))
+		return CombatState.IsAlive(character) and CombatState.IsAlive(target)
+	end
+	for _, at in times.Slams do
+		if not waitUntil(at) then
+			stop()
+			release()
+			return
+		end
+		c.Hit(character, target, { damage = 2, stun = 2, attackType = "Melee", unblockable = true, noShake = true })
+		local where = CometPlan.At(plan, at).Position + forward * 3
+		fx(ctx, "BlackComet", "Slam", { position = Vector3.new(where.X, plan.floorY, where.Z) })
+		c.ShakeArea(where, 30, 0.2)
+	end
+
+	-- The heave.
+	if not waitUntil(times.Drag) then
+		stop()
+		release()
+		return
+	end
+	fx(ctx, "BlackComet", "Throw", { target = target, direction = forward })
+	waitUntil(times.Drag + times.Throw)
+	release()
+	if CombatState.IsAlive(target) then
+		c.Hit(character, target, {
+			damage = 5,
+			stun = 1,
+			attackType = "Melee",
+			unblockable = true,
+			heavy = true,
+			ragdoll = 1.4,
+			velocity = forward * 85 + UP * 30,
+		})
+	end
+	waitUntil(times.Length)
+	stop()
+	CombatState.SetCasting(character, 0.3)
+end
+
+--[[
+	Black Ascent (Demon-Slasher Katana 1): a rising cut that launches whoever
+	is in front of him (blockable); he springs up after them, cuts them twice
+	in the air and cuts them back down into the ground. The paths are
+	Shared/BlackAscent.
+]]
+local ASCENT_STARTUP = 0.14 -- the Rising swing's cut
+
+local function blackAscent(ctx)
+	local c, character = ctx.combat, ctx.character
+	CombatState.SetCasting(character, ASCENT_STARTUP + 0.3)
+	fx(ctx, "BlackAscent", "Cut", { airborne = ctx.airborne })
+	if ctx.airborne then
+		c.ApplyVelocity(character, HOVER, ASCENT_STARTUP + 0.1)
+	else
+		c.ApplyVelocity(character, look(ctx) * 14, ASCENT_STARTUP)
+	end
+	task.wait(ASCENT_STARTUP)
+	if interrupted(ctx) then
+		return
+	end
+	local target: Model? = nil
+	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 0.5, -3.5), Vector3.new(6, 7, 6)) do
+		if not CombatState.IsRagdolled(victim) then
+			target = victim
+			break
+		end
+	end
+	local targetRoot = target and rootOf(target)
+	if not target or not targetRoot then
+		fx(ctx, "BlackAscent", "Whiff")
+		CombatState.SetCasting(character, 0.45)
+		return
+	end
+	if c.Hit(character, target, { damage = 2, stun = 1.5, attackType = "Melee", heavy = true }) ~= "Hit" then
+		CombatState.SetCasting(character, 0.45)
+		return
+	end
+
+	local plan = AscentPlan.Plan(ctx.root.CFrame, targetRoot.Position, floorAt(ctx, targetRoot.Position, { target }))
+	local times = AscentPlan.Times
+	CombatState.SetCasting(character, times.Length + 0.25)
+	CombatState.GiveIFrames(character, times.Length)
+	CombatState.Stun(target, times.Length + 0.5)
+	fx(ctx, "BlackAscent", "Launch", {
+		target = target,
+		origin = plan.origin,
+		start = targetRoot.Position,
+		floorY = plan.floorY,
+	})
+	local stopHim = c.Cutscene({
+		[character] = function(t)
+			return AscentPlan.Attacker(plan, t)
+		end,
+	}, times.Length)
+	local stopThem = c.Cutscene({
+		[target] = function(t)
+			return AscentPlan.Victim(plan, t)
+		end,
+	}, times.Land)
+	local started = os.clock()
+	local function waitUntil(at: number)
+		task.wait(math.max(at - (os.clock() - started), 0))
+	end
+	for _, at in times.Cuts do
+		waitUntil(at)
+		if CombatState.IsAlive(target) then
+			c.Hit(
+				character,
+				target,
+				{ damage = 2, stun = 1.5, attackType = "Melee", unblockable = true, noShake = true }
+			)
+		end
+	end
+	waitUntil(times.Land)
+	stopThem()
+	local floor = Vector3.new(plan.start.X, plan.floorY, plan.start.Z)
+	if CombatState.IsAlive(target) then
+		c.Hit(character, target, {
+			damage = 4,
+			stun = 1,
 			attackType = "Melee",
 			unblockable = true,
 			heavy = true,
 			ragdoll = 1.2,
-			velocity = direction * 25 + UP * 22,
+			velocity = UP * -12 + plan.forward * 8,
 		})
 	end
-	c.ShakeArea(origin, 50, 0.45)
-	task.wait(0.3)
-	CombatState.SetCasting(character, 0.2)
+	fx(ctx, "BlackAscent", "Impact", { position = floor })
+	c.ShakeArea(floor, 40, 0.35)
+	waitUntil(times.Length)
+	stopHim()
+	CombatState.SetCasting(character, 0.25)
 end
 
 --[[
@@ -5450,8 +5744,8 @@ Kit.Skills = { bullThrust, blackMeteorite, blackDivider, antiMagicDeflect }
 local SWORD_MOVES: { [string]: { (any) -> () } } = {
 	Slayer = { blackHurricane, slayerRecall },
 	Dweller = { blackSlashMove, conqueringEon },
-	Destroyer = { causalityBreak, severance },
-	Slasher = { infiniteSlash, zetten },
+	Destroyer = { causalityBreak, blackComet },
+	Slasher = { blackAscent, zetten },
 }
 local function swordMove(slot: number): (any) -> ()
 	return function(ctx)
@@ -5541,7 +5835,7 @@ return Kit
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="24">
+        <Item class="ModuleScript" referent="26">
           <Properties>
             <string name="Name">Wind</string>
             <string name="Source"><![CDATA[--[[
@@ -5585,9 +5879,9 @@ return Kit
 	                         him, then rain down on them
 	  3 Spirit of Euros      a recurve bow of wind; one arrow, too fast to see,
 	                         through everything in a line (unblockable)
-	  4 Neverland            cutscene grab: in the stopped time of the star dome he
-	                         warps round a triangle of stars punching them up,
-	                         hammers them down, and the dome lingers over them
+	  4 Saint Spirit of      cutscene: a star binds them in the air in a pentagram;
+	    Zephyr               he cuts through them from star to star (Conjunction),
+	                         then splits them with one strike from above
 	Air combos: he can jump again in the air (Kits airJumps), and from the air
 	the hawk holds them up and pulls him in, the blades and arrows keep them
 	up there (the last spikes them down), Tempest Dive takes them both up.
@@ -5599,7 +5893,7 @@ return Kit
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
-local NeverlandPlan = require(ReplicatedStorage:WaitForChild("Shared").Neverland)
+local SaintPlan = require(ReplicatedStorage:WaitForChild("Shared").SaintZephyr)
 local DivePlan = require(ReplicatedStorage:WaitForChild("Shared").TempestDive)
 local Projectile = require(script.Parent.Parent.Projectile)
 
@@ -6685,34 +6979,36 @@ local function spiritOfEuros(ctx)
 end
 
 --[[
-	Neverland (Full-Crown 4): a cutscene grab. His hand shoots out; whoever
-	it catches is caught in the stopped time of the star dome. Three stars
-	stand round them and he warps from star to star punching them up through
-	the triangle, then hammers them down from above into the ground. The
-	timeline is Shared/Neverland, the camera work and effects client side.
-	Then the dome lingers over the crater for a few seconds: inside it,
-	enemies are slower and weaker and he hits harder.
+	Saint Spirit of Zephyr (Full-Crown 4): a cutscene. He flicks a star at
+	whoever is in front of him (about 15 studs); it binds them and lifts them
+	into the air in a pentagram of stars. Conjunction takes him from star to
+	star, straight through them each time, then he's high above them and
+	splits them with one strike of wind and starlight, down through them to
+	the ground. The cuts left hanging in the air burst and drive them into
+	the ground. The timeline is Shared/SaintZephyr, the camera work and
+	effects client side.
 ]]
-local NEVERLAND_REACH = 0.15
-local NEVERLAND_LINGER = 4
-local NEVERLAND_RADIUS = 20
+local SAINT_FLICK = 0.2 -- the star leaves his hand (Conjunction's point)
+local SAINT_BOX = Vector3.new(5, 7, 15)
 
-local function neverland(ctx)
+local function saintSpiritOfZephyr(ctx)
 	local c, character = ctx.combat, ctx.character
-	CombatState.SetCasting(character, NEVERLAND_REACH + 0.5)
+	CombatState.SetCasting(character, SAINT_FLICK + 0.5)
 	if ctx.airborne then
-		c.ApplyVelocity(character, HOVER, NEVERLAND_REACH + 0.3)
+		c.ApplyVelocity(character, HOVER, SAINT_FLICK + 0.3)
 	end
-	fx(ctx, "Neverland", "Reach")
-	task.wait(NEVERLAND_REACH)
+	fx(ctx, "SaintSpiritOfZephyr", "Flick", { range = SAINT_BOX.Z })
+	task.wait(SAINT_FLICK)
 	if interrupted(ctx) then
 		return
 	end
 	local target: Model? = nil
-	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -3.5), Vector3.new(6, 7, 7)) do
-		if not CombatState.HasIFrames(victim) and not CombatState.IsRagdolled(victim) then
-			target = victim
-			break
+	local nearest = math.huge
+	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -SAINT_BOX.Z / 2), SAINT_BOX) do
+		local victimRoot = rootOf(victim)
+		local distance = if victimRoot then (victimRoot.Position - ctx.root.Position).Magnitude else math.huge
+		if not CombatState.HasIFrames(victim) and not CombatState.IsRagdolled(victim) and distance < nearest then
+			target, nearest = victim, distance
 		end
 	end
 	local targetRoot = target and rootOf(target)
@@ -6726,45 +7022,58 @@ local function neverland(ctx)
 			)
 			~= "Hit"
 	then
-		fx(ctx, "Neverland", "Whiff")
+		fx(ctx, "SaintSpiritOfZephyr", "Whiff")
 		CombatState.SetCasting(character, 0.55)
 		return
 	end
 
-	local plan = NeverlandPlan.Plan(ctx.root.CFrame, targetRoot.Position, floorUnder(ctx, targetRoot.Position).Y)
-	local times = NeverlandPlan.Times
+	local plan = SaintPlan.Plan(ctx.root.CFrame, targetRoot.Position, floorUnder(ctx, targetRoot.Position).Y)
+	local times = SaintPlan.Times
 	CombatState.SetCasting(character, times.Length + 0.3)
 	CombatState.GiveIFrames(character, times.Length + 0.2)
 	CombatState.Stun(target, times.Length + 0.6)
-	fx(ctx, "Neverland", "Begin", { target = target, origin = plan.origin, start = plan.start, floorY = plan.floorY })
+	fx(ctx, "SaintSpiritOfZephyr", "Begin", {
+		target = target,
+		origin = plan.origin,
+		start = targetRoot.Position,
+		floorY = plan.floorY,
+	})
 	local stopHim = c.Cutscene({
 		[character] = function(t)
-			return NeverlandPlan.Attacker(plan, t)
+			return SaintPlan.Attacker(plan, t)
 		end,
 	}, times.Length)
 	local stopThem = c.Cutscene({
 		[target] = function(t)
-			return NeverlandPlan.Victim(plan, t)
+			return SaintPlan.Victim(plan, t)
 		end,
 	}, times.Land)
 	local started = os.clock()
 	local function waitUntil(at: number)
 		task.wait(math.max(at - (os.clock() - started), 0))
 	end
-	for _, at in times.Strikes do
+	for _, at in times.Cuts do
 		waitUntil(at)
 		if CombatState.IsAlive(target) then
-			c.Hit(character, target, { damage = 2, stun = 3, attackType = "Melee", unblockable = true, noShake = true })
+			c.Hit(
+				character,
+				target,
+				{ damage = 1.6, stun = 3, attackType = "Melee", unblockable = true, noShake = true }
+			)
 		end
 	end
+	waitUntil(times.Strike)
+	if CombatState.IsAlive(target) then
+		c.Hit(character, target, { damage = 3, stun = 3, attackType = "Melee", unblockable = true, noShake = true })
+	end
 
-	-- They hit the ground.
+	-- The cuts burst and drive them into the ground.
 	waitUntil(times.Land)
 	stopThem()
 	local center = Vector3.new(plan.start.X, plan.floorY, plan.start.Z)
 	if CombatState.IsAlive(target) then
 		c.Hit(character, target, {
-			damage = 14,
+			damage = 11,
 			stun = 1.4,
 			attackType = "Melee",
 			unblockable = true,
@@ -6773,25 +7082,10 @@ local function neverland(ctx)
 			velocity = UP * -20 + plan.forward * 4,
 		})
 	end
-	fx(ctx, "Neverland", "Impact", { position = center })
+	fx(ctx, "SaintSpiritOfZephyr", "Impact", { position = center })
 	c.ShakeArea(center, 80, 0.7)
 	waitUntil(times.Length)
 	stopHim()
-
-	-- The dome lingers over them.
-	fx(ctx, "Neverland", "Dome", { center = center, radius = NEVERLAND_RADIUS, duration = NEVERLAND_LINGER })
-	local opened = os.clock()
-	while os.clock() - opened < NEVERLAND_LINGER and character.Parent do
-		local now = os.clock()
-		for _, victim in c.Sphere(character, center, NEVERLAND_RADIUS) do
-			victim:SetAttribute("WeakUntil", now + 0.4)
-			victim:SetAttribute("SlowUntil", now + 0.4)
-		end
-		if (ctx.root.Position - center).Magnitude <= NEVERLAND_RADIUS then
-			character:SetAttribute("PowerUntil", now + 0.4)
-		end
-		task.wait(0.2)
-	end
 end
 
 ---------------------------------------------------------------------------
@@ -6803,7 +7097,7 @@ Kit.Skills = { windBladesShower, swiftWhiteHawk, heavenlyWindArk, galeWhiteBow }
 -- Awakened, the moves follow the stage: Half-Crown, or Full-Crown once he's
 -- ascended (the "Ascended" attribute; names and cooldowns in Shared/Kits).
 local HALF_CROWN = { spiritStorm, tempestDive, quartileScutum, quartileHasta }
-local FULL_CROWN = { spiritOfNotos, spiritOfZephyrus, spiritOfEuros, neverland }
+local FULL_CROWN = { spiritOfNotos, spiritOfZephyrus, spiritOfEuros, saintSpiritOfZephyr }
 local function stageMove(slot: number): (any) -> ()
 	return function(ctx)
 		local moves = if ctx.character:GetAttribute("Ascended") == true then FULL_CROWN else HALF_CROWN
@@ -6887,7 +7181,7 @@ return Kit
           </Properties>
         </Item>
       </Item>
-      <Item class="ModuleScript" referent="25">
+      <Item class="ModuleScript" referent="27">
         <Properties>
           <string name="Name">Projectile</string>
           <string name="Source"><![CDATA[--[[
@@ -6983,7 +7277,7 @@ return Projectile
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="26">
+      <Item class="ModuleScript" referent="28">
         <Properties>
           <string name="Name">Ragdoll</string>
           <string name="Source"><![CDATA[--[[
@@ -7279,16 +7573,16 @@ return Ragdoll
       </Item>
     </Item>
   </Item>
-  <Item class="StarterPlayer" referent="27">
+  <Item class="StarterPlayer" referent="29">
     <Properties>
       <string name="Name">StarterPlayer</string>
       <bool name="EnableMouseLockOption">false</bool>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="28">
+    <Item class="StarterPlayerScripts" referent="30">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="LocalScript" referent="29">
+      <Item class="LocalScript" referent="31">
         <Properties>
           <string name="Name">Client</string>
           <string name="Source"><![CDATA[--[[
@@ -7319,7 +7613,7 @@ ShiftLock.Start()
 TopBar.Start()
 ]]></string>
         </Properties>
-        <Item class="ModuleScript" referent="30">
+        <Item class="ModuleScript" referent="32">
           <Properties>
             <string name="Name">CameraShake</string>
             <string name="Source"><![CDATA[--[[
@@ -7385,7 +7679,7 @@ return CameraShake
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="31">
+        <Item class="ModuleScript" referent="33">
           <Properties>
             <string name="Name">Cinematic</string>
             <string name="Source"><![CDATA[--[[
@@ -7614,7 +7908,7 @@ return Cinematic
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="32">
+        <Item class="ModuleScript" referent="34">
           <Properties>
             <string name="Name">HUD</string>
             <string name="Source"><![CDATA[--[[
@@ -8112,7 +8406,7 @@ return HUD
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="33">
+        <Item class="ModuleScript" referent="35">
           <Properties>
             <string name="Name">Input</string>
             <string name="Source"><![CDATA[--[[
@@ -8710,11 +9004,11 @@ return Input
 ]]></string>
           </Properties>
         </Item>
-        <Item class="Folder" referent="34">
+        <Item class="Folder" referent="36">
           <Properties>
             <string name="Name">Kits</string>
           </Properties>
-          <Item class="ModuleScript" referent="35">
+          <Item class="ModuleScript" referent="37">
             <Properties>
               <string name="Name">AntiMagic</string>
               <string name="Source"><![CDATA[--[[
@@ -8734,6 +9028,8 @@ local TweenService = game:GetService("TweenService")
 
 local BlackMoon = require(ReplicatedStorage:WaitForChild("Shared").BlackMoon)
 local MeteorVortex = require(ReplicatedStorage:WaitForChild("Shared").MeteorVortex)
+local CometPlan = require(ReplicatedStorage:WaitForChild("Shared").BlackComet)
+local AscentPlan = require(ReplicatedStorage:WaitForChild("Shared").BlackAscent)
 
 local CameraShake = require(script.Parent.Parent.CameraShake)
 local Cinematic = require(script.Parent.Parent.Cinematic)
@@ -14370,25 +14666,21 @@ function handlers.ConqueringEon(data, character, root)
 	elseif phase == "Release" then
 		bump(character)
 		local charges = data.charges or 0
-		play(character, if air then ANIMS.AirDividerRelease else ANIMS.GrandRelease)
-		heavyTrail(character, 0.3)
-		crescent(character, {
-			center = CFrame.new(0, 0.6, 0),
-			radius = 7 + charges,
-			from = 100,
-			to = if air then -120 else -40,
-			tilt = 90,
-			width = 2 + 0.4 * charges,
-			sweep = 0.1,
-			fade = 0.35,
-			glow = 0.5 + 0.12 * charges,
-		})
+		local radius: number = data.radius or 10
+		-- The Dweller held high lets it all out at once: a dome of
+		-- anti-magic round him (a black shell in a red shockwave) racing out
+		-- along the ground.
+		play(character, ANIMS.EonRelease)
 		local point = bladePoint(character, 2) or root.Position
 		glowBurst(point, 4 + 1.5 * charges, 0.35)
 		bloomPulse(root.Position, 0.4 + 0.2 * charges, 0.45)
 		edgeGlow(character, 0.4, 1)
-		U.shockwave(root.Position, RED, 2, 10 + 3 * charges, 0.35)
-		blackLightning(point, 3 + charges, 4 + charges)
+		U.shockwave(root.Position, BLACK, 2, radius * 2, 0.4, Enum.Material.Glass, 0.35)
+		U.shockwave(root.Position, RED, 2, radius * 2.1, 0.45)
+		U.ringBurst(CFrame.new(root.Position - UP * 2.8), RED, 1, radius, 0.35, 0.4)
+		U.groundCracks(root.Position, 6 + charges, radius * 0.6, RED, 1.2)
+		blackLightning(root.Position, 4 + charges, radius * 0.7)
+		blackSmoke(root.Position, 10 + 2 * charges, 4, 12)
 		task.delay(0.45, lightMarks, character, 0)
 		if U.isLocal(character) then
 			CameraShake.Add(0.15 + 0.06 * charges)
@@ -14485,150 +14777,195 @@ function handlers.CausalityBreak(data, character, root)
 	end
 end
 
-function handlers.Severance(data, character, root)
+-- Black Comet: the reach and the seize are drawn with Black Meteorite's.
+-- Then his wings throw him forward low over the ground with them, black
+-- smoke and torn-up earth trailing behind; each time he hammers them down
+-- the ground cracks and rocks fly; then he plants and heaves them away.
+function handlers.BlackComet(data, character, root)
 	local phase = data.phase
-	if phase == "Draw" then
-		play(character, ANIMS.Severance)
-		swordGlow(character, RED, 0.3, 0.4)
-		edgeGlow(character, 0.55, 0.9)
-		destroyerFlare(character, 0.4)
-		local point = bladePoint(character, 1.5)
-		if point then
-			U.glint(point, 1.6, WHITE_HOT)
-		end
-	elseif phase == "Dash" then
-		local direction: Vector3 = data.direction
-		U.speedLines(root, direction, 0.25, RED)
-		U.bodyTrail(character, RED, 0.25)
-		heavyTrail(character, 0.2)
-		for i = 0, 3 do
-			task.delay(i * 0.05, U.afterimage, character, BLACK, 0.3)
-		end
-		glowBurst(data.from, 2.5, 0.2)
-		if U.isLocal(character) then
-			CameraShake.FovKick(10)
-		end
-	elseif phase == "Sheathe" then
-		local from: Vector3 = data.from
-		local to: Vector3 = data.to
-		-- The cut hangs in the air along his path, then lands all at once.
-		cutLine(from + UP * 0.6, to + UP * 0.6, 0.5, 0.35)
-		for _, target in data.targets do
-			local targetRoot = U.getRoot(target)
-			if targetRoot then
-				local direction = if (to - from).Magnitude > 0.1 then (to - from).Unit else root.CFrame.LookVector
-				slashMark(targetRoot.Position, markAngle(targetRoot.Position, direction), 6, 0.45)
-				task.delay(0.35, function()
-					if not targetRoot.Parent then
-						return
-					end
-					glowBurst(targetRoot.Position, 3.5, 0.3)
-					U.impactRing(targetRoot.Position, direction, RED, 1, 7, 0.3)
-					U.burst(targetRoot.Position, {
-						color = RED,
-						count = 18,
-						size = 0.6,
-						speed = NumberRange.new(30, 60),
-						lifetime = NumberRange.new(0.15, 0.35),
-						streaks = true,
-						spread = 40,
-						direction = direction,
-					})
-					blackLightning(targetRoot.Position, 4, 4)
+	if phase == "Drag" then
+		play(character, ANIMS.CometDrag)
+		local plan = CometPlan.Plan(data.origin, data.forward, data.distance, data.floorY)
+		local times = CometPlan.Times
+		local started = os.clock()
+		local bind = "CloverBlackComet" .. tostring(started)
+		local nextDust = 0
+		RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
+			local t = os.clock() - started
+			if t > times.Length or not root.Parent then
+				pcall(function()
+					RunService:UnbindFromRenderStep(bind)
 				end)
+				return
 			end
+			root.CFrame = CometPlan.At(plan, t)
+			if t < times.Drag and t >= nextDust then
+				nextDust = t + 0.05
+				local at = root.Position + plan.forward * 3
+				local ground = Vector3.new(at.X, plan.floorY + 0.3, at.Z)
+				blackSmoke(ground, 2, 2.5, 3)
+				U.burst(ground, {
+					color = Color3.fromRGB(90, 78, 66),
+					count = 3,
+					size = 0.5,
+					speed = NumberRange.new(8, 16),
+					lifetime = NumberRange.new(0.3, 0.6),
+					spread = 50,
+					direction = (UP - plan.forward * 0.6).Unit,
+					acceleration = Vector3.new(0, -60, 0),
+				})
+			end
+		end)
+		local feet = root.Position - UP * 2.8
+		glowBurst(feet, 4, 0.3)
+		U.ringBurst(CFrame.new(feet), RED, 1, 8, 0.3, 0.25)
+		blackSmoke(feet, 8, 3, 10)
+		U.bodyTrail(character, RED, times.Drag)
+		heavyTrail(character, times.Drag)
+		local mine = U.isLocal(character) or U.isLocal(data.target)
+		if mine then
+			CameraShake.Add(0.12)
+			CameraShake.FovKick(10)
+			-- Alongside them, low, as they streak along the ground.
+			local right = plan.forward:Cross(UP)
+			Cinematic.Camera(function(t)
+				local at = CometPlan.At(plan, math.min(t, times.Drag)).Position
+				local eye = at - plan.forward * 8 + right * 7 + UP * 2.5
+				return CFrame.lookAt(eye, at + plan.forward * 3 - UP), 78
+			end, times.Length)
 		end
-		if #data.targets > 0 and (U.isLocal(character) or involves({ target = data.targets[1] }, character)) then
-			task.delay(0.35, function()
-				CameraShake.Add(0.25)
-				impactFrame(0.6)
-			end)
+	elseif phase == "Slam" then
+		local position: Vector3 = data.position
+		U.groundRocks(position, 5, 3, 1.1)
+		U.groundCracks(position, 5, 4, RED, 0.8)
+		U.shockwave(position, RED, 1, 9, 0.25)
+		blackSmoke(position + UP * 0.5, 6, 3, 6)
+		redSparks(position + UP * 0.5, 10, 0.5, UP)
+		U.debris(position, 5, 25, 0.5)
+		if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 40 then
+			CameraShake.Add(0.12)
 		end
-	elseif phase == "Seal" then
-		-- Severed from their magic: red seal rings close round them.
-		local target = data.target
-		local targetRoot = U.getRoot(target)
-		if not targetRoot then
-			return
+	elseif phase == "Throw" then
+		play(character, ANIMS.CometThrow)
+		local at = gripPoint(character) or root.Position
+		local direction: Vector3 = data.direction
+		glowBurst(at, 4, 0.3)
+		blackLightning(at, 4, 5)
+		U.afterimage(character, RED, 0.3)
+		task.delay(0.14, function()
+			U.impactRing(at + direction * 2, direction, RED, 1, 6, 0.25)
+			blackSmoke(at, 8, 3, 8)
+		end)
+		if U.isLocal(character) then
+			CameraShake.Add(0.2)
+			CameraShake.FovKick(8)
 		end
-		U.popup(targetRoot.Position + UP * 3.5, "SEALED", RED, 1.3)
-		U.highlight(target, RED, 0.5, 0.4)
-		local duration = data.duration or 3
-		for i = 0, math.floor(duration / 0.4) do
-			task.delay(i * 0.4, function()
-				if targetRoot.Parent then
-					local tilt = CFrame.Angles(math.rad(15 * math.sin(i)), 0, math.rad(15 * math.cos(i)))
-					U.ringBurst(CFrame.new(targetRoot.Position + UP * (i % 3 - 1) * 1.2) * tilt, RED, 3, 2.2, 0.35, 0.1)
-				end
-			end)
-		end
+	else
+		handlers.BlackMeteorite(data, character, root)
 	end
 end
 
-function handlers.InfiniteSlash(data, character, root)
+-- Black Ascent: a rising cut; caught, both go on the shared paths: he
+-- springs up after them, cuts them from one side and then the other, and
+-- cuts them back down into the ground.
+function handlers.BlackAscent(data, character, root)
 	local phase = data.phase
-	if phase == "Raise" then
-		local token = bump(character)
-		local duration = data.duration or 0.55
-		play(character, ANIMS.InfiniteRaise)
-		edgeGlow(character, duration, 0.7)
-		swordAura(character, duration, 35)
-		U.pillar(feetOf(character, root), BLACK, 2.5, 9, duration + 0.1, Enum.Material.ForceField, 0.2)
-		task.spawn(function()
-			local start = os.clock()
-			while live(character, token) and os.clock() - start < duration do
-				local point = bladePoint(character, 1.5)
-				if point then
-					inflow(point, 6)
-				end
-				task.wait(0.06)
+	if phase == "Cut" then
+		play(character, ANIMS.Rising)
+		heavyTrail(character, 0.25)
+		edgeGlow(character, 0.3, 0.8)
+		crescent(character, {
+			center = CFrame.new(0, 0.4, 0),
+			radius = 5.5,
+			from = -60,
+			to = 110,
+			tilt = 90,
+			width = 1.6,
+			sweep = 0.1,
+			fade = 0.3,
+			glow = 0.6,
+		})
+	elseif phase == "Whiff" then
+		blackSmoke(bladePoint(character, 2) or root.Position, 4, 1.5, 3)
+	elseif phase == "Launch" then
+		local target: Model? = data.target
+		local targetRoot = target and U.getRoot(target)
+		local plan = AscentPlan.Plan(data.origin, data.start, data.floorY)
+		local times = AscentPlan.Times
+		local started = os.clock()
+		local mine = U.isLocal(character) or U.isLocal(target)
+		local bind = "CloverBlackAscent" .. tostring(started)
+		RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
+			local t = os.clock() - started
+			if t > times.Length then
+				pcall(function()
+					RunService:UnbindFromRenderStep(bind)
+				end)
+				return
+			end
+			if root.Parent then
+				root.CFrame = AscentPlan.Attacker(plan, t)
+			end
+			if targetRoot and targetRoot.Parent and t <= times.Land then
+				targetRoot.CFrame = AscentPlan.Victim(plan, t)
 			end
 		end)
-		if U.isLocal(character) then
-			U.colorGrade({ Saturation = -0.5, Contrast = 0.25 }, 0.2, duration, 0.4)
-			CameraShake.Add(0.06)
-		end
-	elseif phase == "Cut" then
-		bump(character)
-		play(character, ANIMS.InfiniteCut)
-		local origin: Vector3 = data.origin
-		local direction: Vector3 = data.direction
-		local length: number = data.length
-		crescent(character, {
-			center = CFrame.new(0, 0.6, 0),
-			radius = 5,
-			from = 100,
-			to = -40,
-			tilt = 90,
-			width = 1.2,
-			sweep = 0.06,
-			fade = 0.25,
-			glow = 0.8,
-		})
-		-- One straight cut through everything ahead, opening a beat later.
-		local finish = origin + direction * length
-		cutLine(origin, finish, 0.7, 0.2)
-		glowBurst(origin, 3.5, 0.25)
-		bloomPulse(origin, 0.6, 0.45)
-		for along = 8, length, 8 do
-			local point = origin + direction * along
-			task.delay(along / 400, function()
-				local ground = U.groundBelow(point, { character }, 6)
-				if ground then
-					U.groundCracks(ground.Position, 2, 4, RED, 1)
-					U.debris(ground.Position, 3, 18, 0.5)
+		glowBurst(plan.start + UP, 4, 0.3)
+		U.shockwave(plan.start, RED, 1, 8, 0.25)
+		blackSmoke(plan.start - UP * 2.5, 6, 3, 8)
+		U.bodyTrail(character, RED, times.Length)
+		local clips = { ANIMS.Slash1, ANIMS.Slash2 }
+		for i, at in times.Cuts do
+			task.delay(at - 0.08, function()
+				play(character, clips[i])
+				heavyTrail(character, 0.2)
+			end)
+			task.delay(at, function()
+				local victim = AscentPlan.Victim(plan, at).Position
+				local side = plan.right * (if i % 2 == 1 then -1 else 1)
+				local tilt = UP * (if i % 2 == 1 then 2 else -2)
+				cutLine(victim - side * 4 + tilt, victim + side * 4 - tilt, 0.3, 0.2)
+				glowBurst(victim, 3, 0.2)
+				redSparks(victim, 12, 0.5, side)
+				U.impactRing(victim, side, RED, 1, 5, 0.2)
+				if mine then
+					CameraShake.Add(0.1)
 				end
-				redSparks(point, 4, 0.4, direction)
 			end)
 		end
-		glowBurst(finish, 2.5, 0.25)
-		if U.isLocal(character) then
-			CameraShake.Add(0.25)
-			CameraShake.FovKick(9)
-			impactFrame(0.6)
+		task.delay(times.Spike - 0.1, function()
+			play(character, ANIMS.Chop)
+			heavyTrail(character, 0.3)
+			crescent(character, {
+				center = CFrame.new(0, 0.6, 0),
+				radius = 6,
+				from = 110,
+				to = -60,
+				tilt = 90,
+				width = 2,
+				sweep = 0.1,
+				fade = 0.3,
+				glow = 0.7,
+			})
+		end)
+		if mine then
+			-- From the side, rising with them and following them back down.
+			Cinematic.Camera(function(t)
+				local victim = AscentPlan.Victim(plan, math.min(t, times.Land)).Position
+				local eye = victim + plan.right * 14 - plan.forward * 4 + UP * 1.5
+				return CFrame.lookAt(eye, victim), 72
+			end, times.Length + 0.1)
 		end
-	elseif phase == "Cancel" then
-		bump(character)
+	elseif phase == "Impact" then
+		local position: Vector3 = data.position
+		U.shockwave(position, RED, 2, 14, 0.35)
+		U.groundCracks(position, 7, 6, RED, 1)
+		U.groundRocks(position, 7, 5, 1.2)
+		U.debris(position, 8, 30, 0.6)
+		blackSmoke(position + UP * 0.5, 10, 4, 8)
+		if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 50 then
+			CameraShake.Add(0.25)
+		end
 	end
 end
 
@@ -14842,7 +15179,7 @@ end)
 return Kit
 ]]></string>
             </Properties>
-            <Item class="ModuleScript" referent="36">
+            <Item class="ModuleScript" referent="38">
               <Properties>
                 <string name="Name">Animations</string>
                 <string name="Source"><![CDATA[--[[
@@ -18038,11 +18375,207 @@ Animations.CausalityPull = {
 	},
 }
 
--- Severance: one draw-cut through them, back turned as it lands.
-Animations.Severance = {
+-- Black Comet: flying low and flat, hammering them into the ground three times.
+Animations.CometDrag = {
+	fadeIn = 0.05,
+	fadeOut = 0.1,
+	delays = { Head = 0.02, Sword = 0.04 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-4, 14),
+				Head = rot(-4, -10),
+				RightArm = limb(-15, -10, 32),
+				Sword = aim(0.3, 0.25, 0.92),
+				LeftArm = limb(120, -8),
+				RightLeg = rot(-24),
+				LeftLeg = rot(24),
+			},
+		},
+		{
+			0.1,
+			{
+				Torso = rot(-62, 8),
+				Head = rot(48, -6),
+				RightArm = limb(-40, -10, 30),
+				Sword = aim(0.25, 0.3, 0.92),
+				LeftArm = limb(125, -8),
+				RightLeg = rot(14),
+				LeftLeg = rot(28),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.22,
+			{
+				Torso = rot(-70, 8),
+				Head = rot(52, -6),
+				RightArm = limb(-45, -10, 30),
+				Sword = aim(0.25, 0.3, 0.92),
+				LeftArm = limb(75, -8),
+				RightLeg = rot(10),
+				LeftLeg = rot(24),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.36,
+			{
+				Torso = rot(-62, 8),
+				Head = rot(48, -6),
+				RightArm = limb(-40, -10, 30),
+				Sword = aim(0.25, 0.3, 0.92),
+				LeftArm = limb(125, -8),
+				RightLeg = rot(14),
+				LeftLeg = rot(28),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.47,
+			{
+				Torso = rot(-70, 8),
+				Head = rot(52, -6),
+				RightArm = limb(-45, -10, 30),
+				Sword = aim(0.25, 0.3, 0.92),
+				LeftArm = limb(75, -8),
+				RightLeg = rot(10),
+				LeftLeg = rot(24),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.61,
+			{
+				Torso = rot(-62, 8),
+				Head = rot(48, -6),
+				RightArm = limb(-40, -10, 30),
+				Sword = aim(0.25, 0.3, 0.92),
+				LeftArm = limb(125, -8),
+				RightLeg = rot(14),
+				LeftLeg = rot(28),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.72,
+			{
+				Torso = rot(-70, 8),
+				Head = rot(52, -6),
+				RightArm = limb(-45, -10, 30),
+				Sword = aim(0.25, 0.3, 0.92),
+				LeftArm = limb(75, -8),
+				RightLeg = rot(10),
+				LeftLeg = rot(24),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.9,
+			{
+				Torso = rot(-70, 8),
+				Head = rot(52, -6),
+				RightArm = limb(-45, -10, 30),
+				Sword = aim(0.25, 0.3, 0.92),
+				LeftArm = limb(75, -8),
+				RightLeg = rot(10),
+				LeftLeg = rot(24),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Black Comet: plants, winds round and heaves them away.
+Animations.CometThrow = {
 	fadeIn = 0.03,
 	fadeOut = 0.25,
-	delays = { Sword = 0.015, Head = -0.01 },
+	delays = { Head = 0.02, Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = body(-0.153, -30, 10),
+				Head = rot(16, -8),
+				RightArm = limb(-30, -10, 30),
+				Sword = aim(0.3, 0.25, 0.92),
+				LeftArm = limb(80, -8),
+				RightLeg = rot(-40),
+				LeftLeg = rot(34),
+			},
+		},
+		{
+			0.07,
+			{
+				Torso = body(-0.139, -18, 40),
+				Head = rot(10, -30),
+				RightArm = limb(-20, -10, 30),
+				Sword = aim(0.3, 0.25, 0.92),
+				LeftArm = limb(60, -40, 10),
+				RightLeg = rot(-40),
+				LeftLeg = rot(34),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.16,
+			{
+				Torso = body(0.038, -22, -35),
+				Head = rot(12, 25),
+				RightArm = limb(-25, -10, 30),
+				Sword = aim(0.3, 0.25, 0.92),
+				LeftArm = limb(150, 10),
+				RightLeg = rot(-44),
+				LeftLeg = rot(38),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.4,
+			{
+				Torso = body(0.059, -14, -40),
+				Head = rot(6, 28),
+				RightArm = limb(-20, -10, 30),
+				Sword = aim(0.3, 0.25, 0.92),
+				LeftArm = limb(130, 20),
+				RightLeg = rot(-40),
+				LeftLeg = rot(34),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.6,
+			{
+				Torso = body(0.059, -14, -40),
+				Head = rot(6, 28),
+				RightArm = limb(-20, -10, 30),
+				Sword = aim(0.3, 0.25, 0.92),
+				LeftArm = limb(130, 20),
+				RightLeg = rot(-40),
+				LeftLeg = rot(34),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Conquering Eon: the Dweller held high as everything it drank bursts out.
+Animations.EonRelease = {
+	fadeIn = 0.03,
+	fadeOut = 0.25,
+	delays = { Sword = 0.03 },
 	keys = {
 		{
 			0,
@@ -18057,95 +18590,6 @@ Animations.Severance = {
 		{
 			0.12,
 			{
-				Torso = body(0.02, -26, -30),
-				Head = rot(16, 22),
-				RightArm = limb(-30, -15, 20),
-				Sword = aim(0.32, 0.12, 0.94),
-				LeftArm = limb(70, 10),
-				RightLeg = rot(-40),
-				LeftLeg = rot(36),
-			},
-			"Sine",
-			"Out",
-		},
-		{
-			0.16,
-			{
-				Torso = body(-0.061, -28),
-				Head = rot(16),
-				RightArm = limb(80, -60),
-				Sword = aim(0.9, 0.02, -0.42),
-				LeftArm = limb(20, 0, -30),
-				RightLeg = rot(-44),
-				LeftLeg = rot(38),
-			},
-			"Quad",
-			"In",
-		},
-		{
-			0.2,
-			{
-				Torso = body(-0.344, -30, 40),
-				Head = rot(18, -30),
-				RightArm = limb(84, 80),
-				Sword = aim(-0.86, -0.04, -0.5),
-				LeftArm = limb(-20, 0, -35),
-				RightLeg = rot(-46),
-				LeftLeg = rot(40),
-			},
-			"Linear",
-			"Out",
-		},
-		{
-			0.32,
-			{
-				Torso = body(0.017, -12, 60),
-				Head = rot(6, -40),
-				RightArm = limb(70, 100),
-				Sword = aim(-0.8, -0.45, 0.4),
-				LeftArm = limb(15, -40),
-				RightLeg = rot(-24),
-				LeftLeg = rot(22),
-			},
-			"Quart",
-			"Out",
-		},
-		{
-			0.8,
-			{
-				Torso = body(0.017, -12, 60),
-				Head = rot(6, -40),
-				RightArm = limb(70, 100),
-				Sword = aim(-0.8, -0.45, 0.4),
-				LeftArm = limb(15, -40),
-				RightLeg = rot(-24),
-				LeftLeg = rot(22),
-			},
-			"Linear",
-			"Out",
-		},
-	},
-}
-
--- Infinite Slash: Yami's two-handed overhead raise, trembling.
-Animations.InfiniteRaise = {
-	fadeIn = 0.04,
-	fadeOut = 0.05,
-	delays = { Sword = 0.03 },
-	keys = {
-		{
-			0,
-			{
-				Torso = body(0.049, -6, -18),
-				Head = rot(5, 16),
-				RightArm = limb(85, 25, 10),
-				Sword = aim(-0.006, 0.483, 0.875),
-				LeftArm = limb(10, 0, -14),
-			},
-		},
-		{
-			0.25,
-			{
 				Torso = body(0.088, 10, -10),
 				Head = rot(-10, 8),
 				RightArm = limb(170, -6),
@@ -18154,11 +18598,11 @@ Animations.InfiniteRaise = {
 				RightLeg = rot(-16, 0, 6),
 				LeftLeg = rot(18, 0, -6),
 			},
-			"Sine",
+			"Quart",
 			"Out",
 		},
 		{
-			0.4,
+			0.25,
 			{
 				Torso = body(0.075, 12, -10),
 				Head = rot(-12, 8),
@@ -18172,7 +18616,7 @@ Animations.InfiniteRaise = {
 			"InOut",
 		},
 		{
-			0.55,
+			0.45,
 			{
 				Torso = body(0.088, 10, -10),
 				Head = rot(-10, 8),
@@ -18184,54 +18628,6 @@ Animations.InfiniteRaise = {
 			},
 			"Sine",
 			"InOut",
-		},
-	},
-}
-
--- Infinite Slash: one straight chop that opens the cut.
-Animations.InfiniteCut = {
-	fadeIn = 0.01,
-	fadeOut = 0.3,
-	keys = {
-		{
-			0,
-			{
-				Torso = body(0.088, 10, -10),
-				Head = rot(-10, 8),
-				RightArm = limb(170, -6),
-				Sword = aim(0.1, 0.6, 0.8),
-				LeftArm = limb(165, 8),
-				RightLeg = rot(-16, 0, 6),
-				LeftLeg = rot(18, 0, -6),
-			},
-		},
-		{
-			0.05,
-			{
-				Torso = body(-0.093, -30),
-				Head = rot(16),
-				RightArm = limb(75, 2),
-				Sword = aim(0, -0.35, -0.94),
-				LeftArm = limb(72, -2),
-				RightLeg = rot(-42),
-				LeftLeg = rot(36),
-			},
-			"Quad",
-			"In",
-		},
-		{
-			0.45,
-			{
-				Torso = body(-0.093, -30),
-				Head = rot(16),
-				RightArm = limb(75, 2),
-				Sword = aim(0, -0.35, -0.94),
-				LeftArm = limb(72, -2),
-				RightLeg = rot(-42),
-				LeftLeg = rot(36),
-			},
-			"Linear",
-			"Out",
 		},
 	},
 }
@@ -20710,7 +21106,7 @@ return Animations
               </Properties>
             </Item>
           </Item>
-          <Item class="ModuleScript" referent="37">
+          <Item class="ModuleScript" referent="39">
             <Properties>
               <string name="Name">Wind</string>
               <string name="Source"><![CDATA[--[[
@@ -20727,7 +21123,7 @@ return Animations
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local NeverlandPlan = require(ReplicatedStorage:WaitForChild("Shared").Neverland)
+local SaintPlan = require(ReplicatedStorage:WaitForChild("Shared").SaintZephyr)
 local DivePlan = require(ReplicatedStorage:WaitForChild("Shared").TempestDive)
 local CameraShake = require(script.Parent.Parent.CameraShake)
 local Cinematic = require(script.Parent.Parent.Cinematic)
@@ -20746,7 +21142,6 @@ local WIND_DEEP = Color3.fromRGB(35, 170, 110)
 local WIND_WHITE = Color3.fromRGB(228, 255, 240)
 local STAR = Color3.fromRGB(255, 226, 130)
 local STAR_WHITE = Color3.fromRGB(255, 250, 228)
-local TIME_STOP = Color3.fromRGB(200, 236, 255)
 
 local Kit = {}
 
@@ -23205,69 +23600,66 @@ function handlers.SpiritOfEuros(data, character, root)
 	end
 end
 
--- Neverland: his hand shoots out; whoever it catches is caught in stopped
--- time, a dome of pale light with the world drained of colour. Three stars
--- stand round them joined by beams, a triangle that rises with them; he
--- flashes from star to star punching them up through it, then hammers them
--- down from above, through a great triangle of stars, into the ground.
--- Afterwards the dome lingers over the crater, stars turning on its rim.
-local domes: { [Model]: { close: () -> () } } = {}
+-- Saint Spirit of Zephyr: he flicks a star at them; it binds them and lifts
+-- them into the air, night falls for whoever is watching and five stars open
+-- round them in a pentagram. Conjunction takes him from star to star, each
+-- time straight through them, every cut left hanging in the air. Then he's
+-- high above them, a great blade of wind and starlight raised in both
+-- hands, and splits them with one strike straight down to the ground: a
+-- line cut through the whole sky. Every hanging cut bursts, driving them
+-- into the ground behind him, his back to them.
+local SAINT_BLADE = 24
 
-local function triangleBeams(width: number): { BasePart }
-	local beams = {}
-	for _ = 1, 3 do
-		table.insert(beams, bar(Vector3.zero, UP, width, STAR_WHITE, 0.1))
-	end
-	return beams
+-- A cut left hanging in the air: a white-hot line in a glow of wind.
+local function hangingCut(from: Vector3, to: Vector3): { BasePart }
+	local core = bar(from, to, 0.34, STAR_WHITE, 0)
+	local glow = bar(from, to, 1.5, WIND, 0.45)
+	U.tween(core, 0.1, { Size = Vector3.new(0.16, 0.16, core.Size.Z) })
+	return { core, glow }
 end
 
-local function poseTriangle(beams: { BasePart }, corners: { Vector3 })
-	for i, beam in beams do
-		local a, b = corners[i], corners[i % 3 + 1]
-		beam.Size = Vector3.new(beam.Size.X, beam.Size.Y, (b - a).Magnitude + 0.05)
-		beam.CFrame = CFrame.lookAt(a:Lerp(b, 0.5), b)
-	end
-end
-
-local function punchClip(index: number, variant: string): Animation?
-	return M1Animations.Clips[M1Animations.NameFor(index, variant)]
-end
-
-local function playNeverland(data, character: Model, root: BasePart)
+local function playSaintZephyr(data, character: Model, root: BasePart)
 	local target: Model? = data.target
 	local targetRoot = target and U.getRoot(target)
-	local plan = NeverlandPlan.Plan(data.origin, data.start, data.floorY)
-	local times = NeverlandPlan.Times
+	local plan = SaintPlan.Plan(data.origin, data.start, data.floorY)
+	local times = SaintPlan.Times
 	local started = os.clock()
 	local mine = involves(data, character)
-	local near = (workspace.CurrentCamera.CFrame.Position - plan.start).Magnitude < 70
+	local near = (workspace.CurrentCamera.CFrame.Position - plan.center).Magnitude < 80
+	local restoreNight = if mine or near then Cinematic.Night(0.35) else nil
 
-	-- Time stops: a dome of pale light round them, the world drained.
-	local dome = U.newPart({
-		Shape = Enum.PartType.Ball,
-		Size = Vector3.one * 2,
-		CFrame = CFrame.new(plan.start),
-		Color = TIME_STOP,
-		Material = Enum.Material.ForceField,
-		Transparency = 0.1,
-	})
-	U.tween(dome, 0.35, { Size = Vector3.one * 34 }, Enum.EasingStyle.Quart)
-	U.ringBurst(CFrame.new(plan.start), TIME_STOP, 1, 17, 0.35, 0.2)
-	if mine or near then
-		U.colorGrade({ Saturation = -0.75, Contrast = 0.15, TintColor = TIME_STOP }, 0.15, times.Land - 0.2, 0.5)
+	-- The star that binds them, two rings of starlight turning round them,
+	-- and the pentagram.
+	local seal = makeStar(3.2)
+	local rings = {
+		arcParts(arcPoints(Vector3.zero, Vector3.xAxis, Vector3.zAxis, 1, 0, math.pi * 2, 18), 0.14, STAR, 0.15),
+		arcParts(arcPoints(Vector3.zero, Vector3.xAxis, Vector3.zAxis, 1, 0, math.pi * 2, 18), 0.1, STAR_WHITE, 0.3),
+	}
+	local stars: { Star } = {}
+	local lines: { BasePart } = {}
+	for _ = 1, #plan.stars do
+		table.insert(stars, makeStar(2.6))
+		table.insert(lines, bar(plan.center, plan.center + UP, 0.12, STAR_WHITE, 0.25))
 	end
+	local cuts: { BasePart } = {}
+	local blade = {
+		core = tube(plan.top, plan.top + UP, 1.2, STAR_WHITE, 0),
+		glow = tube(plan.top, plan.top + UP, 4, WIND, 0.5),
+		sheath = tube(plan.top, plan.top + UP, 6.5, WIND, 0),
+	}
+	blade.sheath.Material = Enum.Material.ForceField
+	for _, part in blade do
+		part.Transparency = 1
+	end
+	local tip = makeStar(4)
+	local bladeLight = Instance.new("PointLight")
+	bladeLight.Color = STAR
+	bladeLight.Range = 40
+	bladeLight.Brightness = 0
+	bladeLight.Parent = blade.core
+	local burst = false
 
-	-- The triangle of stars and the light between them.
-	local stars = { makeStar(2.2), makeStar(2.2), makeStar(2.2) }
-	local beams = triangleBeams(0.22)
-	local bigStars: { Star } = {}
-	local bigBeams: { BasePart } = {}
-	local struck = 0
-	local hammered = false
-
-	-- Both of them on the paths, drawn here every frame for smoothness (the
-	-- server holds them there too).
-	local bind = "CloverNeverland" .. tostring(started)
+	local bind = "CloverSaintZephyr" .. tostring(started)
 	local function finish()
 		pcall(function()
 			RunService:UnbindFromRenderStep(bind)
@@ -23280,120 +23672,272 @@ local function playNeverland(data, character: Model, root: BasePart)
 			return
 		end
 		if root.Parent then
-			root.CFrame = NeverlandPlan.Attacker(plan, t)
+			root.CFrame = SaintPlan.Attacker(plan, t)
 		end
+		local victim = SaintPlan.Victim(plan, math.min(t, times.Land))
 		if targetRoot and targetRoot.Parent and t <= times.Land then
-			targetRoot.CFrame = NeverlandPlan.Victim(plan, t)
+			targetRoot.CFrame = victim
 		end
-
-		local height = NeverlandPlan.Height(math.min(t, times.Apex)) - 0.5
-		local corners = {
-			NeverlandPlan.Corner(plan, 1, height),
-			NeverlandPlan.Corner(plan, 2, height),
-			NeverlandPlan.Corner(plan, 3, height),
-		}
-		if not hammered then
-			local grow = math.min(t / 0.4, 1)
+		if not burst then
+			local grow = math.min(t / 0.2, 1)
+			seal.place(victim.Position + victim.LookVector * 0.9 + UP * 0.4, t * 4)
+			for k, ring in rings do
+				local spin = t * (if k == 1 then 3 else -4)
+				local height = if k == 1 then 0.9 else -0.6
+				poseArc(
+					ring,
+					arcPoints(
+						victim.Position + UP * height,
+						Vector3.new(math.cos(spin), 0, math.sin(spin)),
+						Vector3.new(-math.sin(spin), 0, math.cos(spin)),
+						(2.2 + 0.3 * k) * grow + 0.05,
+						0,
+						math.pi * 2,
+						18
+					)
+				)
+			end
+			-- The stars open out of them one by one, joined in a pentagram.
+			local placed: { Vector3 } = {}
 			for i, star in stars do
-				star.place(plan.start + UP * height + (corners[i] - (plan.start + UP * height)) * grow, t * 3 + i)
+				local open = math.clamp((t - 0.1 - i * 0.05) / 0.15, 0, 1)
+				placed[i] = plan.center:Lerp(plan.stars[i], 1 - (1 - open) ^ 2)
+				star.place(placed[i], t * 2 + i)
 			end
-			poseTriangle(beams, corners)
+			for i, line in lines do
+				stretch(line, placed[i], placed[i % #placed + 1])
+			end
 		end
-
-		-- Each punch: a flash of starlight where he appears, then the hit.
-		local strike = NeverlandPlan.StrikeAt(t)
-		if strike and strike > struck then
-			struck = strike
-			local at = times.Strikes[strike]
-			U.flash(corners[((strike - 1) % 3) + 1], STAR_WHITE, 4, 0.15)
-			task.delay(math.max(at - t, 0), function()
-				local clip = punchClip(((strike - 1) % 3) + 1, "Normal")
-				if clip then
-					play(character, clip)
-				end
-				local victim = plan.start + UP * NeverlandPlan.Height(at)
-				U.shockwave(victim, STAR, 1, 7, 0.2)
-				gust(victim, 4)
-				U.burst(victim, {
-					color = STAR,
-					count = 10,
-					size = 0.35,
-					speed = NumberRange.new(14, 30),
-					lifetime = NumberRange.new(0.15, 0.3),
-					streaks = true,
-					spread = 180,
-				})
-				if mine then
-					CameraShake.Add(0.12)
-				end
-			end)
+		-- The blade, from Rise to the strike: up out of his raised hands,
+		-- then straight down along the strike.
+		local right, left = handOf(character, "Right"), handOf(character, "Left")
+		if t >= times.Rise - 0.1 and t < times.Strike + 0.12 and right and left then
+			local hands = right:Lerp(left, 0.5)
+			local length = SAINT_BLADE * math.min((t - (times.Rise - 0.1)) / 0.3, 1) + 0.1
+			local down = (plan.ground - plan.top).Unit
+			local swing = math.clamp((t - (times.Strike - 0.06)) / 0.1, 0, 1)
+			local direction = UP:Lerp(down, swing)
+			direction = if direction.Magnitude > 1e-3 then direction.Unit else down
+			local tipAt = hands + direction * length
+			local pulse = 1 + 0.08 * math.sin(t * 40)
+			for name, part in blade do
+				local width = if name == "core" then 1.2 elseif name == "glow" then 4 else 6.5
+				part.Size = Vector3.new(length, width * pulse, width * pulse)
+				part.CFrame = CFrame.lookAt(hands:Lerp(tipAt, 0.5), tipAt) * CFrame.Angles(0, rad(90), 0)
+				part.Transparency = if name == "core" then 0 elseif name == "glow" then 0.5 else 0
+			end
+			bladeLight.Brightness = 6
+			tip.place(tipAt, t * 6)
+		else
+			for _, part in blade do
+				part.Transparency = 1
+			end
+			bladeLight.Brightness = 0
+			tip.place(plan.top + UP * 500, 0)
 		end
+	end)
 
-		-- The hammer, from above, and a great triangle halfway down for them
-		-- to fall through.
-		if not hammered and t >= times.Apex then
-			hammered = true
-			for _, star in stars do
-				star.fade(0.2)
+	-- The star flies from his hand and binds them.
+	U.flash(plan.center, STAR_WHITE, 6, 0.2)
+	U.ringBurst(CFrame.new(plan.start - UP * 2.8), STAR, 1, 9, 0.4, 0.25)
+	U.light(plan.center, STAR, 5, 30, times.Strike)
+	if mine then
+		CameraShake.Add(0.1)
+	end
+
+	-- Conjunction: star to star, straight through them each time.
+	for i, at in times.Cuts do
+		local star, exit = plan.stars[i], SaintPlan.Exit(plan, i)
+		task.delay(at - SaintPlan.Appear, function()
+			U.afterimage(character, WIND, 0.25)
+			U.flash(star, STAR_WHITE, 4, 0.15)
+			play(character, ANIMS.SaintCut)
+		end)
+		task.delay(at, function()
+			if burst then
+				return
 			end
-			fadeOut(beams, 0.2)
-			local clip = punchClip(4, "Downslam")
-			if clip then
-				play(character, clip)
+			for _, part in hangingCut(star - (exit - star).Unit * 2, exit + (exit - star).Unit * 2) do
+				table.insert(cuts, part)
 			end
-			local middle = plan.start + UP * (NeverlandPlan.Height(times.Slam) * 0.5)
-			local big = {}
-			for i = 1, 3 do
-				big[i] = middle + (NeverlandPlan.Corner(plan, i, 0) - plan.start) * 1.9
-				local star = makeStar(3.4)
-				star.place(big[i], i)
-				table.insert(bigStars, star)
+			local along = (exit - star).Unit
+			U.flash(plan.center, WIND_WHITE, 3.5, 0.1)
+			U.impactRing(plan.center, along, STAR_WHITE, 1, 6, 0.2)
+			U.burst(plan.center, {
+				color = WIND_WHITE,
+				count = 12,
+				size = 0.4,
+				speed = NumberRange.new(30, 60),
+				lifetime = NumberRange.new(0.12, 0.3),
+				streaks = true,
+				spread = 30,
+				direction = along,
+			})
+			if target then
+				U.highlight(target, WIND_WHITE, 0.15)
 			end
-			bigBeams = triangleBeams(0.5)
-			poseTriangle(bigBeams, big)
-			U.flash(plan.start + UP * NeverlandPlan.Height(times.Slam), STAR_WHITE, 9, 0.2)
 			if mine then
-				CameraShake.Add(0.3)
-				CameraShake.FovKick(10)
+				CameraShake.Add(0.08)
+				CameraShake.FovKick(3)
 			end
+		end)
+	end
+
+	-- High above them, the blade raised.
+	task.delay(times.Rise - 0.1, function()
+		play(character, ANIMS.SaintRise)
+		U.flash(plan.top, STAR_WHITE, 6, 0.2)
+		U.ringBurst(CFrame.new(plan.top), STAR, 2, 14, 0.5, 0.3)
+		U.shockwave(plan.top, WIND, 2, 14, 0.4)
+		for _ = 1, 10 do
+			inflow(plan.top + UP * 6, 10, STAR)
 		end
-	end)
-	task.delay(times.Length + 0.5, function()
-		finish()
-		for _, star in bigStars do
-			star.fade(0.4)
+		if mine then
+			CameraShake.Add(0.12)
 		end
-		fadeOut(bigBeams, 0.4)
-		U.tween(dome, 0.5, { Transparency = 1 })
-		task.delay(0.55, dome.Destroy, dome)
 	end)
 
-	-- The camera, for the two of them: round them as they rise, after them
-	-- on the way down.
+	-- The strike, and the line it leaves through the whole sky.
+	task.delay(times.Strike - 0.05, function()
+		play(character, ANIMS.SaintStrike)
+	end)
+	task.delay(times.Strike, function()
+		local direction = (plan.ground - plan.top).Unit
+		local from, to = plan.top - direction * 60, plan.ground + direction * 3
+		local splitCore = bar(from, to, 0.5, STAR_WHITE, 0)
+		local splitGlow = bar(from, to, 3.5, WIND, 0.4)
+		local splitStar = bar(from, to, 1.4, STAR, 0.2)
+		task.delay(0.35, function()
+			U.tween(splitCore, 0.4, { Size = Vector3.new(0.04, 0.04, splitCore.Size.Z) })
+			U.tween(splitStar, 0.4, { Size = Vector3.new(0.04, 0.04, splitStar.Size.Z) })
+			fadeOut({ splitCore, splitGlow, splitStar }, 0.45)
+		end)
+		U.flash(plan.center, STAR_WHITE, 14, 0.3)
+		U.impactRing(plan.center, direction, STAR_WHITE, 2, 16, 0.35)
+		U.light(plan.center, STAR_WHITE, 9, 60, 0.4)
+		if mine or near then
+			U.colorGrade({ Brightness = 0.4, Contrast = 0.35, Saturation = -0.4 }, 0, 0.06, 0.35)
+		end
+		if mine then
+			CameraShake.Add(0.35)
+			CameraShake.FovKick(12)
+		end
+	end)
+
+	-- Every hanging cut bursts.
+	task.delay(times.Burst, function()
+		burst = true
+		for _, part in cuts do
+			U.burst(part.Position, {
+				color = STAR,
+				count = 10,
+				size = 0.5,
+				speed = NumberRange.new(10, 30),
+				lifetime = NumberRange.new(0.2, 0.45),
+				streaks = true,
+				spread = 180,
+			})
+		end
+		fadeOut(cuts, 0.2)
+		for i, star in stars do
+			U.flash(plan.stars[i], STAR_WHITE, 5, 0.18)
+			star.fade(0.2)
+		end
+		fadeOut(lines, 0.2)
+		seal.fade(0.15)
+		for _, ring in rings do
+			fadeOut(ring, 0.15)
+		end
+		local nova = makeStar(8)
+		nova.place(plan.center, 0)
+		task.delay(0.08, nova.fade, 0.4)
+		U.shockwave(plan.center, STAR, 2, 28, 0.45)
+		U.burst(plan.center, {
+			color = STAR,
+			count = 40,
+			size = 0.6,
+			speed = NumberRange.new(40, 90),
+			lifetime = NumberRange.new(0.25, 0.5),
+			streaks = true,
+			spread = 180,
+		})
+		if mine then
+			CameraShake.Add(0.3)
+			CameraShake.FovKick(8)
+		end
+	end)
+
+	-- Landed with his back to them.
+	task.delay(times.Strike + 0.1, function()
+		play(character, ANIMS.SaintLand)
+		gust(plan.ground - UP * 2.5, 6, UP)
+	end)
+	task.delay(times.Length + 0.3, function()
+		finish()
+		for _, part in blade do
+			part:Destroy()
+		end
+		tip.fade(0.1)
+		if restoreNight then
+			restoreNight(0.9)
+		end
+	end)
+
+	-- The camera: over his shoulder as the star binds them, round them
+	-- through the cuts, from below them up at the raised blade, wide across
+	-- the strike, then low behind the crater looking back at him.
 	if mine then
 		Cinematic.Camera(function(t)
-			local focus = NeverlandPlan.Victim(plan, math.min(t, times.Land)).Position
-			local right = plan.forward:Cross(UP)
-			local angle = 0.6 + t * 0.45
-			local offset = (right * math.cos(angle) - plan.forward * math.sin(angle)) * 17
-				+ UP * (3 + math.min(t, times.Apex) * 1.2)
-			return CFrame.lookAt(focus + offset, focus), if t > times.Apex then 80 else 70
+			local forward, right = plan.forward, plan.right
+			if t < times.Cuts[1] - 0.15 then
+				local eye = plan.origin.Position - forward * 7 + right * 3 + UP * 3
+				return CFrame.lookAt(eye, plan.center:Lerp(plan.start, 0.4)), 70
+			elseif t < times.Rise - 0.1 then
+				local angle = t * 2.4
+				local eye = plan.center + (forward * math.cos(angle) + right * math.sin(angle)) * 18 + UP * 3
+				return CFrame.lookAt(eye, plan.center), 75
+			elseif t < times.Strike then
+				local eye = plan.center - UP * 5 + right * 10 - forward * 3
+				return CFrame.lookAt(eye, plan.top + UP * 4), 80
+			elseif t < times.Land then
+				local eye = plan.center + right * 30 + UP * 3
+				return CFrame.lookAt(eye, plan.center - UP * 3), 72
+			end
+			local eye = plan.start + forward * 10 + right * 3 + UP * 2
+			return CFrame.lookAt(eye, plan.ground + UP), 70
 		end, times.Length + 0.3)
 	end
 end
 
-function handlers.Neverland(data, character, root)
+function handlers.SaintSpiritOfZephyr(data, character, root)
 	local phase = data.phase
-	if phase == "Reach" then
-		play(character, ANIMS.Hawk)
-		local hand = handOf(character, "Right")
-		if hand then
-			gust(hand, 3, root.CFrame.LookVector)
-		end
+	if phase == "Flick" then
+		-- The star flies out ahead of him.
+		play(character, ANIMS.Conjunction)
+		local hand = handOf(character, "Right") or root.Position
+		local forward = root.CFrame.LookVector
+		local range: number = data.range or 15
+		local star = makeStar(1.2)
+		U.flash(hand, STAR_WHITE, 2, 0.12)
+		every(0.2, function(elapsed)
+			star.place(hand + forward * range * (elapsed / 0.2), elapsed * 20)
+			return true
+		end, function()
+			star.fade(0.15)
+		end)
 	elseif phase == "Whiff" then
-		gust(root.Position + root.CFrame.LookVector * 4, 2)
+		local at = root.Position + root.CFrame.LookVector * 15
+		U.flash(at, STAR, 2.5, 0.15)
+		U.burst(at, {
+			color = STAR,
+			count = 8,
+			size = 0.3,
+			speed = NumberRange.new(6, 14),
+			lifetime = NumberRange.new(0.2, 0.4),
+			spread = 180,
+		})
 	elseif phase == "Begin" then
-		playNeverland(data, character, root)
+		playSaintZephyr(data, character, root)
 	elseif phase == "Impact" then
 		local position: Vector3 = data.position
 		U.shockwave(position, STAR, 3, 30, 0.5)
@@ -23407,58 +23951,6 @@ function handlers.Neverland(data, character, root)
 		if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 60 then
 			CameraShake.Add(0.4)
 		end
-	elseif phase == "Dome" then
-		local center: Vector3 = data.center
-		local radius: number = data.radius
-		local old = domes[character]
-		if old then
-			old.close()
-		end
-		local dome = U.newPart({
-			Shape = Enum.PartType.Ball,
-			Size = Vector3.one * radius * 2,
-			CFrame = CFrame.new(center),
-			Color = WIND,
-			Material = Enum.Material.ForceField,
-			Transparency = 1,
-		})
-		U.tween(dome, 0.4, { Transparency = 0.25 })
-		local rim: { Star } = {}
-		for _ = 1, 10 do
-			table.insert(rim, makeStar(1.6))
-		end
-		local closed = false
-		local function close()
-			if closed then
-				return
-			end
-			closed = true
-			domes[character] = nil
-			U.tween(dome, 0.5, { Transparency = 1 })
-			task.delay(0.55, dome.Destroy, dome)
-			for _, star in rim do
-				star.fade(0.4)
-			end
-		end
-		domes[character] = { close = close }
-		every(data.duration, function(elapsed)
-			if closed then
-				return false
-			end
-			for i, star in rim do
-				local angle = i / #rim * math.pi * 2 + elapsed * 0.4
-				star.place(
-					center
-						+ Vector3.new(
-							math.cos(angle) * radius,
-							1.5 + math.sin(elapsed * 2 + i) * 0.5,
-							math.sin(angle) * radius
-						),
-					elapsed * 2
-				)
-			end
-			return true
-		end, close)
 	end
 end
 
@@ -24146,7 +24638,7 @@ end
 return Kit
 ]]></string>
             </Properties>
-            <Item class="ModuleScript" referent="38">
+            <Item class="ModuleScript" referent="40">
               <Properties>
                 <string name="Name">Animations</string>
                 <string name="Source"><![CDATA[--[[
@@ -25575,46 +26067,195 @@ Animations.EurosLoose = {
 	},
 }
 
--- Neverland: arms raised to the sky.
-Animations.Neverland = {
-	fadeOut = 0.3,
+-- Saint Spirit of Zephyr: one two-handed cut through them (each star).
+Animations.SaintCut = {
+	fadeIn = 0.03,
+	fadeOut = 0.1,
 	keys = {
 		{
 			0,
 			{
-				Torso = body(0.093, -3, 12),
-				Head = rot(2, -10),
-				RightArm = limb(12, 4, 10),
-				LeftArm = limb(30, -8, -16),
-				RightLeg = rot(-4, 0, 6),
-				LeftLeg = rot(6, 0, -7),
+				Torso = rot(-8, 40),
+				Head = rot(6, -30),
+				RightArm = limb(110, 50, 10),
+				LeftArm = limb(100, 70, -10),
+				RightLeg = rot(-24, 0, 10),
+				LeftLeg = rot(20, 0, -10),
 			},
 		},
 		{
-			0.3,
+			0.06,
 			{
-				Torso = body(0.086, 8),
-				Head = rot(24),
-				RightArm = limb(160, 0, 26),
-				LeftArm = limb(160, 0, -26),
-				RightLeg = rot(-10, 0, 6),
-				LeftLeg = rot(10, 0, -6),
+				Torso = rot(-14, -45),
+				Head = rot(8, 35),
+				RightArm = limb(80, -60, 10),
+				LeftArm = limb(70, -40, -10),
+				RightLeg = rot(-30, 0, 12),
+				LeftLeg = rot(26, 0, -12),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.25,
+			{
+				Torso = rot(-14, -45),
+				Head = rot(8, 35),
+				RightArm = limb(80, -60, 10),
+				LeftArm = limb(70, -40, -10),
+				RightLeg = rot(-30, 0, 12),
+				LeftLeg = rot(26, 0, -12),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Saint Spirit of Zephyr: the blade raised high above them.
+Animations.SaintRise = {
+	fadeIn = 0.03,
+	fadeOut = 0.05,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-14, -45),
+				Head = rot(8, 35),
+				RightArm = limb(80, -60, 10),
+				LeftArm = limb(70, -40, -10),
+				RightLeg = rot(-30, 0, 12),
+				LeftLeg = rot(26, 0, -12),
+			},
+		},
+		{
+			0.12,
+			{
+				Torso = rot(10),
+				Head = rot(-18),
+				RightArm = limb(172, 6),
+				LeftArm = limb(172, -6),
+				RightLeg = rot(-8, 0, 6),
+				LeftLeg = rot(16, 0, -6),
 			},
 			"Sine",
 			"Out",
 		},
 		{
-			1.2,
+			0.75,
 			{
-				Torso = body(0.086, 8),
-				Head = rot(24),
-				RightArm = limb(160, 0, 26),
-				LeftArm = limb(160, 0, -26),
-				RightLeg = rot(-10, 0, 6),
-				LeftLeg = rot(10, 0, -6),
+				Torso = rot(10),
+				Head = rot(-18),
+				RightArm = limb(172, 6),
+				LeftArm = limb(172, -6),
+				RightLeg = rot(-8, 0, 6),
+				LeftLeg = rot(16, 0, -6),
 			},
 			"Linear",
 			"Out",
+		},
+	},
+}
+
+-- Saint Spirit of Zephyr: the one strike, straight down.
+Animations.SaintStrike = {
+	fadeIn = 0.01,
+	fadeOut = 0.1,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(10),
+				Head = rot(-18),
+				RightArm = limb(172, 6),
+				LeftArm = limb(172, -6),
+				RightLeg = rot(-8, 0, 6),
+				LeftLeg = rot(16, 0, -6),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = rot(-38),
+				Head = rot(20),
+				RightArm = limb(40, 6),
+				LeftArm = limb(40, -6),
+				RightLeg = rot(-40, 0, 8),
+				LeftLeg = rot(10, 0, -8),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.2,
+			{
+				Torso = rot(-38),
+				Head = rot(20),
+				RightArm = limb(40, 6),
+				LeftArm = limb(40, -6),
+				RightLeg = rot(-40, 0, 8),
+				LeftLeg = rot(10, 0, -8),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Saint Spirit of Zephyr: landed low, his back to them, then up.
+Animations.SaintLand = {
+	fadeIn = 0.02,
+	fadeOut = 0.3,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(-0.167, -38),
+				Head = rot(20),
+				RightArm = limb(40, 6),
+				LeftArm = limb(40, -6),
+				RightLeg = rot(-40, 0, 8),
+				LeftLeg = rot(10, 0, -8),
+			},
+		},
+		{
+			0.12,
+			{
+				Torso = body(-0.043, -20, 15),
+				Head = rot(12, -10),
+				RightArm = limb(40, 10, 50),
+				LeftArm = limb(25, 0, -25),
+				RightLeg = rot(-50, 0, 10),
+				LeftLeg = rot(40, 0, -10),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.6,
+			{
+				Torso = body(-0.043, -20, 15),
+				Head = rot(12, -10),
+				RightArm = limb(40, 10, 50),
+				LeftArm = limb(25, 0, -25),
+				RightLeg = rot(-50, 0, 10),
+				LeftLeg = rot(40, 0, -10),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			1,
+			{
+				Torso = body(0.111, -6, 12),
+				Head = rot(4, -12),
+				RightArm = limb(20, 6, 30),
+				LeftArm = limb(18, 0, -18),
+				RightLeg = rot(-8, 0, 6),
+				LeftLeg = rot(8, 0, -6),
+			},
+			"Sine",
+			"InOut",
 		},
 	},
 }
@@ -25880,7 +26521,7 @@ return Animations
             </Item>
           </Item>
         </Item>
-        <Item class="ModuleScript" referent="39">
+        <Item class="ModuleScript" referent="41">
           <Properties>
             <string name="Name">M1Animations</string>
             <string name="Source"><![CDATA[--[[
@@ -26268,7 +26909,7 @@ return M1Animations
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="40">
+        <Item class="ModuleScript" referent="42">
           <Properties>
             <string name="Name">Moves</string>
             <string name="Source"><![CDATA[--[[
@@ -26647,7 +27288,7 @@ return Moves
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="41">
+        <Item class="ModuleScript" referent="43">
           <Properties>
             <string name="Name">PoseAnimator</string>
             <string name="Source"><![CDATA[--[[
@@ -27216,7 +27857,7 @@ return PoseAnimator
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="42">
+        <Item class="ModuleScript" referent="44">
           <Properties>
             <string name="Name">Reactions</string>
             <string name="Source"><![CDATA[--[[
@@ -27445,7 +28086,7 @@ return Reactions
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="43">
+        <Item class="ModuleScript" referent="45">
           <Properties>
             <string name="Name">ShiftLock</string>
             <string name="Source"><![CDATA[--[[
@@ -27606,7 +28247,7 @@ return ShiftLock
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="44">
+        <Item class="ModuleScript" referent="46">
           <Properties>
             <string name="Name">TopBar</string>
             <string name="Source"><![CDATA[--[[
@@ -27918,7 +28559,7 @@ return TopBar
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="45">
+        <Item class="ModuleScript" referent="47">
           <Properties>
             <string name="Name">VFX</string>
             <string name="Source"><![CDATA[--[[
@@ -29287,13 +29928,13 @@ return VFX
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="46">
+  <Item class="Workspace" referent="48">
     <Properties>
       <string name="Name">Workspace</string>
       <float name="Gravity">225</float>
       <bool name="NeedsPivotMigration">false</bool>
     </Properties>
-    <Item class="Part" referent="47">
+    <Item class="Part" referent="49">
       <Properties>
         <string name="Name">Baseplate</string>
         <bool name="Anchored">true</bool>
@@ -29312,7 +29953,7 @@ return VFX
         </Vector3>
       </Properties>
     </Item>
-    <Item class="SpawnLocation" referent="48">
+    <Item class="SpawnLocation" referent="50">
       <Properties>
         <string name="Name">SpawnLocation</string>
         <bool name="Anchored">true</bool>

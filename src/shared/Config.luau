@@ -109,7 +109,7 @@ Config.Awakening = {
 	GainPerDamageTaken = 0.5,
 }
 
--- Timed states moves can put on people (Yuno's Neverland): PowerUntil hits
+-- Timed states moves can put on people (Yuno's great arrow): PowerUntil hits
 -- harder, WeakUntil hits softer, SlowUntil moves slower.
 Config.States = {
 	PowerMultiplier = 1.15,

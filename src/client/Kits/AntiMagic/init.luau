@@ -15,6 +15,8 @@ local TweenService = game:GetService("TweenService")
 
 local BlackMoon = require(ReplicatedStorage:WaitForChild("Shared").BlackMoon)
 local MeteorVortex = require(ReplicatedStorage:WaitForChild("Shared").MeteorVortex)
+local CometPlan = require(ReplicatedStorage:WaitForChild("Shared").BlackComet)
+local AscentPlan = require(ReplicatedStorage:WaitForChild("Shared").BlackAscent)
 
 local CameraShake = require(script.Parent.Parent.CameraShake)
 local Cinematic = require(script.Parent.Parent.Cinematic)
@@ -5651,25 +5653,21 @@ function handlers.ConqueringEon(data, character, root)
 	elseif phase == "Release" then
 		bump(character)
 		local charges = data.charges or 0
-		play(character, if air then ANIMS.AirDividerRelease else ANIMS.GrandRelease)
-		heavyTrail(character, 0.3)
-		crescent(character, {
-			center = CFrame.new(0, 0.6, 0),
-			radius = 7 + charges,
-			from = 100,
-			to = if air then -120 else -40,
-			tilt = 90,
-			width = 2 + 0.4 * charges,
-			sweep = 0.1,
-			fade = 0.35,
-			glow = 0.5 + 0.12 * charges,
-		})
+		local radius: number = data.radius or 10
+		-- The Dweller held high lets it all out at once: a dome of
+		-- anti-magic round him (a black shell in a red shockwave) racing out
+		-- along the ground.
+		play(character, ANIMS.EonRelease)
 		local point = bladePoint(character, 2) or root.Position
 		glowBurst(point, 4 + 1.5 * charges, 0.35)
 		bloomPulse(root.Position, 0.4 + 0.2 * charges, 0.45)
 		edgeGlow(character, 0.4, 1)
-		U.shockwave(root.Position, RED, 2, 10 + 3 * charges, 0.35)
-		blackLightning(point, 3 + charges, 4 + charges)
+		U.shockwave(root.Position, BLACK, 2, radius * 2, 0.4, Enum.Material.Glass, 0.35)
+		U.shockwave(root.Position, RED, 2, radius * 2.1, 0.45)
+		U.ringBurst(CFrame.new(root.Position - UP * 2.8), RED, 1, radius, 0.35, 0.4)
+		U.groundCracks(root.Position, 6 + charges, radius * 0.6, RED, 1.2)
+		blackLightning(root.Position, 4 + charges, radius * 0.7)
+		blackSmoke(root.Position, 10 + 2 * charges, 4, 12)
 		task.delay(0.45, lightMarks, character, 0)
 		if U.isLocal(character) then
 			CameraShake.Add(0.15 + 0.06 * charges)
@@ -5766,150 +5764,195 @@ function handlers.CausalityBreak(data, character, root)
 	end
 end
 
-function handlers.Severance(data, character, root)
+-- Black Comet: the reach and the seize are drawn with Black Meteorite's.
+-- Then his wings throw him forward low over the ground with them, black
+-- smoke and torn-up earth trailing behind; each time he hammers them down
+-- the ground cracks and rocks fly; then he plants and heaves them away.
+function handlers.BlackComet(data, character, root)
 	local phase = data.phase
-	if phase == "Draw" then
-		play(character, ANIMS.Severance)
-		swordGlow(character, RED, 0.3, 0.4)
-		edgeGlow(character, 0.55, 0.9)
-		destroyerFlare(character, 0.4)
-		local point = bladePoint(character, 1.5)
-		if point then
-			U.glint(point, 1.6, WHITE_HOT)
-		end
-	elseif phase == "Dash" then
-		local direction: Vector3 = data.direction
-		U.speedLines(root, direction, 0.25, RED)
-		U.bodyTrail(character, RED, 0.25)
-		heavyTrail(character, 0.2)
-		for i = 0, 3 do
-			task.delay(i * 0.05, U.afterimage, character, BLACK, 0.3)
-		end
-		glowBurst(data.from, 2.5, 0.2)
-		if U.isLocal(character) then
-			CameraShake.FovKick(10)
-		end
-	elseif phase == "Sheathe" then
-		local from: Vector3 = data.from
-		local to: Vector3 = data.to
-		-- The cut hangs in the air along his path, then lands all at once.
-		cutLine(from + UP * 0.6, to + UP * 0.6, 0.5, 0.35)
-		for _, target in data.targets do
-			local targetRoot = U.getRoot(target)
-			if targetRoot then
-				local direction = if (to - from).Magnitude > 0.1 then (to - from).Unit else root.CFrame.LookVector
-				slashMark(targetRoot.Position, markAngle(targetRoot.Position, direction), 6, 0.45)
-				task.delay(0.35, function()
-					if not targetRoot.Parent then
-						return
-					end
-					glowBurst(targetRoot.Position, 3.5, 0.3)
-					U.impactRing(targetRoot.Position, direction, RED, 1, 7, 0.3)
-					U.burst(targetRoot.Position, {
-						color = RED,
-						count = 18,
-						size = 0.6,
-						speed = NumberRange.new(30, 60),
-						lifetime = NumberRange.new(0.15, 0.35),
-						streaks = true,
-						spread = 40,
-						direction = direction,
-					})
-					blackLightning(targetRoot.Position, 4, 4)
+	if phase == "Drag" then
+		play(character, ANIMS.CometDrag)
+		local plan = CometPlan.Plan(data.origin, data.forward, data.distance, data.floorY)
+		local times = CometPlan.Times
+		local started = os.clock()
+		local bind = "CloverBlackComet" .. tostring(started)
+		local nextDust = 0
+		RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
+			local t = os.clock() - started
+			if t > times.Length or not root.Parent then
+				pcall(function()
+					RunService:UnbindFromRenderStep(bind)
 				end)
+				return
 			end
+			root.CFrame = CometPlan.At(plan, t)
+			if t < times.Drag and t >= nextDust then
+				nextDust = t + 0.05
+				local at = root.Position + plan.forward * 3
+				local ground = Vector3.new(at.X, plan.floorY + 0.3, at.Z)
+				blackSmoke(ground, 2, 2.5, 3)
+				U.burst(ground, {
+					color = Color3.fromRGB(90, 78, 66),
+					count = 3,
+					size = 0.5,
+					speed = NumberRange.new(8, 16),
+					lifetime = NumberRange.new(0.3, 0.6),
+					spread = 50,
+					direction = (UP - plan.forward * 0.6).Unit,
+					acceleration = Vector3.new(0, -60, 0),
+				})
+			end
+		end)
+		local feet = root.Position - UP * 2.8
+		glowBurst(feet, 4, 0.3)
+		U.ringBurst(CFrame.new(feet), RED, 1, 8, 0.3, 0.25)
+		blackSmoke(feet, 8, 3, 10)
+		U.bodyTrail(character, RED, times.Drag)
+		heavyTrail(character, times.Drag)
+		local mine = U.isLocal(character) or U.isLocal(data.target)
+		if mine then
+			CameraShake.Add(0.12)
+			CameraShake.FovKick(10)
+			-- Alongside them, low, as they streak along the ground.
+			local right = plan.forward:Cross(UP)
+			Cinematic.Camera(function(t)
+				local at = CometPlan.At(plan, math.min(t, times.Drag)).Position
+				local eye = at - plan.forward * 8 + right * 7 + UP * 2.5
+				return CFrame.lookAt(eye, at + plan.forward * 3 - UP), 78
+			end, times.Length)
 		end
-		if #data.targets > 0 and (U.isLocal(character) or involves({ target = data.targets[1] }, character)) then
-			task.delay(0.35, function()
-				CameraShake.Add(0.25)
-				impactFrame(0.6)
-			end)
+	elseif phase == "Slam" then
+		local position: Vector3 = data.position
+		U.groundRocks(position, 5, 3, 1.1)
+		U.groundCracks(position, 5, 4, RED, 0.8)
+		U.shockwave(position, RED, 1, 9, 0.25)
+		blackSmoke(position + UP * 0.5, 6, 3, 6)
+		redSparks(position + UP * 0.5, 10, 0.5, UP)
+		U.debris(position, 5, 25, 0.5)
+		if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 40 then
+			CameraShake.Add(0.12)
 		end
-	elseif phase == "Seal" then
-		-- Severed from their magic: red seal rings close round them.
-		local target = data.target
-		local targetRoot = U.getRoot(target)
-		if not targetRoot then
-			return
+	elseif phase == "Throw" then
+		play(character, ANIMS.CometThrow)
+		local at = gripPoint(character) or root.Position
+		local direction: Vector3 = data.direction
+		glowBurst(at, 4, 0.3)
+		blackLightning(at, 4, 5)
+		U.afterimage(character, RED, 0.3)
+		task.delay(0.14, function()
+			U.impactRing(at + direction * 2, direction, RED, 1, 6, 0.25)
+			blackSmoke(at, 8, 3, 8)
+		end)
+		if U.isLocal(character) then
+			CameraShake.Add(0.2)
+			CameraShake.FovKick(8)
 		end
-		U.popup(targetRoot.Position + UP * 3.5, "SEALED", RED, 1.3)
-		U.highlight(target, RED, 0.5, 0.4)
-		local duration = data.duration or 3
-		for i = 0, math.floor(duration / 0.4) do
-			task.delay(i * 0.4, function()
-				if targetRoot.Parent then
-					local tilt = CFrame.Angles(math.rad(15 * math.sin(i)), 0, math.rad(15 * math.cos(i)))
-					U.ringBurst(CFrame.new(targetRoot.Position + UP * (i % 3 - 1) * 1.2) * tilt, RED, 3, 2.2, 0.35, 0.1)
-				end
-			end)
-		end
+	else
+		handlers.BlackMeteorite(data, character, root)
 	end
 end
 
-function handlers.InfiniteSlash(data, character, root)
+-- Black Ascent: a rising cut; caught, both go on the shared paths: he
+-- springs up after them, cuts them from one side and then the other, and
+-- cuts them back down into the ground.
+function handlers.BlackAscent(data, character, root)
 	local phase = data.phase
-	if phase == "Raise" then
-		local token = bump(character)
-		local duration = data.duration or 0.55
-		play(character, ANIMS.InfiniteRaise)
-		edgeGlow(character, duration, 0.7)
-		swordAura(character, duration, 35)
-		U.pillar(feetOf(character, root), BLACK, 2.5, 9, duration + 0.1, Enum.Material.ForceField, 0.2)
-		task.spawn(function()
-			local start = os.clock()
-			while live(character, token) and os.clock() - start < duration do
-				local point = bladePoint(character, 1.5)
-				if point then
-					inflow(point, 6)
-				end
-				task.wait(0.06)
+	if phase == "Cut" then
+		play(character, ANIMS.Rising)
+		heavyTrail(character, 0.25)
+		edgeGlow(character, 0.3, 0.8)
+		crescent(character, {
+			center = CFrame.new(0, 0.4, 0),
+			radius = 5.5,
+			from = -60,
+			to = 110,
+			tilt = 90,
+			width = 1.6,
+			sweep = 0.1,
+			fade = 0.3,
+			glow = 0.6,
+		})
+	elseif phase == "Whiff" then
+		blackSmoke(bladePoint(character, 2) or root.Position, 4, 1.5, 3)
+	elseif phase == "Launch" then
+		local target: Model? = data.target
+		local targetRoot = target and U.getRoot(target)
+		local plan = AscentPlan.Plan(data.origin, data.start, data.floorY)
+		local times = AscentPlan.Times
+		local started = os.clock()
+		local mine = U.isLocal(character) or U.isLocal(target)
+		local bind = "CloverBlackAscent" .. tostring(started)
+		RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
+			local t = os.clock() - started
+			if t > times.Length then
+				pcall(function()
+					RunService:UnbindFromRenderStep(bind)
+				end)
+				return
+			end
+			if root.Parent then
+				root.CFrame = AscentPlan.Attacker(plan, t)
+			end
+			if targetRoot and targetRoot.Parent and t <= times.Land then
+				targetRoot.CFrame = AscentPlan.Victim(plan, t)
 			end
 		end)
-		if U.isLocal(character) then
-			U.colorGrade({ Saturation = -0.5, Contrast = 0.25 }, 0.2, duration, 0.4)
-			CameraShake.Add(0.06)
-		end
-	elseif phase == "Cut" then
-		bump(character)
-		play(character, ANIMS.InfiniteCut)
-		local origin: Vector3 = data.origin
-		local direction: Vector3 = data.direction
-		local length: number = data.length
-		crescent(character, {
-			center = CFrame.new(0, 0.6, 0),
-			radius = 5,
-			from = 100,
-			to = -40,
-			tilt = 90,
-			width = 1.2,
-			sweep = 0.06,
-			fade = 0.25,
-			glow = 0.8,
-		})
-		-- One straight cut through everything ahead, opening a beat later.
-		local finish = origin + direction * length
-		cutLine(origin, finish, 0.7, 0.2)
-		glowBurst(origin, 3.5, 0.25)
-		bloomPulse(origin, 0.6, 0.45)
-		for along = 8, length, 8 do
-			local point = origin + direction * along
-			task.delay(along / 400, function()
-				local ground = U.groundBelow(point, { character }, 6)
-				if ground then
-					U.groundCracks(ground.Position, 2, 4, RED, 1)
-					U.debris(ground.Position, 3, 18, 0.5)
+		glowBurst(plan.start + UP, 4, 0.3)
+		U.shockwave(plan.start, RED, 1, 8, 0.25)
+		blackSmoke(plan.start - UP * 2.5, 6, 3, 8)
+		U.bodyTrail(character, RED, times.Length)
+		local clips = { ANIMS.Slash1, ANIMS.Slash2 }
+		for i, at in times.Cuts do
+			task.delay(at - 0.08, function()
+				play(character, clips[i])
+				heavyTrail(character, 0.2)
+			end)
+			task.delay(at, function()
+				local victim = AscentPlan.Victim(plan, at).Position
+				local side = plan.right * (if i % 2 == 1 then -1 else 1)
+				local tilt = UP * (if i % 2 == 1 then 2 else -2)
+				cutLine(victim - side * 4 + tilt, victim + side * 4 - tilt, 0.3, 0.2)
+				glowBurst(victim, 3, 0.2)
+				redSparks(victim, 12, 0.5, side)
+				U.impactRing(victim, side, RED, 1, 5, 0.2)
+				if mine then
+					CameraShake.Add(0.1)
 				end
-				redSparks(point, 4, 0.4, direction)
 			end)
 		end
-		glowBurst(finish, 2.5, 0.25)
-		if U.isLocal(character) then
-			CameraShake.Add(0.25)
-			CameraShake.FovKick(9)
-			impactFrame(0.6)
+		task.delay(times.Spike - 0.1, function()
+			play(character, ANIMS.Chop)
+			heavyTrail(character, 0.3)
+			crescent(character, {
+				center = CFrame.new(0, 0.6, 0),
+				radius = 6,
+				from = 110,
+				to = -60,
+				tilt = 90,
+				width = 2,
+				sweep = 0.1,
+				fade = 0.3,
+				glow = 0.7,
+			})
+		end)
+		if mine then
+			-- From the side, rising with them and following them back down.
+			Cinematic.Camera(function(t)
+				local victim = AscentPlan.Victim(plan, math.min(t, times.Land)).Position
+				local eye = victim + plan.right * 14 - plan.forward * 4 + UP * 1.5
+				return CFrame.lookAt(eye, victim), 72
+			end, times.Length + 0.1)
 		end
-	elseif phase == "Cancel" then
-		bump(character)
+	elseif phase == "Impact" then
+		local position: Vector3 = data.position
+		U.shockwave(position, RED, 2, 14, 0.35)
+		U.groundCracks(position, 7, 6, RED, 1)
+		U.groundRocks(position, 7, 5, 1.2)
+		U.debris(position, 8, 30, 0.6)
+		blackSmoke(position + UP * 0.5, 10, 4, 8)
+		if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 50 then
+			CameraShake.Add(0.25)
+		end
 	end
 end
 

@@ -21,11 +21,13 @@
 	                        2 Slayer Recall: boomerang throw, press 2 again to call it back
 	  Demon-Dweller Sword   1 Black Slash: piercing anti-magic slash wave
 	                        2 Conquering Eon: absorbs spells and siphons mana, then
-	                          releases it all as one huge slash
+	                          lets it all out in a dome of anti-magic round him
 	  Demon-Destroyer Sword 1 Causality Break: planted blade breaks the magic (counters,
 	                          guard, stances) of the 4 closest enemies
-	                        2 Severance: dash-through draw cut that seals their moves
-	  Demon-Slasher Katana  1 Infinite Slash: unblockable cut along a straight line
+	                        2 Black Comet: short grab cutscene, flies low hammering
+	                          them along the ground, then throws them
+	  Demon-Slasher Katana  1 Black Ascent: launching cut, two cuts in the air, cut
+	                          back down into the ground
 	                        2 Zetten: ki-reading iai stance, cuts down whoever moves
 	  3 Grand Divider       massive cleave plus a giant slash wave (guard break)
 	  4 Black Moon          cutscene grab: hurls them into the sky, hangs in front
@@ -39,6 +41,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BlackMoon = require(ReplicatedStorage:WaitForChild("Shared").BlackMoon)
 local MeteorVortex = require(ReplicatedStorage:WaitForChild("Shared").MeteorVortex)
+local CometPlan = require(ReplicatedStorage:WaitForChild("Shared").BlackComet)
+local AscentPlan = require(ReplicatedStorage:WaitForChild("Shared").BlackAscent)
 local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
 local Projectile = require(script.Parent.Parent.Projectile)
 
@@ -1658,8 +1662,6 @@ end
 -- Sword moves (Black Form 1 and 2 follow the sword in his hand)
 ---------------------------------------------------------------------------
 
-local SEAL_COLOR = Color3.fromRGB(200, 25, 35)
-
 local function rootOf(character: Model): BasePart?
 	return character:FindFirstChild("HumanoidRootPart") :: BasePart?
 end
@@ -1778,8 +1780,9 @@ end
 --[[
 	Conquering Eon (Demon-Dweller Sword 2): raises the Dweller and it drinks
 	in the magic around him. Spells that hit him are swallowed by the blade,
-	and the mana of everyone close by is siphoned off. Each charge (up to 4)
-	makes the slash he lets it all out in bigger; from 3 it breaks guards.
+	and the mana of everyone close by is siphoned off. Then it lets it all
+	out at once in a dome of anti-magic round him, bigger and harder with
+	each charge (up to 4); from 2 it knocks them down, from 3 it breaks guards.
 ]]
 local EON_CHARGE = 0.6
 local EON_RADIUS = 18
@@ -1834,18 +1837,28 @@ local function conqueringEon(ctx)
 		return
 	end
 
-	local forward = look(ctx)
-	local direction = if airborne then (forward + UP * -0.5).Unit else forward
-	local origin = ctx.root.Position + direction * 3 + UP * 0.8
-	fx(ctx, "ConqueringEon", "Release", { airborne = airborne, charges = charges })
-	blackSlash(ctx, origin, direction, {
-		damage = 8 + 2 * charges,
-		size = Vector3.new(10 + 2.5 * charges, 5 + charges, 3),
-		speed = 105,
-		range = if airborne then waveRange(ctx, origin, direction, 70) else 70,
-		grand = charges >= 3,
-	})
-	c.ShakeArea(ctx.root.Position, 40 + 8 * charges, 0.3 + 0.1 * charges)
+	-- Everything it drank bursts out of the blade at once: a dome of
+	-- anti-magic round him, bigger with every charge.
+	local center = ctx.root.Position
+	local radius = 10 + 2 * charges
+	fx(ctx, "ConqueringEon", "Release", { airborne = airborne, charges = charges, radius = radius })
+	for _, victim in c.Sphere(character, center, radius) do
+		local victimRoot = rootOf(victim)
+		if victimRoot then
+			local away = victimRoot.Position - center
+			local out = if Vector3.new(away.X, 0, away.Z).Magnitude > 0.5 then c.Flat(away) else look(ctx)
+			c.Hit(character, victim, {
+				damage = 6 + 2 * charges,
+				stun = 1,
+				attackType = "Melee",
+				guardBreak = charges >= 3,
+				heavy = true,
+				ragdoll = if charges >= 2 then 1 else nil,
+				velocity = out * (40 + 5 * charges) + UP * 22,
+			})
+		end
+	end
+	c.ShakeArea(center, 40 + 8 * charges, 0.3 + 0.1 * charges)
 	task.wait(0.3)
 	CombatState.SetCasting(character, 0.25)
 end
@@ -1911,113 +1924,202 @@ local function causalityBreak(ctx)
 	CombatState.SetCasting(character, 0.3)
 end
 
---[[
-	Severance (Demon-Destroyer Sword 2): one draw-cut as he dashes straight
-	through them. A beat later the cut lands, and whoever it cut is severed
-	from their magic: every move they have is sealed for a few seconds.
-]]
-local SEVER_DASH_AT = 0.12 -- the Severance animation's crouch
-local SEVER_DASH = 0.2
-local SEVER_SPEED = 95
-local SEVER_DELAY = 0.35
-local SEAL_TIME = 3
+-- What's in the way along `direction` (walls, not people) and where the
+-- floor is, ignoring everyone (for the cutscene paths below).
+local function sceneRay(ctx, origin: Vector3, direction: Vector3, ignore: { Instance }): RaycastResult?
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local skip = table.clone(ignore)
+	table.insert(skip, ctx.character)
+	for _ = 1, 4 do
+		params.FilterDescendantsInstances = skip
+		local hit = workspace:Raycast(origin, direction, params)
+		if not hit then
+			return nil
+		end
+		local model = hit.Instance:FindFirstAncestorWhichIsA("Model")
+		if not (model and model:FindFirstChildOfClass("Humanoid")) then
+			return hit
+		end
+		table.insert(skip, model)
+	end
+	return nil
+end
 
-local function severance(ctx)
-	local c, character = ctx.combat, ctx.character
-	CombatState.SetCasting(character, 0.75)
-	fx(ctx, "Severance", "Draw", { airborne = ctx.airborne })
-	task.wait(SEVER_DASH_AT)
-	if interrupted(ctx) then
-		fx(ctx, "Severance", "Cancel")
-		return
-	end
-	local forward = look(ctx)
-	local from = ctx.root.Position
-	CombatState.GiveIFrames(character, SEVER_DASH + 0.1)
-	c.ApplyVelocity(character, forward * SEVER_SPEED + (if ctx.airborne then HOVER else Vector3.zero), SEVER_DASH)
-	fx(ctx, "Severance", "Dash", { from = from, direction = forward })
-	local cut: { Model } = {}
-	local seen: { [Model]: boolean } = {}
-	local start = os.clock()
-	while os.clock() - start < SEVER_DASH + 0.03 do
-		for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -1), Vector3.new(6, 7, 7)) do
-			if not seen[victim] then
-				seen[victim] = true
-				table.insert(cut, victim)
-			end
-		end
-		task.wait()
-	end
-	c.ApplyVelocity(character, forward * 8, 0.1)
-	fx(ctx, "Severance", "Sheathe", { from = from, to = ctx.root.Position, targets = cut })
-	task.wait(SEVER_DELAY)
-	for _, victim in cut do
-		if
-			CombatState.IsAlive(victim)
-			and c.Hit(character, victim, {
-					damage = 11,
-					stun = 1.1,
-					attackType = "Melee",
-					heavy = true,
-					velocity = forward * 10 + UP * 8,
-					velocityTime = 0.15,
-				})
-				== "Hit"
-		then
-			for _, slot in { 1, 2, 3, 4, CombatState.SpecialSlot } do
-				if CombatState.Cooldown(victim, slot) < SEAL_TIME then
-					CombatState.StartCooldown(victim, slot, SEAL_TIME)
-				end
-			end
-			fx(ctx, "Severance", "Seal", { target = victim, duration = SEAL_TIME })
-			c.Notify(victim, "SEVERED: moves sealed", SEAL_COLOR)
-		end
-	end
-	CombatState.SetCasting(character, 0.2)
+local function floorAt(ctx, position: Vector3, ignore: { Instance }): number
+	local hit = sceneRay(ctx, position + UP * 2, UP * -60, ignore)
+	return if hit then hit.Position.Y else position.Y - 3
 end
 
 --[[
-	Infinite Slash (Demon-Slasher Katana 1): Yami's move. The katana raised
-	overhead comes down once, and a cut opens along everything in a straight
-	line ahead of him, as far as it goes. It cuts only what he means to cut:
-	nothing blocks it.
+	Black Comet (Demon-Destroyer Sword 2): a short grab cutscene. His free
+	hand seizes whoever is in front of him; his wings throw him forward low
+	over the ground and he hammers them into it three times as they streak
+	along, then he plants and heaves them away. The path is Shared/BlackComet.
 ]]
-local INFINITE_RAISE = 0.55
-local INFINITE_RANGE = 60
+local HOLD_COMET = CFrame.new(-1, -1.6, -3) * FACING -- low in front of him
 
-local function infiniteSlash(ctx)
+local function blackComet(ctx)
 	local c, character = ctx.combat, ctx.character
-	local airborne = ctx.airborne
-	CombatState.SetCasting(character, INFINITE_RAISE + 0.45)
-	if airborne then
-		c.ApplyVelocity(character, HOVER, INFINITE_RAISE + 0.25)
-	end
-	fx(ctx, "InfiniteSlash", "Raise", { airborne = airborne, duration = INFINITE_RAISE })
-	task.wait(INFINITE_RAISE)
-	if interrupted(ctx) then
-		fx(ctx, "InfiniteSlash", "Cancel")
+	local times = CometPlan.Times
+	local target, release, hold = reachGrab(ctx, times.Length + 0.4, "BlackComet")
+	if not target or not release or not hold then
 		return
 	end
 	local forward = look(ctx)
-	local direction = if airborne then (forward + UP * -0.35).Unit else forward
-	local origin = ctx.root.Position + direction * 1.5
-	local length = waveRange(ctx, origin, direction, INFINITE_RANGE)
-	fx(ctx, "InfiniteSlash", "Cut", { origin = origin, direction = direction, length = length })
-	local box = CFrame.lookAt(origin + direction * (length / 2), origin + direction * length)
-	for _, victim in c.Box(character, box, Vector3.new(3.5, 7, length)) do
-		c.Hit(character, victim, {
-			damage = 11,
-			stun = 1.1,
+	local origin = ctx.root.Position
+	local wall = sceneRay(ctx, origin + UP, forward * (CometPlan.Distance + 4), { target })
+	local distance = if wall then math.max((wall.Position - (origin + UP)).Magnitude - 4, 4) else CometPlan.Distance
+	local plan = CometPlan.Plan(origin, forward, distance, floorAt(ctx, origin, { target }))
+	hold(HOLD_COMET)
+	CombatState.SetCasting(character, times.Length + 0.3)
+	fx(ctx, "BlackComet", "Drag", {
+		target = target,
+		origin = origin,
+		forward = forward,
+		distance = distance,
+		floorY = plan.floorY,
+	})
+	local stop = c.Cutscene({
+		[character] = function(t)
+			return CometPlan.At(plan, t)
+		end,
+	}, times.Length)
+	local started = os.clock()
+	local function waitUntil(at: number): boolean
+		task.wait(math.max(at - (os.clock() - started), 0))
+		return CombatState.IsAlive(character) and CombatState.IsAlive(target)
+	end
+	for _, at in times.Slams do
+		if not waitUntil(at) then
+			stop()
+			release()
+			return
+		end
+		c.Hit(character, target, { damage = 2, stun = 2, attackType = "Melee", unblockable = true, noShake = true })
+		local where = CometPlan.At(plan, at).Position + forward * 3
+		fx(ctx, "BlackComet", "Slam", { position = Vector3.new(where.X, plan.floorY, where.Z) })
+		c.ShakeArea(where, 30, 0.2)
+	end
+
+	-- The heave.
+	if not waitUntil(times.Drag) then
+		stop()
+		release()
+		return
+	end
+	fx(ctx, "BlackComet", "Throw", { target = target, direction = forward })
+	waitUntil(times.Drag + times.Throw)
+	release()
+	if CombatState.IsAlive(target) then
+		c.Hit(character, target, {
+			damage = 5,
+			stun = 1,
+			attackType = "Melee",
+			unblockable = true,
+			heavy = true,
+			ragdoll = 1.4,
+			velocity = forward * 85 + UP * 30,
+		})
+	end
+	waitUntil(times.Length)
+	stop()
+	CombatState.SetCasting(character, 0.3)
+end
+
+--[[
+	Black Ascent (Demon-Slasher Katana 1): a rising cut that launches whoever
+	is in front of him (blockable); he springs up after them, cuts them twice
+	in the air and cuts them back down into the ground. The paths are
+	Shared/BlackAscent.
+]]
+local ASCENT_STARTUP = 0.14 -- the Rising swing's cut
+
+local function blackAscent(ctx)
+	local c, character = ctx.combat, ctx.character
+	CombatState.SetCasting(character, ASCENT_STARTUP + 0.3)
+	fx(ctx, "BlackAscent", "Cut", { airborne = ctx.airborne })
+	if ctx.airborne then
+		c.ApplyVelocity(character, HOVER, ASCENT_STARTUP + 0.1)
+	else
+		c.ApplyVelocity(character, look(ctx) * 14, ASCENT_STARTUP)
+	end
+	task.wait(ASCENT_STARTUP)
+	if interrupted(ctx) then
+		return
+	end
+	local target: Model? = nil
+	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 0.5, -3.5), Vector3.new(6, 7, 6)) do
+		if not CombatState.IsRagdolled(victim) then
+			target = victim
+			break
+		end
+	end
+	local targetRoot = target and rootOf(target)
+	if not target or not targetRoot then
+		fx(ctx, "BlackAscent", "Whiff")
+		CombatState.SetCasting(character, 0.45)
+		return
+	end
+	if c.Hit(character, target, { damage = 2, stun = 1.5, attackType = "Melee", heavy = true }) ~= "Hit" then
+		CombatState.SetCasting(character, 0.45)
+		return
+	end
+
+	local plan = AscentPlan.Plan(ctx.root.CFrame, targetRoot.Position, floorAt(ctx, targetRoot.Position, { target }))
+	local times = AscentPlan.Times
+	CombatState.SetCasting(character, times.Length + 0.25)
+	CombatState.GiveIFrames(character, times.Length)
+	CombatState.Stun(target, times.Length + 0.5)
+	fx(ctx, "BlackAscent", "Launch", {
+		target = target,
+		origin = plan.origin,
+		start = targetRoot.Position,
+		floorY = plan.floorY,
+	})
+	local stopHim = c.Cutscene({
+		[character] = function(t)
+			return AscentPlan.Attacker(plan, t)
+		end,
+	}, times.Length)
+	local stopThem = c.Cutscene({
+		[target] = function(t)
+			return AscentPlan.Victim(plan, t)
+		end,
+	}, times.Land)
+	local started = os.clock()
+	local function waitUntil(at: number)
+		task.wait(math.max(at - (os.clock() - started), 0))
+	end
+	for _, at in times.Cuts do
+		waitUntil(at)
+		if CombatState.IsAlive(target) then
+			c.Hit(
+				character,
+				target,
+				{ damage = 2, stun = 1.5, attackType = "Melee", unblockable = true, noShake = true }
+			)
+		end
+	end
+	waitUntil(times.Land)
+	stopThem()
+	local floor = Vector3.new(plan.start.X, plan.floorY, plan.start.Z)
+	if CombatState.IsAlive(target) then
+		c.Hit(character, target, {
+			damage = 4,
+			stun = 1,
 			attackType = "Melee",
 			unblockable = true,
 			heavy = true,
 			ragdoll = 1.2,
-			velocity = direction * 25 + UP * 22,
+			velocity = UP * -12 + plan.forward * 8,
 		})
 	end
-	c.ShakeArea(origin, 50, 0.45)
-	task.wait(0.3)
-	CombatState.SetCasting(character, 0.2)
+	fx(ctx, "BlackAscent", "Impact", { position = floor })
+	c.ShakeArea(floor, 40, 0.35)
+	waitUntil(times.Length)
+	stopHim()
+	CombatState.SetCasting(character, 0.25)
 end
 
 --[[
@@ -2115,8 +2217,8 @@ Kit.Skills = { bullThrust, blackMeteorite, blackDivider, antiMagicDeflect }
 local SWORD_MOVES: { [string]: { (any) -> () } } = {
 	Slayer = { blackHurricane, slayerRecall },
 	Dweller = { blackSlashMove, conqueringEon },
-	Destroyer = { causalityBreak, severance },
-	Slasher = { infiniteSlash, zetten },
+	Destroyer = { causalityBreak, blackComet },
+	Slasher = { blackAscent, zetten },
 }
 local function swordMove(slot: number): (any) -> ()
 	return function(ctx)

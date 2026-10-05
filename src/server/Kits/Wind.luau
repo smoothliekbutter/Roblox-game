@@ -39,9 +39,9 @@
 	                         him, then rain down on them
 	  3 Spirit of Euros      a recurve bow of wind; one arrow, too fast to see,
 	                         through everything in a line (unblockable)
-	  4 Neverland            cutscene grab: in the stopped time of the star dome he
-	                         warps round a triangle of stars punching them up,
-	                         hammers them down, and the dome lingers over them
+	  4 Saint Spirit of      cutscene: a star binds them in the air in a pentagram;
+	    Zephyr               he cuts through them from star to star (Conjunction),
+	                         then splits them with one strike from above
 	Air combos: he can jump again in the air (Kits airJumps), and from the air
 	the hawk holds them up and pulls him in, the blades and arrows keep them
 	up there (the last spikes them down), Tempest Dive takes them both up.
@@ -53,7 +53,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
-local NeverlandPlan = require(ReplicatedStorage:WaitForChild("Shared").Neverland)
+local SaintPlan = require(ReplicatedStorage:WaitForChild("Shared").SaintZephyr)
 local DivePlan = require(ReplicatedStorage:WaitForChild("Shared").TempestDive)
 local Projectile = require(script.Parent.Parent.Projectile)
 
@@ -1139,34 +1139,36 @@ local function spiritOfEuros(ctx)
 end
 
 --[[
-	Neverland (Full-Crown 4): a cutscene grab. His hand shoots out; whoever
-	it catches is caught in the stopped time of the star dome. Three stars
-	stand round them and he warps from star to star punching them up through
-	the triangle, then hammers them down from above into the ground. The
-	timeline is Shared/Neverland, the camera work and effects client side.
-	Then the dome lingers over the crater for a few seconds: inside it,
-	enemies are slower and weaker and he hits harder.
+	Saint Spirit of Zephyr (Full-Crown 4): a cutscene. He flicks a star at
+	whoever is in front of him (about 15 studs); it binds them and lifts them
+	into the air in a pentagram of stars. Conjunction takes him from star to
+	star, straight through them each time, then he's high above them and
+	splits them with one strike of wind and starlight, down through them to
+	the ground. The cuts left hanging in the air burst and drive them into
+	the ground. The timeline is Shared/SaintZephyr, the camera work and
+	effects client side.
 ]]
-local NEVERLAND_REACH = 0.15
-local NEVERLAND_LINGER = 4
-local NEVERLAND_RADIUS = 20
+local SAINT_FLICK = 0.2 -- the star leaves his hand (Conjunction's point)
+local SAINT_BOX = Vector3.new(5, 7, 15)
 
-local function neverland(ctx)
+local function saintSpiritOfZephyr(ctx)
 	local c, character = ctx.combat, ctx.character
-	CombatState.SetCasting(character, NEVERLAND_REACH + 0.5)
+	CombatState.SetCasting(character, SAINT_FLICK + 0.5)
 	if ctx.airborne then
-		c.ApplyVelocity(character, HOVER, NEVERLAND_REACH + 0.3)
+		c.ApplyVelocity(character, HOVER, SAINT_FLICK + 0.3)
 	end
-	fx(ctx, "Neverland", "Reach")
-	task.wait(NEVERLAND_REACH)
+	fx(ctx, "SaintSpiritOfZephyr", "Flick", { range = SAINT_BOX.Z })
+	task.wait(SAINT_FLICK)
 	if interrupted(ctx) then
 		return
 	end
 	local target: Model? = nil
-	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -3.5), Vector3.new(6, 7, 7)) do
-		if not CombatState.HasIFrames(victim) and not CombatState.IsRagdolled(victim) then
-			target = victim
-			break
+	local nearest = math.huge
+	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -SAINT_BOX.Z / 2), SAINT_BOX) do
+		local victimRoot = rootOf(victim)
+		local distance = if victimRoot then (victimRoot.Position - ctx.root.Position).Magnitude else math.huge
+		if not CombatState.HasIFrames(victim) and not CombatState.IsRagdolled(victim) and distance < nearest then
+			target, nearest = victim, distance
 		end
 	end
 	local targetRoot = target and rootOf(target)
@@ -1180,45 +1182,58 @@ local function neverland(ctx)
 			)
 			~= "Hit"
 	then
-		fx(ctx, "Neverland", "Whiff")
+		fx(ctx, "SaintSpiritOfZephyr", "Whiff")
 		CombatState.SetCasting(character, 0.55)
 		return
 	end
 
-	local plan = NeverlandPlan.Plan(ctx.root.CFrame, targetRoot.Position, floorUnder(ctx, targetRoot.Position).Y)
-	local times = NeverlandPlan.Times
+	local plan = SaintPlan.Plan(ctx.root.CFrame, targetRoot.Position, floorUnder(ctx, targetRoot.Position).Y)
+	local times = SaintPlan.Times
 	CombatState.SetCasting(character, times.Length + 0.3)
 	CombatState.GiveIFrames(character, times.Length + 0.2)
 	CombatState.Stun(target, times.Length + 0.6)
-	fx(ctx, "Neverland", "Begin", { target = target, origin = plan.origin, start = plan.start, floorY = plan.floorY })
+	fx(ctx, "SaintSpiritOfZephyr", "Begin", {
+		target = target,
+		origin = plan.origin,
+		start = targetRoot.Position,
+		floorY = plan.floorY,
+	})
 	local stopHim = c.Cutscene({
 		[character] = function(t)
-			return NeverlandPlan.Attacker(plan, t)
+			return SaintPlan.Attacker(plan, t)
 		end,
 	}, times.Length)
 	local stopThem = c.Cutscene({
 		[target] = function(t)
-			return NeverlandPlan.Victim(plan, t)
+			return SaintPlan.Victim(plan, t)
 		end,
 	}, times.Land)
 	local started = os.clock()
 	local function waitUntil(at: number)
 		task.wait(math.max(at - (os.clock() - started), 0))
 	end
-	for _, at in times.Strikes do
+	for _, at in times.Cuts do
 		waitUntil(at)
 		if CombatState.IsAlive(target) then
-			c.Hit(character, target, { damage = 2, stun = 3, attackType = "Melee", unblockable = true, noShake = true })
+			c.Hit(
+				character,
+				target,
+				{ damage = 1.6, stun = 3, attackType = "Melee", unblockable = true, noShake = true }
+			)
 		end
 	end
+	waitUntil(times.Strike)
+	if CombatState.IsAlive(target) then
+		c.Hit(character, target, { damage = 3, stun = 3, attackType = "Melee", unblockable = true, noShake = true })
+	end
 
-	-- They hit the ground.
+	-- The cuts burst and drive them into the ground.
 	waitUntil(times.Land)
 	stopThem()
 	local center = Vector3.new(plan.start.X, plan.floorY, plan.start.Z)
 	if CombatState.IsAlive(target) then
 		c.Hit(character, target, {
-			damage = 14,
+			damage = 11,
 			stun = 1.4,
 			attackType = "Melee",
 			unblockable = true,
@@ -1227,25 +1242,10 @@ local function neverland(ctx)
 			velocity = UP * -20 + plan.forward * 4,
 		})
 	end
-	fx(ctx, "Neverland", "Impact", { position = center })
+	fx(ctx, "SaintSpiritOfZephyr", "Impact", { position = center })
 	c.ShakeArea(center, 80, 0.7)
 	waitUntil(times.Length)
 	stopHim()
-
-	-- The dome lingers over them.
-	fx(ctx, "Neverland", "Dome", { center = center, radius = NEVERLAND_RADIUS, duration = NEVERLAND_LINGER })
-	local opened = os.clock()
-	while os.clock() - opened < NEVERLAND_LINGER and character.Parent do
-		local now = os.clock()
-		for _, victim in c.Sphere(character, center, NEVERLAND_RADIUS) do
-			victim:SetAttribute("WeakUntil", now + 0.4)
-			victim:SetAttribute("SlowUntil", now + 0.4)
-		end
-		if (ctx.root.Position - center).Magnitude <= NEVERLAND_RADIUS then
-			character:SetAttribute("PowerUntil", now + 0.4)
-		end
-		task.wait(0.2)
-	end
 end
 
 ---------------------------------------------------------------------------
@@ -1257,7 +1257,7 @@ Kit.Skills = { windBladesShower, swiftWhiteHawk, heavenlyWindArk, galeWhiteBow }
 -- Awakened, the moves follow the stage: Half-Crown, or Full-Crown once he's
 -- ascended (the "Ascended" attribute; names and cooldowns in Shared/Kits).
 local HALF_CROWN = { spiritStorm, tempestDive, quartileScutum, quartileHasta }
-local FULL_CROWN = { spiritOfNotos, spiritOfZephyrus, spiritOfEuros, neverland }
+local FULL_CROWN = { spiritOfNotos, spiritOfZephyrus, spiritOfEuros, saintSpiritOfZephyr }
 local function stageMove(slot: number): (any) -> ()
 	return function(ctx)
 		local moves = if ctx.character:GetAttribute("Ascended") == true then FULL_CROWN else HALF_CROWN

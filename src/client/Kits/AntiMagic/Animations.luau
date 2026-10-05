@@ -3191,11 +3191,207 @@ Animations.CausalityPull = {
 	},
 }
 
--- Severance: one draw-cut through them, back turned as it lands.
-Animations.Severance = {
+-- Black Comet: flying low and flat, hammering them into the ground three times.
+Animations.CometDrag = {
+	fadeIn = 0.05,
+	fadeOut = 0.1,
+	delays = { Head = 0.02, Sword = 0.04 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-4, 14),
+				Head = rot(-4, -10),
+				RightArm = limb(-15, -10, 32),
+				Sword = aim(0.3, 0.25, 0.92),
+				LeftArm = limb(120, -8),
+				RightLeg = rot(-24),
+				LeftLeg = rot(24),
+			},
+		},
+		{
+			0.1,
+			{
+				Torso = rot(-62, 8),
+				Head = rot(48, -6),
+				RightArm = limb(-40, -10, 30),
+				Sword = aim(0.25, 0.3, 0.92),
+				LeftArm = limb(125, -8),
+				RightLeg = rot(14),
+				LeftLeg = rot(28),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.22,
+			{
+				Torso = rot(-70, 8),
+				Head = rot(52, -6),
+				RightArm = limb(-45, -10, 30),
+				Sword = aim(0.25, 0.3, 0.92),
+				LeftArm = limb(75, -8),
+				RightLeg = rot(10),
+				LeftLeg = rot(24),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.36,
+			{
+				Torso = rot(-62, 8),
+				Head = rot(48, -6),
+				RightArm = limb(-40, -10, 30),
+				Sword = aim(0.25, 0.3, 0.92),
+				LeftArm = limb(125, -8),
+				RightLeg = rot(14),
+				LeftLeg = rot(28),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.47,
+			{
+				Torso = rot(-70, 8),
+				Head = rot(52, -6),
+				RightArm = limb(-45, -10, 30),
+				Sword = aim(0.25, 0.3, 0.92),
+				LeftArm = limb(75, -8),
+				RightLeg = rot(10),
+				LeftLeg = rot(24),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.61,
+			{
+				Torso = rot(-62, 8),
+				Head = rot(48, -6),
+				RightArm = limb(-40, -10, 30),
+				Sword = aim(0.25, 0.3, 0.92),
+				LeftArm = limb(125, -8),
+				RightLeg = rot(14),
+				LeftLeg = rot(28),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.72,
+			{
+				Torso = rot(-70, 8),
+				Head = rot(52, -6),
+				RightArm = limb(-45, -10, 30),
+				Sword = aim(0.25, 0.3, 0.92),
+				LeftArm = limb(75, -8),
+				RightLeg = rot(10),
+				LeftLeg = rot(24),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.9,
+			{
+				Torso = rot(-70, 8),
+				Head = rot(52, -6),
+				RightArm = limb(-45, -10, 30),
+				Sword = aim(0.25, 0.3, 0.92),
+				LeftArm = limb(75, -8),
+				RightLeg = rot(10),
+				LeftLeg = rot(24),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Black Comet: plants, winds round and heaves them away.
+Animations.CometThrow = {
 	fadeIn = 0.03,
 	fadeOut = 0.25,
-	delays = { Sword = 0.015, Head = -0.01 },
+	delays = { Head = 0.02, Sword = 0.03 },
+	keys = {
+		{
+			0,
+			{
+				Torso = body(-0.153, -30, 10),
+				Head = rot(16, -8),
+				RightArm = limb(-30, -10, 30),
+				Sword = aim(0.3, 0.25, 0.92),
+				LeftArm = limb(80, -8),
+				RightLeg = rot(-40),
+				LeftLeg = rot(34),
+			},
+		},
+		{
+			0.07,
+			{
+				Torso = body(-0.139, -18, 40),
+				Head = rot(10, -30),
+				RightArm = limb(-20, -10, 30),
+				Sword = aim(0.3, 0.25, 0.92),
+				LeftArm = limb(60, -40, 10),
+				RightLeg = rot(-40),
+				LeftLeg = rot(34),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.16,
+			{
+				Torso = body(0.038, -22, -35),
+				Head = rot(12, 25),
+				RightArm = limb(-25, -10, 30),
+				Sword = aim(0.3, 0.25, 0.92),
+				LeftArm = limb(150, 10),
+				RightLeg = rot(-44),
+				LeftLeg = rot(38),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.4,
+			{
+				Torso = body(0.059, -14, -40),
+				Head = rot(6, 28),
+				RightArm = limb(-20, -10, 30),
+				Sword = aim(0.3, 0.25, 0.92),
+				LeftArm = limb(130, 20),
+				RightLeg = rot(-40),
+				LeftLeg = rot(34),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.6,
+			{
+				Torso = body(0.059, -14, -40),
+				Head = rot(6, 28),
+				RightArm = limb(-20, -10, 30),
+				Sword = aim(0.3, 0.25, 0.92),
+				LeftArm = limb(130, 20),
+				RightLeg = rot(-40),
+				LeftLeg = rot(34),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Conquering Eon: the Dweller held high as everything it drank bursts out.
+Animations.EonRelease = {
+	fadeIn = 0.03,
+	fadeOut = 0.25,
+	delays = { Sword = 0.03 },
 	keys = {
 		{
 			0,
@@ -3210,95 +3406,6 @@ Animations.Severance = {
 		{
 			0.12,
 			{
-				Torso = body(0.02, -26, -30),
-				Head = rot(16, 22),
-				RightArm = limb(-30, -15, 20),
-				Sword = aim(0.32, 0.12, 0.94),
-				LeftArm = limb(70, 10),
-				RightLeg = rot(-40),
-				LeftLeg = rot(36),
-			},
-			"Sine",
-			"Out",
-		},
-		{
-			0.16,
-			{
-				Torso = body(-0.061, -28),
-				Head = rot(16),
-				RightArm = limb(80, -60),
-				Sword = aim(0.9, 0.02, -0.42),
-				LeftArm = limb(20, 0, -30),
-				RightLeg = rot(-44),
-				LeftLeg = rot(38),
-			},
-			"Quad",
-			"In",
-		},
-		{
-			0.2,
-			{
-				Torso = body(-0.344, -30, 40),
-				Head = rot(18, -30),
-				RightArm = limb(84, 80),
-				Sword = aim(-0.86, -0.04, -0.5),
-				LeftArm = limb(-20, 0, -35),
-				RightLeg = rot(-46),
-				LeftLeg = rot(40),
-			},
-			"Linear",
-			"Out",
-		},
-		{
-			0.32,
-			{
-				Torso = body(0.017, -12, 60),
-				Head = rot(6, -40),
-				RightArm = limb(70, 100),
-				Sword = aim(-0.8, -0.45, 0.4),
-				LeftArm = limb(15, -40),
-				RightLeg = rot(-24),
-				LeftLeg = rot(22),
-			},
-			"Quart",
-			"Out",
-		},
-		{
-			0.8,
-			{
-				Torso = body(0.017, -12, 60),
-				Head = rot(6, -40),
-				RightArm = limb(70, 100),
-				Sword = aim(-0.8, -0.45, 0.4),
-				LeftArm = limb(15, -40),
-				RightLeg = rot(-24),
-				LeftLeg = rot(22),
-			},
-			"Linear",
-			"Out",
-		},
-	},
-}
-
--- Infinite Slash: Yami's two-handed overhead raise, trembling.
-Animations.InfiniteRaise = {
-	fadeIn = 0.04,
-	fadeOut = 0.05,
-	delays = { Sword = 0.03 },
-	keys = {
-		{
-			0,
-			{
-				Torso = body(0.049, -6, -18),
-				Head = rot(5, 16),
-				RightArm = limb(85, 25, 10),
-				Sword = aim(-0.006, 0.483, 0.875),
-				LeftArm = limb(10, 0, -14),
-			},
-		},
-		{
-			0.25,
-			{
 				Torso = body(0.088, 10, -10),
 				Head = rot(-10, 8),
 				RightArm = limb(170, -6),
@@ -3307,11 +3414,11 @@ Animations.InfiniteRaise = {
 				RightLeg = rot(-16, 0, 6),
 				LeftLeg = rot(18, 0, -6),
 			},
-			"Sine",
+			"Quart",
 			"Out",
 		},
 		{
-			0.4,
+			0.25,
 			{
 				Torso = body(0.075, 12, -10),
 				Head = rot(-12, 8),
@@ -3325,7 +3432,7 @@ Animations.InfiniteRaise = {
 			"InOut",
 		},
 		{
-			0.55,
+			0.45,
 			{
 				Torso = body(0.088, 10, -10),
 				Head = rot(-10, 8),
@@ -3337,54 +3444,6 @@ Animations.InfiniteRaise = {
 			},
 			"Sine",
 			"InOut",
-		},
-	},
-}
-
--- Infinite Slash: one straight chop that opens the cut.
-Animations.InfiniteCut = {
-	fadeIn = 0.01,
-	fadeOut = 0.3,
-	keys = {
-		{
-			0,
-			{
-				Torso = body(0.088, 10, -10),
-				Head = rot(-10, 8),
-				RightArm = limb(170, -6),
-				Sword = aim(0.1, 0.6, 0.8),
-				LeftArm = limb(165, 8),
-				RightLeg = rot(-16, 0, 6),
-				LeftLeg = rot(18, 0, -6),
-			},
-		},
-		{
-			0.05,
-			{
-				Torso = body(-0.093, -30),
-				Head = rot(16),
-				RightArm = limb(75, 2),
-				Sword = aim(0, -0.35, -0.94),
-				LeftArm = limb(72, -2),
-				RightLeg = rot(-42),
-				LeftLeg = rot(36),
-			},
-			"Quad",
-			"In",
-		},
-		{
-			0.45,
-			{
-				Torso = body(-0.093, -30),
-				Head = rot(16),
-				RightArm = limb(75, 2),
-				Sword = aim(0, -0.35, -0.94),
-				LeftArm = limb(72, -2),
-				RightLeg = rot(-42),
-				LeftLeg = rot(36),
-			},
-			"Linear",
-			"Out",
 		},
 	},
 }

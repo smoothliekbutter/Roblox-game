@@ -722,6 +722,28 @@ Z_CUT = {'Torso': R(-16, 40), 'Head': R(10, -28), 'RightArm': L(130, 70), 'Sword
          'LeftArm': L(-10, 0, -35), 'RightLeg': R(-36), 'LeftLeg': R(32)}
 Z_AFTER = {'Torso': R(-10, 34), 'Head': R(6, -24), 'RightArm': L(115, 60), 'Sword': A(-0.55, 0.6, -0.58),
            'LeftArm': L(0, 0, -30), 'RightLeg': R(-26), 'LeftLeg': R(24)}
+# Conquering Eon's release: the Dweller held high as the dome bursts out.
+EON_RELEASE = [(0.0, UPPER), (0.12, IS_RAISE), (0.25, IS_TREMBLE), (0.45, IS_RAISE)]
+
+# Black Comet: flying low and flat, them by the throat under him, his arm
+# hammering them down three times (CometPlan Slams), sword trailing.
+C_FLY_HIGH = {'Torso': R(-62, 8), 'Head': R(48, -6), 'RightArm': L(-40, -10, 30), 'Sword': A(0.25, 0.3, 0.92),
+              'LeftArm': L(125, -8), 'RightLeg': R(14), 'LeftLeg': R(28)}
+C_FLY_SLAM = {'Torso': R(-70, 8), 'Head': R(52, -6), 'RightArm': L(-45, -10, 30), 'Sword': A(0.25, 0.3, 0.92),
+              'LeftArm': L(75, -8), 'RightLeg': R(10), 'LeftLeg': R(24)}
+COMET_DRAG = [(0.0, SEIZE_LIFT), (0.1, C_FLY_HIGH), (0.22, C_FLY_SLAM), (0.36, C_FLY_HIGH), (0.47, C_FLY_SLAM),
+              (0.61, C_FLY_HIGH), (0.72, C_FLY_SLAM), (0.9, C_FLY_SLAM)]
+# The heave: planted, wound round, them flung away ahead.
+C_PLANT = {'Torso': R(-30, 10), 'Head': R(16, -8), 'RightArm': L(-30, -10, 30), 'Sword': A(0.3, 0.25, 0.92),
+           'LeftArm': L(80, -8), 'RightLeg': R(-40), 'LeftLeg': R(34)}
+C_WIND = {'Torso': R(-18, 40), 'Head': R(10, -30), 'RightArm': L(-20, -10, 30), 'Sword': A(0.3, 0.25, 0.92),
+          'LeftArm': L(60, -40, 10), 'RightLeg': R(-40), 'LeftLeg': R(34)}
+C_HEAVE = {'Torso': R(-22, -35), 'Head': R(12, 25), 'RightArm': L(-25, -10, 30), 'Sword': A(0.3, 0.25, 0.92),
+           'LeftArm': L(150, 10), 'RightLeg': R(-44), 'LeftLeg': R(38)}
+C_FOLLOW = {'Torso': R(-14, -40), 'Head': R(6, 28), 'RightArm': L(-20, -10, 30), 'Sword': A(0.3, 0.25, 0.92),
+            'LeftArm': L(130, 20), 'RightLeg': R(-40), 'LeftLeg': R(34)}
+COMET_THROW = [(0.0, C_PLANT), (0.07, C_WIND), (0.16, C_HEAVE), (0.4, C_FOLLOW), (0.6, C_FOLLOW)]
+
 ZETTEN_STANCE = [(0.0, UPPER), (0.12, Z_STANCE), (1.4, Z_STANCE)]
 ZETTEN_CUT = [(0.0, Z_STANCE), (0.05, Z_CUT), (0.35, Z_AFTER), (0.6, Z_AFTER)]
 
@@ -735,8 +757,8 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grab
        'AirDeflectStance': AIR_DEFLECT_STANCE,
        'MeteorLunge': METEOR_LUNGE, 'MeteorReach': METEOR_REACH, 'MeteorRise': METEOR_RISE, 'MeteorSpin': METEOR_SPIN, 'SwordSwap': SWORD_SWAP,
        'RecallThrow': RECALL_THROW, 'RecallCall': RECALL_CALL, 'RecallCatch': RECALL_CATCH,
-       'CausalityPlant': CAUSALITY_PLANT, 'CausalityPull': CAUSALITY_PULL, 'Severance': SEVERANCE,
-       'InfiniteRaise': INFINITE_RAISE, 'InfiniteCut': INFINITE_CUT, 'ZettenStance': ZETTEN_STANCE,
+       'CausalityPlant': CAUSALITY_PLANT, 'CausalityPull': CAUSALITY_PULL, 'CometDrag': COMET_DRAG,
+       'CometThrow': COMET_THROW, 'EonRelease': EON_RELEASE, 'ZettenStance': ZETTEN_STANCE,
        'ZettenCut': ZETTEN_CUT, 'MeteorDrill': METEOR_DRILL, 'MeteorLand': METEOR_LAND, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
        'DividerCharge': DIVIDER_CHARGE, 'DividerRelease': DIVIDER_RELEASE,
        'DeflectStance': DEFLECT_STANCE, 'DeflectCounter': DEFLECT_COUNTER, 'DeflectReflect': DEFLECT_REFLECT,
@@ -750,7 +772,7 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grab
 # wide stances). These are played in the air instead, or leave the ground
 # (planted only up to the time given).
 AIRBORNE = {'Air', 'Grabbed', 'Launched', 'MoonPerch', 'MoonFlight', 'Plunge', 'AirDividerCharge', 'AirDividerRelease', 'MeteorRise', 'MeteorSpin', 'MeteorDrill', 'MeteorLand', 'MeteorSlam', 'Chop',
-            'AirPropel', 'AirMeteorLunge', 'AirMeteorReach', 'AirSeize', 'AirDeflectStance'}
+            'AirPropel', 'AirMeteorLunge', 'AirMeteorReach', 'AirSeize', 'AirDeflectStance', 'CometDrag'}
 PLANT_UNTIL = {'Leap': 0.1}
 UNPLANTED = dict(ALL)
 # The run sets its own height (its bob lifts off the floor between steps).
@@ -780,8 +802,7 @@ if __name__ == '__main__':
              # The other swords are shorter than the Demon-Slayer.
              'CausalityPlant': dict(floor=-4.0, reach=DESTROYER_REACH),  # driven into the ground
              'CausalityPull': dict(floor=-4.0, reach=DESTROYER_REACH),
-             'Severance': dict(reach=DESTROYER_REACH),
-             'InfiniteRaise': dict(reach=SLASHER_REACH), 'InfiniteCut': dict(reach=SLASHER_REACH),
+             'CometDrag': dict(floor=-10, reach=DESTROYER_REACH), 'CometThrow': dict(reach=DESTROYER_REACH),
              'ZettenStance': dict(reach=SLASHER_REACH), 'ZettenCut': dict(reach=SLASHER_REACH)}
     ok = True
     for name, keys in ALL.items():

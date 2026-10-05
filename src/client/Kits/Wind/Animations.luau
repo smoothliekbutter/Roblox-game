@@ -1424,46 +1424,195 @@ Animations.EurosLoose = {
 	},
 }
 
--- Neverland: arms raised to the sky.
-Animations.Neverland = {
-	fadeOut = 0.3,
+-- Saint Spirit of Zephyr: one two-handed cut through them (each star).
+Animations.SaintCut = {
+	fadeIn = 0.03,
+	fadeOut = 0.1,
 	keys = {
 		{
 			0,
 			{
-				Torso = body(0.093, -3, 12),
-				Head = rot(2, -10),
-				RightArm = limb(12, 4, 10),
-				LeftArm = limb(30, -8, -16),
-				RightLeg = rot(-4, 0, 6),
-				LeftLeg = rot(6, 0, -7),
+				Torso = rot(-8, 40),
+				Head = rot(6, -30),
+				RightArm = limb(110, 50, 10),
+				LeftArm = limb(100, 70, -10),
+				RightLeg = rot(-24, 0, 10),
+				LeftLeg = rot(20, 0, -10),
 			},
 		},
 		{
-			0.3,
+			0.06,
 			{
-				Torso = body(0.086, 8),
-				Head = rot(24),
-				RightArm = limb(160, 0, 26),
-				LeftArm = limb(160, 0, -26),
-				RightLeg = rot(-10, 0, 6),
-				LeftLeg = rot(10, 0, -6),
+				Torso = rot(-14, -45),
+				Head = rot(8, 35),
+				RightArm = limb(80, -60, 10),
+				LeftArm = limb(70, -40, -10),
+				RightLeg = rot(-30, 0, 12),
+				LeftLeg = rot(26, 0, -12),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.25,
+			{
+				Torso = rot(-14, -45),
+				Head = rot(8, 35),
+				RightArm = limb(80, -60, 10),
+				LeftArm = limb(70, -40, -10),
+				RightLeg = rot(-30, 0, 12),
+				LeftLeg = rot(26, 0, -12),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Saint Spirit of Zephyr: the blade raised high above them.
+Animations.SaintRise = {
+	fadeIn = 0.03,
+	fadeOut = 0.05,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(-14, -45),
+				Head = rot(8, 35),
+				RightArm = limb(80, -60, 10),
+				LeftArm = limb(70, -40, -10),
+				RightLeg = rot(-30, 0, 12),
+				LeftLeg = rot(26, 0, -12),
+			},
+		},
+		{
+			0.12,
+			{
+				Torso = rot(10),
+				Head = rot(-18),
+				RightArm = limb(172, 6),
+				LeftArm = limb(172, -6),
+				RightLeg = rot(-8, 0, 6),
+				LeftLeg = rot(16, 0, -6),
 			},
 			"Sine",
 			"Out",
 		},
 		{
-			1.2,
+			0.75,
 			{
-				Torso = body(0.086, 8),
-				Head = rot(24),
-				RightArm = limb(160, 0, 26),
-				LeftArm = limb(160, 0, -26),
-				RightLeg = rot(-10, 0, 6),
-				LeftLeg = rot(10, 0, -6),
+				Torso = rot(10),
+				Head = rot(-18),
+				RightArm = limb(172, 6),
+				LeftArm = limb(172, -6),
+				RightLeg = rot(-8, 0, 6),
+				LeftLeg = rot(16, 0, -6),
 			},
 			"Linear",
 			"Out",
+		},
+	},
+}
+
+-- Saint Spirit of Zephyr: the one strike, straight down.
+Animations.SaintStrike = {
+	fadeIn = 0.01,
+	fadeOut = 0.1,
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(10),
+				Head = rot(-18),
+				RightArm = limb(172, 6),
+				LeftArm = limb(172, -6),
+				RightLeg = rot(-8, 0, 6),
+				LeftLeg = rot(16, 0, -6),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = rot(-38),
+				Head = rot(20),
+				RightArm = limb(40, 6),
+				LeftArm = limb(40, -6),
+				RightLeg = rot(-40, 0, 8),
+				LeftLeg = rot(10, 0, -8),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.2,
+			{
+				Torso = rot(-38),
+				Head = rot(20),
+				RightArm = limb(40, 6),
+				LeftArm = limb(40, -6),
+				RightLeg = rot(-40, 0, 8),
+				LeftLeg = rot(10, 0, -8),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Saint Spirit of Zephyr: landed low, his back to them, then up.
+Animations.SaintLand = {
+	fadeIn = 0.02,
+	fadeOut = 0.3,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(-0.167, -38),
+				Head = rot(20),
+				RightArm = limb(40, 6),
+				LeftArm = limb(40, -6),
+				RightLeg = rot(-40, 0, 8),
+				LeftLeg = rot(10, 0, -8),
+			},
+		},
+		{
+			0.12,
+			{
+				Torso = body(-0.043, -20, 15),
+				Head = rot(12, -10),
+				RightArm = limb(40, 10, 50),
+				LeftArm = limb(25, 0, -25),
+				RightLeg = rot(-50, 0, 10),
+				LeftLeg = rot(40, 0, -10),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.6,
+			{
+				Torso = body(-0.043, -20, 15),
+				Head = rot(12, -10),
+				RightArm = limb(40, 10, 50),
+				LeftArm = limb(25, 0, -25),
+				RightLeg = rot(-50, 0, 10),
+				LeftLeg = rot(40, 0, -10),
+			},
+			"Linear",
+			"Out",
+		},
+		{
+			1,
+			{
+				Torso = body(0.111, -6, 12),
+				Head = rot(4, -12),
+				RightArm = limb(20, 6, 30),
+				LeftArm = limb(18, 0, -18),
+				RightLeg = rot(-8, 0, 6),
+				LeftLeg = rot(8, 0, -6),
+			},
+			"Sine",
+			"InOut",
 		},
 	},
 }
