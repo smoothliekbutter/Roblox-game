@@ -148,18 +148,18 @@ STORM_FIRE = [(0.0, STORM_GATHER), (0.06, STORM_PUSH), (0.7, STORM_PUSH)]
 SCUTUM_HOLD = pose(R(4), R(2), L(100, 22, 12), L(100, -22, -12), R(-16, 0, 8), R(16, 0, -8))
 SCUTUM = [(0.0, STANCE), (0.15, SCUTUM_HOLD), (2.5, SCUTUM_HOLD)]
 
-# Quartile Hasta: left hand conducting the stars overhead, right pointing
-# the way (0.2 to 0.5); the beam goes and he rocks back.
-HASTA_AIM = pose(R(-4, -12), R(6, 10), L(92, 10, 0), L(150, -10, -22), R(-16, 0, 8), R(16, 0, -8))
-HASTA_KICK = pose(R(6, -8), R(10, 6), L(100, 8, 0), L(140, -10, -26), R(-18, 0, 8), R(18, 0, -8))
-HASTA_STARS = [(0.0, STANCE), (0.2, HASTA_AIM), (1.0, HASTA_AIM)]  # held through a tapped barrage
-# Held: leaning into the beam he keeps on them.
-HASTA_PUSH = pose(R(-8, -12), R(8, 10), L(94, 8, 0), L(140, -10, -26), R(-20, 0, 8), R(20, 0, -8))
-HASTA_BEAM = [(0.0, HASTA_AIM), (0.1, HASTA_PUSH), (2.0, HASTA_PUSH)]
-# In the air: both hands down at the ground, calling the star-fire down on it.
-HASTA_CALL = pose(R(-10), R(-14), L(40, 10, 20), L(40, -10, -20), R(14), R(-8))
-HASTA_RAIN = [(0.0, AIR[0][1]), (0.15, HASTA_CALL), (1.2, HASTA_CALL)]
-HASTA_FIRE = [(0.0, HASTA_AIM), (0.05, HASTA_KICK), (0.45, HASTA_KICK)]
+# Nova Vortex: his right hand up and open in front of him, the star forming
+# over the palm, the left hand cupped under it, eyes on it; then the flick
+# that sends it, the whole body turning into it, the free arm swung back.
+NOVA_CRADLE = pose(R(-4, 20), R(14, -12), L(112, -14, 8), L(62, 34, -14), R(-14, 0, 8), R(14, 0, -8))
+NOVA_SEND = pose(R(-12, -26), R(6, 20), L(94, 22, 0), L(26, 0, -34), R(-26, 0, 8), R(24, 0, -8))
+NOVA_FORM = [(0.0, STANCE), (0.16, NOVA_CRADLE), (0.32, NOVA_CRADLE)]
+NOVA_FLICK = [(0.0, NOVA_CRADLE), (0.07, NOVA_SEND), (0.5, NOVA_SEND)]
+# In the air: the same, knees up, and the star flicked down at the ground.
+NOVA_CRADLE_AIR = pose(R(-8, 20), R(18, -12), L(100, -14, 8), L(56, 34, -14), R(-40, 0, 10), R(-10, 0, -10))
+NOVA_SEND_AIR = pose(R(-30, -22), R(22, 18), L(58, 18, 0), L(20, 0, -40), R(-30, 0, 10), R(-4, 0, -10))
+NOVA_FORM_AIR = [(0.0, AIR[0][1]), (0.16, NOVA_CRADLE_AIR), (0.32, NOVA_CRADLE_AIR)]
+NOVA_FLICK_AIR = [(0.0, NOVA_CRADLE_AIR), (0.07, NOVA_SEND_AIR), (0.5, NOVA_SEND_AIR)]
 
 # ---------------- Full-Crown Spirit of Zephyr ----------------
 # Spirit of Notos: arms crossed as the wind gathers, flung wide as it bursts.
@@ -288,10 +288,10 @@ SPEC = {
     'StormCharge': dict(keys=STORM_CHARGE, ease=[None, SINE_OUT, LINEAR], fadeOut=0.05, doc="Spirit Storm: palm out, mana gathering."),
     'StormFire': dict(keys=STORM_FIRE, ease=[None, QUART_OUT, LINEAR], fadeIn=0.02, fadeOut=0.3, doc="Spirit Storm: leaning into the beam."),
     'Scutum': dict(keys=SCUTUM, ease=[None, SINE_OUT, LINEAR], fadeOut=0.2, doc="Quartile Scutum: hands out, holding the barrier."),
-    'HastaStars': dict(keys=HASTA_STARS, ease=[None, SINE_OUT, LINEAR], fadeOut=0.05, doc="Quartile Hasta: conducting the four stars."),
-    'HastaBeam': dict(keys=HASTA_BEAM, ease=[None, QUART_OUT, LINEAR], fadeIn=0.03, fadeOut=0.3, doc="Quartile Hasta held: leaning into the beam."),
-    'HastaRain': dict(keys=HASTA_RAIN, ease=[None, SINE_OUT, LINEAR], fadeOut=0.25, doc="Quartile Hasta in the air: hands down, calling the star-fire down."),
-    'HastaFire': dict(keys=HASTA_FIRE, ease=[None, QUART_OUT, SINE_OUT], fadeIn=0.02, fadeOut=0.3, doc="Quartile Hasta: the lance goes, he rocks back."),
+    'NovaForm': dict(keys=NOVA_FORM, ease=[None, SINE_OUT, LINEAR], fadeIn=0.04, fadeOut=0.1, doc="Nova Vortex: the star forming over his open hand."),
+    'NovaFlick': dict(keys=NOVA_FLICK, ease=[None, QUART_OUT, LINEAR], fadeIn=0.02, fadeOut=0.3, doc="Nova Vortex: the star flicked out, his body turning into it."),
+    'NovaFormAir': dict(keys=NOVA_FORM_AIR, ease=[None, SINE_OUT, LINEAR], fadeIn=0.04, fadeOut=0.1, doc="Nova Vortex in the air: the star forming over his open hand, knees up."),
+    'NovaFlickAir': dict(keys=NOVA_FLICK_AIR, ease=[None, QUART_OUT, LINEAR], fadeIn=0.02, fadeOut=0.3, doc="Nova Vortex in the air: the star flicked down at the ground."),
     'Notos': dict(keys=NOTOS, ease=snap(4), fadeOut=0.3, doc="Spirit of Notos: arms crossed, then flung wide."),
     'ZephyrusLunge': dict(keys=ZEPHYRUS_LUNGE, ease=[None, QUART_OUT, LINEAR], fadeIn=0.03, fadeOut=0.2, doc="Spirit of Zephyrus: the lunge, sword low and forward."),
     'ZephyrusThrust': dict(keys=ZEPHYRUS_THRUST, ease=[None, QUART_OUT, LINEAR], fadeIn=0.02, fadeOut=0.25, doc="Spirit of Zephyrus: the thrust through them."),
@@ -367,12 +367,12 @@ def lively(spec, k=0.14):
     spec['keys'], spec['ease'] = keys, ease
 
 for _name in ('Shower', 'Hawk', 'Ark', 'AirArk', 'Bow', 'Conjunction', 'Warp', 'StormCharge', 'StormFire', 'Scutum',
-              'HastaStars', 'HastaBeam', 'HastaRain', 'HastaFire', 'Notos', 'ZephyrusLunge', 'ZephyrusThrust',
+              'NovaForm', 'NovaFlick', 'NovaFormAir', 'NovaFlickAir', 'Notos', 'ZephyrusLunge', 'ZephyrusThrust',
               'BoreasForm', 'BoreasChop', 'EurosDraw', 'EurosLoose', 'TempestDrag'):
     lively(SPEC[_name])
 
 # Played in the air (not planted, feet not checked); the run sets its own height.
-AIRBORNE = {'Air', 'AirArk', 'TempestDrag', 'HastaRain', 'HoverIdle', 'HoverMove', 'SaintCut', 'SaintCutBack', 'SaintAscend', 'SaintPoise', 'SaintRise', 'SaintStrike', 'ZephyrusDraw', 'ZephyrusSkewer'}
+AIRBORNE = {'Air', 'AirArk', 'TempestDrag', 'NovaFormAir', 'NovaFlickAir', 'HoverIdle', 'HoverMove', 'SaintCut', 'SaintCutBack', 'SaintAscend', 'SaintPoise', 'SaintRise', 'SaintStrike', 'ZephyrusDraw', 'ZephyrusSkewer'}
 OWN_HEIGHT = {'Run'}
 ALL = {name: spec['keys'] if name in AIRBORNE or name in OWN_HEIGHT else plant(spec['keys']) for name, spec in SPEC.items()}
 

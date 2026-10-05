@@ -29,9 +29,9 @@
 	                         Landing it twice is what unlocks the Full-Crown
 	  3 Quartile Scutum      four stars and the light between them: a wall in
 	                         front that stops everything, melee thrown back off it
-	  4 Quartile Hasta       four stars round his hand: tapped, a barrage of star
-	                         bolts; held, a beam he keeps on them; in the air,
-	                         star-fire raining on the ground below
+	  4 Nova Vortex          a star flicked out opens into a galaxy of wind that
+	                         drags everyone in, then goes nova: a pillar of
+	                         starlight that throws them up (held: turns longer)
 	Full-Crown Spirit of Zephyr (G again, once Tempest Dive has landed twice)
 	  1 Spirit of Boreas     a great axe of wind; one huge chop splits the ground in
 	                         a line ahead, through guards, launching them
@@ -785,169 +785,122 @@ local function quartileScutum(ctx)
 end
 
 --[[
-	Quartile Hasta (Half-Crown 4): four stars open round his outstretched
-	hand, and then, depending on the key:
-	  tapped    a mini barrage: the stars fire star bolts at whoever he
-	            faces, one after another;
-	  held      their light converges into a beam he keeps on them for as
-	            long as the key is down (up to 1.6s, turning with him),
-	            ending in a blast that breaks guards;
-	  in the air  star-fire rains down on the ground below him.
+	Nova Vortex (Half-Crown 4): a star forms in his open hand and he flicks it
+	out (at whoever he faces, else ahead of him; from the air, down to the
+	ground ahead). Where it lands it opens into a galaxy of wind and stars
+	turning flat over the ground, and everyone round it is dragged in toward
+	its eye; whoever reaches the eye is held up in it, cut by the wind. He's
+	free the moment the star leaves his hand. It turns for 1.1s (held, as
+	long as the key is down, up to 2.2s), then collapses into its eye and
+	goes nova: a pillar of starlight into the sky that breaks guards and
+	throws whoever is in it straight up, for him to follow.
 ]]
-local HASTA_SLOT = 4
-local HASTA_CHARGE = 0.25 -- the stars open; still held after this, it's the beam
-local HASTA_LENGTH = 60
-local HASTA_BOLTS = 5
-local HASTA_BOLT_GAP = 0.09
-local HASTA_BEAM_MAX = 1.6
-local HASTA_BEAM_TICK = 0.12
-local HASTA_RAIN = 12
-local HASTA_RAIN_RADIUS = 11
-local HASTA_RAIN_TIME = 1
+local NOVA_SLOT = 4
+local NOVA_CAST = 0.28 -- the star forms in his hand and he flicks it
+local NOVA_SPEED = 120 -- the star's flight
+local NOVA_RANGE = 45 -- how far it reaches for someone to aim at
+local NOVA_AHEAD = 24 -- where it goes with nobody to aim at
+local NOVA_PULL = 22 -- the reach of the vortex
+local NOVA_EYE = 5 -- held in the eye within this
+local NOVA_LIFT = 4 -- how high the eye holds them off the ground
+local NOVA_OPEN = 1.1 -- how long it turns, tapped
+local NOVA_HELD = 2.2 -- the longest it turns, held
+local NOVA_TICK = 0.1
+local NOVA_CUT = 0.25 -- the wind cuts whoever is in the eye this often
+local NOVA_COLLAPSE = 0.15 -- the vortex falling into its eye before the nova
+local NOVA_BLAST = 9 -- the nova's reach
 
-local function hastaBarrage(ctx)
-	local c, character = ctx.combat, ctx.character
-	CombatState.SetCasting(character, HASTA_BOLTS * HASTA_BOLT_GAP + 0.25)
-	for i = 1, HASTA_BOLTS do
-		if interrupted(ctx) then
-			return
-		end
-		local last = i == HASTA_BOLTS
-		local origin = ctx.root.Position + look(ctx) * 3 + UP * 0.8
-		local direction = aimFrom(ctx, origin, softTarget(ctx, HASTA_LENGTH, 30), 0.3)
-		fx(
-			ctx,
-			"QuartileHasta",
-			"Bolt",
-			{ index = (i - 1) % 4 + 1, direction = direction, speed = 190, range = 70, last = last }
-		)
-		Projectile.Fire({
-			owner = character,
-			origin = origin,
-			direction = direction,
-			speed = 190,
-			range = 70,
-			size = Vector3.new(2, 2, 3),
-			onHit = function(victim)
-				c.Hit(character, victim, {
-					damage = if last then 3 else 2,
-					stun = if last then 0.9 else 0.5,
-					attackType = "Bolt",
-					heavy = last,
-					velocity = if last then c.Flat(direction) * 40 + UP * 12 else c.Flat(direction) * 5,
-					velocityTime = 0.15,
-				})
-			end,
-		})
-		task.wait(HASTA_BOLT_GAP)
-	end
-end
-
-local function hastaBeam(ctx)
-	local c, character = ctx.combat, ctx.character
-	local started = os.clock()
-	character:SetAttribute("Rooted", true)
-	local origin, direction, length = ctx.root.Position, look(ctx), HASTA_LENGTH
-	while os.clock() - started < HASTA_BEAM_MAX and not interrupted(ctx) do
-		if not c.IsHeld(character, HASTA_SLOT) and os.clock() - started > 0.4 then
-			break
-		end
-		CombatState.SetCasting(character, HASTA_BEAM_TICK + 0.3)
-		origin = ctx.root.Position + look(ctx) * 3 + UP * 0.8
-		direction = aimFrom(ctx, origin, softTarget(ctx, HASTA_LENGTH, 25), 0.4)
-		length = reach(ctx, origin, direction, HASTA_LENGTH)
-		fx(ctx, "QuartileHasta", "Beam", { origin = origin, direction = direction, length = length })
-		for _, victim in lineVictims(ctx, origin, direction, length, 5) do
-			c.Hit(character, victim, {
-				damage = 1.1,
-				stun = 0.45,
-				attackType = "Bolt",
-				noShake = true,
-				velocity = c.Flat(direction) * 8,
-				velocityTime = 0.12,
-			})
-		end
-		task.wait(HASTA_BEAM_TICK)
-	end
-	character:SetAttribute("Rooted", false)
-	if interrupted(ctx) then
-		return
-	end
-	-- One last burst along it, breaking guards.
-	fx(ctx, "QuartileHasta", "BeamEnd", { origin = origin, direction = direction, length = length })
-	for _, victim in lineVictims(ctx, origin, direction, length, 6) do
-		c.Hit(character, victim, {
-			damage = 4,
-			stun = 1,
-			attackType = "Bolt",
-			guardBreak = true,
-			heavy = true,
-			ragdoll = 1,
-			velocity = c.Flat(direction) * 45 + UP * 15,
-		})
-	end
-	c.ShakeArea(origin, 45, 0.4)
-end
-
-local function hastaRain(ctx)
-	local c, character = ctx.combat, ctx.character
-	CombatState.SetCasting(character, HASTA_RAIN_TIME + 0.3)
-	c.ApplyVelocity(character, HOVER, HASTA_RAIN_TIME + 0.2)
-	local center = floorUnder(ctx, ctx.root.Position + look(ctx) * 6)
-	fx(ctx, "QuartileHasta", "Rain", { center = center, radius = HASTA_RAIN_RADIUS, duration = HASTA_RAIN_TIME })
-	for _ = 1, HASTA_RAIN do
-		if interrupted(ctx) then
-			return
-		end
-		-- Half of them at whoever is in it, the rest anywhere in the circle.
-		local spot
-		local victims = c.Sphere(character, center + UP * 3, HASTA_RAIN_RADIUS)
-		local victimRoot = if #victims > 0 and math.random() < 0.5
-			then rootOf(victims[math.random(1, #victims)])
-			else nil
-		if victimRoot then
-			spot = floorUnder(
-				ctx,
-				victimRoot.Position + Vector3.new(math.random(-15, 15) / 10, 0, math.random(-15, 15) / 10)
-			)
-		else
-			local angle = math.random() * math.pi * 2
-			spot = center
-				+ Vector3.new(math.cos(angle), 0, math.sin(angle)) * HASTA_RAIN_RADIUS * math.sqrt(math.random())
-		end
-		local from = ctx.root.Position + Vector3.new(math.random(-20, 20) / 10, 1, math.random(-20, 20) / 10)
-		fx(ctx, "QuartileHasta", "Fall", { from = from, spot = spot })
-		task.delay(0.18, function()
-			for _, victim in c.Sphere(character, spot + UP * 2, 4) do
-				c.Hit(character, victim, { damage = 1.8, stun = 0.5, attackType = "Explosion", noShake = true })
-			end
-		end)
-		task.wait(HASTA_RAIN_TIME / HASTA_RAIN)
-	end
-end
-
-local function quartileHasta(ctx)
+local function novaVortex(ctx)
 	local c, character = ctx.combat, ctx.character
 	local airborne = ctx.airborne
-	CombatState.SetCasting(character, HASTA_CHARGE + 0.3)
+	CombatState.SetCasting(character, NOVA_CAST + 0.15)
 	if airborne then
-		c.ApplyVelocity(character, HOVER, HASTA_CHARGE + 0.2)
+		c.ApplyVelocity(character, HOVER, NOVA_CAST + 0.1)
 	end
-	fx(ctx, "QuartileHasta", "Stars", { airborne = airborne })
-	task.wait(HASTA_CHARGE)
+	fx(ctx, "NovaVortex", "Form", { airborne = airborne })
+	task.wait(NOVA_CAST)
 	if interrupted(ctx) then
-		fx(ctx, "QuartileHasta", "Done")
+		fx(ctx, "NovaVortex", "Cancel")
 		return
 	end
-	if airborne then
-		hastaRain(ctx)
-	elseif c.IsHeld(character, HASTA_SLOT) then
-		hastaBeam(ctx)
-	else
-		hastaBarrage(ctx)
+
+	-- Where it goes: whoever he faces, else ahead of him; always to the
+	-- ground there (walls stop it short).
+	local forward = look(ctx)
+	local aimed = softTarget(ctx, NOVA_RANGE, 35)
+	local aimedRoot = aimed and rootOf(aimed)
+	local from = ctx.root.Position + forward * 2 + UP * 1.5
+	local spot = if aimedRoot then aimedRoot.Position else ctx.root.Position + forward * NOVA_AHEAD
+	local flat = c.Flat(spot - ctx.root.Position)
+	local along = if flat.Magnitude > 1e-3 then flat.Unit else forward
+	local distance = math.min(flat.Magnitude, reach(ctx, from, along, NOVA_RANGE))
+	local ground = floorUnder(ctx, ctx.root.Position + along * math.max(distance, 4))
+	local eye = ground + UP * 2.5
+	local flight = math.clamp((eye - from).Magnitude / NOVA_SPEED, 0.08, 0.45)
+	fx(ctx, "NovaVortex", "Throw", { from = from, eye = eye, flight = flight })
+	task.wait(flight)
+	if not CombatState.IsAlive(character) then
+		fx(ctx, "NovaVortex", "Fizzle")
+		return
 	end
-	fx(ctx, "QuartileHasta", "Done")
-	CombatState.SetCasting(character, 0.2)
+
+	-- The vortex: everyone near is dragged in; in its eye, held up and cut.
+	fx(ctx, "NovaVortex", "Open", { eye = eye, ground = ground, reach = NOVA_PULL })
+	local opened = os.clock()
+	local lastCut = -1
+	local hold = ground + UP * (NOVA_LIFT + 3) -- where the eye holds their root
+	while true do
+		local t = os.clock() - opened
+		if not CombatState.IsAlive(character) then
+			fx(ctx, "NovaVortex", "Fizzle")
+			return
+		end
+		if t >= NOVA_HELD or (t >= NOVA_OPEN and not c.IsHeld(character, NOVA_SLOT)) then
+			break
+		end
+		local cut = t - lastCut >= NOVA_CUT
+		if cut then
+			lastCut = t
+		end
+		for _, victim in c.Sphere(character, eye, NOVA_PULL) do
+			local victimRoot = rootOf(victim)
+			if victimRoot then
+				local offset = hold - victimRoot.Position
+				local level = Vector3.new(offset.X, 0, offset.Z)
+				if level.Magnitude < NOVA_EYE then
+					-- Held up in the eye, turning with it.
+					local pull = offset / 0.15
+					c.ApplyVelocity(victim, if pull.Magnitude > 40 then pull.Unit * 40 else pull, NOVA_TICK + 0.05)
+					if cut then
+						c.Hit(character, victim, { damage = 0.6, stun = 0.6, attackType = "Zone", noShake = true })
+					end
+				elseif level.Magnitude > 1e-3 then
+					-- Dragged in: harder the closer they get.
+					local strength = 16 + 20 * (1 - level.Magnitude / NOVA_PULL)
+					c.ApplyVelocity(victim, level.Unit * strength + UP * 2, NOVA_TICK + 0.05)
+				end
+			end
+		end
+		task.wait(NOVA_TICK)
+	end
+
+	-- It falls into its eye and goes nova.
+	fx(ctx, "NovaVortex", "Nova", { eye = eye, ground = ground })
+	task.wait(NOVA_COLLAPSE)
+	for _, victim in c.Sphere(character, eye + UP * 2, NOVA_BLAST) do
+		local victimRoot = rootOf(victim)
+		local out = if victimRoot then c.Flat(victimRoot.Position - eye) else Vector3.zero
+		c.Hit(character, victim, {
+			damage = 5,
+			stun = 1,
+			attackType = "Explosion",
+			guardBreak = true,
+			heavy = true,
+			ragdoll = 1.2,
+			velocity = UP * 72 + (if out.Magnitude > 1e-3 then out.Unit * 6 else Vector3.zero),
+		})
+	end
+	c.ShakeArea(eye, 45, 0.35)
 end
 
 ---------------------------------------------------------------------------
@@ -1297,7 +1250,7 @@ Kit.Skills = { windBladesShower, swiftWhiteHawk, heavenlyWindArk, galeWhiteBow }
 
 -- Awakened, the moves follow the stage: Half-Crown, or Full-Crown once he's
 -- ascended (the "Ascended" attribute; names and cooldowns in Shared/Kits).
-local HALF_CROWN = { spiritStorm, tempestDive, quartileScutum, quartileHasta }
+local HALF_CROWN = { spiritStorm, tempestDive, quartileScutum, novaVortex }
 local FULL_CROWN = { spiritOfBoreas, spiritOfZephyrus, spiritOfEuros, saintSpiritOfZephyr }
 local function stageMove(slot: number): (any) -> ()
 	return function(ctx)

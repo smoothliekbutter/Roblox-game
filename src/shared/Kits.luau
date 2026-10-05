@@ -186,7 +186,7 @@ Kits.List = {
 			{ name = "Spirit Storm", cooldown = 12, type = "Bolt", airHold = true },
 			{ name = "Tempest Dive", cooldown = 16, type = "Melee", airHold = true },
 			{ name = "Quartile Scutum", cooldown = 16, type = "Counter" },
-			{ name = "Quartile Hasta", cooldown = 14, type = "Bolt", airHold = true },
+			{ name = "Nova Vortex", cooldown = 14, type = "Zone", airHold = true },
 		},
 		awakening = {
 			name = "Half-Crown",

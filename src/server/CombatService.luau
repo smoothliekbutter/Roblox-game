@@ -51,7 +51,7 @@ export type CharData = {
 	-- Whether that press was made in the air (the player's own client says).
 	skillInputAir: { [number]: boolean },
 	-- Skill keys being held down right now (press to release), for moves
-	-- that do something different when held (Yuno's Quartile Hasta).
+	-- that do something different when held (Yuno's Nova Vortex).
 	skillHeld: { [number]: boolean },
 	-- Bumped whenever a skill, special or awakening starts, so a move that
 	-- listens for follow-ups (Anti-Magic Leap) knows another move took over.
