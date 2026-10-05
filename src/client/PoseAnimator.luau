@@ -223,6 +223,29 @@ local function write(joint: Motor6D, value: CFrame)
 	lastWritten[joint] = value
 end
 
+-- A lift under everything a character plays (Yuno hovering while awakened):
+-- the whole body raised `studs` off its root, eased so it never pops. It
+-- settles to nothing while the root is anchored (a cutscene path), so the
+-- body stays where the path puts it.
+type Lift = { target: number, current: number }
+local lifts: { [Model]: Lift } = setmetatable({}, { __mode = "k" }) :: any
+
+local function liftFor(character: Model, joint: Motor6D, dt: number): CFrame?
+	local lift = lifts[character]
+	if not lift then
+		return nil
+	end
+	local root = joint.Part0
+	local target = if root and root.Anchored then 0 else lift.target
+	lift.current += (target - lift.current) * math.min(dt * 6, 1)
+	if lift.current < 0.005 and target == 0 then
+		lift.current = 0
+		return nil
+	end
+	local c0 = joint.C0.Rotation
+	return c0:Inverse() * CFrame.new(0, lift.current, 0) * c0
+end
+
 local function release(track: Track, character: Model)
 	-- Hand the joints back; the default Animator overwrites them next frame
 	-- if it's animating them. Joints the idle covers stay put, the idle
@@ -374,7 +397,9 @@ local function step(dt: number)
 		local track = tracks[character]
 		for poseName, value in values do
 			if not (track and track.joints[poseName]) then
-				write(idle.joints[poseName], value)
+				local joint = idle.joints[poseName]
+				local lift = if poseName == "Torso" then liftFor(character, joint, dt) else nil
+				write(joint, if lift then lift * value else value)
 			end
 		end
 	end
@@ -422,9 +447,26 @@ local function step(dt: number)
 			local target = if additive[poseName] then base * local_ else local_
 			-- Fading in starts from wherever the joint really was (mid-swing
 			-- from the previous track, for example), not from the base.
-			local start = if fadingIn then track.from[poseName] or base else base
-			write(joint, start:Lerp(target, weight))
+			local lift = if poseName == "Torso" then liftFor(character, joint, dt) else nil
+			local start = base
+			if fadingIn and track.from[poseName] then
+				-- (What the joint really was includes the lift; take it off.)
+				start = if lift then lift:Inverse() * track.from[poseName] else track.from[poseName]
+			end
+			local value = start:Lerp(target, weight)
+			write(joint, if lift then lift * value else value)
 		end
+	end
+end
+
+-- Lifts everything `character` plays `studs` off the ground (0 to settle
+-- back down), eased in and out.
+function PoseAnimator.SetLift(character: Model, studs: number)
+	local lift = lifts[character]
+	if lift then
+		lift.target = studs
+	else
+		lifts[character] = { target = studs, current = 0 }
 	end
 end
 

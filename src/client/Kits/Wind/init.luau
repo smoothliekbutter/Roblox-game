@@ -2244,7 +2244,7 @@ end
 
 -- Looks (built further down); moves can hide his wind sword for a moment
 -- (the halberd, the bow).
-local looks: { [Model]: { hideSword: number } } = {}
+local looks: { [Model]: { hideSword: number, blade: BasePart? } } = {}
 
 local function hideSword(character: Model, duration: number)
 	local look = looks[character]
@@ -3281,15 +3281,18 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 		end
 	end)
 
-	-- Conjunction: from star to star, straight through them, faster and
-	-- faster, his afterimages gathering round them.
+	-- From star to star: a quick dash round them, then a cut straight
+	-- through them that you see him make (the swing, his blade's trail),
+	-- each cut left hanging in the air behind him.
 	local function cutFrom(star: Vector3, at: number, scale: number, clip: Animation)
 		local exit = SaintPlan.Exit(plan, star)
 		local along = (exit - star).Unit
-		task.delay(math.max(at - SaintPlan.Appear, 0), function()
-			U.afterimage(character, WIND, 0.45)
-			windPuff(star, 2)
-			U.glint(star, 1.2, STAR_WHITE)
+		task.delay(math.max(SaintPlan.DashFrom(at), 0), function()
+			U.afterimage(character, WIND, 0.3)
+			U.glint(star, 1, STAR_WHITE)
+		end)
+		task.delay(math.max(at - SaintPlan.Through / 2 - 0.03, 0), function()
+			windPuff(star, 1.5, along)
 			play(character, clip)
 		end)
 		task.delay(at, function()
@@ -3298,7 +3301,7 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 			end
 			local bend = along:Cross(U.randomUnit())
 			bend = if bend.Magnitude > 1e-3 then bend.Unit * (2.5 + math.random() * 2) else UP * 3
-			table.insert(slashes, windSlash(star - along * 3, exit + along * 3, bend, scale))
+			table.insert(slashes, windSlash(star - along * 2, exit + along * 2, bend, scale * 0.7))
 			U.flash(plan.center, WIND_WHITE, 2.5 * scale, 0.08)
 			windRing(plan.center, along, 1, 6 * scale, 0.25)
 			windPuff(plan.center, 2.5 * scale, along)
@@ -3323,6 +3326,37 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 	for i, at in times.Cuts do
 		cutFrom(plan.stars[i], at, 1, if i % 2 == 1 then ANIMS.SaintCut else ANIMS.SaintCutBack)
 	end
+	-- His sword leaves a trail of wind the length of the blade as it swings.
+	task.delay(SaintPlan.DashFrom(times.Cuts[1]), function()
+		local look = looks[character]
+		local blade = look and look.blade
+		if not blade then
+			return
+		end
+		local hilt = Instance.new("Attachment")
+		hilt.Position = Vector3.new(0, -2.6, 0)
+		hilt.Parent = blade
+		local point = Instance.new("Attachment")
+		point.Position = Vector3.new(0, 2.7, 0)
+		point.Parent = blade
+		local trail = Instance.new("Trail")
+		trail.Attachment0 = hilt
+		trail.Attachment1 = point
+		trail.Color = ColorSequence.new(WIND_WHITE, WIND)
+		trail.Transparency = NumberSequence.new({ key(0, 0.15), key(1, 1) })
+		trail.Lifetime = 0.2
+		trail.LightEmission = 1
+		trail.LightInfluence = 0
+		trail.Parent = blade
+		task.delay(times.Rise - 0.1 - SaintPlan.DashFrom(times.Cuts[1]), function()
+			trail.Enabled = false
+			task.delay(0.3, function()
+				trail:Destroy()
+				hilt:Destroy()
+				point:Destroy()
+			end)
+		end)
+	end)
 
 	-- The X: his cut and its mirror at once.
 	cutFrom(plan.cross, times.Cross, 1.6, ANIMS.SaintCut)
@@ -3556,23 +3590,15 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 		local function them(t: number): Vector3
 			return SaintPlan.Victim(plan, math.min(t, times.Land)).Position
 		end
-		local function cutIndex(t: number): number
-			local index = 1
-			for i, at in cuts do
-				if t >= at - SaintPlan.Appear then
-					index = i
-				end
-			end
-			return index
+		-- Through the cuts the camera follows him smoothly (not every
+		-- dart he makes).
+		local followed: Vector3? = nil
+		local function follow(t: number, dt: number): Vector3
+			local target = him(t)
+			followed = if followed then followed:Lerp(target, math.min(dt * 8, 1)) else target
+			return followed :: Vector3
 		end
-		-- Just behind him where he appears at star i, looking at them.
-		local function behindStar(i: number): Vector3
-			local star = plan.stars[i]
-			local out = (star - center).Unit
-			local side = out:Cross(UP)
-			side = if side.Magnitude > 1e-3 then side.Unit else right
-			return star + out * 7 + UP * 2.5 + side * 1.8
-		end
+		local lastT = 0
 		type Shot = {
 			from: number,
 			to: number,
@@ -3621,28 +3647,17 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 				end,
 			},
 			{
-				from = cuts[1],
-				to = 2.3,
+				from = cuts[1] - 0.25,
+				to = times.Cross - 0.1,
 				blend = 0.22,
 				get = function(u, t)
-					local angle = 0.6 + u * u * rad(260) + u * rad(40)
+					local dt = math.max(t - lastT, 0)
+					lastT = t
+					local angle = 0.6 + u * rad(200)
 					local eye = center
-						+ (forward * math.cos(angle) + right * math.sin(angle)) * (24 - 6 * u)
-						+ UP * (3 + math.sin(t * 4) * 2)
-					return eye, center:Lerp(him(t), 0.3), -4, 78 + 6 * u, 0
-				end,
-			},
-			{
-				from = 2.3,
-				to = times.Cross - 0.1,
-				blend = 0,
-				get = function(u, t)
-					local i = cutIndex(t)
-					local spot = behindStar(i)
-					if i > 1 then
-						spot = behindStar(i - 1):Lerp(spot, ease((t - (cuts[i] - SaintPlan.Appear)) / 0.2))
-					end
-					return spot, center, 0, 72 + 12 * u, 0
+						+ (forward * math.cos(angle) + right * math.sin(angle)) * (24 - 5 * u)
+						+ UP * (4 + math.sin(u * math.pi) * 2)
+					return eye, center:Lerp(follow(t, dt), 0.4), -3, 76 + 6 * u, 0
 				end,
 			},
 			{
@@ -4123,6 +4138,17 @@ local function longSword(character: Model, duration: number): LongSword
 	trail.LightInfluence = 0
 	trail.FaceCamera = true
 	trail.Parent = hub
+	-- And the whole blade sweeps a sheet of wind behind it as he swings, so
+	-- each cut is his blade going through them.
+	local sweep = Instance.new("Trail")
+	sweep.Attachment0 = hilt
+	sweep.Attachment1 = point
+	sweep.Color = ColorSequence.new(WIND_WHITE, WIND)
+	sweep.Transparency = NumberSequence.new({ key(0, 0.2), key(1, 1) })
+	sweep.Lifetime = 0.18
+	sweep.LightEmission = 1
+	sweep.LightInfluence = 0
+	sweep.Parent = hub
 	local alive = true
 	every(duration, function()
 		local arm = character:FindFirstChild("Right Arm") :: BasePart?
@@ -4145,6 +4171,7 @@ local function longSword(character: Model, duration: number): LongSword
 		if alive then
 			alive = false
 			trail.Enabled = false
+			sweep.Enabled = false
 			fadeBeams(beams, 0.2, { hub })
 		end
 	end
@@ -4187,7 +4214,7 @@ function handlers.SpiritOfZephyrus(data, character, root)
 			local side = root.CFrame.RightVector * (if index % 2 == 1 then 1 else -1)
 			local tilt = UP * (index - 2) * 1.5
 			local slash =
-				windSlash(at + side * 4 + tilt, at - side * 4 - tilt, root.CFrame.LookVector * 1.5 + UP * 0.5, 0.8)
+				windSlash(at + side * 3 + tilt, at - side * 3 - tilt, root.CFrame.LookVector * 1.2 + UP * 0.4, 0.5)
 			task.delay(0.15, slash.fade, 0.25)
 			windPuff(at, 2, side)
 			U.burst(at, {
@@ -4356,7 +4383,7 @@ local function buildLook(character: Model, full: boolean): () -> ()
 	if not torso or not head or not root then
 		return function() end
 	end
-	local look = { hideSword = 0 }
+	local look: { hideSword: number, blade: BasePart? } = { hideSword = 0, blade = nil }
 	looks[character] = look
 	local entries: { { part: BasePart, base: number } } = {}
 	local function part(props: { [string]: any }, base: number, wedge: boolean?): BasePart
@@ -4551,13 +4578,15 @@ local function buildLook(character: Model, full: boolean): () -> ()
 	-- The wind sword (Full-Crown), in the right hand.
 	local sword: { BasePart }? = nil
 	if full then
-		sword = {
+		local parts = {
 			part({ Size = Vector3.new(0.22, 1.1, 0.22), Color = WIND_DEEP }, 0),
 			part({ Size = Vector3.new(1.5, 0.18, 0.32), Color = STAR }, 0),
 			part({ Size = Vector3.new(0.2, 5.6, 0.85), Color = WIND }, 0.25),
 			part({ Size = Vector3.new(0.1, 5.4, 0.28), Color = WIND_WHITE }, 0),
 			part({ Size = Vector3.new(0.3, 5.9, 1.15), Color = WIND, Material = Enum.Material.ForceField }, 0),
 		}
+		sword = parts
+		look.blade = parts[4] -- (moves trail wind off it as it swings)
 	end
 
 	-- Hovering: a ring of wind turning on the ground under him and a soft
@@ -4736,6 +4765,8 @@ function Kit.SetAwakened(character: Model, on: boolean)
 		destroy()
 	end
 	PoseAnimator.SetIdle(character, if on then HOVER else Kit.Idle)
+	-- Hovering under everything he does (attacks too), not only standing.
+	PoseAnimator.SetLift(character, if on then 1.8 else 0)
 	if not on then
 		return
 	end

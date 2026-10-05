@@ -1150,8 +1150,8 @@ end
 	Saint Spirit of Zephyr (Full-Crown 4): a 6-second cutscene. He flicks a
 	star at whoever is in front of him (about 15 studs); it binds them and a
 	column of wind carries them 32 studs into the sky, him flying up beside
-	them. A constellation of twelve stars opens round them and Conjunction
-	takes him through them from star to star, faster and faster, then an X;
+	them. A constellation of eight stars opens round them and he dashes round
+	them from star to star, cutting straight through them from each, then an X;
 	then he's high above them and splits them with one strike of wind and
 	starlight down through them to the ground. The cuts left hanging in the
 	air detonate and they fall like a meteor into the ground. The timeline
@@ -1232,7 +1232,7 @@ local function saintSpiritOfZephyr(ctx)
 	end
 	for _, at in times.Cuts do
 		waitUntil(at)
-		cut(0.9)
+		cut(1.35)
 	end
 	waitUntil(times.Cross)
 	cut(2)

@@ -499,7 +499,7 @@ Animations.HoverIdle = {
 		{
 			0,
 			{
-				Torso = body(1.75, 3, 12),
+				Torso = body(0, 3, 12),
 				Head = rot(-5, -10),
 				RightArm = limb(16, 4, 24),
 				LeftArm = limb(24, -4, -28),
@@ -510,7 +510,7 @@ Animations.HoverIdle = {
 		{
 			1.6,
 			{
-				Torso = body(2.1, 1, 14),
+				Torso = body(0.32, 1, 14),
 				Head = rot(-8, -12),
 				RightArm = limb(22, 4, 32),
 				LeftArm = limb(30, -4, -36),
@@ -523,7 +523,7 @@ Animations.HoverIdle = {
 		{
 			3.2,
 			{
-				Torso = body(1.75, 3, 12),
+				Torso = body(0, 3, 12),
 				Head = rot(-5, -10),
 				RightArm = limb(16, 4, 24),
 				LeftArm = limb(24, -4, -28),
@@ -543,7 +543,7 @@ Animations.HoverMove = {
 		{
 			0,
 			{
-				Torso = body(1.6, -24),
+				Torso = body(-0.12, -24),
 				Head = rot(22),
 				RightArm = limb(-28, 6, 24),
 				LeftArm = limb(-28, -6, -24),
@@ -554,7 +554,7 @@ Animations.HoverMove = {
 		{
 			0.8,
 			{
-				Torso = body(1.85, -26),
+				Torso = body(0.12, -26),
 				Head = rot(24),
 				RightArm = limb(-34, 6, 30),
 				LeftArm = limb(-34, -6, -30),
@@ -567,7 +567,7 @@ Animations.HoverMove = {
 		{
 			1.6,
 			{
-				Torso = body(1.6, -24),
+				Torso = body(-0.12, -24),
 				Head = rot(22),
 				RightArm = limb(-28, 6, 24),
 				LeftArm = limb(-28, -6, -24),

@@ -32,19 +32,20 @@ IDLE = [
 ]
 
 # ---------------- Hovering (Half-Crown and Full-Crown) ----------------
-# Carried on the wind about 1.8 studs off the ground (the torso lifted; his
-# root stays where it is), rising and settling slowly, legs loose and
-# trailing, arms drifting out from his sides in the updraft. Moving, he
-# leans into it and glides: legs swept back, arms back like wings, chin up.
+# Carried on the wind (the client lifts everything he plays about 1.8 studs
+# while he's awakened, PoseAnimator.SetLift; these only add the bob),
+# rising and settling slowly, legs loose and trailing, arms drifting out
+# from his sides in the updraft. Moving, he leans into it and glides: legs
+# swept back, arms back like wings, chin up.
 def hover(lift, lean, turn, rarm, larm, rleg, lleg, head):
     return {'Torso': ('body', lift, lean, turn, 0), 'Head': head, 'RightArm': rarm, 'LeftArm': larm,
             'RightLeg': rleg, 'LeftLeg': lleg}
 
-HOVER_LOW = hover(1.75, 3, 12, L(16, 4, 24), L(24, -4, -28), L(10, 0, 4), L(-14, 0, -4), R(-5, -10))
-HOVER_HIGH = hover(2.1, 1, 14, L(22, 4, 32), L(30, -4, -36), L(6, 0, 6), L(-18, 0, -6), R(-8, -12))
+HOVER_LOW = hover(0, 3, 12, L(16, 4, 24), L(24, -4, -28), L(10, 0, 4), L(-14, 0, -4), R(-5, -10))
+HOVER_HIGH = hover(0.32, 1, 14, L(22, 4, 32), L(30, -4, -36), L(6, 0, 6), L(-18, 0, -6), R(-8, -12))
 HOVER_IDLE = [(0.0, HOVER_LOW), (1.6, HOVER_HIGH), (3.2, HOVER_LOW)]
-GLIDE_A = hover(1.6, -24, 0, L(-28, 6, 24), L(-28, -6, -24), L(-22, 0, 3), L(-34, 0, -3), R(22))
-GLIDE_B = hover(1.85, -26, 0, L(-34, 6, 30), L(-34, -6, -30), L(-30, 0, 3), L(-26, 0, -3), R(24))
+GLIDE_A = hover(-0.12, -24, 0, L(-28, 6, 24), L(-28, -6, -24), L(-22, 0, 3), L(-34, 0, -3), R(22))
+GLIDE_B = hover(0.12, -26, 0, L(-34, 6, 30), L(-34, -6, -30), L(-30, 0, 3), L(-26, 0, -3), R(24))
 HOVER_MOVE = [(0.0, GLIDE_A), (0.8, GLIDE_B), (1.6, GLIDE_A)]
 
 # ---------------- Locomotion ----------------
