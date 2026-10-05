@@ -78,6 +78,7 @@ Config.M1 = {
 
 Config.Block = {
 	PerfectWindow = 0.2, -- block pressed this recently = perfect block
+	PerfectCooldown = 10, -- after one, blocks are plain blocks this long ("PerfectCD")
 	ParryStun = 1.25, -- attacker stun after being perfect blocked
 	GuardBreakStun = 1.75,
 	Cooldown = 0.4, -- after releasing block, stops perfect-block spam

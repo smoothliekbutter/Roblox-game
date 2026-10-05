@@ -2423,10 +2423,11 @@ function handlers.SpiritOfZephyrus(data, character, root)
 	end
 end
 
--- Spirit of Euros: a recurve bow of wind (curled tips) and a great wind
+-- Spirit of Euros: a recurve bow of wind (curled tips) and a giant wind
 -- arrow that the wind spirals into as he draws, a glow swelling at its head;
 -- loosed, it's gone in a blink, a white line all there is of it, then the
 -- air along it rings.
+local EUROS_SCALE = 3.6 -- the arrow, against a normal wind arrow
 function handlers.SpiritOfEuros(data, character, root)
 	if data.phase == "Draw" then
 		play(character, ANIMS.EurosDraw)
@@ -2434,7 +2435,7 @@ function handlers.SpiritOfEuros(data, character, root)
 		hideSword(character, data.duration + 0.4)
 		local segments = 12
 		local limbs = arcParts(table.create(segments + 1, Vector3.zero), 0.24, WIND, 0.15)
-		local arrow = makeArrow(1.5)
+		local arrow = makeArrow(EUROS_SCALE)
 		local charge = U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one, Color = WIND, Transparency = 0.6 })
 		local all = table.clone(limbs)
 		table.insert(all, charge)
@@ -2452,12 +2453,13 @@ function handlers.SpiritOfEuros(data, character, root)
 			points[#points] += forward * 0.7
 			poseArc(limbs, points)
 			local tip = hand + forward * 1.6
-			local frame = CFrame.lookAt(pull, tip) * CFrame.new(0, 0, -2.5)
+			-- Nocked at his hand, the head far out past the bow.
+			local frame = CFrame.lookAt(pull, tip) * CFrame.new(0, 0, -1.7 * EUROS_SCALE)
 			arrow.place(frame * CFrame.Angles(0, 0, elapsed * 2))
-			local head = (frame * CFrame.new(0, 0, -3.1)).Position
-			charge.Size = Vector3.one * (0.6 + 2.4 * math.min(elapsed / data.duration, 1))
+			local head = (frame * CFrame.new(0, 0, -2.1 * EUROS_SCALE)).Position
+			charge.Size = Vector3.one * (1 + 5 * math.min(elapsed / data.duration, 1))
 			charge.CFrame = CFrame.new(head)
-			inflow(head, 4)
+			inflow(head, 7)
 			return true
 		end, function()
 			arrow.destroy(0.1)
@@ -2469,13 +2471,13 @@ function handlers.SpiritOfEuros(data, character, root)
 		local origin: Vector3 = data.origin
 		local direction: Vector3 = data.direction
 		local finish = origin + direction * data.length
-		flyingArrow(origin, direction, data.length / 0.08, data.length, 1.6)
-		local line = bar(origin, finish, 0.2, WIND_WHITE, 0)
-		local glow = bar(origin, finish, 1.2, WIND, 0.55)
-		U.tween(line, 0.45, { Size = Vector3.new(0.02, 0.02, line.Size.Z) })
+		flyingArrow(origin, direction, data.length / 0.08, data.length, EUROS_SCALE)
+		local line = bar(origin, finish, 0.6, WIND_WHITE, 0)
+		local glow = bar(origin, finish, 3.5, WIND, 0.55)
+		U.tween(line, 0.45, { Size = Vector3.new(0.04, 0.04, line.Size.Z) })
 		fadeOut({ line, glow }, 0.45)
 		for i = 0, 8 do
-			task.delay(i * 0.02, U.impactRing, origin:Lerp(finish, i / 8), direction, WIND_WHITE, 0.5, 3, 0.25)
+			task.delay(i * 0.02, U.impactRing, origin:Lerp(finish, i / 8), direction, WIND_WHITE, 1.5, 6, 0.3)
 		end
 		U.flash(finish, WIND_WHITE, 8, 0.2)
 		gust(finish, 6, direction)

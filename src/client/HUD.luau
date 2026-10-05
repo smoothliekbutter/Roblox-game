@@ -1,7 +1,8 @@
 --[[
 	HUD
 	Top right (in the top bar): small health bar; under it the Evasive bar
-	           and, beside that, a tiny bar for R (the special's cooldown).
+	           and, beside that, a tiny bar for R (the special's cooldown);
+	           under those, a small icon for the perfect block's cooldown.
 	Bottom:    awakening bar over the move icons (skills 1-4) with cooldowns.
 	Right:     combo counter.
 	Top:       toast messages from the server.
@@ -60,6 +61,11 @@ local ui: {
 	special: Frame,
 	specialFill: Frame,
 	specialKey: TextLabel,
+	perfect: Frame,
+	perfectFill: Frame,
+	perfectGem: Frame,
+	perfectStroke: UIStroke,
+	perfectTime: TextLabel,
 	awakening: Frame,
 	awakeningFill: Frame,
 	awakeningStroke: UIStroke,
@@ -236,6 +242,55 @@ local function buildStatus(playerGui: Instance)
 		Size = UDim2.fromOffset(8, 10),
 		TextXAlignment = Enum.TextXAlignment.Right,
 	})
+	-- The perfect block: a small icon just under the R bar (a diamond that's
+	-- bright when it's ready; dark, filling back up, with the seconds left
+	-- while it's on cooldown).
+	ui.perfect = Instance.new("Frame")
+	ui.perfect.Name = "PerfectBlock"
+	ui.perfect.AnchorPoint = Vector2.new(0.5, 0)
+	ui.perfect.Position = UDim2.new(1, -8 - SPECIAL_WIDTH / 2, 1, 4)
+	ui.perfect.Size = UDim2.fromOffset(18, 18)
+	ui.perfect.BackgroundColor3 = COLORS.Panel
+	ui.perfect.BackgroundTransparency = 0.25
+	ui.perfect.Parent = panel
+	corner(ui.perfect, UDim.new(0, 4))
+	ui.perfectFill = Instance.new("Frame")
+	ui.perfectFill.AnchorPoint = Vector2.new(0, 1)
+	ui.perfectFill.Position = UDim2.fromScale(0, 1)
+	ui.perfectFill.Size = UDim2.fromScale(1, 1)
+	ui.perfectFill.BackgroundColor3 = COLORS.Evasive
+	ui.perfectFill.BackgroundTransparency = 0.75
+	ui.perfectFill.BorderSizePixel = 0
+	ui.perfectFill.Parent = ui.perfect
+	corner(ui.perfectFill, UDim.new(0, 4))
+	ui.perfectGem = Instance.new("Frame")
+	ui.perfectGem.AnchorPoint = Vector2.new(0.5, 0.5)
+	ui.perfectGem.Position = UDim2.fromScale(0.5, 0.5)
+	ui.perfectGem.Size = UDim2.fromOffset(7, 7)
+	ui.perfectGem.Rotation = 45
+	ui.perfectGem.BackgroundColor3 = COLORS.Text
+	ui.perfectGem.BorderSizePixel = 0
+	ui.perfectGem.ZIndex = 2
+	ui.perfectGem.Parent = ui.perfect
+	ui.perfectStroke = Instance.new("UIStroke")
+	ui.perfectStroke.Color = COLORS.Evasive
+	ui.perfectStroke.Thickness = 1
+	ui.perfectStroke.Parent = ui.perfect
+	ui.perfectTime = label(ui.perfect, {
+		TextSize = 9,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 3,
+		TextStrokeTransparency = 0.3,
+	})
+	label(ui.perfect, {
+		Text = "F",
+		TextSize = 9,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(0, -3, 0.5, 0),
+		Size = UDim2.fromOffset(8, 10),
+		TextXAlignment = Enum.TextXAlignment.Right,
+	})
+
 	ui.evasiveStroke = Instance.new("UIStroke")
 	ui.evasiveStroke.Color = COLORS.Evasive
 	ui.evasiveStroke.Thickness = 1.5
@@ -451,6 +506,18 @@ local function update(dt: number)
 		ui.specialFill.Size = UDim2.fromScale(if ready then 1 else math.clamp(1 - remaining / length, 0, 1), 1)
 		ui.specialFill.BackgroundColor3 = if ready then COLORS.Special else COLORS.SpecialCharging
 		ui.specialKey.TextColor3 = if ready then COLORS.Text else COLORS.SubText
+
+		local perfectLeft = math.max((tonumber(character:GetAttribute("PerfectCD")) or 0) - CombatState.Now(), 0)
+		local perfectReady = perfectLeft <= 0
+		ui.perfectFill.Size = UDim2.fromScale(
+			1,
+			if perfectReady then 1 else 1 - math.clamp(perfectLeft / Config.Block.PerfectCooldown, 0, 1)
+		)
+		ui.perfectFill.BackgroundTransparency = if perfectReady then 0.75 else 0.85
+		ui.perfectGem.BackgroundColor3 = if perfectReady then COLORS.Text else COLORS.SubText
+		ui.perfectGem.BackgroundTransparency = if perfectReady then 0 else 0.6
+		ui.perfectStroke.Transparency = if perfectReady then pulse else 0.8
+		ui.perfectTime.Text = if perfectReady then "" else tostring(math.ceil(perfectLeft))
 	end
 
 	if comboCount > 0 and os.clock() - lastComboHit > COMBO_TIMEOUT then

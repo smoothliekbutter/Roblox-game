@@ -641,6 +641,7 @@ Config.M1 = {
 
 Config.Block = {
 	PerfectWindow = 0.2, -- block pressed this recently = perfect block
+	PerfectCooldown = 10, -- after one, blocks are plain blocks this long ("PerfectCD")
 	ParryStun = 1.25, -- attacker stun after being perfect blocked
 	GuardBreakStun = 1.75,
 	Cooldown = 0.4, -- after releasing block, stops perfect-block spam
@@ -930,26 +931,20 @@ Kits.List = {
 		special = { name = "Anti-Magic Leap", cooldown = 10, type = "Melee", airHold = true },
 		awakenedSkills = {
 			{ name = "Black Hurricane", cooldown = 9, type = "Melee", airHold = true },
-			{ name = "Black Slash", cooldown = 7, type = "Bolt", airHold = true },
+			{ name = "Slayer Recall", cooldown = 12, type = "Bolt", airHold = true },
 			{ name = "Grand Divider", cooldown = 13, type = "Explosion", airHold = true },
 			{ name = "Black Moon", cooldown = 25, type = "Melee" },
 		},
-		-- In Black Form R draws another of his swords from the grimoire, at
-		-- random; moves 1 and 2 come from the sword in his hand.
-		awakenedSpecial = { name = "Swap Sword", cooldown = 10, type = "Melee" },
+		-- In Black Form R draws the next of his three swords from the
+		-- grimoire, in order, with no cooldown; moves 1 and 2 come from the
+		-- sword in his hand.
+		awakenedSpecial = { name = "Swap Sword", cooldown = 0, type = "Melee" },
 		swords = {
 			Slayer = {
 				name = "Demon-Slayer Sword",
 				skills = {
 					{ name = "Black Hurricane", cooldown = 9, type = "Melee", airHold = true },
 					{ name = "Slayer Recall", cooldown = 12, type = "Bolt", airHold = true },
-				},
-			},
-			Dweller = {
-				name = "Demon-Dweller Sword",
-				skills = {
-					{ name = "Black Slash", cooldown = 7, type = "Bolt", airHold = true },
-					{ name = "Conquering Eon", cooldown = 15, type = "Counter", airHold = true },
 				},
 			},
 			Destroyer = {
@@ -2394,7 +2389,11 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	if CombatState.IsBlocking(victim) and facing and not hit.unblockable then
 		local blockAge = CombatState.Now() - (tonumber(victim:GetAttribute("BlockStart")) or 0)
 
-		if blockAge <= Config.Block.PerfectWindow then
+		-- A perfect block, when theirs is ready: one every PerfectCooldown
+		-- ("PerfectCD" is the server time it's ready again; HUD icon).
+		local perfectReady = CombatState.Now() >= (tonumber(victim:GetAttribute("PerfectCD")) or 0)
+		if blockAge <= Config.Block.PerfectWindow and perfectReady then
+			victim:SetAttribute("PerfectCD", CombatState.Now() + Config.Block.PerfectCooldown)
 			CombatState.Stun(attacker, Config.Block.ParryStun)
 			CombatService.FireVFX("PerfectBlock", clash)
 			CombatService.Shake(attacker, 0.6)
@@ -3542,13 +3541,10 @@ return Hitbox
 	                        perfect Divider: huge damage, unblockable
 	  4 Anti-Magic Deflect  counters EVERY attack type. Melee attackers get slashed
 	                        aside, ranged attacks are sent back as a Black Slash
-	Black Form (G). R swaps to another of his swords at random; moves 1 and 2
-	belong to the sword in his hand:
+	Black Form (G). R (no cooldown) cycles through his three swords in order;
+	moves 1 and 2 belong to the sword in his hand:
 	  Demon-Slayer Sword    1 Black Hurricane: spinning charge that drags enemies along
 	                        2 Slayer Recall: boomerang throw, press 2 again to call it back
-	  Demon-Dweller Sword   1 Black Slash: piercing anti-magic slash wave
-	                        2 Conquering Eon: absorbs spells and siphons mana, then
-	                          lets it all out in a dome of anti-magic round him
 	  Demon-Destroyer Sword 1 Causality Break: planted blade breaks the magic (counters,
 	                          guard, stances) of the 4 closest enemies
 	                        2 Black Comet: short grab cutscene, flies low hammering
@@ -3775,89 +3771,6 @@ local function alongBlade(blade: BasePart, point: Vector3): number
 	return blade.CFrame:PointToObjectSpace(point).Y
 end
 
--- The Demon-Dweller Sword: a straight, narrow pointed blade, dirt-stained,
--- black markings down the flat (they light up with whatever magic it has
--- taken in), an ornate four-sided guard, a spiral-wrapped grip and a round
--- pommel. About 4.2 studs.
-local function buildDweller(): Model
-	local model = Instance.new("Model")
-	model.Name = "KitWeapon"
-	local steel = Color3.fromRGB(50, 50, 55)
-	local hilt = Color3.fromRGB(65, 62, 58)
-	local dirt = Color3.fromRGB(100, 85, 65)
-	local mark = Color3.fromRGB(10, 10, 10)
-	local metal = Enum.Material.Metal
-
-	local handle = swordPart("Handle", Vector3.new(0.24, 0.95, 0.24), CFrame.new(), hilt, metal)
-	handle.Parent = model
-	model.PrimaryPart = handle
-	local parts = {
-		ball(swordPart("Pommel", Vector3.one * 0.32, CFrame.new(0, -0.62, 0), hilt, metal)),
-		-- The four-sided guard: two crossed bars (a + seen from the point),
-		-- each end knobbed.
-		swordPart("Guard", Vector3.new(0.16, 0.14, 0.9), CFrame.new(0, 0.55, 0), hilt, metal),
-		swordPart("GuardCross", Vector3.new(0.52, 0.14, 0.16), CFrame.new(0, 0.55, 0), hilt, metal),
-		-- The blade (0.62 to 3.52) and its point (to 3.97).
-		swordPart("Blade", Vector3.new(0.12, 2.9, 0.38), CFrame.new(0, 2.07, 0), steel, metal),
-		swordPart("TipA", Vector3.new(0.12, 0.45, 0.19), CFrame.new(0, 3.745, -0.095), steel, metal, "WedgePart"),
-		swordPart(
-			"TipB",
-			Vector3.new(0.12, 0.45, 0.19),
-			CFrame.new(0, 3.745, 0.095) * CFrame.Angles(0, math.pi, 0),
-			steel,
-			metal,
-			"WedgePart"
-		),
-		-- The markings (neon, black until it absorbs something).
-		swordPart("Mark0", Vector3.new(0.13, 2.3, 0.04), CFrame.new(0, 2.0, 0), mark, Enum.Material.Neon),
-		swordPart("DirtA", Vector3.new(0.125, 0.5, 0.16), CFrame.new(0, 1.5, 0.09), dirt, Enum.Material.Slate),
-		swordPart("DirtB", Vector3.new(0.125, 0.4, 0.14), CFrame.new(0, 2.9, -0.1), dirt, Enum.Material.Slate),
-	}
-	for i, offset in
-		{ Vector3.new(0, 0, 0.47), Vector3.new(0, 0, -0.47), Vector3.new(0.28, 0, 0), Vector3.new(-0.28, 0, 0) }
-	do
-		table.insert(
-			parts,
-			ball(
-				swordPart(
-					"GuardKnob" .. i,
-					Vector3.one * 0.16,
-					CFrame.new(Vector3.new(0, 0.55, 0) + offset),
-					hilt,
-					metal
-				)
-			)
-		)
-	end
-	for i, y in { -0.36, -0.12, 0.12, 0.36 } do
-		-- The spiral grip: wrap rings tipped one way, then the other.
-		local tilt = math.rad(if i % 2 == 0 then 14 else -14)
-		table.insert(
-			parts,
-			swordPart(
-				"Spiral" .. i,
-				Vector3.new(0.3, 0.05, 0.3),
-				CFrame.new(0, y, 0) * CFrame.Angles(tilt, 0, 0),
-				Color3.fromRGB(40, 38, 36),
-				metal
-			)
-		)
-	end
-	for i, y in { 1.2, 1.85, 2.5, 3.1 } do
-		table.insert(
-			parts,
-			swordPart(
-				"Mark" .. i,
-				Vector3.one * 0.13,
-				CFrame.new(0, y, 0) * CFrame.Angles(math.rad(45), 0, 0),
-				mark,
-				Enum.Material.Neon
-			)
-		)
-	end
-	return assemble(model, handle, parts, { guard = -1.45, tip = 1.68, point = 1.9 })
-end
-
 -- The Demon-Destroyer Sword: a single-edged blade that curves back and
 -- widens into a broad head with a white clover on its spine end; a short
 -- bar guard with a round plate that glows (Asta and Liebe united, as in
@@ -4022,7 +3935,6 @@ end
 -- Asta's swords (Black Form's R swaps between them at random).
 local SWORDS: { [string]: () -> Model } = {
 	Slayer = buildSlayer,
-	Dweller = buildDweller,
 	Destroyer = buildDestroyer,
 	Slasher = buildSlasher,
 }
@@ -4929,28 +4841,6 @@ local function waveRange(ctx, origin: Vector3, direction: Vector3, maxRange: num
 	return if hit then math.max((hit.Position - origin).Magnitude + 2, 8) else maxRange
 end
 
--- Black Slash. In the air he hangs for the throw and hurls it down ahead.
-local function blackSlashMove(ctx)
-	local c, character = ctx.combat, ctx.character
-	local airborne = ctx.airborne
-	CombatState.SetCasting(character, 0.5)
-	if airborne then
-		c.ApplyVelocity(character, HOVER, 0.4)
-	end
-	fx(ctx, "BlackSlash", "Windup", { airborne = airborne })
-	task.wait(0.22)
-	if interrupted(ctx) then
-		return
-	end
-	local forward = look(ctx)
-	local direction = if airborne then (forward + UP * -0.45).Unit else forward
-	local origin = ctx.root.Position + direction * 2 + UP * 0.5
-	blackSlash(ctx, origin, direction, {
-		damage = 9,
-		range = if airborne then waveRange(ctx, origin, direction, 90) else nil,
-	})
-end
-
 -- Grand Divider. In the air he hangs while it charges, then brings it down
 -- on whatever is below and in front, and the wave is driven into the ground.
 local function grandDivider(ctx)
@@ -5302,92 +5192,6 @@ local function slayerRecall(ctx)
 	if CombatState.IsAlive(character) then
 		fx(ctx, "SlayerRecall", "Catch", { instant = moved() })
 	end
-end
-
---[[
-	Conquering Eon (Demon-Dweller Sword 2): raises the Dweller and it drinks
-	in the magic around him. Spells that hit him are swallowed by the blade,
-	and the mana of everyone close by is siphoned off. Then it lets it all
-	out at once in a dome of anti-magic round him, bigger and harder with
-	each charge (up to 4); from 2 it knocks them down, from 3 it breaks guards.
-]]
-local EON_CHARGE = 0.6
-local EON_RADIUS = 18
-local EON_MAX = 4
-local SPELLS = { Bolt = true, Explosion = true, Swarm = true, Zone = true }
-
-local function conqueringEon(ctx)
-	local c, character = ctx.combat, ctx.character
-	local airborne = ctx.airborne
-	local charges = 0
-	CombatState.SetCasting(character, EON_CHARGE + 0.5)
-	if airborne then
-		c.ApplyVelocity(character, HOVER, EON_CHARGE + 0.2)
-	end
-	fx(ctx, "ConqueringEon", "Raise", { airborne = airborne, duration = EON_CHARGE })
-	local raisedAt = os.clock()
-
-	local function absorb(attacker: Model)
-		charges = math.min(charges + 1, EON_MAX)
-		local attackerRoot = rootOf(attacker)
-		fx(ctx, "ConqueringEon", "Absorb", {
-			from = if attackerRoot then attackerRoot.Position else ctx.root.Position + look(ctx) * 10,
-			charges = charges,
-		})
-		local left = EON_CHARGE - (os.clock() - raisedAt)
-		if left > 0.02 then
-			c.SetCounter(character, left, SPELLS, absorb)
-		end
-	end
-	c.SetCounter(character, EON_CHARGE, SPELLS, absorb)
-
-	task.wait(0.2)
-	if interrupted(ctx) then
-		c.ClearCounter(character)
-		fx(ctx, "ConqueringEon", "Cancel")
-		return
-	end
-	local drained = {}
-	for _, victim in c.Sphere(character, ctx.root.Position, EON_RADIUS) do
-		if c.Hit(character, victim, { damage = 2, stun = 0.5, attackType = "Zone", unblockable = true }) == "Hit" then
-			table.insert(drained, victim)
-			charges = math.min(charges + 1, EON_MAX)
-		end
-	end
-	if #drained > 0 then
-		fx(ctx, "ConqueringEon", "Siphon", { targets = drained, charges = charges })
-	end
-	task.wait(EON_CHARGE - 0.2)
-	c.ClearCounter(character)
-	if interrupted(ctx) then
-		fx(ctx, "ConqueringEon", "Cancel")
-		return
-	end
-
-	-- Everything it drank bursts out of the blade at once: a dome of
-	-- anti-magic round him, bigger with every charge.
-	local center = ctx.root.Position
-	local radius = 10 + 2 * charges
-	fx(ctx, "ConqueringEon", "Release", { airborne = airborne, charges = charges, radius = radius })
-	for _, victim in c.Sphere(character, center, radius) do
-		local victimRoot = rootOf(victim)
-		if victimRoot then
-			local away = victimRoot.Position - center
-			local out = if Vector3.new(away.X, 0, away.Z).Magnitude > 0.5 then c.Flat(away) else look(ctx)
-			c.Hit(character, victim, {
-				damage = 6 + 2 * charges,
-				stun = 1,
-				attackType = "Melee",
-				guardBreak = charges >= 3,
-				heavy = true,
-				ragdoll = if charges >= 2 then 1 else nil,
-				velocity = out * (40 + 5 * charges) + UP * 22,
-			})
-		end
-	end
-	c.ShakeArea(center, 40 + 8 * charges, 0.3 + 0.1 * charges)
-	task.wait(0.3)
-	CombatState.SetCasting(character, 0.25)
 end
 
 --[[
@@ -5743,7 +5547,6 @@ Kit.Skills = { bullThrust, blackMeteorite, blackDivider, antiMagicDeflect }
 -- "Sword" attribute; names and cooldowns in Shared/Kits swords).
 local SWORD_MOVES: { [string]: { (any) -> () } } = {
 	Slayer = { blackHurricane, slayerRecall },
-	Dweller = { blackSlashMove, conqueringEon },
 	Destroyer = { causalityBreak, blackComet },
 	Slasher = { blackAscent, zetten },
 }
@@ -5755,9 +5558,10 @@ local function swordMove(slot: number): (any) -> ()
 end
 Kit.AwakenedSkills = { swordMove(1), swordMove(2), grandDivider, blackMoon }
 
--- R in Black Form: one of his other swords, at random, out of the grimoire.
--- The new one is in his hand when the SwordSwap animation draws it.
-local SWORD_KINDS = { "Slayer", "Dweller", "Destroyer", "Slasher" }
+-- R in Black Form (no cooldown): the next of his swords, in order, out of
+-- the grimoire (Slayer, Destroyer, Slasher, round again). The new one is in
+-- his hand when the SwordSwap animation draws it.
+local SWORD_KINDS = { "Slayer", "Destroyer", "Slasher" }
 local SWAP_DRAW = 0.22
 
 function Kit.AwakenedSpecial(ctx)
@@ -5766,16 +5570,8 @@ function Kit.AwakenedSpecial(ctx)
 	if character:GetAttribute("SwordAway") then
 		return -- the Slayer's still out (Slayer Recall)
 	end
-	local choices = {}
-	for _, kind in SWORD_KINDS do
-		if kind ~= current and SWORDS[kind] then
-			table.insert(choices, kind)
-		end
-	end
-	if #choices == 0 then
-		return
-	end
-	local kind = choices[math.random(1, #choices)]
+	local index = table.find(SWORD_KINDS, current) or 0
+	local kind = SWORD_KINDS[index % #SWORD_KINDS + 1]
 	CombatState.SetCasting(character, 0.4)
 	fx(ctx, "SwordSwap", "Swap", { sword = kind })
 	task.wait(SWAP_DRAW)
@@ -6964,7 +6760,7 @@ local function spiritOfEuros(ctx)
 	local direction = aimFrom(ctx, origin, softTarget(ctx, EUROS_RANGE, 20), 0.3)
 	local length = reach(ctx, origin, direction, EUROS_RANGE)
 	fx(ctx, "SpiritOfEuros", "Loose", { origin = origin, direction = direction, length = length })
-	for _, victim in lineVictims(ctx, origin, direction, length, 3.5) do
+	for _, victim in lineVictims(ctx, origin, direction, length, 6) do -- a giant arrow
 		c.Hit(character, victim, {
 			damage = 16,
 			stun = 1.3,
@@ -7914,7 +7710,8 @@ return Cinematic
             <string name="Source"><![CDATA[--[[
 	HUD
 	Top right (in the top bar): small health bar; under it the Evasive bar
-	           and, beside that, a tiny bar for R (the special's cooldown).
+	           and, beside that, a tiny bar for R (the special's cooldown);
+	           under those, a small icon for the perfect block's cooldown.
 	Bottom:    awakening bar over the move icons (skills 1-4) with cooldowns.
 	Right:     combo counter.
 	Top:       toast messages from the server.
@@ -7973,6 +7770,11 @@ local ui: {
 	special: Frame,
 	specialFill: Frame,
 	specialKey: TextLabel,
+	perfect: Frame,
+	perfectFill: Frame,
+	perfectGem: Frame,
+	perfectStroke: UIStroke,
+	perfectTime: TextLabel,
 	awakening: Frame,
 	awakeningFill: Frame,
 	awakeningStroke: UIStroke,
@@ -8149,6 +7951,55 @@ local function buildStatus(playerGui: Instance)
 		Size = UDim2.fromOffset(8, 10),
 		TextXAlignment = Enum.TextXAlignment.Right,
 	})
+	-- The perfect block: a small icon just under the R bar (a diamond that's
+	-- bright when it's ready; dark, filling back up, with the seconds left
+	-- while it's on cooldown).
+	ui.perfect = Instance.new("Frame")
+	ui.perfect.Name = "PerfectBlock"
+	ui.perfect.AnchorPoint = Vector2.new(0.5, 0)
+	ui.perfect.Position = UDim2.new(1, -8 - SPECIAL_WIDTH / 2, 1, 4)
+	ui.perfect.Size = UDim2.fromOffset(18, 18)
+	ui.perfect.BackgroundColor3 = COLORS.Panel
+	ui.perfect.BackgroundTransparency = 0.25
+	ui.perfect.Parent = panel
+	corner(ui.perfect, UDim.new(0, 4))
+	ui.perfectFill = Instance.new("Frame")
+	ui.perfectFill.AnchorPoint = Vector2.new(0, 1)
+	ui.perfectFill.Position = UDim2.fromScale(0, 1)
+	ui.perfectFill.Size = UDim2.fromScale(1, 1)
+	ui.perfectFill.BackgroundColor3 = COLORS.Evasive
+	ui.perfectFill.BackgroundTransparency = 0.75
+	ui.perfectFill.BorderSizePixel = 0
+	ui.perfectFill.Parent = ui.perfect
+	corner(ui.perfectFill, UDim.new(0, 4))
+	ui.perfectGem = Instance.new("Frame")
+	ui.perfectGem.AnchorPoint = Vector2.new(0.5, 0.5)
+	ui.perfectGem.Position = UDim2.fromScale(0.5, 0.5)
+	ui.perfectGem.Size = UDim2.fromOffset(7, 7)
+	ui.perfectGem.Rotation = 45
+	ui.perfectGem.BackgroundColor3 = COLORS.Text
+	ui.perfectGem.BorderSizePixel = 0
+	ui.perfectGem.ZIndex = 2
+	ui.perfectGem.Parent = ui.perfect
+	ui.perfectStroke = Instance.new("UIStroke")
+	ui.perfectStroke.Color = COLORS.Evasive
+	ui.perfectStroke.Thickness = 1
+	ui.perfectStroke.Parent = ui.perfect
+	ui.perfectTime = label(ui.perfect, {
+		TextSize = 9,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 3,
+		TextStrokeTransparency = 0.3,
+	})
+	label(ui.perfect, {
+		Text = "F",
+		TextSize = 9,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(0, -3, 0.5, 0),
+		Size = UDim2.fromOffset(8, 10),
+		TextXAlignment = Enum.TextXAlignment.Right,
+	})
+
 	ui.evasiveStroke = Instance.new("UIStroke")
 	ui.evasiveStroke.Color = COLORS.Evasive
 	ui.evasiveStroke.Thickness = 1.5
@@ -8364,6 +8215,18 @@ local function update(dt: number)
 		ui.specialFill.Size = UDim2.fromScale(if ready then 1 else math.clamp(1 - remaining / length, 0, 1), 1)
 		ui.specialFill.BackgroundColor3 = if ready then COLORS.Special else COLORS.SpecialCharging
 		ui.specialKey.TextColor3 = if ready then COLORS.Text else COLORS.SubText
+
+		local perfectLeft = math.max((tonumber(character:GetAttribute("PerfectCD")) or 0) - CombatState.Now(), 0)
+		local perfectReady = perfectLeft <= 0
+		ui.perfectFill.Size = UDim2.fromScale(
+			1,
+			if perfectReady then 1 else 1 - math.clamp(perfectLeft / Config.Block.PerfectCooldown, 0, 1)
+		)
+		ui.perfectFill.BackgroundTransparency = if perfectReady then 0.75 else 0.85
+		ui.perfectGem.BackgroundColor3 = if perfectReady then COLORS.Text else COLORS.SubText
+		ui.perfectGem.BackgroundTransparency = if perfectReady then 0 else 0.6
+		ui.perfectStroke.Transparency = if perfectReady then pulse else 0.8
+		ui.perfectTime.Text = if perfectReady then "" else tostring(math.ceil(perfectLeft))
 	end
 
 	if comboCount > 0 and os.clock() - lastComboHit > COMBO_TIMEOUT then
@@ -14240,7 +14103,6 @@ end
 
 local SWORD_NAMES = {
 	Slayer = "DEMON-SLAYER SWORD",
-	Dweller = "DEMON-DWELLER SWORD",
 	Destroyer = "DEMON-DESTROYER SWORD",
 	Slasher = "DEMON-SLASHER KATANA",
 }
@@ -14578,120 +14440,6 @@ function handlers.SlayerRecall(data, character, root)
 		if U.isLocal(character) then
 			CameraShake.Add(0.12)
 		end
-	end
-end
-
--- Conquering Eon: the Demon-Dweller's markings fill with what it drinks in.
-local MARK_DARK = Color3.fromRGB(10, 10, 10)
-local function lightMarks(character: Model, charges: number)
-	local sword = getSword(character)
-	if not sword then
-		return
-	end
-	for i = 0, 4 do
-		local mark = sword:FindFirstChild("Mark" .. i, true)
-		if mark and mark:IsA("BasePart") then
-			local on = charges > 0 and i <= charges
-			U.tween(mark, 0.15, { Color = if not on then MARK_DARK elseif i == 0 then RED else HOT })
-		end
-	end
-end
-
-function handlers.ConqueringEon(data, character, root)
-	local phase = data.phase
-	local air = data.airborne == true
-	if phase == "Raise" then
-		local token = bump(character)
-		local duration = data.duration or 0.6
-		play(character, if air then ANIMS.AirDividerCharge else ANIMS.GrandCharge)
-		lightMarks(character, 0)
-		edgeGlow(character, duration, 0.6)
-		swordAura(character, duration, 30)
-		-- Its pull: rings closing in from the edge of its reach, mana
-		-- streaming into the blade.
-		local feet = feetOf(character, root)
-		U.ringBurst(CFrame.new(feet + UP * 0.2), BLACK, 18, 2, duration, 0.4)
-		U.ringBurst(CFrame.new(feet + UP * 0.25), RED, 18, 2, duration * 0.85, 0.15)
-		task.spawn(function()
-			local start = os.clock()
-			while live(character, token) and os.clock() - start < duration do
-				local point = bladePoint(character, 1.2)
-				if point then
-					inflow(point, 9)
-					inflow(point, 5)
-				end
-				task.wait(0.05)
-			end
-		end)
-		if U.isLocal(character) then
-			CameraShake.Add(0.08)
-		end
-	elseif phase == "Absorb" then
-		local charges = data.charges or 1
-		lightMarks(character, charges)
-		local point = bladePoint(character, 1.2)
-		if point and typeof(data.from) == "Vector3" then
-			U.lightning(data.from, point, BLACK, RED, 0.24, 0.2, true)
-			U.lightning(data.from, point, RED, HOT, 0.08, 0.15)
-			glowBurst(point, 2.5 + charges * 0.6, 0.25)
-			U.burst(point, {
-				color = HOT,
-				count = 10,
-				size = 0.4,
-				speed = NumberRange.new(8, 20),
-				lifetime = NumberRange.new(0.15, 0.3),
-			})
-		end
-		if U.isLocal(character) then
-			CameraShake.Add(0.1)
-		end
-	elseif phase == "Siphon" then
-		lightMarks(character, data.charges or 1)
-		for _, target in data.targets do
-			local targetRoot = U.getRoot(target)
-			if targetRoot then
-				U.highlight(target, RED, 0.45, 0.35)
-				redSparks(targetRoot.Position, 8, 0.5)
-				blackSmoke(targetRoot.Position, 5, 2, 4)
-				for i = 0, 5 do
-					task.delay(i * 0.06, function()
-						local point = bladePoint(character, 1.2)
-						if point and targetRoot.Parent then
-							U.lightning(targetRoot.Position, point, BLACK, RED, 0.14, 0.1, i % 2 == 0)
-						end
-					end)
-				end
-			end
-		end
-	elseif phase == "Release" then
-		bump(character)
-		local charges = data.charges or 0
-		local radius: number = data.radius or 10
-		-- The Dweller held high lets it all out at once: a dome of
-		-- anti-magic round him (a black shell in a red shockwave) racing out
-		-- along the ground.
-		play(character, ANIMS.EonRelease)
-		local point = bladePoint(character, 2) or root.Position
-		glowBurst(point, 4 + 1.5 * charges, 0.35)
-		bloomPulse(root.Position, 0.4 + 0.2 * charges, 0.45)
-		edgeGlow(character, 0.4, 1)
-		U.shockwave(root.Position, BLACK, 2, radius * 2, 0.4, Enum.Material.Glass, 0.35)
-		U.shockwave(root.Position, RED, 2, radius * 2.1, 0.45)
-		U.ringBurst(CFrame.new(root.Position - UP * 2.8), RED, 1, radius, 0.35, 0.4)
-		U.groundCracks(root.Position, 6 + charges, radius * 0.6, RED, 1.2)
-		blackLightning(root.Position, 4 + charges, radius * 0.7)
-		blackSmoke(root.Position, 10 + 2 * charges, 4, 12)
-		task.delay(0.45, lightMarks, character, 0)
-		if U.isLocal(character) then
-			CameraShake.Add(0.15 + 0.06 * charges)
-			CameraShake.FovKick(6 + 2 * charges)
-			if charges >= 3 then
-				impactFrame(0.6)
-			end
-		end
-	elseif phase == "Cancel" then
-		bump(character)
-		lightMarks(character, 0)
 	end
 end
 
@@ -18567,67 +18315,6 @@ Animations.CometThrow = {
 			},
 			"Linear",
 			"Out",
-		},
-	},
-}
-
--- Conquering Eon: the Dweller held high as everything it drank bursts out.
-Animations.EonRelease = {
-	fadeIn = 0.03,
-	fadeOut = 0.25,
-	delays = { Sword = 0.03 },
-	keys = {
-		{
-			0,
-			{
-				Torso = body(0.049, -6, -18),
-				Head = rot(5, 16),
-				RightArm = limb(85, 25, 10),
-				Sword = aim(-0.006, 0.483, 0.875),
-				LeftArm = limb(10, 0, -14),
-			},
-		},
-		{
-			0.12,
-			{
-				Torso = body(0.088, 10, -10),
-				Head = rot(-10, 8),
-				RightArm = limb(170, -6),
-				Sword = aim(0.1, 0.6, 0.8),
-				LeftArm = limb(165, 8),
-				RightLeg = rot(-16, 0, 6),
-				LeftLeg = rot(18, 0, -6),
-			},
-			"Quart",
-			"Out",
-		},
-		{
-			0.25,
-			{
-				Torso = body(0.075, 12, -10),
-				Head = rot(-12, 8),
-				RightArm = limb(170, -6),
-				Sword = aim(0.1, 0.6, 0.8),
-				LeftArm = limb(165, 8),
-				RightLeg = rot(-16, 0, 6),
-				LeftLeg = rot(18, 0, -6),
-			},
-			"Sine",
-			"InOut",
-		},
-		{
-			0.45,
-			{
-				Torso = body(0.088, 10, -10),
-				Head = rot(-10, 8),
-				RightArm = limb(170, -6),
-				Sword = aim(0.1, 0.6, 0.8),
-				LeftArm = limb(165, 8),
-				RightLeg = rot(-16, 0, 6),
-				LeftLeg = rot(18, 0, -6),
-			},
-			"Sine",
-			"InOut",
 		},
 	},
 }
@@ -23534,10 +23221,11 @@ function handlers.SpiritOfZephyrus(data, character, root)
 	end
 end
 
--- Spirit of Euros: a recurve bow of wind (curled tips) and a great wind
+-- Spirit of Euros: a recurve bow of wind (curled tips) and a giant wind
 -- arrow that the wind spirals into as he draws, a glow swelling at its head;
 -- loosed, it's gone in a blink, a white line all there is of it, then the
 -- air along it rings.
+local EUROS_SCALE = 3.6 -- the arrow, against a normal wind arrow
 function handlers.SpiritOfEuros(data, character, root)
 	if data.phase == "Draw" then
 		play(character, ANIMS.EurosDraw)
@@ -23545,7 +23233,7 @@ function handlers.SpiritOfEuros(data, character, root)
 		hideSword(character, data.duration + 0.4)
 		local segments = 12
 		local limbs = arcParts(table.create(segments + 1, Vector3.zero), 0.24, WIND, 0.15)
-		local arrow = makeArrow(1.5)
+		local arrow = makeArrow(EUROS_SCALE)
 		local charge = U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one, Color = WIND, Transparency = 0.6 })
 		local all = table.clone(limbs)
 		table.insert(all, charge)
@@ -23563,12 +23251,13 @@ function handlers.SpiritOfEuros(data, character, root)
 			points[#points] += forward * 0.7
 			poseArc(limbs, points)
 			local tip = hand + forward * 1.6
-			local frame = CFrame.lookAt(pull, tip) * CFrame.new(0, 0, -2.5)
+			-- Nocked at his hand, the head far out past the bow.
+			local frame = CFrame.lookAt(pull, tip) * CFrame.new(0, 0, -1.7 * EUROS_SCALE)
 			arrow.place(frame * CFrame.Angles(0, 0, elapsed * 2))
-			local head = (frame * CFrame.new(0, 0, -3.1)).Position
-			charge.Size = Vector3.one * (0.6 + 2.4 * math.min(elapsed / data.duration, 1))
+			local head = (frame * CFrame.new(0, 0, -2.1 * EUROS_SCALE)).Position
+			charge.Size = Vector3.one * (1 + 5 * math.min(elapsed / data.duration, 1))
 			charge.CFrame = CFrame.new(head)
-			inflow(head, 4)
+			inflow(head, 7)
 			return true
 		end, function()
 			arrow.destroy(0.1)
@@ -23580,13 +23269,13 @@ function handlers.SpiritOfEuros(data, character, root)
 		local origin: Vector3 = data.origin
 		local direction: Vector3 = data.direction
 		local finish = origin + direction * data.length
-		flyingArrow(origin, direction, data.length / 0.08, data.length, 1.6)
-		local line = bar(origin, finish, 0.2, WIND_WHITE, 0)
-		local glow = bar(origin, finish, 1.2, WIND, 0.55)
-		U.tween(line, 0.45, { Size = Vector3.new(0.02, 0.02, line.Size.Z) })
+		flyingArrow(origin, direction, data.length / 0.08, data.length, EUROS_SCALE)
+		local line = bar(origin, finish, 0.6, WIND_WHITE, 0)
+		local glow = bar(origin, finish, 3.5, WIND, 0.55)
+		U.tween(line, 0.45, { Size = Vector3.new(0.04, 0.04, line.Size.Z) })
 		fadeOut({ line, glow }, 0.45)
 		for i = 0, 8 do
-			task.delay(i * 0.02, U.impactRing, origin:Lerp(finish, i / 8), direction, WIND_WHITE, 0.5, 3, 0.25)
+			task.delay(i * 0.02, U.impactRing, origin:Lerp(finish, i / 8), direction, WIND_WHITE, 1.5, 6, 0.3)
 		end
 		U.flash(finish, WIND_WHITE, 8, 0.2)
 		gust(finish, 6, direction)

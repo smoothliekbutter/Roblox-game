@@ -722,9 +722,6 @@ Z_CUT = {'Torso': R(-16, 40), 'Head': R(10, -28), 'RightArm': L(130, 70), 'Sword
          'LeftArm': L(-10, 0, -35), 'RightLeg': R(-36), 'LeftLeg': R(32)}
 Z_AFTER = {'Torso': R(-10, 34), 'Head': R(6, -24), 'RightArm': L(115, 60), 'Sword': A(-0.55, 0.6, -0.58),
            'LeftArm': L(0, 0, -30), 'RightLeg': R(-26), 'LeftLeg': R(24)}
-# Conquering Eon's release: the Dweller held high as the dome bursts out.
-EON_RELEASE = [(0.0, UPPER), (0.12, IS_RAISE), (0.25, IS_TREMBLE), (0.45, IS_RAISE)]
-
 # Black Comet: flying low and flat, them by the throat under him, his arm
 # hammering them down three times (CometPlan Slams), sword trailing.
 C_FLY_HIGH = {'Torso': R(-62, 8), 'Head': R(48, -6), 'RightArm': L(-40, -10, 30), 'Sword': A(0.25, 0.3, 0.92),
@@ -758,7 +755,7 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grab
        'MeteorLunge': METEOR_LUNGE, 'MeteorReach': METEOR_REACH, 'MeteorRise': METEOR_RISE, 'MeteorSpin': METEOR_SPIN, 'SwordSwap': SWORD_SWAP,
        'RecallThrow': RECALL_THROW, 'RecallCall': RECALL_CALL, 'RecallCatch': RECALL_CATCH,
        'CausalityPlant': CAUSALITY_PLANT, 'CausalityPull': CAUSALITY_PULL, 'CometDrag': COMET_DRAG,
-       'CometThrow': COMET_THROW, 'EonRelease': EON_RELEASE, 'ZettenStance': ZETTEN_STANCE,
+       'CometThrow': COMET_THROW, 'ZettenStance': ZETTEN_STANCE,
        'ZettenCut': ZETTEN_CUT, 'MeteorDrill': METEOR_DRILL, 'MeteorLand': METEOR_LAND, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
        'DividerCharge': DIVIDER_CHARGE, 'DividerRelease': DIVIDER_RELEASE,
        'DeflectStance': DEFLECT_STANCE, 'DeflectCounter': DEFLECT_COUNTER, 'DeflectReflect': DEFLECT_REFLECT,

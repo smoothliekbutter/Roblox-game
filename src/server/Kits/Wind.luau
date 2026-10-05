@@ -1124,7 +1124,7 @@ local function spiritOfEuros(ctx)
 	local direction = aimFrom(ctx, origin, softTarget(ctx, EUROS_RANGE, 20), 0.3)
 	local length = reach(ctx, origin, direction, EUROS_RANGE)
 	fx(ctx, "SpiritOfEuros", "Loose", { origin = origin, direction = direction, length = length })
-	for _, victim in lineVictims(ctx, origin, direction, length, 3.5) do
+	for _, victim in lineVictims(ctx, origin, direction, length, 6) do -- a giant arrow
 		c.Hit(character, victim, {
 			damage = 16,
 			stun = 1.3,

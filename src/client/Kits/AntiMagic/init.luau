@@ -5227,7 +5227,6 @@ end
 
 local SWORD_NAMES = {
 	Slayer = "DEMON-SLAYER SWORD",
-	Dweller = "DEMON-DWELLER SWORD",
 	Destroyer = "DEMON-DESTROYER SWORD",
 	Slasher = "DEMON-SLASHER KATANA",
 }
@@ -5565,120 +5564,6 @@ function handlers.SlayerRecall(data, character, root)
 		if U.isLocal(character) then
 			CameraShake.Add(0.12)
 		end
-	end
-end
-
--- Conquering Eon: the Demon-Dweller's markings fill with what it drinks in.
-local MARK_DARK = Color3.fromRGB(10, 10, 10)
-local function lightMarks(character: Model, charges: number)
-	local sword = getSword(character)
-	if not sword then
-		return
-	end
-	for i = 0, 4 do
-		local mark = sword:FindFirstChild("Mark" .. i, true)
-		if mark and mark:IsA("BasePart") then
-			local on = charges > 0 and i <= charges
-			U.tween(mark, 0.15, { Color = if not on then MARK_DARK elseif i == 0 then RED else HOT })
-		end
-	end
-end
-
-function handlers.ConqueringEon(data, character, root)
-	local phase = data.phase
-	local air = data.airborne == true
-	if phase == "Raise" then
-		local token = bump(character)
-		local duration = data.duration or 0.6
-		play(character, if air then ANIMS.AirDividerCharge else ANIMS.GrandCharge)
-		lightMarks(character, 0)
-		edgeGlow(character, duration, 0.6)
-		swordAura(character, duration, 30)
-		-- Its pull: rings closing in from the edge of its reach, mana
-		-- streaming into the blade.
-		local feet = feetOf(character, root)
-		U.ringBurst(CFrame.new(feet + UP * 0.2), BLACK, 18, 2, duration, 0.4)
-		U.ringBurst(CFrame.new(feet + UP * 0.25), RED, 18, 2, duration * 0.85, 0.15)
-		task.spawn(function()
-			local start = os.clock()
-			while live(character, token) and os.clock() - start < duration do
-				local point = bladePoint(character, 1.2)
-				if point then
-					inflow(point, 9)
-					inflow(point, 5)
-				end
-				task.wait(0.05)
-			end
-		end)
-		if U.isLocal(character) then
-			CameraShake.Add(0.08)
-		end
-	elseif phase == "Absorb" then
-		local charges = data.charges or 1
-		lightMarks(character, charges)
-		local point = bladePoint(character, 1.2)
-		if point and typeof(data.from) == "Vector3" then
-			U.lightning(data.from, point, BLACK, RED, 0.24, 0.2, true)
-			U.lightning(data.from, point, RED, HOT, 0.08, 0.15)
-			glowBurst(point, 2.5 + charges * 0.6, 0.25)
-			U.burst(point, {
-				color = HOT,
-				count = 10,
-				size = 0.4,
-				speed = NumberRange.new(8, 20),
-				lifetime = NumberRange.new(0.15, 0.3),
-			})
-		end
-		if U.isLocal(character) then
-			CameraShake.Add(0.1)
-		end
-	elseif phase == "Siphon" then
-		lightMarks(character, data.charges or 1)
-		for _, target in data.targets do
-			local targetRoot = U.getRoot(target)
-			if targetRoot then
-				U.highlight(target, RED, 0.45, 0.35)
-				redSparks(targetRoot.Position, 8, 0.5)
-				blackSmoke(targetRoot.Position, 5, 2, 4)
-				for i = 0, 5 do
-					task.delay(i * 0.06, function()
-						local point = bladePoint(character, 1.2)
-						if point and targetRoot.Parent then
-							U.lightning(targetRoot.Position, point, BLACK, RED, 0.14, 0.1, i % 2 == 0)
-						end
-					end)
-				end
-			end
-		end
-	elseif phase == "Release" then
-		bump(character)
-		local charges = data.charges or 0
-		local radius: number = data.radius or 10
-		-- The Dweller held high lets it all out at once: a dome of
-		-- anti-magic round him (a black shell in a red shockwave) racing out
-		-- along the ground.
-		play(character, ANIMS.EonRelease)
-		local point = bladePoint(character, 2) or root.Position
-		glowBurst(point, 4 + 1.5 * charges, 0.35)
-		bloomPulse(root.Position, 0.4 + 0.2 * charges, 0.45)
-		edgeGlow(character, 0.4, 1)
-		U.shockwave(root.Position, BLACK, 2, radius * 2, 0.4, Enum.Material.Glass, 0.35)
-		U.shockwave(root.Position, RED, 2, radius * 2.1, 0.45)
-		U.ringBurst(CFrame.new(root.Position - UP * 2.8), RED, 1, radius, 0.35, 0.4)
-		U.groundCracks(root.Position, 6 + charges, radius * 0.6, RED, 1.2)
-		blackLightning(root.Position, 4 + charges, radius * 0.7)
-		blackSmoke(root.Position, 10 + 2 * charges, 4, 12)
-		task.delay(0.45, lightMarks, character, 0)
-		if U.isLocal(character) then
-			CameraShake.Add(0.15 + 0.06 * charges)
-			CameraShake.FovKick(6 + 2 * charges)
-			if charges >= 3 then
-				impactFrame(0.6)
-			end
-		end
-	elseif phase == "Cancel" then
-		bump(character)
-		lightMarks(character, 0)
 	end
 end
 

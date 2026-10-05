@@ -672,7 +672,11 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	if CombatState.IsBlocking(victim) and facing and not hit.unblockable then
 		local blockAge = CombatState.Now() - (tonumber(victim:GetAttribute("BlockStart")) or 0)
 
-		if blockAge <= Config.Block.PerfectWindow then
+		-- A perfect block, when theirs is ready: one every PerfectCooldown
+		-- ("PerfectCD" is the server time it's ready again; HUD icon).
+		local perfectReady = CombatState.Now() >= (tonumber(victim:GetAttribute("PerfectCD")) or 0)
+		if blockAge <= Config.Block.PerfectWindow and perfectReady then
+			victim:SetAttribute("PerfectCD", CombatState.Now() + Config.Block.PerfectCooldown)
 			CombatState.Stun(attacker, Config.Block.ParryStun)
 			CombatService.FireVFX("PerfectBlock", clash)
 			CombatService.Shake(attacker, 0.6)

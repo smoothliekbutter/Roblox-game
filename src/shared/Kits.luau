@@ -118,26 +118,20 @@ Kits.List = {
 		special = { name = "Anti-Magic Leap", cooldown = 10, type = "Melee", airHold = true },
 		awakenedSkills = {
 			{ name = "Black Hurricane", cooldown = 9, type = "Melee", airHold = true },
-			{ name = "Black Slash", cooldown = 7, type = "Bolt", airHold = true },
+			{ name = "Slayer Recall", cooldown = 12, type = "Bolt", airHold = true },
 			{ name = "Grand Divider", cooldown = 13, type = "Explosion", airHold = true },
 			{ name = "Black Moon", cooldown = 25, type = "Melee" },
 		},
-		-- In Black Form R draws another of his swords from the grimoire, at
-		-- random; moves 1 and 2 come from the sword in his hand.
-		awakenedSpecial = { name = "Swap Sword", cooldown = 10, type = "Melee" },
+		-- In Black Form R draws the next of his three swords from the
+		-- grimoire, in order, with no cooldown; moves 1 and 2 come from the
+		-- sword in his hand.
+		awakenedSpecial = { name = "Swap Sword", cooldown = 0, type = "Melee" },
 		swords = {
 			Slayer = {
 				name = "Demon-Slayer Sword",
 				skills = {
 					{ name = "Black Hurricane", cooldown = 9, type = "Melee", airHold = true },
 					{ name = "Slayer Recall", cooldown = 12, type = "Bolt", airHold = true },
-				},
-			},
-			Dweller = {
-				name = "Demon-Dweller Sword",
-				skills = {
-					{ name = "Black Slash", cooldown = 7, type = "Bolt", airHold = true },
-					{ name = "Conquering Eon", cooldown = 15, type = "Counter", airHold = true },
 				},
 			},
 			Destroyer = {
