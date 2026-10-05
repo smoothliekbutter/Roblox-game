@@ -2239,190 +2239,6 @@ local function hideSword(character: Model, duration: number)
 	end
 end
 
--- Spirit of Notos: the south wind bursts out of him (a sphere of wind and a
--- ring along the ground); spells blown back go as a whirling disc of wind.
-function handlers.SpiritOfNotos(data, character, root)
-	if data.phase == "Blast" then
-		play(character, ANIMS.Notos)
-		task.delay(0.1, function()
-			if not root.Parent then
-				return
-			end
-			local position = root.Position
-			U.shockwave(position, WIND, 4, 34, 0.5, Enum.Material.ForceField)
-			U.ringBurst(CFrame.new(position - UP * 2.8), WIND_WHITE, 2, 18, 0.4, 0.3)
-			U.burst(position, {
-				color = WIND_WHITE,
-				count = 36,
-				size = 0.5,
-				speed = NumberRange.new(60, 100),
-				lifetime = NumberRange.new(0.2, 0.4),
-				streaks = true,
-				spread = 180,
-			})
-			U.light(position, WIND, 5, 30, 0.4)
-			if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 30 then
-				CameraShake.Add(0.2)
-			end
-		end)
-	elseif data.phase == "Gust" then
-		local origin: Vector3 = data.origin
-		local direction: Vector3 = data.direction
-		local disc = U.newPart({
-			Shape = Enum.PartType.Cylinder,
-			Size = Vector3.new(0.3, 6, 6),
-			Color = WIND,
-			Transparency = 0.4,
-		})
-		local position = origin
-		every(0.75, function(elapsed, dt)
-			position += direction * 120 * dt
-			disc.CFrame = CFrame.lookAt(position, position + direction)
-				* CFrame.Angles(0, rad(90), 0)
-				* CFrame.Angles(elapsed * 20, 0, 0)
-			return true
-		end, function()
-			fadeOut({ disc }, 0.1)
-		end)
-		gust(origin, 5, direction)
-	end
-end
-
--- Spirit of Zephyrus: he leaps into the sky on a burst of wind; hanging
--- there, arms flung wide over a turning ring of wind, wind arrows form one
--- by one floating round him (the same ring the server fires from), pointed
--- down at the ground; then they rain down one after another.
-local ZEPHYRUS_ARROWS = 14
-local ZEPHYRUS_RING = 4.5
-type Volley = { arrows: { [number]: Arrow }, started: number, ring: { BasePart } }
-local volleys: { [Model]: Volley } = {}
-
-local function floatingAt(root: BasePart, i: number, t: number): Vector3
-	local angle = i / ZEPHYRUS_ARROWS * math.pi * 2 + t * 1.5
-	return root.Position
-		+ Vector3.new(math.cos(angle) * ZEPHYRUS_RING, 1.2 + math.sin(angle * 2) * 0.6, math.sin(angle) * ZEPHYRUS_RING)
-end
-
-local function clearVolley(character: Model)
-	local volley = volleys[character]
-	if volley then
-		volleys[character] = nil
-		for _, arrow in volley.arrows do
-			arrow.destroy(0.15)
-		end
-		fadeOut(volley.ring, 0.2)
-	end
-end
-
-function handlers.SpiritOfZephyrus(data, character, root)
-	local phase = data.phase
-	if phase == "Leap" then
-		play(character, ANIMS.Ark)
-		local feet = root.Position - UP * 2.9
-		U.ringBurst(CFrame.new(feet), WIND, 1, 9, 0.35, 0.3)
-		U.burst(feet, {
-			color = WIND_WHITE,
-			count = 24,
-			size = 0.5,
-			speed = NumberRange.new(30, 60),
-			lifetime = NumberRange.new(0.2, 0.4),
-			streaks = true,
-			spread = 40,
-			direction = -UP,
-		})
-		U.debris(feet, 6, 30, 0.5)
-		U.bodyTrail(character, WIND, data.rise + 0.1)
-		if U.isLocal(character) then
-			CameraShake.Add(0.15)
-			CameraShake.FovKick(6)
-		end
-	elseif phase == "Gather" then
-		play(character, ANIMS.Notos)
-		clearVolley(character)
-		local token = bump(character)
-		local volley: Volley = {
-			arrows = {},
-			started = os.clock(),
-			ring = arcParts(
-				arcPoints(Vector3.zero, Vector3.xAxis, Vector3.zAxis, 1, 0, math.pi * 2, 16),
-				0.25,
-				WIND_WHITE,
-				0.2
-			),
-		}
-		volleys[character] = volley
-		local count: number = data.arrows
-		for i = 1, count do
-			task.delay((i - 1) / count * data.gather, function()
-				if volleys[character] ~= volley then
-					return
-				end
-				-- The last (the one they never see coming) is the biggest.
-				volley.arrows[i] = makeArrow(if i == count then 1.5 else 1)
-				local at = floatingAt(root, i, os.clock() - volley.started)
-				U.flash(at, WIND_WHITE, 2.5, 0.15)
-				U.ringBurst(CFrame.new(at), WIND, 0.3, 1.6, 0.2, 0.08)
-			end)
-		end
-		every(data.gather + count * 0.06 + 1, function()
-			if volleys[character] ~= volley or not live(character, token) or not root.Parent then
-				return false
-			end
-			local t = os.clock() - volley.started
-			for i, arrow in volley.arrows do
-				local position = floatingAt(root, i, t)
-				local outward = Vector3.new(position.X - root.Position.X, 0, position.Z - root.Position.Z)
-				local aim = ((if outward.Magnitude > 1e-3 then outward.Unit else Vector3.xAxis) * 0.45 - UP).Unit
-				arrow.place(CFrame.lookAt(position, position + aim) * CFrame.Angles(0, 0, t * 3 + i))
-			end
-			local spin = t * 3
-			poseArc(
-				volley.ring,
-				arcPoints(
-					root.Position - UP * 3.2,
-					Vector3.new(math.cos(spin), 0, math.sin(spin)),
-					Vector3.new(-math.sin(spin), 0, math.cos(spin)),
-					5,
-					0,
-					math.pi * 2,
-					16
-				)
-			)
-			return true
-		end, function()
-			if volleys[character] == volley then
-				clearVolley(character)
-			end
-		end)
-		U.light(root.Position, WIND, 4, 24, data.gather + 1.2)
-	elseif phase == "Arrow" then
-		local volley = volleys[character]
-		local arrow = volley and volley.arrows[data.index]
-		local aim: Vector3 = data.aim
-		local from = if volley and arrow
-			then floatingAt(root, data.index, os.clock() - volley.started)
-			else root.Position
-		if volley and arrow then
-			volley.arrows[data.index] = nil
-		end
-		flyingArrow(from, (aim - from).Unit, data.speed, data.range, if data.last then 1.5 else 0.9, arrow)
-		U.flash(from, WIND_WHITE, if data.last then 4 else 2, 0.12)
-		if data.last and volley then
-			task.delay(0.3, function()
-				if volleys[character] == volley then
-					clearVolley(character)
-				end
-			end)
-		end
-		if U.isLocal(character) then
-			CameraShake.FovKick(if data.last then 5 else 1)
-		end
-	elseif phase == "Cancel" then
-		bump(character)
-		clearVolley(character)
-	end
-end
-
 -- Spirit of Euros: a recurve bow of wind (curled tips) and a giant wind
 -- arrow that the wind spirals into as he draws, a glow swelling at its head;
 -- loosed, it's gone in a blink, a white line all there is of it, then the
@@ -3219,8 +3035,18 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 	outline(character, WIND_WHITE, times.Length)
 	outline(target, STAR, times.Land)
 
-	-- For whoever's watching close up: a bloom so the wind and starlight
-	-- glow, and (for the two of them) depth of field on him.
+	-- For whoever's watching close up, the light shifts ever so slightly
+	-- (a touch brighter, greener and richer, nothing darker) and a bloom
+	-- makes the wind and starlight glow; for the two of them, depth of field
+	-- on him.
+	if mine or near then
+		U.colorGrade(
+			{ TintColor = Color3.fromRGB(238, 255, 244), Saturation = 0.12, Contrast = 0.06, Brightness = 0.03 },
+			0.6,
+			times.Length - 0.5,
+			0.9
+		)
+	end
 	local bloom: BloomEffect? = nil
 	local depth: DepthOfFieldEffect? = nil
 	if mine or near then
@@ -3415,8 +3241,8 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 		U.bodyTrail(character, WIND, times.Lift)
 	end)
 	if mine then
-		CameraShake.Add(0.2)
-		CameraShake.FovKick(8)
+		CameraShake.Add(0.06)
+		CameraShake.FovKick(4)
 	end
 
 	-- The constellation opens round them; wind swirls round them.
@@ -3476,8 +3302,7 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 				U.highlight(target, WIND_WHITE, 0.1, 0.6)
 			end
 			if mine then
-				CameraShake.Add(0.06 * scale)
-				CameraShake.FovKick(2 * scale)
+				CameraShake.FovKick(1 * scale)
 			end
 		end)
 	end
@@ -3502,8 +3327,8 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 			U.colorGrade({ Brightness = 0.1, Contrast = 0.3, Saturation = -0.4 }, 0, 0.05, 0.15)
 		end
 		if mine then
-			CameraShake.Add(0.25)
-			CameraShake.FovKick(8)
+			CameraShake.Add(0.08)
+			CameraShake.FovKick(4)
 		end
 	end)
 
@@ -3573,7 +3398,7 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 			windPuff(root.Position + UP * (SAINT_BLADE + 2.5), 4)
 		end)
 		if mine then
-			CameraShake.Add(0.15)
+			CameraShake.Add(0.05)
 		end
 	end)
 
@@ -3613,8 +3438,8 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 			U.colorGrade({ Brightness = 0.25, Contrast = 0.85, Saturation = -1 }, 0, 0.07, 0.22)
 		end
 		if mine then
-			CameraShake.Add(0.45)
-			CameraShake.FovKick(14)
+			CameraShake.Add(0.18)
+			CameraShake.FovKick(7)
 		end
 	end)
 	task.delay(times.Strike + 0.12, function()
@@ -3670,8 +3495,8 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 			U.colorGrade({ Brightness = 0.1, TintColor = Color3.fromRGB(255, 246, 222) }, 0, 0.08, 0.3)
 		end
 		if mine then
-			CameraShake.Add(0.35)
-			CameraShake.FovKick(10)
+			CameraShake.Add(0.12)
+			CameraShake.FovKick(5)
 		end
 	end)
 
@@ -3693,9 +3518,9 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 	end)
 	task.delay(times.Length + 0.3, finish)
 
-	-- The camera: every shot moving, with a little handheld sway, a tilt
-	-- where it hurts and quick whips between some of them, and him always in
-	-- shot. Pushing in over his shoulder as the star strikes; craning up the
+	-- The camera: every shot moving, smoothly (eased, no handheld shake),
+	-- a gentle tilt here and there, soft whips between some of them, and him
+	-- always in shot. Pushing in over his shoulder as the star strikes; craning up the
 	-- column with them; pulling back as the constellation opens; orbiting
 	-- them, banked, through the first cuts; then riding his shoulder from
 	-- star to star; the X head-on; circling slowly in from below at him and
@@ -3738,7 +3563,7 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 			from: number,
 			to: number,
 			blend: number, -- whip in from the last shot over this long (0: a cut)
-			-- eye, focus, roll (degrees), field of view, handheld sway (degrees)
+			-- eye, focus, roll (degrees), field of view, (unused: handheld sway)
 			get: (number, number) -> (Vector3, Vector3, number, number, number),
 		}
 		local shots: { Shot } = {
@@ -3752,20 +3577,20 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 						origin - forward * 3 + right * 1.8 + UP * 2.2,
 						e
 					)
-					return eye, them(t) + UP * 0.5, -4 * e, 72 - 10 * e, 0.3
+					return eye, them(t) + UP * 0.5, -2 * e, 72 - 10 * e, 0
 				end,
 			},
 			{
 				from = 0.3,
 				to = times.Lift + 0.15,
-				blend = 0.08,
+				blend = 0.22,
 				get = function(u, t)
 					local e = ease(u)
 					local victim = them(t)
 					local angle = rad(-20 + 70 * e)
 					local around = forward * math.sin(angle) + right * math.cos(angle)
 					local eye = Vector3.new(start.X, start.Y + 1.5 + (victim.Y - start.Y) * 0.8, start.Z) + around * 12
-					return eye, victim:Lerp(him(t), 0.35) + UP, 6, 84 - 8 * e, 0.4
+					return eye, victim:Lerp(him(t), 0.35) + UP, 3, 84 - 8 * e, 0
 				end,
 			},
 			{
@@ -3778,19 +3603,19 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 						center - forward * 34 + right * 14 + UP * 9,
 						e
 					)
-					return eye, center, -3 + 3 * e, 60 + 20 * e, 0.2
+					return eye, center, -2 + 2 * e, 60 + 20 * e, 0
 				end,
 			},
 			{
 				from = cuts[1],
 				to = 2.3,
-				blend = 0.06,
+				blend = 0.22,
 				get = function(u, t)
 					local angle = 0.6 + u * u * rad(260) + u * rad(40)
 					local eye = center
 						+ (forward * math.cos(angle) + right * math.sin(angle)) * (24 - 6 * u)
 						+ UP * (3 + math.sin(t * 4) * 2)
-					return eye, center:Lerp(him(t), 0.3), -8, 78 + 6 * u, 0.5
+					return eye, center:Lerp(him(t), 0.3), -4, 78 + 6 * u, 0
 				end,
 			},
 			{
@@ -3801,9 +3626,9 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 					local i = cutIndex(t)
 					local spot = behindStar(i)
 					if i > 1 then
-						spot = behindStar(i - 1):Lerp(spot, easeOut((t - (cuts[i] - SaintPlan.Appear)) / 0.07))
+						spot = behindStar(i - 1):Lerp(spot, ease((t - (cuts[i] - SaintPlan.Appear)) / 0.2))
 					end
-					return spot, center, if i % 2 == 0 then 6 else -6, 72 + 18 * u, 0.8
+					return spot, center, 0, 72 + 12 * u, 0
 				end,
 			},
 			{
@@ -3814,48 +3639,44 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 					local e = ease(u)
 					return (center - forward * 12 + UP * 0.5):Lerp(center - forward * 9 + UP * 0.5, e),
 						center,
-						8 * e,
+						4 * e,
 						66 - 8 * e,
-						0.4
+						0
 				end,
 			},
 			{
 				from = times.Rise - 0.1,
 				to = times.Strike - 0.08,
-				blend = 0.1,
+				blend = 0.22,
 				get = function(u, _)
 					local e = ease(u)
 					local angle = rad(-30 + 60 * e)
 					local around = right * math.cos(angle) - forward * math.sin(angle)
 					local eye = center - UP * (10 - 3 * e) + around * (13 - 4 * e)
-					return eye, top + UP * 4, -10 + 6 * e, 70 - 18 * e, 0.3
+					return eye, top + UP * 4, -5 + 3 * e, 70 - 18 * e, 0
 				end,
 			},
 			{
 				from = times.Strike - 0.08,
 				to = times.Burst + 0.05,
-				blend = 0.08,
+				blend = 0.22,
 				get = function(u, _)
-					return center + right * (48 + 6 * u) + UP * (2 + u),
-						center - UP * 8,
-						0,
-						72 + 8 * u,
-						1.2 * (1 - u) + 0.2
+					return center + right * (48 + 6 * u) + UP * (2 + u), center - UP * 8, 0, 72 + 8 * u, 0
 				end,
 			},
 			{
 				from = times.Burst + 0.05,
 				to = times.Land + 0.1,
-				blend = 0.06,
+				blend = 0.22,
 				get = function(_, t)
 					local victim = them(t)
-					return victim + right * 16 + UP * 10 - forward * 6, victim:Lerp(ground, 0.4), 10, 82, 1
+					return victim + right * 16 + UP * 10 - forward * 6, victim:Lerp(ground, 0.4), 4, 82, 0
 				end,
 			},
 			{
 				from = times.Land + 0.1,
 				to = times.Length + 0.3,
-				blend = 0.1,
+				blend = 0.22,
 				get = function(u, _)
 					local e = ease(u)
 					local angle = rad(160 * e)
@@ -3864,7 +3685,7 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 						ground + UP * (1.5 + 0.3 * e),
 						0,
 						70 - 12 * e,
-						0.2
+						0
 				end,
 			},
 		}
@@ -3887,15 +3708,8 @@ local function playSaintZephyr(data, character: Model, root: BasePart)
 				whipFrom, whipFov = last, lastFov
 			end
 			local u = math.clamp((t - shot.from) / math.max(shot.to - shot.from, 1e-3), 0, 1)
-			local eye, focus, roll, fov, sway = shot.get(u, t)
-			local a = rad(sway)
-			local cframe = CFrame.lookAt(eye, focus)
-				* CFrame.Angles(
-					math.sin(t * 13.7) * a * 0.6,
-					math.sin(t * 9.1 + 1.3) * a,
-					math.sin(t * 6.3 + 2.1) * a * 0.5
-				)
-				* CFrame.Angles(0, 0, rad(roll))
+			local eye, focus, roll, fov = shot.get(u, t)
+			local cframe = CFrame.lookAt(eye, focus) * CFrame.Angles(0, 0, rad(roll))
 			if shot.blend > 0 and whipFrom and t - shot.from < shot.blend then
 				local b = easeOut((t - shot.from) / shot.blend)
 				cframe = whipFrom:Lerp(cframe, b)
@@ -3967,7 +3781,461 @@ function handlers.SaintSpiritOfZephyr(data, character, root)
 		})
 		U.light(position, STAR, 6, 60, 0.9)
 		if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 80 then
-			CameraShake.Add(0.5)
+			CameraShake.Add(0.2)
+		end
+	end
+end
+
+-- Spirit of Boreas: a great axe of wind forms in his raised hands (a haft
+-- of light and a crescent head: a white-hot edge round a see-through blade
+-- of wind, wind pouring off it), comes down in one chop, and the ground
+-- splits in a line ahead: the earth bursting up along it in a wave, a seam
+-- of wind down it, cracks and rocks. From the air it chops down at the
+-- ground ahead and below.
+local AXE_HAFT = 7
+type Axe = { swing: (number) -> (), stop: () -> () }
+local axes: { [Model]: Axe } = {}
+
+local function windAxe(character: Model, root: BasePart): Axe
+	local hub = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1 })
+	-- In the hub's space the haft runs up +Y from his hands and the head's
+	-- edge faces -Z.
+	local function at(position: Vector3, axis: Vector3): Attachment
+		local x = axis.Unit
+		local y = if math.abs(x.Y) > 0.98 then Vector3.zAxis else UP
+		local z = x:Cross(y).Unit
+		local attachment = Instance.new("Attachment")
+		attachment.CFrame = CFrame.fromMatrix(position, x, z:Cross(x).Unit)
+		attachment.Parent = hub
+		return attachment
+	end
+	local h = AXE_HAFT
+	local butt = at(Vector3.new(0, -1.5, 0), UP)
+	local crown = at(Vector3.new(0, h, 0), UP)
+	-- The head's crescent, from high on the haft out to the edge and back.
+	local headTop = at(Vector3.new(0, h - 0.4, 0), Vector3.new(0, -2, -8))
+	local edge = at(Vector3.new(0, h - 2.4, -4), Vector3.new(0, -1, 0))
+	local headLow = at(Vector3.new(0, h - 4.4, 0), Vector3.new(0, -2, 8))
+	local curve = 1.9
+	local white = ColorSequence.new(STAR_WHITE, WIND_WHITE)
+	local green = ColorSequence.new(WIND_WHITE, WIND)
+	local beams = {
+		softBeam(
+			butt,
+			crown,
+			{ color = white, width0 = 0.3, width1 = 0.3, transparency = NumberSequence.new(0.15) },
+			hub
+		),
+		softBeam(butt, crown, {
+			color = green,
+			width0 = 1.3,
+			width1 = 1.3,
+			transparency = NumberSequence.new(0.65),
+			texture = SMOKE,
+			speed = 2,
+			length = 4,
+		}, hub),
+		softBeam(headTop, edge, {
+			color = white,
+			width0 = 0.2,
+			width1 = 0.7,
+			transparency = NumberSequence.new({ key(0, 0.4), key(1, 0.05) }),
+			curve0 = curve,
+			curve1 = curve,
+		}, hub),
+		softBeam(edge, headLow, {
+			color = white,
+			width0 = 0.7,
+			width1 = 0.2,
+			transparency = NumberSequence.new({ key(0, 0.05), key(1, 0.4) }),
+			curve0 = curve,
+			curve1 = curve,
+		}, hub),
+		softBeam(headTop, edge, {
+			color = green,
+			width0 = 1.2,
+			width1 = 3.2,
+			transparency = NumberSequence.new({ key(0, 0.7), key(1, 0.45) }),
+			curve0 = curve,
+			curve1 = curve,
+			texture = SMOKE,
+			speed = 2,
+			length = 3,
+		}, hub),
+		softBeam(edge, headLow, {
+			color = green,
+			width0 = 3.2,
+			width1 = 1.2,
+			transparency = NumberSequence.new({ key(0, 0.45), key(1, 0.7) }),
+			curve0 = curve,
+			curve1 = curve,
+			texture = SMOKE,
+			speed = 2,
+			length = 3,
+		}, hub),
+	}
+	-- The blade itself: see-through wind filling the crescent.
+	local upper = newWedge({
+		Size = Vector3.new(0.1, 2, 4),
+		Color = WIND_WHITE,
+		Material = Enum.Material.ForceField,
+		Transparency = 0.25,
+	})
+	local lower = newWedge({
+		Size = Vector3.new(0.1, 2, 4),
+		Color = WIND_WHITE,
+		Material = Enum.Material.ForceField,
+		Transparency = 0.25,
+	})
+	local pour = windEmitter(upper, {
+		Size = NumberSequence.new({ key(0, 1), key(1, 3) }),
+		Lifetime = NumberRange.new(0.3, 0.6),
+		Speed = NumberRange.new(2, 6),
+		Drag = 3,
+		Rate = 30,
+	})
+	local light = Instance.new("PointLight")
+	light.Color = WIND
+	light.Range = 22
+	light.Brightness = 3
+	light.Parent = hub
+	local swing = 0
+	local alive = true
+	every(4, function(elapsed)
+		if not alive or not root.Parent then
+			return false
+		end
+		local right, left = handOf(character, "Right"), handOf(character, "Left")
+		local hands = if right and left then right:Lerp(left, 0.5) else root.Position + UP * 3
+		local forward = root.CFrame.LookVector
+		local side = root.CFrame.RightVector
+		-- Raised over his head, then down at the ground ahead.
+		local raised = (UP * 0.92 - forward * 0.3).Unit
+		local struck = (forward * 0.85 - UP * 0.5).Unit
+		local s = swing * swing * (3 - 2 * swing)
+		local haft = raised:Lerp(struck, s).Unit
+		local grow = math.min(elapsed / 0.2, 1)
+		hub.CFrame = CFrame.fromMatrix(hands, side, haft)
+		upper.CFrame = hub.CFrame * CFrame.new(0, h - 1.4, -2)
+		lower.CFrame = hub.CFrame * CFrame.new(0, h - 3.4, -2) * CFrame.Angles(0, 0, math.pi)
+		upper.Size = Vector3.new(0.1, 2 * grow, 4 * grow)
+		lower.Size = Vector3.new(0.1, 2 * grow, 4 * grow)
+		return true
+	end)
+	local axe = {}
+	function axe.swing(value: number)
+		swing = value
+	end
+	function axe.stop()
+		if not alive then
+			return
+		end
+		alive = false
+		pour.Enabled = false
+		light.Enabled = false
+		fadeOut({ upper, lower }, 0.25)
+		fadeBeams(beams, 0.25, { hub })
+	end
+	return axe
+end
+
+function handlers.SpiritOfBoreas(data, character, root)
+	local phase = data.phase
+	if phase == "Raise" then
+		play(character, ANIMS.BoreasForm)
+		local old = axes[character]
+		if old then
+			old.stop()
+		end
+		hideSword(character, data.duration + 0.6)
+		local axe = windAxe(character, root)
+		axes[character] = axe
+		task.delay(data.duration + 0.8, function()
+			if axes[character] == axe then
+				axes[character] = nil
+				axe.stop()
+			end
+		end)
+		windPuff(root.Position + UP * 4, 3)
+		for _ = 1, 8 do
+			inflow(root.Position + UP * 6, 8, WIND_WHITE)
+		end
+	elseif phase == "Chop" then
+		play(character, ANIMS.BoreasChop)
+		local axe = axes[character]
+		if axe then
+			every(0.1, function(elapsed)
+				axe.swing(elapsed / 0.1)
+				return true
+			end, function()
+				axe.swing(1)
+			end)
+		end
+		local origin: Vector3 = data.origin
+		local direction: Vector3 = data.direction
+		local length: number = data.length
+		local forward = Vector3.new(direction.X, 0, direction.Z)
+		forward = if forward.Magnitude > 1e-3 then forward.Unit else root.CFrame.LookVector
+		task.delay(0.08, function()
+			-- Where the axe bites, and the line it splits along the ground.
+			local function floorAt(point: Vector3): Vector3
+				local hit = U.groundBelow(point, { character }, 30)
+				return if hit then hit.Position else point - UP * 3
+			end
+			local first = floorAt(origin + forward * 2)
+			local last = if data.airborne
+				then floorAt(origin + direction * length)
+				else floorAt(origin + forward * length)
+			if data.airborne then
+				first = last
+			end
+			U.flash(first + UP, WIND_WHITE, 5, 0.15)
+			windRing(first + UP * 0.3, UP, 1, 12, 0.4)
+			U.shockwave(first, WIND, 2, 18, 0.4)
+			U.debris(first, 10, 40, 0.7)
+			gust(first + UP, 6, UP)
+			-- The ground splitting in a wave along the line.
+			local span = (last - first).Magnitude
+			local steps = math.max(math.floor(span / 3), 1)
+			for i = 0, steps do
+				local point = first:Lerp(last, i / steps)
+				task.delay(i * 0.018, function()
+					windPuff(point + UP * 0.6, 2.4, UP)
+					if i % 2 == 0 then
+						U.groundRocks(point, 3, 2.2, 0.9)
+					end
+					if i % 3 == 0 then
+						U.groundCracks(point, 3, 3.5, WIND, 1.2)
+					end
+				end)
+			end
+			if span > 1 then
+				local a, b = worldAnchor(first + UP * 0.2, last - first), worldAnchor(last + UP * 0.2, last - first)
+				local seam = {
+					softBeam(a, b, {
+						color = ColorSequence.new(STAR_WHITE, WIND_WHITE),
+						width0 = 0.9,
+						width1 = 0.3,
+						transparency = NumberSequence.new({ key(0, 0.1), key(1, 0.5) }),
+					}),
+					softBeam(a, b, {
+						color = ColorSequence.new(WIND_WHITE, WIND),
+						width0 = 6,
+						width1 = 3,
+						transparency = NumberSequence.new({ key(0, 0.5), key(1, 0.8) }),
+						texture = SMOKE,
+						speed = 6,
+						length = 10,
+					}),
+				}
+				task.delay(0.3, fadeBeams, seam, 0.5, { a, b })
+			end
+			U.burst(first:Lerp(last, 0.5) + UP, {
+				texture = SMOKE,
+				color = Color3.fromRGB(190, 198, 188),
+				count = 16,
+				size = 4,
+				speed = NumberRange.new(10, 26),
+				lifetime = NumberRange.new(0.5, 0.9),
+				lightEmission = 0,
+				transparency = 0.5,
+				spread = 70,
+				direction = UP,
+				drag = 3,
+			})
+			U.light(first, WIND, 5, 30, 0.4)
+			if (workspace.CurrentCamera.CFrame.Position - first).Magnitude < 50 then
+				CameraShake.Add(0.25)
+			end
+		end)
+		if U.isLocal(character) then
+			CameraShake.FovKick(8)
+		end
+	elseif phase == "Cancel" then
+		local axe = axes[character]
+		if axe then
+			axes[character] = nil
+			axe.stop()
+		end
+	end
+end
+
+-- Spirit of Zephyrus: his sword of wind grows long (a blade of wind far
+-- out past its point, streaking as it moves) and he lunges on a burst of
+-- wind, afterimages behind him. Caught, three cuts in a blur, each a
+-- crescent of wind through them, then a thrust that runs a seam of wind
+-- straight through them.
+type LongSword = { stop: () -> () }
+local longSwords: { [Model]: LongSword } = {}
+
+local function longSword(character: Model, duration: number): LongSword
+	local hub = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1 })
+	local hilt = Instance.new("Attachment")
+	hilt.Parent = hub
+	local point = Instance.new("Attachment")
+	point.Position = Vector3.new(0, 0, -9)
+	point.Parent = hub
+	local beams = {
+		softBeam(hilt, point, {
+			color = ColorSequence.new(STAR_WHITE, WIND_WHITE),
+			width0 = 0.45,
+			width1 = 0.1,
+			transparency = NumberSequence.new({ key(0, 0.1), key(1, 0.45) }),
+		}, hub),
+		softBeam(hilt, point, {
+			color = ColorSequence.new(WIND_WHITE, WIND),
+			width0 = 2.2,
+			width1 = 0.6,
+			transparency = NumberSequence.new({ key(0, 0.55), key(1, 0.85) }),
+			texture = SMOKE,
+			speed = 4,
+			length = 6,
+		}, hub),
+	}
+	local streak0 = Instance.new("Attachment")
+	streak0.Position = Vector3.new(0, 0.5, -8.5)
+	streak0.Parent = hub
+	local streak1 = Instance.new("Attachment")
+	streak1.Position = Vector3.new(0, -0.5, -8.5)
+	streak1.Parent = hub
+	local trail = Instance.new("Trail")
+	trail.Attachment0 = streak0
+	trail.Attachment1 = streak1
+	trail.Color = ColorSequence.new(WIND_WHITE, WIND)
+	trail.Transparency = NumberSequence.new({ key(0, 0.35), key(1, 1) })
+	trail.WidthScale = NumberSequence.new({ key(0, 1), key(1, 0.2) })
+	trail.Lifetime = 0.25
+	trail.LightEmission = 1
+	trail.LightInfluence = 0
+	trail.FaceCamera = true
+	trail.Parent = hub
+	local alive = true
+	every(duration, function()
+		local arm = character:FindFirstChild("Right Arm") :: BasePart?
+		if not alive or not arm then
+			return false
+		end
+		-- The same grip as his sword of wind (see the look below).
+		local grip = arm.CFrame * CFrame.new(0, -1.1, 0) * CFrame.Angles(rad(-90), 0, 0)
+		hub.CFrame = CFrame.lookAt(grip.Position, grip.Position + grip.UpVector)
+		return true
+	end, function()
+		if alive then
+			alive = false
+			trail.Enabled = false
+			fadeBeams(beams, 0.2, { hub })
+		end
+	end)
+	local sword = {}
+	function sword.stop()
+		if alive then
+			alive = false
+			trail.Enabled = false
+			fadeBeams(beams, 0.2, { hub })
+		end
+	end
+	return sword
+end
+
+function handlers.SpiritOfZephyrus(data, character, root)
+	local phase = data.phase
+	if phase == "Lunge" then
+		play(character, ANIMS.ZephyrusLunge)
+		local old = longSwords[character]
+		if old then
+			old.stop()
+		end
+		longSwords[character] = longSword(character, data.duration + 1)
+		local direction: Vector3 = data.direction
+		windPuff(root.Position - UP * 2.4, 3, -direction)
+		windRing(root.Position, direction, 1, 6, 0.3)
+		U.bodyTrail(character, WIND, data.duration + 0.1)
+		for i = 0, 3 do
+			task.delay(i * 0.07, U.afterimage, character, WIND, 0.35)
+		end
+		if U.isLocal(character) then
+			U.speedLines(root, direction, data.duration, WIND_WHITE)
+			CameraShake.FovKick(8)
+		end
+	elseif phase == "Catch" then
+		local targetRoot = U.getRoot(data.target)
+		if targetRoot then
+			U.flash(targetRoot.Position, WIND_WHITE, 3, 0.1)
+			windRing(targetRoot.Position, root.CFrame.LookVector, 1, 7, 0.25)
+			windPuff(targetRoot.Position, 3, root.CFrame.LookVector)
+		end
+	elseif phase == "Cut" then
+		local index: number = data.index or 1
+		play(character, if index % 2 == 1 then ANIMS.SaintCut else ANIMS.SaintCutBack)
+		local targetRoot = U.getRoot(data.target)
+		if targetRoot then
+			local at = targetRoot.Position
+			local side = root.CFrame.RightVector * (if index % 2 == 1 then 1 else -1)
+			local tilt = UP * (index - 2) * 1.5
+			local slash =
+				windSlash(at + side * 4 + tilt, at - side * 4 - tilt, root.CFrame.LookVector * 1.5 + UP * 0.5, 0.8)
+			task.delay(0.15, slash.fade, 0.25)
+			windPuff(at, 2, side)
+			U.burst(at, {
+				color = WIND_WHITE,
+				count = 8,
+				size = 0.4,
+				speed = NumberRange.new(24, 50),
+				lifetime = NumberRange.new(0.1, 0.25),
+				streaks = true,
+				spread = 40,
+				direction = side,
+			})
+			U.highlight(data.target, WIND_WHITE, 0.08, 0.6)
+			if involves(data, character) then
+				CameraShake.Add(0.06)
+			end
+		end
+	elseif phase == "Thrust" then
+		play(character, ANIMS.ZephyrusThrust)
+		local direction: Vector3 = data.direction
+		local targetRoot = U.getRoot(data.target)
+		local through = if targetRoot then targetRoot.Position else root.Position + direction * 4
+		local from = through - direction * 4
+		local a, b = worldAnchor(from, direction), worldAnchor(from + direction * 16, direction)
+		local beams = {
+			softBeam(a, b, {
+				color = ColorSequence.new(STAR_WHITE, WIND_WHITE),
+				width0 = 0.8,
+				width1 = 0.1,
+				transparency = NumberSequence.new({ key(0, 0.05), key(1, 0.6) }),
+			}),
+			softBeam(a, b, {
+				color = ColorSequence.new(WIND_WHITE, WIND),
+				width0 = 4,
+				width1 = 1,
+				transparency = NumberSequence.new({ key(0, 0.5), key(1, 0.9) }),
+				texture = SMOKE,
+				speed = 6,
+				length = 8,
+			}),
+		}
+		task.delay(0.12, fadeBeams, beams, 0.3, { a, b })
+		windRing(through, direction, 1, 9, 0.3)
+		U.shockwave(through, WIND, 1, 12, 0.3)
+		windPuff(through + direction * 2, 4, direction)
+		task.delay(0.35, function()
+			local sword = longSwords[character]
+			if sword then
+				longSwords[character] = nil
+				sword.stop()
+			end
+		end)
+		if involves(data, character) then
+			CameraShake.Add(0.2)
+			CameraShake.FovKick(6)
+		end
+	elseif phase == "Whiff" then
+		windPuff(root.Position + root.CFrame.LookVector * 3, 2)
+		local sword = longSwords[character]
+		if sword then
+			longSwords[character] = nil
+			sword.stop()
 		end
 	end
 end

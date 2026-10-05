@@ -206,8 +206,8 @@ Kits.List = {
 			cooldownMultiplier = 0.75,
 			speedBonus = 8,
 			skills = {
-				{ name = "Spirit of Notos", cooldown = 12, type = "Counter" },
-				{ name = "Spirit of Zephyrus", cooldown = 13, type = "Bolt", airHold = true },
+				{ name = "Spirit of Boreas", cooldown = 12, type = "Melee", airHold = true },
+				{ name = "Spirit of Zephyrus", cooldown = 13, type = "Melee", airHold = true },
 				{ name = "Spirit of Euros", cooldown = 18, type = "Bolt", airHold = true },
 				{ name = "Saint Spirit of Zephyr", cooldown = 30, type = "Melee" },
 			},

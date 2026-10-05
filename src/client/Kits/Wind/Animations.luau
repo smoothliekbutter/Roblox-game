@@ -1233,6 +1233,96 @@ Animations.Notos = {
 	},
 }
 
+-- Spirit of Zephyrus: the lunge, sword low and forward.
+Animations.ZephyrusLunge = {
+	fadeIn = 0.03,
+	fadeOut = 0.2,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(0.093, -3, 12),
+				Head = rot(2, -10),
+				RightArm = limb(12, 4, 10),
+				LeftArm = limb(30, -8, -16),
+				RightLeg = rot(-4, 0, 6),
+				LeftLeg = rot(6, 0, -7),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = body(-0.149, -28, 18),
+				Head = rot(18, -14),
+				RightArm = limb(20, 8),
+				LeftArm = limb(-35, 0, -25),
+				RightLeg = rot(-55, 0, 8),
+				LeftLeg = rot(45, 0, -8),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.6,
+			{
+				Torso = body(-0.149, -28, 18),
+				Head = rot(18, -14),
+				RightArm = limb(20, 8),
+				LeftArm = limb(-35, 0, -25),
+				RightLeg = rot(-55, 0, 8),
+				LeftLeg = rot(45, 0, -8),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
+-- Spirit of Zephyrus: the thrust through them.
+Animations.ZephyrusThrust = {
+	fadeIn = 0.02,
+	fadeOut = 0.25,
+	keys = {
+		{
+			0,
+			{
+				Torso = body(-0.149, -28, 18),
+				Head = rot(18, -14),
+				RightArm = limb(20, 8),
+				LeftArm = limb(-35, 0, -25),
+				RightLeg = rot(-55, 0, 8),
+				LeftLeg = rot(45, 0, -8),
+			},
+		},
+		{
+			0.06,
+			{
+				Torso = body(-0.362, -36, 26),
+				Head = rot(22, -18),
+				RightArm = limb(26, 6),
+				LeftArm = limb(-48, 0, -30),
+				RightLeg = rot(-62, 0, 8),
+				LeftLeg = rot(52, 0, -8),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.45,
+			{
+				Torso = body(-0.362, -36, 26),
+				Head = rot(22, -18),
+				RightArm = limb(26, 6),
+				LeftArm = limb(-48, 0, -30),
+				RightLeg = rot(-62, 0, 8),
+				LeftLeg = rot(52, 0, -8),
+			},
+			"Linear",
+			"Out",
+		},
+	},
+}
+
 -- Tempest Dive: both hands raised over them at the top.
 Animations.BoreasForm = {
 	fadeOut = 0.05,

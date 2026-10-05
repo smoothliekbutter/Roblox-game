@@ -33,10 +33,10 @@
 	                         bolts; held, a beam he keeps on them; in the air,
 	                         star-fire raining on the ground below
 	Full-Crown Spirit of Zephyr (G again, once Tempest Dive has landed twice)
-	  1 Spirit of Notos      the south wind bursts out of him, and blows spells
-	                         thrown at him back where they came from
-	  2 Spirit of Zephyrus   he leaps into the sky, wind arrows form floating round
-	                         him, then rain down on them
+	  1 Spirit of Boreas     a great axe of wind; one huge chop splits the ground in
+	                         a line ahead, through guards, launching them
+	  2 Spirit of Zephyrus   his sword of wind grows long and he lunges at them
+	                         (steerable); caught, three cuts and a thrust
 	  3 Spirit of Euros      a recurve bow of wind; one arrow, too fast to see,
 	                         through everything in a line (unblockable)
 	  4 Saint Spirit of      cutscene: a star binds them in the air in a pentagram;
@@ -62,7 +62,6 @@ local UP = Vector3.yAxis
 -- Holds a character in the air (a tiny upward velocity switches on the
 -- vertical force, so gravity stops pulling).
 local HOVER = Vector3.new(0, 0.05, 0)
-local SPELLS = { Bolt = true, Explosion = true, Swarm = true, Zone = true }
 local ALL_TYPES = { Melee = true, Bolt = true, Explosion = true, Swarm = true, Zone = true }
 
 local Kit = {}
@@ -952,149 +951,158 @@ end
 -- Full-Crown Spirit of Zephyr
 ---------------------------------------------------------------------------
 
--- Spirit of Notos: the south wind bursts out of him and throws everyone
--- near away; for a moment after, spells thrown at him are blown back at
--- whoever threw them.
-local NOTOS_RADIUS = 16
-local NOTOS_GUARD = 0.8
+--[[
+	Spirit of Boreas (Full-Crown 1, the north wind): a great axe of wind
+	forms in his hands, raised high, and he brings it down in one huge chop
+	that splits the ground in a line ahead of him, through guards, throwing
+	whoever is on it into the air. From the air he chops down at the ground
+	ahead and below, spiking them.
+]]
+local BOREAS_RAISE = 0.42 -- the axe forms, raised (BoreasForm, then BoreasChop)
+local BOREAS_REACH = 28
+local BOREAS_WIDTH = 7
 
-local function spiritOfNotos(ctx)
+local function spiritOfBoreas(ctx)
 	local c, character = ctx.combat, ctx.character
-	CombatState.SetCasting(character, 0.45)
-	if ctx.airborne then
-		c.ApplyVelocity(character, HOVER, 0.45)
+	local airborne = ctx.airborne
+	CombatState.SetCasting(character, BOREAS_RAISE + 0.6)
+	if airborne then
+		c.ApplyVelocity(character, HOVER, BOREAS_RAISE + 0.25)
 	end
-	fx(ctx, "SpiritOfNotos", "Blast", { airborne = ctx.airborne })
-	task.wait(0.1)
-	for _, victim in c.Sphere(character, ctx.root.Position, NOTOS_RADIUS) do
-		local victimRoot = rootOf(victim)
-		if victimRoot then
-			c.Hit(character, victim, {
-				damage = 6,
-				stun = 0.9,
-				attackType = "Zone",
-				heavy = true,
-				ragdoll = 1,
-				velocity = c.Flat(victimRoot.Position - ctx.root.Position) * 70 + UP * 22,
-			})
-		end
+	fx(ctx, "SpiritOfBoreas", "Raise", { airborne = airborne, duration = BOREAS_RAISE })
+	task.wait(BOREAS_RAISE)
+	if interrupted(ctx) then
+		fx(ctx, "SpiritOfBoreas", "Cancel")
+		return
 	end
-	local guardFrom = os.clock()
-	local function blowBack(attacker: Model)
-		local attackerRoot = rootOf(attacker)
-		if attackerRoot then
-			local origin = ctx.root.Position + UP * 0.6
-			local direction = (attackerRoot.Position - origin).Unit
-			fx(ctx, "SpiritOfNotos", "Gust", { origin = origin, direction = direction })
-			Projectile.Fire({
-				owner = character,
-				origin = origin + direction * 2,
-				direction = direction,
-				speed = 120,
-				range = 90,
-				size = Vector3.new(6, 6, 3),
-				onHit = function(victim)
-					c.Hit(character, victim, {
-						damage = 7,
-						stun = 0.9,
-						attackType = "Bolt",
-						heavy = true,
-						velocity = c.Flat(direction) * 45 + UP * 15,
-					})
-				end,
-			})
-		end
-		local left = NOTOS_GUARD - (os.clock() - guardFrom)
-		if left > 0.02 then
-			c.SetCounter(character, left, SPELLS, blowBack)
-		end
+	local forward = look(ctx)
+	local direction = if airborne then (forward - UP * 0.8).Unit else forward
+	local origin = ctx.root.Position + forward * 1.5
+	local length = reach(ctx, origin, direction, BOREAS_REACH)
+	fx(ctx, "SpiritOfBoreas", "Chop", { origin = origin, direction = direction, length = length, airborne = airborne })
+	for _, victim in lineVictims(ctx, origin, direction, length, BOREAS_WIDTH) do
+		c.Hit(character, victim, {
+			damage = 10,
+			stun = 1.2,
+			attackType = "Melee",
+			guardBreak = true,
+			heavy = true,
+			ragdoll = 1,
+			velocity = if airborne then forward * 10 + UP * -45 else forward * 8 + UP * 38,
+		})
 	end
-	c.SetCounter(character, NOTOS_GUARD, SPELLS, blowBack)
-	c.ShakeArea(ctx.root.Position, 40, 0.35)
+	c.ShakeArea(origin + direction * length * 0.5, 55, 0.45)
+	task.wait(0.15)
+	CombatState.SetCasting(character, 0.4)
 end
 
--- Spirit of Zephyrus (the west wind): he leaps into the sky on a burst of
--- wind; hanging there, wind arrows form one by one in a ring floating
--- round him, then rain down one after another on whoever is nearest
--- below: they keep them pinned, the last one knocks them down. Then he
--- glides back down. From the air he leaps less high.
-local ZEPHYRUS_RISE = 0.35
-local ZEPHYRUS_GATHER = 0.6
-local ZEPHYRUS_ARROWS = 14
-local ZEPHYRUS_GAP = 0.06
-local ZEPHYRUS_RING = 4.5
-
--- Where floating arrow i is, `t` seconds after they start forming (the
--- client draws them with the same numbers).
-local function floatingArrow(root: BasePart, i: number, t: number): Vector3
-	local angle = i / ZEPHYRUS_ARROWS * math.pi * 2 + t * 1.5
-	return root.Position
-		+ Vector3.new(math.cos(angle) * ZEPHYRUS_RING, 1.2 + math.sin(angle * 2) * 0.6, math.sin(angle) * ZEPHYRUS_RING)
-end
-
-local function nearestEnemy(ctx, radius: number): Model?
-	local best, bestDistance = nil, math.huge
-	for _, victim in ctx.combat.Sphere(ctx.character, ctx.root.Position, radius) do
-		local victimRoot = rootOf(victim)
-		local distance = if victimRoot then (victimRoot.Position - ctx.root.Position).Magnitude else math.huge
-		if distance < bestDistance then
-			best, bestDistance = victim, distance
-		end
-	end
-	return best
-end
+--[[
+	Spirit of Zephyrus (Full-Crown 2, the west wind): his sword of wind grows
+	long and he lunges at whoever he's facing on a burst of wind (steerable).
+	Caught, they're cut three times in a blur of wind, held in front of him,
+	and run through with a thrust that blows them away. From the air the
+	lunge dives at them.
+]]
+local LUNGE_SPEED = 100
+local LUNGE_TIME = 0.34
+local LUNGE_STEER = 180
+local LUNGE_CUTS = { 0.12, 0.24, 0.36 } -- after the catch
+local LUNGE_THRUST = 0.52
+local LUNGE_HOLD = 3.6 -- studs in front of him while he cuts
 
 local function spiritOfZephyrus(ctx)
 	local c, character = ctx.combat, ctx.character
-	local hang = ZEPHYRUS_GATHER + ZEPHYRUS_ARROWS * ZEPHYRUS_GAP
-	CombatState.SetCasting(character, ZEPHYRUS_RISE + hang + 0.4)
-	fx(ctx, "SpiritOfZephyrus", "Leap", { rise = ZEPHYRUS_RISE })
-	c.ApplyVelocity(character, UP * (if ctx.airborne then 30 else 62), ZEPHYRUS_RISE)
-	task.wait(ZEPHYRUS_RISE)
-	if interrupted(ctx) then
-		return
+	local airborne = ctx.airborne
+	local forward = look(ctx)
+	local aimed = softTarget(ctx, 30, 35)
+	local aimedRoot = aimed and rootOf(aimed)
+	local direction = if aimedRoot
+		then (aimedRoot.Position - ctx.root.Position).Unit
+		elseif airborne then (forward - UP * 0.5).Unit
+		else forward
+	if not airborne then
+		direction = c.Flat(direction) -- a lunge, not a jump
 	end
-	c.ApplyVelocity(character, HOVER, hang + 0.2)
-	fx(ctx, "SpiritOfZephyrus", "Gather", { gather = ZEPHYRUS_GATHER, arrows = ZEPHYRUS_ARROWS })
-	local started = os.clock()
-	task.wait(ZEPHYRUS_GATHER)
-	for i = 1, ZEPHYRUS_ARROWS do
+	CombatState.SetCasting(character, LUNGE_TIME + 0.3)
+	fx(ctx, "SpiritOfZephyrus", "Lunge", { direction = direction, duration = LUNGE_TIME, airborne = airborne })
+	c.ApplyVelocity(
+		character,
+		direction * LUNGE_SPEED,
+		LUNGE_TIME,
+		{ steer = LUNGE_STEER, landStop = direction.Y < 0, landKeep = 0.4 }
+	)
+	local start = os.clock()
+	local target: Model? = nil
+	while os.clock() - start < LUNGE_TIME + 0.05 do
 		if interrupted(ctx) then
-			fx(ctx, "SpiritOfZephyrus", "Cancel")
 			return
 		end
-		local last = i == ZEPHYRUS_ARROWS
-		local target = nearestEnemy(ctx, 55)
-		local targetRoot = target and rootOf(target)
-		-- The first arrows land round them, closing in.
-		local scatter = if last then 0 else 3 * (1 - i / ZEPHYRUS_ARROWS) + 0.5
-		local aim = if targetRoot then targetRoot.Position else ctx.root.Position + look(ctx) * 16 - UP * 20
-		aim += Vector3.new(math.random(-10, 10) / 10, 0, math.random(-10, 10) / 10) * scatter
-		local origin = floatingArrow(ctx.root, i, os.clock() - started)
-		local direction = (aim - origin).Unit
-		fx(ctx, "SpiritOfZephyrus", "Arrow", { index = i, aim = aim, speed = 160, range = 90, last = last })
-		Projectile.Fire({
-			owner = character,
-			origin = origin,
-			direction = direction,
-			speed = 160,
-			range = 90,
-			size = Vector3.new(2, 2, 4),
-			onHit = function(victim)
-				c.Hit(character, victim, {
-					damage = if last then 4 else 1.4,
-					stun = if last then 1 else 0.5,
-					attackType = "Bolt",
-					heavy = last,
-					ragdoll = if last then 1.2 else nil,
-					velocity = if last then UP * -40 + c.Flat(direction) * 10 else c.Flat(direction) * 3,
-					velocityTime = 0.15,
-				})
-			end,
-		})
-		task.wait(ZEPHYRUS_GAP)
+		local hits = c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -3.5), Vector3.new(6, 7, 7))
+		if #hits > 0 then
+			target = hits[1]
+			break
+		end
+		task.wait()
 	end
-	c.ApplyVelocity(character, UP * -20 + look(ctx) * 4, 0.5)
+	if not target then
+		fx(ctx, "SpiritOfZephyrus", "Whiff")
+		CombatState.SetCasting(character, 0.45)
+		return
+	end
+	c.ApplyVelocity(character, Vector3.zero, 0.05)
+	forward = look(ctx)
+	if c.Hit(character, target, { damage = 3, stun = 1.4, attackType = "Melee" }) ~= "Hit" then
+		fx(ctx, "SpiritOfZephyrus", "Whiff")
+		CombatState.SetCasting(character, 0.4)
+		return
+	end
+
+	-- The cuts, held in front of him in a blur of wind, then the thrust.
+	CombatState.SetCasting(character, LUNGE_THRUST + 0.3)
+	fx(ctx, "SpiritOfZephyrus", "Catch", { target = target })
+	local caught = target :: Model
+	local started = os.clock()
+	local function pull(): Vector3
+		local targetRoot = rootOf(caught)
+		if not targetRoot then
+			return Vector3.zero
+		end
+		local offset = ctx.root.Position + forward * LUNGE_HOLD - targetRoot.Position
+		local flat = Vector3.new(offset.X, 0, offset.Z) / 0.12
+		return if flat.Magnitude > 30 then flat.Unit * 30 else flat
+	end
+	for index, at in LUNGE_CUTS do
+		task.wait(math.max(at - (os.clock() - started), 0))
+		if interrupted(ctx) or not CombatState.IsAlive(caught) then
+			return
+		end
+		local hit = c.Hit(character, caught, {
+			damage = 1.5,
+			stun = 1,
+			attackType = "Melee",
+			noShake = true,
+			velocity = pull(),
+			velocityTime = 0.12,
+		})
+		if hit ~= "Hit" then
+			return
+		end
+		fx(ctx, "SpiritOfZephyrus", "Cut", { target = caught, index = index })
+	end
+	task.wait(math.max(LUNGE_THRUST - (os.clock() - started), 0))
+	if interrupted(ctx) or not CombatState.IsAlive(caught) then
+		return
+	end
+	fx(ctx, "SpiritOfZephyrus", "Thrust", { target = caught, direction = forward })
+	c.Hit(character, caught, {
+		damage = 4,
+		stun = 1,
+		attackType = "Melee",
+		heavy = true,
+		ragdoll = 1,
+		velocity = forward * 65 + UP * 18,
+	})
+	c.ShakeArea(ctx.root.Position, 40, 0.3)
 	CombatState.SetCasting(character, 0.3)
 end
 
@@ -1263,7 +1271,7 @@ Kit.Skills = { windBladesShower, swiftWhiteHawk, heavenlyWindArk, galeWhiteBow }
 -- Awakened, the moves follow the stage: Half-Crown, or Full-Crown once he's
 -- ascended (the "Ascended" attribute; names and cooldowns in Shared/Kits).
 local HALF_CROWN = { spiritStorm, tempestDive, quartileScutum, quartileHasta }
-local FULL_CROWN = { spiritOfNotos, spiritOfZephyrus, spiritOfEuros, saintSpiritOfZephyr }
+local FULL_CROWN = { spiritOfBoreas, spiritOfZephyrus, spiritOfEuros, saintSpiritOfZephyr }
 local function stageMove(slot: number): (any) -> ()
 	return function(ctx)
 		local moves = if ctx.character:GetAttribute("Ascended") == true then FULL_CROWN else HALF_CROWN

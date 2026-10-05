@@ -155,6 +155,13 @@ NOTOS = [(0.0, STANCE), (0.08, NOTOS_GATHER), (0.15, NOTOS_BURST), (0.45, NOTOS_
 BOREAS_RAISE = pose(R(6, 6), R(12), L(168, 10, 0), L(168, -10, 0), R(-14, 0, 6), R(14, 0, -6))
 BOREAS_DOWN = pose(R(-30, -4), R(14), L(44, 10, 0), L(44, -10, 0), R(-30, 0, 10), R(30, 0, -10))
 BOREAS_FORM = [(0.0, STANCE), (0.12, BOREAS_RAISE), (0.42, BOREAS_RAISE)]
+
+# Spirit of Zephyrus: a long lunge, sword arm low and forward (the blade
+# runs out ahead along it), free arm thrown back; then the thrust, deeper.
+LUNGE = pose(R(-28, 18), R(18, -14), L(20, 8, 0), L(-35, 0, -25), R(-55, 0, 8), R(45, 0, -8))
+THRUST = pose(R(-36, 26), R(22, -18), L(26, 6, 0), L(-48, 0, -30), R(-62, 0, 8), R(52, 0, -8))
+ZEPHYRUS_LUNGE = [(0.0, STANCE), (0.08, LUNGE), (0.6, LUNGE)]
+ZEPHYRUS_THRUST = [(0.0, LUNGE), (0.06, THRUST), (0.45, THRUST)]
 BOREAS_CHOP = [(0.0, BOREAS_RAISE), (0.1, BOREAS_DOWN), (0.5, BOREAS_DOWN)]
 
 # Spirit of Euros: the archer's stance again, drawn deeper and held longer;
@@ -237,6 +244,8 @@ SPEC = {
     'HastaRain': dict(keys=HASTA_RAIN, ease=[None, SINE_OUT, LINEAR], fadeOut=0.25, doc="Quartile Hasta in the air: hands down, calling the star-fire down."),
     'HastaFire': dict(keys=HASTA_FIRE, ease=[None, QUART_OUT, SINE_OUT], fadeIn=0.02, fadeOut=0.3, doc="Quartile Hasta: the lance goes, he rocks back."),
     'Notos': dict(keys=NOTOS, ease=snap(4), fadeOut=0.3, doc="Spirit of Notos: arms crossed, then flung wide."),
+    'ZephyrusLunge': dict(keys=ZEPHYRUS_LUNGE, ease=[None, QUART_OUT, LINEAR], fadeIn=0.03, fadeOut=0.2, doc="Spirit of Zephyrus: the lunge, sword low and forward."),
+    'ZephyrusThrust': dict(keys=ZEPHYRUS_THRUST, ease=[None, QUART_OUT, LINEAR], fadeIn=0.02, fadeOut=0.25, doc="Spirit of Zephyrus: the thrust through them."),
     'BoreasForm': dict(keys=BOREAS_FORM, ease=[None, SINE_OUT, LINEAR], fadeOut=0.05, doc="Tempest Dive: both hands raised over them at the top."),
     'BoreasChop': dict(keys=BOREAS_CHOP, ease=[None, QUAD_IN, LINEAR], fadeIn=0.01, fadeOut=0.3, doc="Tempest Dive: driving them down into the ground."),
     'EurosDraw': dict(keys=EUROS_DRAW, ease=[None, SINE_OUT, SINE_IO, LINEAR], fadeOut=0.05, doc="Spirit of Euros: drawn deep and held."),
