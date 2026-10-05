@@ -21275,16 +21275,135 @@ function handlers.SpiritStorm(data, character, root)
 	end
 end
 
--- Tempest Dive: he flies straight up dragging them by the collar (wind
--- trailing off them both); a beat at the top, then he swings over them and
--- drives them down, and a tornado forms behind them on the way down: rings
--- of wind stacked from the ground up (narrow at the foot, wide at the top)
--- and a shimmering funnel, spinning, each part appearing as they fall past
--- it. Once they hit, the whole funnel stands over the crater a moment, then
--- blows apart.
-local TORNADO_RINGS = 9
-local TORNADO_SEGMENTS = 10
+-- A full tornado: a hollow funnel of wind, narrow at the ground and wide at
+-- the top. Its wall is bands of overlapping panels (dust-grey and pale,
+-- streaked with glowing green), each band welded to a hub so turning it is
+-- one write, dense enough that you can barely see through it; dust pours
+-- off it and debris whirls round inside it. It rises out of the ground,
+-- spins, and blows apart.
+local TORNADO_BANDS = 12
+local TORNADO_PANELS = 16
+local TORNADO_SHADES = { WIND, Color3.fromRGB(150, 176, 160), Color3.fromRGB(96, 120, 106) }
 
+type Tornado = { update: (t: number, visible: number) -> (), destroy: () -> () }
+
+local function makeTornado(base: Vector3, height: number): Tornado
+	local bands = {}
+	local emitters = {}
+	for k = 1, TORNADO_BANDS do
+		local fraction = (k - 0.5) / TORNADO_BANDS
+		local radius = 2.5 + 11 * fraction ^ 1.25
+		local hub = U.newPart({
+			Size = Vector3.one * 0.2,
+			Transparency = 1,
+			CFrame = CFrame.new(base + UP * (height * fraction)),
+		})
+		local panels = {}
+		local width = 2 * math.pi * radius / TORNADO_PANELS * 1.3
+		for j = 1, TORNADO_PANELS do
+			local shade = (j + k) % 3 + 1
+			local panel = Instance.new("Part")
+			panel.Anchored = false
+			panel.CanCollide = false
+			panel.CanQuery = false
+			panel.CanTouch = false
+			panel.CastShadow = false
+			panel.Massless = true
+			panel.Material = if shade == 1 then Enum.Material.Neon else Enum.Material.SmoothPlastic
+			panel.Color = TORNADO_SHADES[shade]
+			panel.Transparency = 1
+			panel.Size = Vector3.new(width, height / TORNADO_BANDS + 0.8, 0.5)
+			-- Leaning into the spin, like streaks of wind.
+			panel.CFrame = hub.CFrame
+				* CFrame.Angles(0, j / TORNADO_PANELS * math.pi * 2, 0)
+				* CFrame.new(0, 0, -radius)
+				* CFrame.Angles(0, 0, rad(18))
+			local weld = Instance.new("WeldConstraint")
+			weld.Part0 = hub
+			weld.Part1 = panel
+			weld.Parent = panel
+			panel.Parent = U.folder
+			table.insert(panels, { part = panel, solid = if shade == 1 then 0.35 else 0.18 })
+			if k % 2 == 0 and j % 4 == 0 then
+				local dust = Instance.new("ParticleEmitter")
+				dust.Texture = U.textures.Smoke
+				dust.Color = ColorSequence.new(Color3.fromRGB(170, 190, 175))
+				dust.LightInfluence = 0.6
+				dust.Size = NumberSequence.new(2.5, 4.5)
+				dust.Transparency = NumberSequence.new(0.45, 1)
+				dust.Lifetime = NumberRange.new(0.5, 0.8)
+				dust.Rate = 0
+				dust.Speed = NumberRange.new(0, 1)
+				dust.Parent = panel
+				table.insert(emitters, dust)
+			end
+		end
+		table.insert(bands, { hub = hub, panels = panels, height = height * fraction, radius = radius, shown = -1 })
+	end
+	local debris = {}
+	for _ = 1, 18 do
+		table.insert(
+			debris,
+			U.newPart({
+				Size = Vector3.new(0.4, 0.3, 0.5) * (1 + math.random() * 1.5),
+				Color = Color3.fromRGB(92, 86, 78),
+				Material = Enum.Material.Slate,
+				Transparency = 1,
+			})
+		)
+	end
+
+	local tornado = {}
+	-- `visible` 0 to 1: how much of it has risen out of the ground (bands
+	-- appear from the foot up), then how solid it still is as it goes.
+	function tornado.update(t: number, visible: number)
+		for k, band in bands do
+			band.hub.CFrame = CFrame.new(base + UP * band.height) * CFrame.Angles(0, t * (9 - k * 0.35) + k * 0.5, 0)
+			local risen = math.clamp(visible * TORNADO_BANDS - (k - 1), 0, 1)
+			local shown = math.floor(risen * 20 + 0.5) / 20
+			if shown ~= band.shown then
+				band.shown = shown
+				for _, panel in band.panels do
+					panel.part.Transparency = 1 - (1 - panel.solid) * shown
+				end
+			end
+		end
+		for _, dust in emitters do
+			dust.Rate = if visible > 0.5 then 12 else 0
+		end
+		for i, chunk in debris do
+			local fraction = (i - 0.5) / #debris
+			local angle = t * (6 + i % 3) + i
+			local radius = (2.5 + 11 * fraction ^ 1.25) * 0.75
+			local position = base
+				+ Vector3.new(
+					math.cos(angle) * radius,
+					height * 0.9 * fraction + math.sin(t * 2 + i) * 1.5,
+					math.sin(angle) * radius
+				)
+			chunk.CFrame = CFrame.new(position) * CFrame.Angles(t * 5 + i, t * 3, 0)
+			chunk.Transparency = if visible > fraction then 0 else 1
+		end
+	end
+	function tornado.destroy()
+		for _, band in bands do
+			band.hub:Destroy()
+			for _, panel in band.panels do
+				panel.part:Destroy()
+			end
+		end
+		for _, chunk in debris do
+			chunk:Destroy()
+		end
+	end
+	return tornado
+end
+
+-- Tempest Dive: he flies straight up dragging them by the collar (wind
+-- trailing off them both); a beat at the top, then he swings over them, a
+-- full tornado rises out of the ground under them, and he drives them down
+-- through the eye of it. The camera goes inside for the way down. Once
+-- they hit, the tornado stands over the crater a moment, then blows apart.
 local function playTempestDive(data, character: Model, root: BasePart)
 	local target: Model? = data.target
 	local targetRoot = target and U.getRoot(target)
@@ -21303,44 +21422,17 @@ local function playTempestDive(data, character: Model, root: BasePart)
 	gust(plan.start, 6, UP)
 	U.ringBurst(CFrame.new(base + UP * 0.2), WIND, 1, 9, 0.4, 0.3)
 
-	local rings = {}
-	for k = 1, TORNADO_RINGS do
-		local fraction = (k - 0.5) / TORNADO_RINGS
-		local parts = {}
-		for j = 1, TORNADO_SEGMENTS do
-			local wide = j % 2 == 0
-			table.insert(parts, bar(Vector3.zero, UP, if wide then 0.4 else 0.22, if wide then WIND else WIND_WHITE, 1))
-		end
-		table.insert(
-			rings,
-			{ parts = parts, height = DivePlan.Height * fraction, radius = 2 + 8 * fraction ^ 1.3, phase = k * 0.7 }
-		)
-	end
-	local funnel = {}
-	for k = 1, 3 do
-		local fraction = (k - 0.5) / 3
-		local width = 3.5 + 13 * fraction
-		table.insert(funnel, {
-			part = U.newPart({
-				Shape = Enum.PartType.Cylinder,
-				Size = Vector3.new(DivePlan.Height / 3 + 1, width, width),
-				Color = WIND,
-				Material = Enum.Material.ForceField,
-				Transparency = 1,
-			}),
-			height = DivePlan.Height * fraction,
-		})
-	end
-	local foot = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.new(base) })
-
-	local finishAt = times.Land + 0.8
+	local tornado = makeTornado(base, DivePlan.Height + 4)
+	local formFrom = times.Flip - 0.25 -- it rises out of the ground as he turns them over
+	local standUntil = times.Land + 0.6
+	local finishAt = standUntil + 0.4
 	local bind = "CloverTempestDive" .. tostring(started)
 	local function finish()
 		pcall(function()
 			RunService:UnbindFromRenderStep(bind)
 		end)
 	end
-	local flipped, dove = false, false
+	local flipped, dove, risen = false, false, false
 	RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
 		local t = os.clock() - started
 		if t > finishAt then
@@ -21363,65 +21455,44 @@ local function playTempestDive(data, character: Model, root: BasePart)
 				CameraShake.Add(0.1)
 			end
 		end
+		if not risen and t >= formFrom then
+			risen = true
+			U.ringBurst(CFrame.new(base + UP * 0.2), WIND_WHITE, 2, 16, 0.4, 0.5)
+			U.debris(base, 14, 40, 0.8)
+			if mine or (workspace.CurrentCamera.CFrame.Position - base).Magnitude < 70 then
+				CameraShake.Add(0.2)
+			end
+		end
 		if not dove and t >= times.Flip then
 			dove = true
 			play(character, ANIMS.BoreasChop)
-			U.spiral(foot, WIND, 4, DivePlan.Height, finishAt - times.Flip, 4, 0.22, 0.35)
 			if mine then
 				CameraShake.FovKick(10)
 			end
 		end
-		if t >= times.Flip then
-			local fall = math.clamp((t - times.Flip) / (times.Land - times.Flip), 0, 1)
-			local front = DivePlan.DiveAt(plan, fall).Y - floorY
-			local apart = math.clamp((t - times.Land - 0.5) / 0.3, 0, 1)
-			for k, ring in rings do
-				local center = base + UP * ring.height
-				local spin = t * (11 - k * 0.6) + ring.phase
-				local points = arcPoints(
-					center,
-					Vector3.xAxis,
-					Vector3.zAxis,
-					ring.radius * (1 + apart * 0.9),
-					spin,
-					spin + math.pi * 1.7,
-					TORNADO_SEGMENTS
-				)
-				poseArc(ring.parts, points)
-				local transparency = if ring.height >= front - 1 then 0.25 + 0.75 * apart else 1
-				for _, p in ring.parts do
-					p.Transparency = transparency
-				end
-			end
-			for k, segment in funnel do
-				segment.part.CFrame = CFrame.new(base + UP * segment.height)
-					* CFrame.Angles(0, t * 6 + k, 0)
-					* CFrame.Angles(0, 0, rad(90))
-				segment.part.Transparency = if segment.height >= front - DivePlan.Height / 6
-					then 0.15 + 0.85 * apart
-					else 1
-			end
+		if t >= formFrom then
+			local rising = math.clamp((t - formFrom) / 0.3, 0, 1)
+			local going = math.clamp((t - standUntil) / 0.4, 0, 1)
+			tornado.update(t, rising * (1 - going))
 		end
 	end)
 	task.delay(finishAt + 0.1, function()
 		finish()
-		for _, ring in rings do
-			for _, p in ring.parts do
-				p:Destroy()
-			end
-		end
-		for _, segment in funnel do
-			segment.part:Destroy()
-		end
-		foot:Destroy()
+		tornado.destroy()
 	end)
 
+	-- The camera: from the side on the way up, then inside the tornado on the
+	-- way down, looking down past him at them, the walls whirling round.
 	if mine then
 		Cinematic.Camera(function(t)
 			local focus = DivePlan.Victim(plan, math.min(t, times.Land)).Position
 			local right = plan.forward:Cross(UP)
-			local offset = right * 18 - plan.forward * 6 + UP * (if t < times.Lift then -2 else 3)
-			return CFrame.lookAt(focus + offset, focus), if t > times.Flip and t < times.Land then 84 else 72
+			if t < times.Flip - 0.05 then
+				local offset = right * 18 - plan.forward * 6 + UP * (if t < times.Lift then -2 else 3)
+				return CFrame.lookAt(focus + offset, focus), 72
+			end
+			local eye = focus + UP * 9 + right * 1.5 - plan.forward * 0.5
+			return CFrame.lookAt(eye, focus), 88
 		end, times.Length + 0.2)
 	end
 end
