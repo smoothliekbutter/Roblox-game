@@ -764,6 +764,32 @@ COMET = [(0.0, SEIZE_LIFT), (0.05, C_YANK), (0.11, C_LAUNCH), (S1 - 0.07, c_lift
                                            (COMET_RELEASE - 0.06, C_HAUL), (COMET_RELEASE, C_HEAVE),
                                            (COMET_RELEASE + 0.18, C_FOLLOW), (COMET_RELEASE + 0.4, C_SETTLE)])
 
+# Black Ascent (Demon-Slasher 1): from the launching cut (the Rising
+# swing's strike) he springs up after them knees first, then in the air:
+# a horizontal cut right to left as he glides across in front of them
+# (ASCENT_CUTS[0]), a rising cut back the other way (ASCENT_CUTS[1]), over
+# the top with the katana raised high and one cut straight down
+# (ASCENT_SPIKE), diving after them, and lands in a crouch (ASCENT_LAND,
+# planted from there). Shared/BlackAscent moves him; keep the times in step.
+ASCENT_CUTS, ASCENT_SPIKE, ASCENT_LAND = (0.4, 0.58), 0.8, 1.02
+def air(pose, right=-48, left=-16):
+    return pose | {'RightLeg': R(right), 'LeftLeg': R(left)}
+AS_SPRING = {'Torso': R(-18, 10), 'Head': R(8, -6), 'RightArm': L(125, 25), 'Sword': A(0.25, 0.75, 0.6),
+             'LeftArm': L(45, -30), 'RightLeg': R(-62), 'LeftLeg': R(-18)}
+AS_DIVE = {'Torso': R(-20, 6), 'Head': R(14, -4), 'RightArm': L(70, 22, 6), 'Sword': A(-0.1, -0.35, -0.93),
+           'LeftArm': L(-10, 0, -40), 'RightLeg': R(-10), 'LeftLeg': R(14)}
+AS_LAND = {'Torso': R(-28, 8), 'Head': R(14, -6), 'RightArm': L(60, 30), 'Sword': A(-0.3, -0.15, -0.94),
+           'LeftArm': L(30, 0, -30), 'RightLeg': R(-48), 'LeftLeg': R(38)}
+AS_RISE = {'Torso': R(-12, 22), 'Head': R(6, -16), 'RightArm': L(72, 50), 'Sword': A(-0.6, -0.2, -0.77),
+           'LeftArm': L(20, 0, -30), 'RightLeg': R(-28), 'LeftLeg': R(24)}
+A1, A2 = ASCENT_CUTS
+ASCENT = [(0.0, RISING[3][1]), (0.08, RISING[4][1]), (0.18, AS_SPRING), (A1 - 0.08, air(B_SWEEP_WIND)),
+          (A1, air(B_SWEEP)), (A1 + 0.07, air(B_SWEEP_FOLLOW)), (A2 - 0.05, air(B_RISE_WIND, -30, -40)),
+          (A2, air(B_RISE, -30, -40)), (A2 + 0.07, air(B_RISE_FOLLOW, -40, -10)),
+          (ASCENT_SPIKE - 0.06, air(B_CHOP_WIND, -70, -40)), (ASCENT_SPIKE, air(B_CHOP, -30, -10)),
+          (ASCENT_SPIKE + 0.08, air(B_CHOP_FOLLOW, -10, 8)), (ASCENT_LAND - 0.06, AS_DIVE)] + plant(
+             [(ASCENT_LAND, AS_LAND), (ASCENT_LAND + 0.28, AS_RISE)])
+
 ZETTEN_STANCE = [(0.0, UPPER), (0.12, Z_STANCE), (1.4, Z_STANCE)]
 ZETTEN_CUT = [(0.0, Z_STANCE), (0.05, Z_CUT), (0.35, Z_AFTER), (0.6, Z_AFTER)]
 
@@ -777,7 +803,7 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grab
        'AirDeflectStance': AIR_DEFLECT_STANCE,
        'MeteorLunge': METEOR_LUNGE, 'MeteorReach': METEOR_REACH, 'MeteorRise': METEOR_RISE, 'MeteorSpin': METEOR_SPIN, 'SwordSwap': SWORD_SWAP,
        'RecallThrow': RECALL_THROW, 'RecallCall': RECALL_CALL, 'RecallCatch': RECALL_CATCH,
-       'CausalityPlant': CAUSALITY_PLANT, 'CausalityPull': CAUSALITY_PULL, 'Comet': COMET, 'ZettenStance': ZETTEN_STANCE,
+       'CausalityPlant': CAUSALITY_PLANT, 'CausalityPull': CAUSALITY_PULL, 'Comet': COMET, 'Ascent': ASCENT, 'ZettenStance': ZETTEN_STANCE,
        'ZettenCut': ZETTEN_CUT, 'MeteorDrill': METEOR_DRILL, 'MeteorLand': METEOR_LAND, 'MeteorSlam': METEOR_SLAM, 'MeteorImpact': METEOR_IMPACT,
        'DividerCharge': DIVIDER_CHARGE, 'DividerRelease': DIVIDER_RELEASE,
        'DeflectStance': DEFLECT_STANCE, 'DeflectCounter': DEFLECT_COUNTER, 'DeflectReflect': DEFLECT_REFLECT,
@@ -791,7 +817,7 @@ ALL = {'Idle': IDLE, 'Run': RUN, 'Walk': WALK, 'Air': AIR, 'Seize': SEIZE, 'Grab
 # wide stances). These are played in the air instead, or leave the ground
 # (planted only up to the time given).
 AIRBORNE = {'Air', 'Grabbed', 'Launched', 'MoonPerch', 'MoonFlight', 'Plunge', 'AirDividerCharge', 'AirDividerRelease', 'MeteorRise', 'MeteorSpin', 'MeteorDrill', 'MeteorLand', 'MeteorSlam', 'Chop',
-            'AirPropel', 'AirMeteorLunge', 'AirMeteorReach', 'AirSeize', 'AirDeflectStance', 'Comet'}
+            'AirPropel', 'AirMeteorLunge', 'AirMeteorReach', 'AirSeize', 'AirDeflectStance', 'Comet', 'Ascent'}
 PLANT_UNTIL = {'Leap': 0.1}
 UNPLANTED = dict(ALL)
 # The run sets its own height (its bob lifts off the floor between steps).
@@ -821,7 +847,7 @@ if __name__ == '__main__':
              # The other swords are shorter than the Demon-Slayer.
              'CausalityPlant': dict(floor=-4.0, reach=DESTROYER_REACH),  # driven into the ground
              'CausalityPull': dict(floor=-4.0, reach=DESTROYER_REACH),
-             'Comet': dict(floor=-10, reach=DESTROYER_REACH),
+             'Comet': dict(floor=-10, reach=DESTROYER_REACH), 'Ascent': dict(floor=-10, reach=SLASHER_REACH),
              'ZettenStance': dict(reach=SLASHER_REACH), 'ZettenCut': dict(reach=SLASHER_REACH)}
     ok = True
     for name, keys in ALL.items():

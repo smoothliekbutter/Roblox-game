@@ -1913,16 +1913,19 @@ local function blackAscent(ctx)
 	for _, at in times.Cuts do
 		waitUntil(at)
 		if CombatState.IsAlive(target) then
-			c.Hit(
-				character,
-				target,
-				{ damage = 2, stun = 1.5, attackType = "Melee", unblockable = true, noShake = true }
-			)
+			-- (They flail in the air on the path: no flinch, no shake.)
+			c.Hit(character, target, {
+				damage = 2,
+				stun = 1.5,
+				attackType = "Melee",
+				unblockable = true,
+				noShake = true,
+				noReaction = true,
+			})
 		end
 	end
 	waitUntil(times.Land)
 	stopThem()
-	local floor = Vector3.new(plan.start.X, plan.floorY, plan.start.Z)
 	if CombatState.IsAlive(target) then
 		c.Hit(character, target, {
 			damage = 4,
@@ -1931,11 +1934,10 @@ local function blackAscent(ctx)
 			unblockable = true,
 			heavy = true,
 			ragdoll = 1.2,
+			noShake = true,
 			velocity = UP * -12 + plan.forward * 8,
 		})
 	end
-	fx(ctx, "BlackAscent", "Impact", { position = floor })
-	c.ShakeArea(floor, 40, 0.35)
 	waitUntil(times.Length)
 	stopHim()
 	CombatState.SetCasting(character, 0.25)

@@ -15,10 +15,10 @@ local TweenService = game:GetService("TweenService")
 
 local BlackMoon = require(ReplicatedStorage:WaitForChild("Shared").BlackMoon)
 local MeteorVortex = require(ReplicatedStorage:WaitForChild("Shared").MeteorVortex)
-local AscentPlan = require(ReplicatedStorage:WaitForChild("Shared").BlackAscent)
 
 local CameraShake = require(script.Parent.Parent.CameraShake)
 local Cinematic = require(script.Parent.Parent.Cinematic)
+local Ascent = require(script.Ascent)
 local Comet = require(script.Comet)
 local PoseAnimator = require(script.Parent.Parent.PoseAnimator)
 local Reactions = require(script.Parent.Parent.Reactions)
@@ -5693,9 +5693,29 @@ function handlers.BlackComet(data, character, root)
 	end
 end
 
--- Black Ascent: a rising cut; caught, both go on the shared paths: he
--- springs up after them, cuts them from one side and then the other, and
--- cuts them back down into the ground.
+-- Black Ascent: a rising cut; caught, the cutscene is the Ascent module.
+local ascentContext: Ascent.Context = {
+	anims = ANIMS,
+	play = play,
+	launched = launchedFor,
+	wings = function(character: Model): Comet.Wings?
+		return awakenedVisuals[character]
+	end,
+	crescent = crescent,
+	cutLine = cutLine,
+	blackSmoke = blackSmoke,
+	redSparks = redSparks,
+	blackLightning = blackLightning,
+	glowBurst = glowBurst,
+	bloomPulse = bloomPulse,
+	heavyTrail = heavyTrail,
+	edgeGlow = edgeGlow,
+	swordAura = swordAura,
+	trailEmitter = trailEmitter,
+	impactFrame = impactFrame,
+	lingerSmoke = lingerSmoke,
+}
+
 function handlers.BlackAscent(data, character, root)
 	local phase = data.phase
 	if phase == "Cut" then
@@ -5716,84 +5736,7 @@ function handlers.BlackAscent(data, character, root)
 	elseif phase == "Whiff" then
 		blackSmoke(bladePoint(character, 2) or root.Position, 4, 1.5, 3)
 	elseif phase == "Launch" then
-		local target: Model? = data.target
-		local targetRoot = target and U.getRoot(target)
-		local plan = AscentPlan.Plan(data.origin, data.start, data.floorY)
-		local times = AscentPlan.Times
-		local started = os.clock()
-		local mine = U.isLocal(character) or U.isLocal(target)
-		local bind = "CloverBlackAscent" .. tostring(started)
-		RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
-			local t = os.clock() - started
-			if t > times.Length then
-				pcall(function()
-					RunService:UnbindFromRenderStep(bind)
-				end)
-				return
-			end
-			if root.Parent then
-				root.CFrame = AscentPlan.Attacker(plan, t)
-			end
-			if targetRoot and targetRoot.Parent and t <= times.Land then
-				targetRoot.CFrame = AscentPlan.Victim(plan, t)
-			end
-		end)
-		glowBurst(plan.start + UP, 4, 0.3)
-		U.shockwave(plan.start, RED, 1, 8, 0.25)
-		blackSmoke(plan.start - UP * 2.5, 6, 3, 8)
-		U.bodyTrail(character, RED, times.Length)
-		local clips = { ANIMS.Slash1, ANIMS.Slash2 }
-		for i, at in times.Cuts do
-			task.delay(at - 0.08, function()
-				play(character, clips[i])
-				heavyTrail(character, 0.2)
-			end)
-			task.delay(at, function()
-				local victim = AscentPlan.Victim(plan, at).Position
-				local side = plan.right * (if i % 2 == 1 then -1 else 1)
-				local tilt = UP * (if i % 2 == 1 then 2 else -2)
-				cutLine(victim - side * 4 + tilt, victim + side * 4 - tilt, 0.3, 0.2)
-				glowBurst(victim, 3, 0.2)
-				redSparks(victim, 12, 0.5, side)
-				U.impactRing(victim, side, RED, 1, 5, 0.2)
-				if mine then
-					CameraShake.Add(0.1)
-				end
-			end)
-		end
-		task.delay(times.Spike - 0.1, function()
-			play(character, ANIMS.Chop)
-			heavyTrail(character, 0.3)
-			crescent(character, {
-				center = CFrame.new(0, 0.6, 0),
-				radius = 6,
-				from = 110,
-				to = -60,
-				tilt = 90,
-				width = 2,
-				sweep = 0.1,
-				fade = 0.3,
-				glow = 0.7,
-			})
-		end)
-		if mine then
-			-- From the side, rising with them and following them back down.
-			Cinematic.Camera(function(t)
-				local victim = AscentPlan.Victim(plan, math.min(t, times.Land)).Position
-				local eye = victim + plan.right * 14 - plan.forward * 4 + UP * 1.5
-				return CFrame.lookAt(eye, victim), 72
-			end, times.Length + 0.1)
-		end
-	elseif phase == "Impact" then
-		local position: Vector3 = data.position
-		U.shockwave(position, RED, 2, 14, 0.35)
-		U.groundCracks(position, 7, 6, RED, 1)
-		U.groundRocks(position, 7, 5, 1.2)
-		U.debris(position, 8, 30, 0.6)
-		blackSmoke(position + UP * 0.5, 10, 4, 8)
-		if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 50 then
-			CameraShake.Add(0.25)
-		end
+		Ascent.Play(ascentContext, data, character, root)
 	end
 end
 

@@ -1,12 +1,18 @@
 --[[
 	BlackAscent
 	Black Ascent (Black Form, Demon-Slasher Katana 1): a rising cut launches
-	them; he springs up after them, cuts them twice in the air, from one
-	side then the other, and cuts them back down into the ground.
+	them; he springs up after them, glides across in front of them cutting
+	them from right to left, sweeps back up the other way in a rising cut,
+	comes over the top of them and cuts them straight back down into the
+	ground, landing beside the crater.
 
 	Shared so the server (which holds them both on the paths) and every
-	client (which draws them on it smoothly) agree on where they are.
-	t = 0 is the launching cut landing.
+	client (which draws them smoothly) agree on where they are. t = 0 is the
+	launching cut landing. His path is a smooth curve through keyframes
+	(position, facing and lean all ease through each one: nothing jumps);
+	the cuts knock them about with eased shoves, never a jump. In step with
+	the Ascent clip (tools/anim/asta_anims.py: ASCENT_CUTS, ASCENT_SPIKE,
+	ASCENT_LAND).
 ]]
 
 local BlackAscent = {}
@@ -14,14 +20,15 @@ local BlackAscent = {}
 local UP = Vector3.yAxis
 
 BlackAscent.Times = {
-	Rise = 0.3, -- they're carried up
-	Cuts = { 0.38, 0.56 }, -- the two cuts in the air
-	Spike = 0.78, -- the cut back down
+	Rise = 0.32, -- they're carried up
+	Cuts = { 0.4, 0.58 }, -- the two cuts in the air
+	Spike = 0.8, -- the cut back down
 	Land = 0.95, -- they hit the ground
-	Length = 1.1, -- he's landed
+	Length = 1.3, -- he's landed and risen
 }
 BlackAscent.Height = 11
 
+export type Key = { t: number, p: Vector3, yaw: number, pitch: number }
 export type Plan = {
 	origin: CFrame,
 	start: Vector3,
@@ -29,85 +36,137 @@ export type Plan = {
 	right: Vector3,
 	floorY: number,
 	top: Vector3,
+	keys: { Key }, -- his path
 }
 
-local function smooth(a: number): number
-	a = math.clamp(a, 0, 1)
-	return a * a * (3 - 2 * a)
+local function flat(v: Vector3, fallback: Vector3): Vector3
+	local f = Vector3.new(v.X, 0, v.Z)
+	return if f.Magnitude > 1e-3 then f.Unit else fallback
+end
+
+-- A shove from a cut: out to `amount` fast, easing back (u e^(1-u)).
+local function knock(t: number, at: number, time: number): number
+	if t <= at then
+		return 0
+	end
+	local u = (t - at) / time
+	return u * math.exp(1 - u)
 end
 
 function BlackAscent.Plan(origin: CFrame, victimPosition: Vector3, floorY: number): Plan
 	local toward = victimPosition - origin.Position
-	local flat = Vector3.new(toward.X, 0, toward.Z)
-	if flat.Magnitude < 1e-3 then
-		flat = Vector3.new(origin.LookVector.X, 0, origin.LookVector.Z)
-	end
-	local forward = if flat.Magnitude > 1e-3 then flat.Unit else Vector3.new(0, 0, -1)
+	local forward = flat(toward, flat(origin.LookVector, Vector3.new(0, 0, -1)))
+	local right = forward:Cross(UP)
 	local start = Vector3.new(victimPosition.X, floorY + 3, victimPosition.Z)
+	local top = start + UP * BlackAscent.Height
+	local times = BlackAscent.Times
+	local cut1, cut2 = times.Cuts[1], times.Cuts[2]
+	local landed = Vector3.new(start.X, floorY + 3, start.Z) - forward * 3
+	local from = origin.Position
+	-- Yaw: degrees he's turned from facing them square on (positive to his
+	-- right); pitch: how far he leans forward.
+	local keys: { Key } = {
+		{ t = 0, p = from, yaw = 0, pitch = 0 },
+		{ t = 0.1, p = from + forward * 0.5 + UP * 1.2, yaw = -6, pitch = -8 },
+		{ t = cut1 - 0.07, p = top - forward * 2.8 + right * 3.4 - UP * 0.3, yaw = -40, pitch = -6 },
+		{ t = cut1, p = top - forward * 3.1 + UP * 0.1, yaw = -6, pitch = -10 },
+		{ t = cut1 + 0.08, p = top - forward * 2.6 - right * 3.3 - UP * 0.7, yaw = 36, pitch = -4 },
+		{ t = cut2, p = top - forward * 2.7 - right * 0.9 + UP * 1.1, yaw = 22, pitch = -8 },
+		{ t = cut2 + 0.08, p = top - forward * 2.1 + right * 1.6 + UP * 3.2, yaw = -12, pitch = -14 },
+		{ t = times.Spike - 0.05, p = top - forward * 1.1 + UP * 4.3, yaw = 0, pitch = -38 },
+		{ t = times.Spike, p = top - forward * 1.4 + UP * 2.9, yaw = 0, pitch = -62 },
+		{ t = times.Land + 0.07, p = landed + UP * 0.4, yaw = 0, pitch = -12 },
+		{ t = times.Land + 0.15, p = landed, yaw = 0, pitch = 0 },
+		{ t = times.Length, p = landed, yaw = 0, pitch = 0 },
+	}
 	return {
 		origin = origin,
 		start = start,
 		forward = forward,
-		right = forward:Cross(UP),
+		right = right,
 		floorY = floorY,
-		top = start + UP * BlackAscent.Height,
+		top = top,
+		keys = keys,
 	}
+end
+
+-- Catmull-Rom through the keys (uneven spacing), standing still at both
+-- ends: smooth through every one.
+local function slope(keys: { Key }, i: number, get: (Key) -> any): any
+	if i == 1 or i == #keys then
+		return get(keys[i]) * 0
+	end
+	local a, b = keys[i - 1], keys[i + 1]
+	return (get(b) - get(a)) / (b.t - a.t)
+end
+
+local function through(keys: { Key }, t: number, get: (Key) -> any): any
+	if t <= keys[1].t then
+		return get(keys[1])
+	end
+	for i = 1, #keys - 1 do
+		local a, b = keys[i], keys[i + 1]
+		if t <= b.t then
+			local span = b.t - a.t
+			local s = (t - a.t) / span
+			local s2, s3 = s * s, s * s * s
+			return get(a) * (2 * s3 - 3 * s2 + 1)
+				+ slope(keys, i, get) * (span * (s3 - 2 * s2 + s))
+				+ get(b) * (-2 * s3 + 3 * s2)
+				+ slope(keys, i + 1, get) * (span * (s3 - s2))
+		end
+	end
+	return get(keys[#keys])
+end
+
+local function position(key: Key): Vector3
+	return key.p
+end
+local function yaw(key: Key): number
+	return key.yaw
+end
+local function pitch(key: Key): number
+	return key.pitch
+end
+
+function BlackAscent.Attacker(plan: Plan, t: number): CFrame
+	local p: Vector3 = through(plan.keys, t, position)
+	if t > BlackAscent.Times.Land then
+		-- Landed: on his feet, not an inch lower.
+		p = Vector3.new(p.X, math.max(p.Y, plan.floorY + 3), p.Z)
+	end
+	local turn = math.rad(through(plan.keys, t, yaw) :: number)
+	local lean = math.rad(through(plan.keys, t, pitch) :: number)
+	local facing = plan.forward * math.cos(turn) + plan.right * math.sin(turn)
+	return CFrame.lookAt(p, p + facing) * CFrame.Angles(lean, 0, 0)
 end
 
 function BlackAscent.Victim(plan: Plan, t: number): CFrame
 	local times = BlackAscent.Times
+	local cut1, cut2 = times.Cuts[1], times.Cuts[2]
 	local toward = CFrame.lookAt(Vector3.zero, -plan.forward).Rotation
-	if t <= times.Rise then
-		local a = 1 - (1 - t / times.Rise) ^ 2
-		return CFrame.new(plan.start:Lerp(plan.top, a)) * toward * CFrame.Angles(math.rad(-50) * a, 0, 0)
-	end
+	-- Carried up off the cut, slowing to the top, drifting on up a little.
+	local rise = 1 - (1 - math.clamp(t / times.Rise, 0, 1)) ^ 2.5
+	local p = plan.start:Lerp(plan.top, rise) + UP * 0.7 * math.max(t - times.Rise, 0)
+	-- Knocked away by each cut: off to their side, then up and the other way.
+	local first = knock(t, cut1, 0.09)
+	local second = knock(t, cut2, 0.1)
+	p += -plan.right * 1.1 * first + UP * 0.3 * first + plan.right * 0.9 * second + UP * 0.9 * second
+	local tumble = -50 * rise
+		- 18 * math.min(math.max(t - cut1, 0) / 0.1, 1)
+		- 22 * math.min(math.max(t - cut2, 0) / 0.12, 1)
+	local roll = 14 * first - 18 * second
 	if t <= times.Spike then
-		-- Knocked one way, then the other, by the cuts.
-		local offset = Vector3.zero
-		for i, at in times.Cuts do
-			if t >= at then
-				local side = if i % 2 == 1 then -1 else 1
-				offset += plan.right * side * 0.8 * math.exp(-(t - at) * 12)
-			end
-		end
-		return CFrame.new(plan.top + offset) * toward * CFrame.Angles(math.rad(-50), 0, 0)
+		return CFrame.new(p) * toward * CFrame.Angles(math.rad(tumble), 0, math.rad(roll))
 	end
+	-- Cut down: driven straight into the ground (fast from the cut, faster
+	-- still), turning face down.
+	local held = BlackAscent.Victim(plan, times.Spike)
 	local a = math.clamp((t - times.Spike) / (times.Land - times.Spike), 0, 1)
-	local floor = Vector3.new(plan.start.X, plan.floorY + 1.5, plan.start.Z)
-	return CFrame.new(plan.top:Lerp(floor, a * a)) * toward * CFrame.Angles(math.rad(-50 - 40 * a), 0, 0)
-end
-
-function BlackAscent.Attacker(plan: Plan, t: number): CFrame
-	local times = BlackAscent.Times
-	local look = CFrame.lookAt(Vector3.zero, plan.forward).Rotation
-	local front = plan.top - plan.forward * 3 -- in front of them, up there
-	if t < 0.08 then
-		return plan.origin
-	end
-	if t < times.Cuts[1] - 0.05 then
-		-- Springing up after them.
-		local a = smooth((t - 0.08) / (times.Cuts[1] - 0.13))
-		local from = plan.origin.Position
-		return CFrame.new(from:Lerp(front, a) + UP * math.sin(a * math.pi) * 1.5) * look
-	end
-	if t < times.Cuts[2] - 0.05 then
-		-- From his right side...
-		local at = front + plan.right * 2.5
-		return CFrame.lookAt(at, plan.top)
-	end
-	if t < times.Spike - 0.08 then
-		-- ...then his left.
-		local at = front - plan.right * 2.5
-		return CFrame.lookAt(at, plan.top)
-	end
-	local above = plan.top + UP * 3.5 - plan.forward * 1.5
-	local landed = Vector3.new(plan.start.X, plan.floorY + 3, plan.start.Z) - plan.forward * 3
-	if t < times.Spike then
-		return CFrame.new(above) * look * CFrame.Angles(math.rad(-30), 0, 0)
-	end
-	-- Down with them, landing just short of where they hit.
-	local a = math.clamp((t - times.Spike) / (times.Land - times.Spike), 0, 1)
-	return CFrame.new(above:Lerp(landed, a * a)) * look
+	local floor = Vector3.new(plan.start.X, plan.floorY + 1.2, plan.start.Z)
+	local down = held.Position:Lerp(floor, 0.45 * a + 0.55 * a * a)
+	local face = CFrame.new(down) * toward * CFrame.Angles(math.rad(-95), 0, 0)
+	return held.Rotation:Lerp(face.Rotation, math.min(a * 1.4, 1)) + down
 end
 
 return BlackAscent

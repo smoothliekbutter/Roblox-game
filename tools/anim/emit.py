@@ -126,6 +126,11 @@ SPEC = {
                                    SINE_IO, SINE_OUT, SINE_IO, QUAD_IN, QUART_OUT, SINE_IO],
                   fadeIn=0.05, fadeOut=0.3, delays={'Head': 0.02, 'Sword': 0.04},
                   doc="Black Comet: flying low on his wings, hammering them into the ground three times, then landing skidding and heaving them away."),
+    # Each cut accelerates into its strike and slows through the follow.
+    'Ascent': dict(keys=ASCENT, ease=[None, SINE_OUT, QUART_OUT, SINE_IO, QUAD_IN, QUART_OUT, SINE_IO, QUAD_IN,
+                                     QUART_OUT, SINE_IO, QUAD_IN, QUART_OUT, SINE_IO, QUART_OUT, SINE_IO],
+                   fadeIn=0.04, fadeOut=0.3, delays={'Head': 0.02, 'Sword': 0.02},
+                   doc="Black Ascent: springs up after them, a cut across, a rising cut, over the top and one cut down, then lands."),
     'ZettenStance': dict(keys=ZETTEN_STANCE, ease=[None, SINE_OUT, LINEAR], fadeIn=0.05, fadeOut=0.05,
                          doc="Zetten: still in an iai stance, the katana low at the hip, head bowed."),
     'ZettenCut': dict(keys=ZETTEN_CUT, ease=[None, QUAD_IN, QUART_OUT, LINEAR], fadeIn=0.01, fadeOut=0.25,

@@ -64,12 +64,18 @@
           <string name="Source"><![CDATA[--[[
 	BlackAscent
 	Black Ascent (Black Form, Demon-Slasher Katana 1): a rising cut launches
-	them; he springs up after them, cuts them twice in the air, from one
-	side then the other, and cuts them back down into the ground.
+	them; he springs up after them, glides across in front of them cutting
+	them from right to left, sweeps back up the other way in a rising cut,
+	comes over the top of them and cuts them straight back down into the
+	ground, landing beside the crater.
 
 	Shared so the server (which holds them both on the paths) and every
-	client (which draws them on it smoothly) agree on where they are.
-	t = 0 is the launching cut landing.
+	client (which draws them smoothly) agree on where they are. t = 0 is the
+	launching cut landing. His path is a smooth curve through keyframes
+	(position, facing and lean all ease through each one: nothing jumps);
+	the cuts knock them about with eased shoves, never a jump. In step with
+	the Ascent clip (tools/anim/asta_anims.py: ASCENT_CUTS, ASCENT_SPIKE,
+	ASCENT_LAND).
 ]]
 
 local BlackAscent = {}
@@ -77,14 +83,15 @@ local BlackAscent = {}
 local UP = Vector3.yAxis
 
 BlackAscent.Times = {
-	Rise = 0.3, -- they're carried up
-	Cuts = { 0.38, 0.56 }, -- the two cuts in the air
-	Spike = 0.78, -- the cut back down
+	Rise = 0.32, -- they're carried up
+	Cuts = { 0.4, 0.58 }, -- the two cuts in the air
+	Spike = 0.8, -- the cut back down
 	Land = 0.95, -- they hit the ground
-	Length = 1.1, -- he's landed
+	Length = 1.3, -- he's landed and risen
 }
 BlackAscent.Height = 11
 
+export type Key = { t: number, p: Vector3, yaw: number, pitch: number }
 export type Plan = {
 	origin: CFrame,
 	start: Vector3,
@@ -92,85 +99,137 @@ export type Plan = {
 	right: Vector3,
 	floorY: number,
 	top: Vector3,
+	keys: { Key }, -- his path
 }
 
-local function smooth(a: number): number
-	a = math.clamp(a, 0, 1)
-	return a * a * (3 - 2 * a)
+local function flat(v: Vector3, fallback: Vector3): Vector3
+	local f = Vector3.new(v.X, 0, v.Z)
+	return if f.Magnitude > 1e-3 then f.Unit else fallback
+end
+
+-- A shove from a cut: out to `amount` fast, easing back (u e^(1-u)).
+local function knock(t: number, at: number, time: number): number
+	if t <= at then
+		return 0
+	end
+	local u = (t - at) / time
+	return u * math.exp(1 - u)
 end
 
 function BlackAscent.Plan(origin: CFrame, victimPosition: Vector3, floorY: number): Plan
 	local toward = victimPosition - origin.Position
-	local flat = Vector3.new(toward.X, 0, toward.Z)
-	if flat.Magnitude < 1e-3 then
-		flat = Vector3.new(origin.LookVector.X, 0, origin.LookVector.Z)
-	end
-	local forward = if flat.Magnitude > 1e-3 then flat.Unit else Vector3.new(0, 0, -1)
+	local forward = flat(toward, flat(origin.LookVector, Vector3.new(0, 0, -1)))
+	local right = forward:Cross(UP)
 	local start = Vector3.new(victimPosition.X, floorY + 3, victimPosition.Z)
+	local top = start + UP * BlackAscent.Height
+	local times = BlackAscent.Times
+	local cut1, cut2 = times.Cuts[1], times.Cuts[2]
+	local landed = Vector3.new(start.X, floorY + 3, start.Z) - forward * 3
+	local from = origin.Position
+	-- Yaw: degrees he's turned from facing them square on (positive to his
+	-- right); pitch: how far he leans forward.
+	local keys: { Key } = {
+		{ t = 0, p = from, yaw = 0, pitch = 0 },
+		{ t = 0.1, p = from + forward * 0.5 + UP * 1.2, yaw = -6, pitch = -8 },
+		{ t = cut1 - 0.07, p = top - forward * 2.8 + right * 3.4 - UP * 0.3, yaw = -40, pitch = -6 },
+		{ t = cut1, p = top - forward * 3.1 + UP * 0.1, yaw = -6, pitch = -10 },
+		{ t = cut1 + 0.08, p = top - forward * 2.6 - right * 3.3 - UP * 0.7, yaw = 36, pitch = -4 },
+		{ t = cut2, p = top - forward * 2.7 - right * 0.9 + UP * 1.1, yaw = 22, pitch = -8 },
+		{ t = cut2 + 0.08, p = top - forward * 2.1 + right * 1.6 + UP * 3.2, yaw = -12, pitch = -14 },
+		{ t = times.Spike - 0.05, p = top - forward * 1.1 + UP * 4.3, yaw = 0, pitch = -38 },
+		{ t = times.Spike, p = top - forward * 1.4 + UP * 2.9, yaw = 0, pitch = -62 },
+		{ t = times.Land + 0.07, p = landed + UP * 0.4, yaw = 0, pitch = -12 },
+		{ t = times.Land + 0.15, p = landed, yaw = 0, pitch = 0 },
+		{ t = times.Length, p = landed, yaw = 0, pitch = 0 },
+	}
 	return {
 		origin = origin,
 		start = start,
 		forward = forward,
-		right = forward:Cross(UP),
+		right = right,
 		floorY = floorY,
-		top = start + UP * BlackAscent.Height,
+		top = top,
+		keys = keys,
 	}
+end
+
+-- Catmull-Rom through the keys (uneven spacing), standing still at both
+-- ends: smooth through every one.
+local function slope(keys: { Key }, i: number, get: (Key) -> any): any
+	if i == 1 or i == #keys then
+		return get(keys[i]) * 0
+	end
+	local a, b = keys[i - 1], keys[i + 1]
+	return (get(b) - get(a)) / (b.t - a.t)
+end
+
+local function through(keys: { Key }, t: number, get: (Key) -> any): any
+	if t <= keys[1].t then
+		return get(keys[1])
+	end
+	for i = 1, #keys - 1 do
+		local a, b = keys[i], keys[i + 1]
+		if t <= b.t then
+			local span = b.t - a.t
+			local s = (t - a.t) / span
+			local s2, s3 = s * s, s * s * s
+			return get(a) * (2 * s3 - 3 * s2 + 1)
+				+ slope(keys, i, get) * (span * (s3 - 2 * s2 + s))
+				+ get(b) * (-2 * s3 + 3 * s2)
+				+ slope(keys, i + 1, get) * (span * (s3 - s2))
+		end
+	end
+	return get(keys[#keys])
+end
+
+local function position(key: Key): Vector3
+	return key.p
+end
+local function yaw(key: Key): number
+	return key.yaw
+end
+local function pitch(key: Key): number
+	return key.pitch
+end
+
+function BlackAscent.Attacker(plan: Plan, t: number): CFrame
+	local p: Vector3 = through(plan.keys, t, position)
+	if t > BlackAscent.Times.Land then
+		-- Landed: on his feet, not an inch lower.
+		p = Vector3.new(p.X, math.max(p.Y, plan.floorY + 3), p.Z)
+	end
+	local turn = math.rad(through(plan.keys, t, yaw) :: number)
+	local lean = math.rad(through(plan.keys, t, pitch) :: number)
+	local facing = plan.forward * math.cos(turn) + plan.right * math.sin(turn)
+	return CFrame.lookAt(p, p + facing) * CFrame.Angles(lean, 0, 0)
 end
 
 function BlackAscent.Victim(plan: Plan, t: number): CFrame
 	local times = BlackAscent.Times
+	local cut1, cut2 = times.Cuts[1], times.Cuts[2]
 	local toward = CFrame.lookAt(Vector3.zero, -plan.forward).Rotation
-	if t <= times.Rise then
-		local a = 1 - (1 - t / times.Rise) ^ 2
-		return CFrame.new(plan.start:Lerp(plan.top, a)) * toward * CFrame.Angles(math.rad(-50) * a, 0, 0)
-	end
+	-- Carried up off the cut, slowing to the top, drifting on up a little.
+	local rise = 1 - (1 - math.clamp(t / times.Rise, 0, 1)) ^ 2.5
+	local p = plan.start:Lerp(plan.top, rise) + UP * 0.7 * math.max(t - times.Rise, 0)
+	-- Knocked away by each cut: off to their side, then up and the other way.
+	local first = knock(t, cut1, 0.09)
+	local second = knock(t, cut2, 0.1)
+	p += -plan.right * 1.1 * first + UP * 0.3 * first + plan.right * 0.9 * second + UP * 0.9 * second
+	local tumble = -50 * rise
+		- 18 * math.min(math.max(t - cut1, 0) / 0.1, 1)
+		- 22 * math.min(math.max(t - cut2, 0) / 0.12, 1)
+	local roll = 14 * first - 18 * second
 	if t <= times.Spike then
-		-- Knocked one way, then the other, by the cuts.
-		local offset = Vector3.zero
-		for i, at in times.Cuts do
-			if t >= at then
-				local side = if i % 2 == 1 then -1 else 1
-				offset += plan.right * side * 0.8 * math.exp(-(t - at) * 12)
-			end
-		end
-		return CFrame.new(plan.top + offset) * toward * CFrame.Angles(math.rad(-50), 0, 0)
+		return CFrame.new(p) * toward * CFrame.Angles(math.rad(tumble), 0, math.rad(roll))
 	end
+	-- Cut down: driven straight into the ground (fast from the cut, faster
+	-- still), turning face down.
+	local held = BlackAscent.Victim(plan, times.Spike)
 	local a = math.clamp((t - times.Spike) / (times.Land - times.Spike), 0, 1)
-	local floor = Vector3.new(plan.start.X, plan.floorY + 1.5, plan.start.Z)
-	return CFrame.new(plan.top:Lerp(floor, a * a)) * toward * CFrame.Angles(math.rad(-50 - 40 * a), 0, 0)
-end
-
-function BlackAscent.Attacker(plan: Plan, t: number): CFrame
-	local times = BlackAscent.Times
-	local look = CFrame.lookAt(Vector3.zero, plan.forward).Rotation
-	local front = plan.top - plan.forward * 3 -- in front of them, up there
-	if t < 0.08 then
-		return plan.origin
-	end
-	if t < times.Cuts[1] - 0.05 then
-		-- Springing up after them.
-		local a = smooth((t - 0.08) / (times.Cuts[1] - 0.13))
-		local from = plan.origin.Position
-		return CFrame.new(from:Lerp(front, a) + UP * math.sin(a * math.pi) * 1.5) * look
-	end
-	if t < times.Cuts[2] - 0.05 then
-		-- From his right side...
-		local at = front + plan.right * 2.5
-		return CFrame.lookAt(at, plan.top)
-	end
-	if t < times.Spike - 0.08 then
-		-- ...then his left.
-		local at = front - plan.right * 2.5
-		return CFrame.lookAt(at, plan.top)
-	end
-	local above = plan.top + UP * 3.5 - plan.forward * 1.5
-	local landed = Vector3.new(plan.start.X, plan.floorY + 3, plan.start.Z) - plan.forward * 3
-	if t < times.Spike then
-		return CFrame.new(above) * look * CFrame.Angles(math.rad(-30), 0, 0)
-	end
-	-- Down with them, landing just short of where they hit.
-	local a = math.clamp((t - times.Spike) / (times.Land - times.Spike), 0, 1)
-	return CFrame.new(above:Lerp(landed, a * a)) * look
+	local floor = Vector3.new(plan.start.X, plan.floorY + 1.2, plan.start.Z)
+	local down = held.Position:Lerp(floor, 0.45 * a + 0.55 * a * a)
+	local face = CFrame.new(down) * toward * CFrame.Angles(math.rad(-95), 0, 0)
+	return held.Rotation:Lerp(face.Rotation, math.min(a * 1.4, 1)) + down
 end
 
 return BlackAscent
@@ -6005,16 +6064,19 @@ local function blackAscent(ctx)
 	for _, at in times.Cuts do
 		waitUntil(at)
 		if CombatState.IsAlive(target) then
-			c.Hit(
-				character,
-				target,
-				{ damage = 2, stun = 1.5, attackType = "Melee", unblockable = true, noShake = true }
-			)
+			-- (They flail in the air on the path: no flinch, no shake.)
+			c.Hit(character, target, {
+				damage = 2,
+				stun = 1.5,
+				attackType = "Melee",
+				unblockable = true,
+				noShake = true,
+				noReaction = true,
+			})
 		end
 	end
 	waitUntil(times.Land)
 	stopThem()
-	local floor = Vector3.new(plan.start.X, plan.floorY, plan.start.Z)
 	if CombatState.IsAlive(target) then
 		c.Hit(character, target, {
 			damage = 4,
@@ -6023,11 +6085,10 @@ local function blackAscent(ctx)
 			unblockable = true,
 			heavy = true,
 			ragdoll = 1.2,
+			noShake = true,
 			velocity = UP * -12 + plan.forward * 8,
 		})
 	end
-	fx(ctx, "BlackAscent", "Impact", { position = floor })
-	c.ShakeArea(floor, 40, 0.35)
 	waitUntil(times.Length)
 	stopHim()
 	CombatState.SetCasting(character, 0.25)
@@ -9489,10 +9550,10 @@ local TweenService = game:GetService("TweenService")
 
 local BlackMoon = require(ReplicatedStorage:WaitForChild("Shared").BlackMoon)
 local MeteorVortex = require(ReplicatedStorage:WaitForChild("Shared").MeteorVortex)
-local AscentPlan = require(ReplicatedStorage:WaitForChild("Shared").BlackAscent)
 
 local CameraShake = require(script.Parent.Parent.CameraShake)
 local Cinematic = require(script.Parent.Parent.Cinematic)
+local Ascent = require(script.Ascent)
 local Comet = require(script.Comet)
 local PoseAnimator = require(script.Parent.Parent.PoseAnimator)
 local Reactions = require(script.Parent.Parent.Reactions)
@@ -15167,9 +15228,29 @@ function handlers.BlackComet(data, character, root)
 	end
 end
 
--- Black Ascent: a rising cut; caught, both go on the shared paths: he
--- springs up after them, cuts them from one side and then the other, and
--- cuts them back down into the ground.
+-- Black Ascent: a rising cut; caught, the cutscene is the Ascent module.
+local ascentContext: Ascent.Context = {
+	anims = ANIMS,
+	play = play,
+	launched = launchedFor,
+	wings = function(character: Model): Comet.Wings?
+		return awakenedVisuals[character]
+	end,
+	crescent = crescent,
+	cutLine = cutLine,
+	blackSmoke = blackSmoke,
+	redSparks = redSparks,
+	blackLightning = blackLightning,
+	glowBurst = glowBurst,
+	bloomPulse = bloomPulse,
+	heavyTrail = heavyTrail,
+	edgeGlow = edgeGlow,
+	swordAura = swordAura,
+	trailEmitter = trailEmitter,
+	impactFrame = impactFrame,
+	lingerSmoke = lingerSmoke,
+}
+
 function handlers.BlackAscent(data, character, root)
 	local phase = data.phase
 	if phase == "Cut" then
@@ -15190,84 +15271,7 @@ function handlers.BlackAscent(data, character, root)
 	elseif phase == "Whiff" then
 		blackSmoke(bladePoint(character, 2) or root.Position, 4, 1.5, 3)
 	elseif phase == "Launch" then
-		local target: Model? = data.target
-		local targetRoot = target and U.getRoot(target)
-		local plan = AscentPlan.Plan(data.origin, data.start, data.floorY)
-		local times = AscentPlan.Times
-		local started = os.clock()
-		local mine = U.isLocal(character) or U.isLocal(target)
-		local bind = "CloverBlackAscent" .. tostring(started)
-		RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
-			local t = os.clock() - started
-			if t > times.Length then
-				pcall(function()
-					RunService:UnbindFromRenderStep(bind)
-				end)
-				return
-			end
-			if root.Parent then
-				root.CFrame = AscentPlan.Attacker(plan, t)
-			end
-			if targetRoot and targetRoot.Parent and t <= times.Land then
-				targetRoot.CFrame = AscentPlan.Victim(plan, t)
-			end
-		end)
-		glowBurst(plan.start + UP, 4, 0.3)
-		U.shockwave(plan.start, RED, 1, 8, 0.25)
-		blackSmoke(plan.start - UP * 2.5, 6, 3, 8)
-		U.bodyTrail(character, RED, times.Length)
-		local clips = { ANIMS.Slash1, ANIMS.Slash2 }
-		for i, at in times.Cuts do
-			task.delay(at - 0.08, function()
-				play(character, clips[i])
-				heavyTrail(character, 0.2)
-			end)
-			task.delay(at, function()
-				local victim = AscentPlan.Victim(plan, at).Position
-				local side = plan.right * (if i % 2 == 1 then -1 else 1)
-				local tilt = UP * (if i % 2 == 1 then 2 else -2)
-				cutLine(victim - side * 4 + tilt, victim + side * 4 - tilt, 0.3, 0.2)
-				glowBurst(victim, 3, 0.2)
-				redSparks(victim, 12, 0.5, side)
-				U.impactRing(victim, side, RED, 1, 5, 0.2)
-				if mine then
-					CameraShake.Add(0.1)
-				end
-			end)
-		end
-		task.delay(times.Spike - 0.1, function()
-			play(character, ANIMS.Chop)
-			heavyTrail(character, 0.3)
-			crescent(character, {
-				center = CFrame.new(0, 0.6, 0),
-				radius = 6,
-				from = 110,
-				to = -60,
-				tilt = 90,
-				width = 2,
-				sweep = 0.1,
-				fade = 0.3,
-				glow = 0.7,
-			})
-		end)
-		if mine then
-			-- From the side, rising with them and following them back down.
-			Cinematic.Camera(function(t)
-				local victim = AscentPlan.Victim(plan, math.min(t, times.Land)).Position
-				local eye = victim + plan.right * 14 - plan.forward * 4 + UP * 1.5
-				return CFrame.lookAt(eye, victim), 72
-			end, times.Length + 0.1)
-		end
-	elseif phase == "Impact" then
-		local position: Vector3 = data.position
-		U.shockwave(position, RED, 2, 14, 0.35)
-		U.groundCracks(position, 7, 6, RED, 1)
-		U.groundRocks(position, 7, 5, 1.2)
-		U.debris(position, 8, 30, 0.6)
-		blackSmoke(position + UP * 0.5, 10, 4, 8)
-		if (workspace.CurrentCamera.CFrame.Position - position).Magnitude < 50 then
-			CameraShake.Add(0.25)
-		end
+		Ascent.Play(ascentContext, data, character, root)
 	end
 end
 
@@ -18908,6 +18912,223 @@ Animations.Comet = {
 	},
 }
 
+-- Black Ascent: springs up after them, a cut across, a rising cut, over the top and one cut down, then lands.
+Animations.Ascent = {
+	fadeIn = 0.04,
+	fadeOut = 0.3,
+	delays = { Head = 0.02, Sword = 0.02 },
+	keys = {
+		{
+			0,
+			{
+				Torso = rot(15, 15),
+				Head = rot(-20, -10),
+				RightArm = limb(175, 10),
+				Sword = aim(0.05, 1, 0.1),
+				LeftArm = limb(30, -20),
+				RightLeg = rot(0, -15),
+				LeftLeg = rot(0, -15),
+			},
+		},
+		{
+			0.08,
+			{
+				Torso = rot(10, 10),
+				Head = rot(-14, -8),
+				RightArm = limb(160, 10),
+				Sword = aim(0.05, 0.8, 0.6),
+				LeftArm = limb(32, -20),
+				RightLeg = rot(0, -10),
+				LeftLeg = rot(0, -10),
+			},
+			"Sine",
+			"Out",
+		},
+		{
+			0.18,
+			{
+				Torso = rot(-18, 10),
+				Head = rot(8, -6),
+				RightArm = limb(125, 25),
+				Sword = aim(0.25, 0.75, 0.6),
+				LeftArm = limb(45, -30),
+				RightLeg = rot(-62),
+				LeftLeg = rot(-18),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.32,
+			{
+				Torso = rot(-8, 42),
+				Head = rot(2, -32),
+				RightArm = limb(84, 80),
+				Sword = aim(-0.85, 0.08, 0.52),
+				LeftArm = limb(-15, 0, -35),
+				RightLeg = rot(-48),
+				LeftLeg = rot(-16),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.4,
+			{
+				Torso = rot(-12, -14),
+				Head = rot(6, 10),
+				RightArm = limb(86, -36),
+				Sword = aim(0.5, -0.06, -0.86),
+				LeftArm = limb(30, 0, -45),
+				RightLeg = rot(-48),
+				LeftLeg = rot(-16),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.47,
+			{
+				Torso = rot(-12, -62),
+				Head = rot(6, 45),
+				RightArm = limb(86, -88),
+				Sword = aim(0.95, -0.1, 0.25),
+				LeftArm = limb(40, 0, -40),
+				RightLeg = rot(-48),
+				LeftLeg = rot(-16),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.53,
+			{
+				Torso = rot(-24, -40),
+				Head = rot(14, 32),
+				RightArm = limb(30, -62, 8),
+				Sword = aim(0.62, -0.28, 0.73),
+				LeftArm = limb(70, -15),
+				RightLeg = rot(-30),
+				LeftLeg = rot(-40),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.58,
+			{
+				Torso = rot(-8, 16),
+				Head = rot(6, -12),
+				RightArm = limb(105, 20),
+				Sword = aim(-0.42, 0.5, -0.76),
+				LeftArm = limb(30, -25),
+				RightLeg = rot(-30),
+				LeftLeg = rot(-40),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.65,
+			{
+				Torso = rot(2, 30),
+				Head = rot(-2, -22),
+				RightArm = limb(148, 32),
+				Sword = aim(-0.55, 0.8, 0.1),
+				LeftArm = limb(25, -30),
+				RightLeg = rot(-40),
+				LeftLeg = rot(-10),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.74,
+			{
+				Torso = rot(16, 6),
+				Head = rot(-10, -4),
+				RightArm = limb(172, 10, 14),
+				Sword = aim(-0.05, 0.5, 0.86),
+				LeftArm = limb(168, -10, -14),
+				RightLeg = rot(-70),
+				LeftLeg = rot(-40),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			0.8,
+			{
+				Torso = rot(-12, 8),
+				Head = rot(12, -6),
+				RightArm = limb(100, 30, 6),
+				Sword = aim(-0.12, -0.28, -0.95),
+				LeftArm = limb(104, -16, -6),
+				RightLeg = rot(-30),
+				LeftLeg = rot(-10),
+			},
+			"Quad",
+			"In",
+		},
+		{
+			0.88,
+			{
+				Torso = rot(-28, 8),
+				Head = rot(16, -6),
+				RightArm = limb(56, 30, 6),
+				Sword = aim(-0.15, -0.25, -0.96),
+				LeftArm = limb(60, -16, -6),
+				RightLeg = rot(-10),
+				LeftLeg = rot(8),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			0.96,
+			{
+				Torso = rot(-20, 6),
+				Head = rot(14, -4),
+				RightArm = limb(70, 22, 6),
+				Sword = aim(-0.1, -0.35, -0.93),
+				LeftArm = limb(-10, 0, -40),
+				RightLeg = rot(-10),
+				LeftLeg = rot(14),
+			},
+			"Sine",
+			"InOut",
+		},
+		{
+			1.02,
+			{
+				Torso = body(-0.097, -28, 8),
+				Head = rot(14, -6),
+				RightArm = limb(60, 30),
+				Sword = aim(-0.3, -0.15, -0.94),
+				LeftArm = limb(30, 0, -30),
+				RightLeg = rot(-48),
+				LeftLeg = rot(38),
+			},
+			"Quart",
+			"Out",
+		},
+		{
+			1.3,
+			{
+				Torso = rot(-12, 22),
+				Head = rot(6, -16),
+				RightArm = limb(72, 50),
+				Sword = aim(-0.6, -0.2, -0.77),
+				LeftArm = limb(20, 0, -30),
+				RightLeg = rot(-28),
+				LeftLeg = rot(24),
+			},
+			"Sine",
+			"InOut",
+		},
+	},
+}
+
 -- Zetten: still in an iai stance, the katana low at the hip, head bowed.
 Animations.ZettenStance = {
 	fadeIn = 0.05,
@@ -21383,6 +21604,412 @@ return Animations
             </Item>
             <Item class="ModuleScript" referent="39">
               <Properties>
+                <string name="Name">Ascent</string>
+                <string name="Source"><![CDATA[--[[
+	Anti-Magic Knight (Asta): Black Ascent (Black Form, Demon-Slasher 1),
+	drawn. The paths are Shared/BlackAscent (the server holds them both on
+	them); this draws it, about 1.3 seconds:
+
+	  launch    the rising cut throws them up, a black streak trailing off
+	            them, the ground split red under them; he springs up after
+	            them on a beat of his wings.
+	  the cuts  he glides across in front of them cutting right to left,
+	            then sweeps back up the other way: each cut is a crescent of
+	            black and red, and the line it cut through them stays
+	            hanging in the air, the two making an X.
+	  the spike over the top of them, one cut straight down: the X bursts,
+	            they're driven into the ground like a stake, a crater, red
+	            cracks, rocks and a ring of dust, and he lands beside it.
+
+	The camera (for the two of them) circles them up in the air, then
+	cranes down after them as they fall. No shake: eased zooms.
+]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local AscentPlan = require(ReplicatedStorage:WaitForChild("Shared").BlackAscent)
+local CameraShake = require(script.Parent.Parent.Parent.CameraShake)
+local Cinematic = require(script.Parent.Parent.Parent.Cinematic)
+local PoseAnimator = require(script.Parent.Parent.Parent.PoseAnimator)
+local Soft = require(script.Parent.Parent.Parent.Soft)
+
+local U = Soft.U
+local rad = math.rad
+local UP = Vector3.yAxis
+local key = Soft.key
+
+local BLACK = Color3.fromRGB(8, 8, 10)
+local RED = Color3.fromRGB(200, 25, 35)
+local DARK_RED = Color3.fromRGB(110, 8, 18)
+local DUST = Color3.fromRGB(150, 138, 122)
+
+type Animation = PoseAnimator.Animation
+type Wings = { flap: (() -> ())?, setPose: ((string?) -> ())?, setPair: ((boolean) -> ())? }
+
+-- What the kit lends this module.
+export type Context = {
+	anims: { [string]: Animation },
+	play: (Model, Animation) -> (),
+	launched: (Model) -> Animation?, -- their thrown-in-the-air flail
+	wings: (Model) -> Wings?,
+	crescent: (Model, { [string]: any }) -> (),
+	cutLine: (Vector3, Vector3, number, number) -> (),
+	blackSmoke: (Vector3, number, number, number?) -> (),
+	redSparks: (Vector3, number, number?, Vector3?) -> (),
+	blackLightning: (Vector3, number, number, number?) -> (),
+	glowBurst: (Vector3, number, number?) -> (),
+	bloomPulse: (Vector3, number, number) -> (),
+	heavyTrail: (Model, number) -> (),
+	edgeGlow: (Model, number, number?) -> (),
+	swordAura: (Model, number, number) -> (),
+	trailEmitter: (BasePart, { [string]: any }, number) -> ParticleEmitter,
+	impactFrame: (number?) -> (),
+	lingerSmoke: (Vector3, number, number) -> (),
+}
+
+local Ascent = {}
+
+local function smooth(u: number): number
+	u = math.clamp(u, 0, 1)
+	return u * u * (3 - 2 * u)
+end
+
+-- A soft ring racing out across `normal`, smoke flowing round it.
+local function smokeRing(
+	center: Vector3,
+	normal: Vector3,
+	from: number,
+	to: number,
+	duration: number,
+	color: Color3,
+	width: number
+)
+	local ring = Soft.softRing({
+		color = ColorSequence.new(color),
+		width0 = width,
+		width1 = width,
+		transparency = NumberSequence.new(0.2),
+		texture = Soft.SMOKE,
+		speed = 3,
+		length = 3,
+		emission = if color == BLACK then 0 else 1,
+	})
+	local frame = CFrame.lookAt(center, center + normal) * CFrame.Angles(rad(90), 0, 0)
+	ring.set(frame, from)
+	Soft.every(duration, function(elapsed)
+		local a = 1 - (1 - elapsed / duration) ^ 3
+		ring.set(frame, from + (to - from) * a)
+		return true
+	end)
+	ring.fade(duration)
+end
+
+-- A streak trailing off someone for a moment: black smoke and a red trail.
+local function streak(ctx: Context, part: BasePart, duration: number)
+	ctx.trailEmitter(part, {
+		Texture = U.textures.Smoke,
+		Color = ColorSequence.new(BLACK, Color3.fromRGB(40, 10, 12)),
+		LightEmission = 0,
+		Size = NumberSequence.new({ key(0, 1.8), key(1, 3.6) }),
+		Transparency = NumberSequence.new({ key(0, 0.2), key(1, 1) }),
+		Lifetime = NumberRange.new(0.25, 0.4),
+		Rate = 120,
+		Speed = NumberRange.new(1, 3),
+		SpreadAngle = Vector2.new(40, 40),
+		Drag = 3,
+	}, duration)
+	local trail = Soft.trail(part, Vector3.new(0, 1, 0), Vector3.new(0, -1, 0), {
+		color = ColorSequence.new(RED, DARK_RED),
+		transparency = NumberSequence.new({ key(0, 0.25), key(1, 1) }),
+		lifetime = 0.2,
+		width = NumberSequence.new(1, 0.2),
+	})
+	task.delay(duration, Soft.endTrail, trail)
+end
+
+-- Draws it (t = 0 now). Returns stop(), which cuts it short.
+function Ascent.Play(ctx: Context, data, character: Model, root: BasePart): (() -> ())?
+	if typeof(data.origin) ~= "CFrame" or typeof(data.start) ~= "Vector3" then
+		return nil
+	end
+	local times = AscentPlan.Times
+	local plan = AscentPlan.Plan(data.origin, data.start, tonumber(data.floorY) or data.start.Y - 3)
+	local right = plan.right
+	local victim: Model? = if typeof(data.target) == "Instance" and data.target:IsA("Model") then data.target else nil
+	local victimRoot = U.getRoot(victim)
+	local mine = U.isLocal(character) or U.isLocal(victim)
+	local started = os.clock()
+	local finished = false
+	local floor = Vector3.new(plan.start.X, plan.floorY, plan.start.Z)
+
+	local function at(time: number, fn: () -> ())
+		task.delay(math.max(time - (os.clock() - started), 0), function()
+			if not finished and character.Parent then
+				fn()
+			end
+		end)
+	end
+	local function them(t: number): Vector3
+		if victimRoot and victimRoot.Parent and t <= times.Land then
+			return victimRoot.Position
+		end
+		return AscentPlan.Victim(plan, math.min(t, times.Land)).Position
+	end
+
+	-- Both of them on the paths.
+	local bind = "CloverBlackAscent" .. tostring(started)
+	local stop: () -> ()
+	function stop()
+		if finished then
+			return
+		end
+		finished = true
+		pcall(function()
+			RunService:UnbindFromRenderStep(bind)
+		end)
+	end
+	RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
+		local t = os.clock() - started
+		if t > times.Length then
+			stop()
+			return
+		end
+		if root.Parent then
+			root.CFrame = AscentPlan.Attacker(plan, t)
+		end
+		if victimRoot and victimRoot.Parent and t <= times.Land then
+			victimRoot.CFrame = AscentPlan.Victim(plan, t)
+		end
+	end)
+	task.delay(times.Length + 0.5, stop)
+
+	ctx.play(character, ctx.anims.Ascent)
+	if victim then
+		local flail = ctx.launched(victim)
+		if flail then
+			PoseAnimator.Play(victim, flail)
+		end
+	end
+	local wings = ctx.wings(character)
+	local function wing(pose: string?, flap: boolean?)
+		if wings then
+			if wings.setPose then
+				wings.setPose(pose)
+			end
+			if flap and wings.flap then
+				wings.flap()
+			end
+		end
+	end
+
+	-- The launch: the ground splits under them and they're thrown up, a
+	-- black streak trailing off them.
+	U.groundCracks(floor, 7, 6, RED, 1.6)
+	U.debris(floor, 10, 34, 0.8)
+	U.burst(floor + UP * 0.5, {
+		texture = U.textures.Smoke,
+		color = DUST,
+		count = 14,
+		size = 3.5,
+		speed = NumberRange.new(10, 22),
+		lifetime = NumberRange.new(0.5, 0.9),
+		lightEmission = 0,
+		transparency = 0.45,
+		drag = 4,
+		spread = 70,
+	})
+	smokeRing(floor + UP * 0.4, UP, 1, 10, 0.4, Color3.fromRGB(70, 62, 56), 1.8)
+	ctx.glowBurst(plan.start + UP, 4, 0.3)
+	ctx.redSparks(plan.start, 14, 0.6, UP)
+	if victimRoot then
+		streak(ctx, victimRoot, times.Rise)
+	end
+
+	-- He springs up after them on a beat of his wings.
+	at(0.08, function()
+		local feet = Vector3.new(root.Position.X, plan.floorY, root.Position.Z)
+		U.ringBurst(CFrame.new(feet + UP * 0.2), DUST, 1, 7, 0.35, 0.3)
+		ctx.blackSmoke(feet + UP * 0.5, 8, 3, 10)
+		U.groundCracks(feet, 4, 3, RED, 1)
+		wing("spread", true)
+	end)
+	U.bodyTrail(character, RED, times.Land)
+	ctx.heavyTrail(character, times.Length)
+	ctx.swordAura(character, times.Length, 30)
+
+	-- The two cuts in the air, left hanging as an X until the last cut.
+	local cuts = {
+		{ from = 70, to = -110, tilt = 12, side = -right, line = right * 5.5 + UP * 0.8 },
+		{ from = -100, to = 80, tilt = 62, side = right + UP * 0.6, line = right * 4.5 + UP * 4 },
+	}
+	for i, when in times.Cuts do
+		local cut = cuts[i]
+		at(when - 0.06, function()
+			ctx.edgeGlow(character, 0.2, 1)
+			ctx.crescent(character, {
+				center = CFrame.new(0, 0.5, 0),
+				radius = 5.2,
+				from = cut.from,
+				to = cut.to,
+				tilt = cut.tilt,
+				width = 1.8,
+				sweep = 0.07,
+				fade = 0.3,
+				glow = 0.8,
+			})
+		end)
+		at(when, function()
+			local point = them(when)
+			local side = (cut.side :: Vector3).Unit
+			ctx.cutLine(point - cut.line, point + cut.line, 0.32, times.Spike - when)
+			ctx.glowBurst(point, 4, 0.25)
+			ctx.redSparks(point, 16, 0.6, side)
+			ctx.blackLightning(point, 3, 4, 0.18)
+			U.impactRing(point, side, RED, 1, 6, 0.25)
+			smokeRing(point, side, 1, 7, 0.3, BLACK, 1.4)
+			U.afterimage(character, RED, 0.3)
+			ctx.bloomPulse(point, 0.45, 0.2)
+		end)
+	end
+
+	-- Over the top and one cut straight down: the X bursts and they're
+	-- driven into the ground.
+	at(times.Spike - 0.07, function()
+		wing("spread", true)
+		ctx.edgeGlow(character, 0.25, 1.2)
+		ctx.crescent(character, {
+			center = CFrame.new(0, 0.6, 0),
+			radius = 6,
+			from = 110,
+			to = -60,
+			tilt = 90,
+			width = 2.2,
+			sweep = 0.08,
+			fade = 0.35,
+			glow = 1,
+		})
+	end)
+	at(times.Spike, function()
+		local point = them(times.Spike)
+		ctx.cutLine(point + UP * 5, point - UP * 5, 0.4, 0.12)
+		ctx.glowBurst(point, 6, 0.3)
+		ctx.redSparks(point, 20, 0.7, -UP)
+		ctx.blackLightning(point, 5, 6, 0.2)
+		U.flash(point, BLACK, 7, 0.18)
+		smokeRing(point, UP, 1.5, 11, 0.35, BLACK, 2)
+		Soft.lightRing(point, UP, 1, 10, 0.3, RED)
+		ctx.bloomPulse(point, 0.7, 0.3)
+		if victimRoot then
+			streak(ctx, victimRoot, times.Land - times.Spike + 0.05)
+		end
+		if mine then
+			ctx.impactFrame(0.45)
+		end
+	end)
+
+	-- The crater.
+	at(times.Land, function()
+		U.shockwave(floor, RED, 2, 18, 0.4)
+		U.shockwave(floor, BLACK, 2, 13, 0.5)
+		U.groundCracks(floor, 10, 9, RED, 2.2)
+		U.groundRocks(floor, 10, 6, 1.6)
+		U.debris(floor, 16, 42, 0.9)
+		smokeRing(floor + UP * 0.5, UP, 2, 16, 0.55, Color3.fromRGB(80, 72, 64), 2.6)
+		Soft.lightRing(floor + UP * 0.3, UP, 1, 14, 0.4, RED)
+		ctx.blackSmoke(floor + UP, 14, 4, 12)
+		ctx.glowBurst(floor + UP, 5, 0.35)
+		ctx.blackLightning(floor + UP * 0.5, 5, 7, 0.22)
+		ctx.lingerSmoke(floor, 1.6, 9)
+		ctx.bloomPulse(floor, 0.8, 0.35)
+		U.light(floor + UP * 2, RED, 8, 24, 0.45)
+		if mine then
+			ctx.impactFrame(0.6)
+		elseif (workspace.CurrentCamera.CFrame.Position - floor).Magnitude < 50 then
+			CameraShake.Add(0.2)
+		end
+	end)
+	-- He lands beside it.
+	at(times.Land + 0.15, function()
+		local feet = Vector3.new(root.Position.X, plan.floorY, root.Position.Z)
+		U.ringBurst(CFrame.new(feet + UP * 0.2), DUST, 1, 6, 0.3, 0.25)
+		ctx.blackSmoke(feet + UP * 0.5, 6, 2.5, 6)
+		wing(nil)
+	end)
+	task.delay(times.Length + 0.6, function()
+		wing(nil)
+	end)
+
+	if mine then
+		U.colorGrade(
+			{ Contrast = 0.12, Saturation = -0.12, TintColor = Color3.fromRGB(255, 238, 238) },
+			0.15,
+			times.Length - 0.25,
+			0.4
+		)
+		local release = Ascent.Camera(plan)
+		local stopDrawing = stop
+		stop = function()
+			stopDrawing()
+			release()
+		end
+	end
+	return stop
+end
+
+--[[
+	The camera: low behind his shoulder as they're thrown up, rising and
+	circling round them in the air through the cuts, then held and craned
+	down after them as they're driven into the ground, coming to rest low
+	on the crater with him beside it.
+]]
+function Ascent.Camera(plan: AscentPlan.Plan): () -> ()
+	local times = AscentPlan.Times
+	local forward, right, top = plan.forward, plan.right, plan.top
+	local function him(t: number): Vector3
+		return AscentPlan.Attacker(plan, t).Position
+	end
+	local function them(t: number): Vector3
+		return AscentPlan.Victim(plan, math.min(t, times.Land)).Position
+	end
+	local function blow(t: number, at: number, amount: number): number
+		if t < at then
+			return 0
+		end
+		local u = (t - at) / 0.07
+		return amount * u * math.exp(1 - u)
+	end
+	local ground = Vector3.new(plan.start.X, plan.floorY, plan.start.Z)
+	return Cinematic.Camera(function(elapsed)
+		local t = math.min(elapsed, times.Length)
+		-- Up with them behind his right shoulder (the cuts sweep across the
+		-- shot), then round to their side for the cut down.
+		local up = smooth(t / 0.45)
+		local angle = rad(25 + 25 * smooth(t / 0.35) + 50 * smooth((t - 0.6) / 0.35))
+		local around = -forward * math.cos(angle) + right * math.sin(angle)
+		local height = plan.start.Y + 0.5 + (top.Y - 1.5 - plan.start.Y - 0.5) * up
+		local eye = Vector3.new(top.X, height, top.Z) + around * (11 + 3 * up)
+		-- After the cut down: held there, craning down onto the crater and
+		-- sinking toward the ground.
+		local fall = smooth((t - times.Spike) / (times.Land + 0.2 - times.Spike))
+		eye = eye:Lerp(ground + around * 13 + UP * 4, fall * 0.75)
+		local pair = them(t):Lerp(him(t), 0.4)
+		local focus = pair:Lerp(ground + UP * 1.5 - forward * 1, fall)
+		local fov = 72 - 4 * up + 4 * fall
+		for i, cut in times.Cuts do
+			fov -= blow(t, cut, 3 + i)
+		end
+		fov -= blow(t, times.Spike, 6) + blow(t, times.Land, 8)
+		return CFrame.lookAt(eye, focus) * CFrame.Angles(0, 0, rad(-2 + 4 * up - 2 * fall)), fov
+	end, times.Length + 0.05)
+end
+
+return Ascent
+]]></string>
+              </Properties>
+            </Item>
+            <Item class="ModuleScript" referent="40">
+              <Properties>
                 <string name="Name">Comet</string>
                 <string name="Source"><![CDATA[--[[
 	Anti-Magic Knight (Asta): Black Comet (Black Form, Demon-Destroyer 2),
@@ -22021,7 +22648,7 @@ return Comet
               </Properties>
             </Item>
           </Item>
-          <Item class="ModuleScript" referent="40">
+          <Item class="ModuleScript" referent="41">
             <Properties>
               <string name="Name">Wind</string>
               <string name="Source"><![CDATA[--[[
@@ -26422,7 +27049,7 @@ end
 return Kit
 ]]></string>
             </Properties>
-            <Item class="ModuleScript" referent="41">
+            <Item class="ModuleScript" referent="42">
               <Properties>
                 <string name="Name">Animations</string>
                 <string name="Source"><![CDATA[--[[
@@ -28616,7 +29243,7 @@ return Animations
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="42">
+            <Item class="ModuleScript" referent="43">
               <Properties>
                 <string name="Name">Saint</string>
                 <string name="Source"><![CDATA[--[[
@@ -30452,7 +31079,7 @@ return Saint
             </Item>
           </Item>
         </Item>
-        <Item class="ModuleScript" referent="43">
+        <Item class="ModuleScript" referent="44">
           <Properties>
             <string name="Name">M1Animations</string>
             <string name="Source"><![CDATA[--[[
@@ -30840,7 +31467,7 @@ return M1Animations
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="44">
+        <Item class="ModuleScript" referent="45">
           <Properties>
             <string name="Name">Moves</string>
             <string name="Source"><![CDATA[--[[
@@ -31221,7 +31848,7 @@ return Moves
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="45">
+        <Item class="ModuleScript" referent="46">
           <Properties>
             <string name="Name">PoseAnimator</string>
             <string name="Source"><![CDATA[--[[
@@ -31844,7 +32471,7 @@ return PoseAnimator
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="46">
+        <Item class="ModuleScript" referent="47">
           <Properties>
             <string name="Name">Reactions</string>
             <string name="Source"><![CDATA[--[[
@@ -32073,7 +32700,7 @@ return Reactions
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="47">
+        <Item class="ModuleScript" referent="48">
           <Properties>
             <string name="Name">ShiftLock</string>
             <string name="Source"><![CDATA[--[[
@@ -32234,7 +32861,7 @@ return ShiftLock
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="48">
+        <Item class="ModuleScript" referent="49">
           <Properties>
             <string name="Name">Soft</string>
             <string name="Source"><![CDATA[--[[
@@ -33259,7 +33886,7 @@ return Soft
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="49">
+        <Item class="ModuleScript" referent="50">
           <Properties>
             <string name="Name">TopBar</string>
             <string name="Source"><![CDATA[--[[
@@ -33571,7 +34198,7 @@ return TopBar
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="50">
+        <Item class="ModuleScript" referent="51">
           <Properties>
             <string name="Name">VFX</string>
             <string name="Source"><![CDATA[--[[
@@ -34940,13 +35567,13 @@ return VFX
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="51">
+  <Item class="Workspace" referent="52">
     <Properties>
       <string name="Name">Workspace</string>
       <float name="Gravity">225</float>
       <bool name="NeedsPivotMigration">false</bool>
     </Properties>
-    <Item class="Part" referent="52">
+    <Item class="Part" referent="53">
       <Properties>
         <string name="Name">Baseplate</string>
         <bool name="Anchored">true</bool>
@@ -34965,7 +35592,7 @@ return VFX
         </Vector3>
       </Properties>
     </Item>
-    <Item class="SpawnLocation" referent="53">
+    <Item class="SpawnLocation" referent="54">
       <Properties>
         <string name="Name">SpawnLocation</string>
         <bool name="Anchored">true</bool>
