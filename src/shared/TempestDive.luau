@@ -27,7 +27,7 @@ TempestDive.Times = {
 }
 TempestDive.Height = 34 -- how high he drags them
 TempestDive.Hold = 2.6 -- how far above them he flies, dragging them
-TempestDive.Spins = 4 -- drill turns on the way down
+TempestDive.Spins = 3 -- drill turns on the way down (winding up, faster and faster)
 
 export type Plan = {
 	origin: CFrame,
@@ -77,6 +77,12 @@ function TempestDive.DiveAt(plan: Plan, a: number): Vector3
 	return top(plan):Lerp(TempestDive.Impact(plan), a * a)
 end
 
+-- How far round they've drilled at fraction a of the dive: from still,
+-- winding up as they fall (whole turns, so they land the way they started).
+function TempestDive.Spin(a: number): number
+	return a * a * TempestDive.Spins * 2 * math.pi
+end
+
 function TempestDive.Victim(plan: Plan, t: number): CFrame
 	local times = TempestDive.Times
 	local toward = facing(-plan.forward) -- facing him
@@ -92,8 +98,10 @@ function TempestDive.Victim(plan: Plan, t: number): CFrame
 		return CFrame.new(top(plan)) * toward * CFrame.Angles(math.pi * a, 0, 0)
 	end
 	local a = math.clamp((t - times.Flip) / (times.Land - times.Flip), 0, 1)
-	local spin = a * TempestDive.Spins * 2 * math.pi
-	return CFrame.new(TempestDive.DiveAt(plan, a)) * CFrame.Angles(0, -spin, 0) * toward * CFrame.Angles(math.pi, 0, 0)
+	return CFrame.new(TempestDive.DiveAt(plan, a))
+		* CFrame.Angles(0, -TempestDive.Spin(a), 0)
+		* toward
+		* CFrame.Angles(math.pi, 0, 0)
 end
 
 function TempestDive.Attacker(plan: Plan, t: number): CFrame
@@ -115,9 +123,8 @@ function TempestDive.Attacker(plan: Plan, t: number): CFrame
 	if t <= times.Land then
 		-- Driving them down, right on top of them.
 		local a = (t - times.Flip) / (times.Land - times.Flip)
-		local spin = a * TempestDive.Spins * 2 * math.pi
 		return CFrame.new(TempestDive.DiveAt(plan, a) + UP * 3.2)
-			* CFrame.Angles(0, -spin, 0)
+			* CFrame.Angles(0, -TempestDive.Spin(a), 0)
 			* ahead
 			* CFrame.Angles(math.pi, 0, 0)
 	end

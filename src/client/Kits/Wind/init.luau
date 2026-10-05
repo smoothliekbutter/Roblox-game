@@ -186,6 +186,12 @@ local function easeOut(u: number): number
 	return 1 - (1 - math.clamp(u, 0, 1)) ^ 3
 end
 
+-- Eases in and out (0 to 1, no jolt at either end).
+local function easeInOut(u: number): number
+	u = math.clamp(u, 0, 1)
+	return u * u * (3 - 2 * u)
+end
+
 -- Feathers of wind flung out of a point, tumbling as they fade.
 local function featherBurst(position: Vector3, count: number, speed: number)
 	for _ = 1, count do
@@ -1850,11 +1856,16 @@ local function playTempestDive(data, character: Model, root: BasePart)
 			local focus = DivePlan.Victim(plan, math.min(t, times.Land)).Position
 			local right = plan.forward:Cross(UP)
 			if t < times.Flip - 0.05 then
-				local offset = right * 18 - plan.forward * 6 + UP * (if t < times.Lift then -2 else 3)
+				-- From the side, rising a little with them on the way up.
+				local lift = -2 + 5 * easeInOut(t / times.Lift)
+				local offset = right * 18 - plan.forward * 6 + UP * lift
 				return CFrame.lookAt(focus + offset, focus), 72
 			end
-			local eye = focus + UP * 9 + right * 1.5 - plan.forward * 0.5
-			return CFrame.lookAt(eye, focus), 88
+			-- Inside the tornado on the way down, then easing up and out of it
+			-- as it stands over the crater.
+			local after = easeInOut((t - times.Land) / 0.6)
+			local eye = focus + UP * (9 + 7 * after) + right * (1.5 + 4 * after) - plan.forward * (0.5 + 3 * after)
+			return CFrame.lookAt(eye, focus), 88 - 12 * after
 		end, times.Length + 0.2)
 	end
 end
