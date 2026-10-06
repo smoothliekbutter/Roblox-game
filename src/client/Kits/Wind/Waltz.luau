@@ -1,5 +1,3 @@
--- Yuno's Spirit of Zephyrus waltz (Full-Crown 2), drawn along Shared/Zephyrus's paths.
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
@@ -21,11 +19,10 @@ local SMOKE = Soft.SMOKE
 type Animation = PoseAnimator.Animation
 type Sword = { hold: (number) -> (), point: () -> Vector3 }
 
--- What the kit lends this module.
 export type Context = {
 	anims: { [string]: Animation },
 	play: (Model, Animation) -> (),
-	sword: (Model) -> Sword?, -- his long sword of wind, out since the lunge
+	sword: (Model) -> Sword?,
 }
 
 local Waltz = {}
@@ -35,7 +32,6 @@ local function smooth(u: number): number
 	return u * u * (3 - 2 * u)
 end
 
--- Draws it (t = 0 now). Returns stop(), which cuts it short.
 function Waltz.Play(ctx: Context, data, character: Model, root: BasePart): (() -> ())?
 	if typeof(data.attacker) ~= "Vector3" or typeof(data.victim) ~= "Vector3" then
 		return nil
@@ -47,7 +43,7 @@ function Waltz.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 	local mine = U.isLocal(character) or U.isLocal(victim)
 	local started = os.clock()
 	local finished = false
-	local through = -plan.out -- the way the spear goes
+	local through = -plan.out
 
 	local function at(time: number, fn: () -> ())
 		task.delay(math.max(time - (os.clock() - started), 0), function()
@@ -60,7 +56,6 @@ function Waltz.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 		return WaltzPlan.Victim(plan, math.min(t, times.Thrust)).Position
 	end
 
-	-- Both of them on the paths.
 	local bind = "CloverZephyrWaltz" .. tostring(started)
 	local stop: () -> ()
 	function stop()
@@ -91,7 +86,6 @@ function Waltz.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 		sword.hold(times.Length + 0.2)
 	end
 
-	-- The catch: a ring of wind off them, and the wind lifts them.
 	local center = plan.center
 	Soft.windRing(center, plan.out, 1, 8, 0.3)
 	Soft.lightRing(center, plan.out, 0.5, 6, 0.25, WIND_WHITE)
@@ -100,7 +94,6 @@ function Waltz.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 	U.flash(center, WIND_WHITE, 3, 0.1)
 	if victim then
 		U.highlight(victim, WIND_WHITE, 0.1, 0.6)
-		-- Swept off their feet: flailing in the wind.
 		local flail = Reactions.Launched
 		if flail then
 			PoseAnimator.Play(victim, flail)
@@ -160,7 +153,6 @@ function Waltz.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 		end)
 	end
 
-	-- Each cut: his sword through them, the cut left hanging round them.
 	local slashes: { Soft.Slash } = {}
 	for i, when in times.Cuts do
 		at(when - 0.05, function()
@@ -198,7 +190,6 @@ function Waltz.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 		end)
 	end
 
-	-- Out in front of them, drawn back: the wind pours into his sword.
 	at(times.Out - 0.06, function()
 		ctx.play(character, ctx.anims.ZephyrusDraw)
 		for i = 0, 6 do
@@ -215,7 +206,6 @@ function Waltz.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 		ctx.play(character, ctx.anims.ZephyrusSkewer)
 	end)
 
-	-- The spear: his sword shoots out through them and blows them away.
 	at(times.Thrust, function()
 		local hand = WaltzPlan.Attacker(plan, times.Thrust).Position + UP * 0.3
 		local heart = them(times.Thrust)
@@ -239,7 +229,6 @@ function Waltz.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 			}),
 		}
 		table.insert(spear, Soft.starStream(a, b, 0.7, 16))
-		-- It shoots out, then fades.
 		Soft.every(0.07, function(elapsed)
 			Soft.aim(b, hand:Lerp(tip, smooth(elapsed / 0.07)), through)
 			return true
@@ -251,7 +240,6 @@ function Waltz.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 			return hand, tip
 		end, 1.4, 4, 0.3, 3, 0.5, 0.4, WIND_WHITE)
 		task.delay(0.4, stopSpiral)
-		-- Rings of wind racing down it.
 		for i = 1, 6 do
 			task.delay(i * 0.025, function()
 				local ring = hand + through * (2 + i * 4)
@@ -259,7 +247,6 @@ function Waltz.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 				Soft.lightRing(ring, through, 0.5, 2.5 + i * 0.7, 0.25, WIND_WHITE)
 			end)
 		end
-		-- Where it goes through them: the air bursts, every cut bursts.
 		U.flash(heart, STAR_WHITE, 5, 0.12)
 		Soft.twinkle(heart, 9, STAR, 0.3)
 		Soft.windRing(heart, through, 1, 12, 0.35)
@@ -313,9 +300,7 @@ function Waltz.Camera(plan: WaltzPlan.Plan): () -> ()
 	end
 	return Cinematic.Camera(function(elapsed)
 		local t = math.min(elapsed, times.Length)
-		-- From beside his shoulder, round the other way to him...
 		local counter = rad(-40) - rad(40) * smooth(t / times.Out)
-		-- ...then on round behind him for the spear.
 		local behind = smooth((t - (times.Out - 0.35)) / 0.45)
 		local angle = counter + (rad(18) - counter) * behind
 		local radial = plan.out * math.cos(angle) + plan.side * math.sin(angle)

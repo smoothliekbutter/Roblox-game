@@ -1,5 +1,3 @@
--- Anti-Magic Knight (Asta), server side: his skills, Black Form and its swords.
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BlackMoon = require(ReplicatedStorage:WaitForChild("Shared").BlackMoon)
@@ -16,8 +14,6 @@ local HOVER = Vector3.new(0, 0.05, 0)
 local ALL_TYPES = { Melee = true, Bolt = true, Explosion = true, Swarm = true, Zone = true }
 
 local Kit = {}
-
--- Demon-Slayer Sword model
 
 local function swordPart(
 	name: string,
@@ -43,9 +39,9 @@ local function swordPart(
 end
 
 type BladeMarks = {
-	guard: number, -- blade-local Y of the guard end
-	tip: number, -- where effects treat as the business end
-	point: number, -- the very point
+	guard: number,
+	tip: number,
+	point: number,
 }
 
 local function assemble(model: Model, handle: BasePart, parts: { BasePart }, marks: BladeMarks): Model
@@ -54,7 +50,7 @@ local function assemble(model: Model, handle: BasePart, parts: { BasePart }, mar
 		weld.Name = "Join"
 		weld.Part0 = handle
 		weld.Part1 = part
-		weld.C0 = part.CFrame -- built relative to the handle at the origin
+		weld.C0 = part.CFrame
 		weld.Parent = part
 		part.Parent = model
 	end
@@ -63,7 +59,6 @@ local function assemble(model: Model, handle: BasePart, parts: { BasePart }, mar
 	blade:SetAttribute("GuardY", marks.guard)
 	blade:SetAttribute("TipY", marks.tip)
 	blade:SetAttribute("PointY", marks.point)
-	-- Swing trail between the blade's base and tip. Clients switch it on during attacks.
 	local base = Instance.new("Attachment")
 	base.Name = "TrailBase"
 	base.Position = Vector3.new(0, marks.guard + 0.23, 0)
@@ -76,7 +71,6 @@ local function assemble(model: Model, handle: BasePart, parts: { BasePart }, mar
 	trail.Name = "SwingTrail"
 	trail.Attachment0 = base
 	trail.Attachment1 = tip
-	-- Subtle: just enough to read the blade's path.
 	trail.Color = ColorSequence.new(Color3.fromRGB(30, 30, 34), Color3.fromRGB(90, 90, 100))
 	trail.Transparency = NumberSequence.new(0.55, 1)
 	trail.LightEmission = 0
@@ -108,7 +102,6 @@ local function buildSlayer(): Model
 	model.PrimaryPart = handle
 
 	local function flat(name: string, size: Vector3, y: number, z: number, tilt: number): BasePart
-		-- A patch lying on both flats of the blade, turned `tilt` degrees.
 		return swordPart(
 			name,
 			size,
@@ -122,14 +115,12 @@ local function buildSlayer(): Model
 	pommel.Shape = Enum.PartType.Ball
 
 	local parts = {
-		-- Long two-handed grip, wrapped, with a round pommel.
 		swordPart("GripLower", Vector3.new(0.26, 0.4, 0.26), CFrame.new(0, -0.67, 0), wrap, cloth),
 		swordPart("WrapA", Vector3.new(0.3, 0.05, 0.3), CFrame.new(0, -0.76, 0), band, cloth),
 		swordPart("WrapB", Vector3.new(0.3, 0.05, 0.3), CFrame.new(0, -0.5, 0), band, cloth),
 		swordPart("WrapC", Vector3.new(0.32, 0.05, 0.32), CFrame.new(0, -0.15, 0), band, cloth),
 		swordPart("WrapD", Vector3.new(0.32, 0.05, 0.32), CFrame.new(0, 0.2, 0), band, cloth),
 		pommel,
-		-- Thin crossbar, a little wider than the blade, capped at the ends.
 		swordPart("Guard", Vector3.new(0.2, 0.15, 1.8), CFrame.new(0, 0.6, 0), bronze, metal),
 		swordPart("GuardCapA", Vector3.new(0.24, 0.22, 0.12), CFrame.new(0, 0.6, 0.94), darkBronze, metal),
 		swordPart("GuardCapB", Vector3.new(0.24, 0.22, 0.12), CFrame.new(0, 0.6, -0.94), darkBronze, metal),
@@ -145,7 +136,6 @@ local function buildSlayer(): Model
 			"WedgePart"
 		),
 		swordPart("Ridge", Vector3.new(0.22, 4.2, 0.12), CFrame.new(0, 3.1, 0), ridge, Enum.Material.SmoothPlastic),
-		-- Worn edges down both sides, carried on up the point to its tip.
 		swordPart("EdgeA", Vector3.new(0.14, 3.67, 0.08), CFrame.new(0, 2.765, -0.69), worn, metal),
 		swordPart("EdgeB", Vector3.new(0.14, 3.67, 0.08), CFrame.new(0, 2.765, 0.69), worn, metal),
 		swordPart(
@@ -162,12 +152,10 @@ local function buildSlayer(): Model
 			worn,
 			metal
 		),
-		-- Stains and scars across the flats.
 		flat("StainA", Vector3.new(0.215, 0.9, 0.45), 1.7, 0.25, 20),
 		flat("StainB", Vector3.new(0.215, 0.6, 0.35), 2.6, -0.3, -15),
 		flat("StainC", Vector3.new(0.215, 1.1, 0.4), 3.6, 0.2, 10),
 		flat("StainD", Vector3.new(0.215, 0.5, 0.3), 4.1, 0.25, 30),
-		-- Nicks along the edges.
 		swordPart("NickA", Vector3.new(0.16, 0.22, 0.1), CFrame.new(0, 1.9, -0.66), nick, metal),
 		swordPart("NickB", Vector3.new(0.16, 0.16, 0.1), CFrame.new(0, 3.2, 0.66), nick, metal),
 		swordPart("NickC", Vector3.new(0.16, 0.26, 0.1), CFrame.new(0, 3.9, -0.66), nick, metal),
@@ -208,7 +196,7 @@ local function buildDestroyer(): Model
 		Color3.fromRGB(120, 15, 25),
 		Enum.Material.Neon
 	);
-	(plate :: Part).Shape = Enum.PartType.Cylinder -- along X: the disc faces the flats
+	(plate :: Part).Shape = Enum.PartType.Cylinder
 	local parts = {
 		swordPart("Pommel", Vector3.new(0.3, 0.2, 0.3), CFrame.new(0, -0.55, 0), black, metal),
 		swordPart("Guard", Vector3.new(0.18, 0.16, 0.85), CFrame.new(0, 0.55, 0), black, metal),
@@ -232,13 +220,11 @@ local function buildDestroyer(): Model
 		)
 		at = at * CFrame.new(0, 0.66, 0) * CFrame.Angles(math.rad(5), 0, 0)
 	end
-	-- The broad head, its point at the edge side.
 	local head = at * CFrame.new(0, 0.3, 0.18)
 	table.insert(parts, swordPart("Head", Vector3.new(0.14, 0.6, 0.7), head, black, metal))
 	table.insert(parts, swordPart("HeadEdge", Vector3.new(0.1, 0.6, 0.06), head * CFrame.new(0, 0, -0.34), edge, metal))
 	local tipFrame = head * CFrame.new(0, 0.55, 0) * CFrame.Angles(0, math.pi, 0)
 	table.insert(parts, swordPart("HeadTip", Vector3.new(0.14, 0.5, 0.7), tipFrame, black, metal, "WedgePart"))
-	-- The clover, white on the spine end of the head.
 	local clover = head * CFrame.new(0, 0.05, 0.2)
 	for i, leaf in
 		{ Vector3.new(0, 0.09, 0), Vector3.new(0, -0.09, 0), Vector3.new(0, 0, 0.09), Vector3.new(0, 0, -0.09) }
@@ -285,7 +271,7 @@ local function buildSlasher(): Model
 		fitting,
 		metal
 	);
-	(tsuba :: Part).Shape = Enum.PartType.Cylinder -- turned to lie across the blade
+	(tsuba :: Part).Shape = Enum.PartType.Cylinder
 	local parts = {
 		swordPart("Kashira", Vector3.new(0.22, 0.08, 0.24), CFrame.new(0, -0.49, 0), fitting, metal),
 		tsuba,
@@ -321,7 +307,6 @@ local function buildSlasher(): Model
 		)
 		at = at * CFrame.new(0, 0.62, 0) * CFrame.Angles(math.rad(3), 0, 0)
 	end
-	-- The point sweeps up from the edge to the spine side.
 	table.insert(
 		parts,
 		swordPart("Kissaki", Vector3.new(0.09, 0.3, 0.19), at * CFrame.new(0, 0.15, 0), steel, metal, "WedgePart")
@@ -335,7 +320,6 @@ local function buildSlasher(): Model
 	})
 end
 
--- Asta's swords (Black Form's R swaps between them at random).
 local SWORDS: { [string]: () -> Model } = {
 	Slayer = buildSlayer,
 	Destroyer = buildDestroyer,
@@ -360,7 +344,6 @@ local function wield(character: Model, sword: Model)
 			return
 		end
 		local grip = CFrame.new(0, -arm.Size.Y / 2, 0) * CFrame.Angles(math.rad(215), 0, 0)
-		-- Place the whole sword at the hand first, then join it.
 		for _, part in sword:GetChildren() do
 			if part:IsA("BasePart") then
 				local join = part:FindFirstChild("Join") :: Weld?
@@ -417,8 +400,6 @@ function Kit.Unequip(character: Model)
 	character:SetAttribute("Sword", nil)
 end
 
--- Helpers
-
 local function fx(ctx, skill: string, phase: string, extra: { [string]: any }?)
 	local data: { [string]: any } = { character = ctx.character, kit = KIT_ID, skill = skill, phase = phase }
 	if extra then
@@ -433,7 +414,6 @@ local function look(ctx): Vector3
 	return ctx.combat.Flat(ctx.root.CFrame.LookVector)
 end
 
--- Interrupted by getting hit, ragdolled or dying.
 local function interrupted(ctx): boolean
 	local character = ctx.character
 	return not CombatState.IsAlive(character) or CombatState.IsStunned(character) or CombatState.IsRagdolled(character)
@@ -497,7 +477,6 @@ local function groundBelow(ctx): Vector3
 	return ctx.root.Position - Vector3.new(0, 3, 0)
 end
 
--- Anti-magic slash wave. Used by Black Slash, Grand Divider and Deflect.
 local function blackSlash(
 	ctx,
 	origin: Vector3,
@@ -548,33 +527,27 @@ local function blackSlash(
 	})
 end
 
--- Base moves
-
 local PROPEL_SPEED = 85
-local PROPEL_TIME = 0.55 -- the Propel animation holds for this long
-local PROPEL_STEER = 200 -- degrees per second: up to a ~110 degree curve
+local PROPEL_TIME = 0.55
+local PROPEL_STEER = 200
 
 local COMBO = {
 	{ kind = "Rising", at = 0.14, damage = 1.5, reach = 3.8, drift = 5 },
 	{ kind = "Sweep", at = 0.3, damage = 1.5, reach = 3.8, drift = 3 },
 	{ kind = "Spin", at = 0.54, damage = 1.5, reach = 3.8, drift = 3 },
-	-- Knocked back a step, clear of the point while he coils for the thrust.
 	{ kind = "Chop", at = 0.76, damage = 2, reach = 4.6, drift = 0 },
-	-- The finisher: nothing holds them after it (see THRUST_PUSH).
 	{ kind = "Thrust", at = 1.1, damage = 3, reach = 0, drift = 0 },
 }
--- The thrust drives them back about 2.5 studs, still stunned: an M1 still
--- reaches them.
 local THRUST_PUSH = 17
-local MAX_PULL = 30 -- fastest (studs per second) they're eased back in front of him
+local MAX_PULL = 30
 
-local DIVE_HEIGHT = 9 -- root to floor; a jump peaks at about 7.5 (3 + Config JumpHeight)
-local DIVE_AFTER_LEAP = 2.5 -- the leap (R) allows it this long, until he lands
+local DIVE_HEIGHT = 9
+local DIVE_AFTER_LEAP = 2.5
 local leapedAt: { [Model]: number } = setmetatable({}, { __mode = "k" }) :: any
 local SLAM_RADIUS = 11
 local SLAM_DAMAGE = 6
-local SLAM_RECOVERY = 0.45 -- the PlungeImpact stab he lands in
-local SLAM_WHIFF_RECOVERY = 1.1 -- the sword sticks when the slam hits nobody
+local SLAM_RECOVERY = 0.45
+local SLAM_WHIFF_RECOVERY = 1.1
 local LAND_WINDOW = 0.5
 
 local function holdInFront(ctx, target: Model, forward: Vector3, reach: number, drift: number, time: number): Vector3
@@ -591,7 +564,6 @@ local function holdInFront(ctx, target: Model, forward: Vector3, reach: number, 
 	return velocity
 end
 
--- How far his root is above the floor (characters under him don't count).
 local function heightAboveFloor(ctx): number
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
@@ -611,7 +583,6 @@ local function heightAboveFloor(ctx): number
 	return math.huge
 end
 
--- True once he's on the ground, within `timeout`.
 local function landsWithin(ctx, timeout: number): boolean
 	local start = os.clock()
 	while os.clock() - start < timeout do
@@ -630,7 +601,6 @@ local function bullSlam(ctx)
 	local c, character = ctx.combat, ctx.character
 	local forward = look(ctx)
 	c.ApplyVelocity(character, Vector3.zero, 0.05)
-	-- Where the blade bites, just in front of his feet.
 	local impact = groundBelow(ctx) + forward * 1.5
 	local victims = c.Sphere(character, impact + UP * 2, SLAM_RADIUS)
 	local whiff = #victims == 0
@@ -670,11 +640,9 @@ local function bullThrust(ctx)
 
 	CombatState.SetCasting(character, PROPEL_TIME + 0.25)
 	fx(ctx, "BullThrust", "Propel", { airborne = airborne, direction = direction, duration = PROPEL_TIME })
-	-- The air version ends the moment it lands (the slam replaces the skid).
 	local target, landed =
 		lunge(ctx, direction * PROPEL_SPEED, PROPEL_TIME, Vector3.new(6, 6, 7), PROPEL_STEER, airborne)
 	if not target then
-		-- Dove from high up: still falling when the propel runs out.
 		if airborne and not landed and not interrupted(ctx) then
 			CombatState.SetCasting(character, LAND_WINDOW + 0.1)
 			landed = landsWithin(ctx, LAND_WINDOW)
@@ -684,16 +652,13 @@ local function bullThrust(ctx)
 			return
 		end
 		fx(ctx, "BullThrust", "Whiff")
-		-- Whiffing it leaves him open (the dive more so).
 		CombatState.SetCasting(character, if airborne then 0.9 else 0.45)
 		return
 	end
 
-	-- Wherever they curved to is forward now.
 	forward = look(ctx)
 	local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
 	local contact = if targetRoot then targetRoot.Position else ctx.root.Position + forward * 3
-	-- The dive breaks guards and carries straight on into the combo.
 	local caught = c.Hit(character, target, { damage = 2, stun = 1.6, attackType = "Melee", guardBreak = airborne })
 	if caught ~= "Hit" and caught ~= "GuardBreak" then
 		CombatState.SetCasting(character, 0.4)
@@ -701,8 +666,6 @@ local function bullThrust(ctx)
 	end
 	fx(ctx, "BullThrust", "Catch", { target = target, position = contact })
 
-	-- The combo: five hits, each on its own swing, with them held in front
-	-- of him the whole way.
 	CombatState.SetCasting(character, COMBO[#COMBO].at + 0.2)
 	fx(ctx, "BullThrust", "Combo", { target = target })
 	local first = COMBO[1]
@@ -710,7 +673,6 @@ local function bullThrust(ctx)
 	c.ApplyVelocity(character, Vector3.zero, first.at)
 	local start = os.clock()
 	for index, cut in COMBO do
-		-- Timed from the start so the waits don't add up and fall behind the animation.
 		local remaining = cut.at - (os.clock() - start)
 		if remaining > 0 then
 			task.wait(remaining)
@@ -726,15 +688,12 @@ local function bullThrust(ctx)
 			hit.velocity = holdInFront(ctx, target, forward, cut.reach, cut.drift, nextCut.at - cut.at)
 			hit.velocityTime = nextCut.at - cut.at
 		else
-			-- The thrust: drives them back, still stunned, so an M1 string
-			-- connects right after.
 			hit.stun = 1.1
 			hit.heavy = true
 			hit.velocity = forward * THRUST_PUSH + UP * 4
 			hit.velocityTime = 0.15
 		end
 		if c.Hit(character, target, hit) ~= "Hit" then
-			-- They broke out (Evasive) or can't be hit any more.
 			fx(ctx, "BullThrust", "Interrupted")
 			CombatState.SetCasting(character, 0.3)
 			return
@@ -745,7 +704,6 @@ local function bullThrust(ctx)
 		end
 	end
 	CombatState.ClearCasting(character)
-	-- Start a fresh M1 string.
 	ctx.data.combo = 0
 	ctx.data.nextM1 = 0
 end
@@ -753,7 +711,6 @@ end
 local FACING = CFrame.Angles(0, math.pi, 0)
 local HOLD_SEIZE = CFrame.new(-1.6, 0.35, -1.75) * FACING
 local HOLD_DRILL = CFrame.new(-0.6, 0.6, -2.4) * FACING
--- Held out at arm's length while he spins them round.
 local HOLD_SPIN = CFrame.new(-1.7, 0.5, -2.3) * FACING
 
 local function seize(ctx, target: Model, grabTime: number): ((() -> ())?, ((CFrame) -> ())?)
@@ -768,14 +725,11 @@ local function seize(ctx, target: Model, grabTime: number): ((() -> ())?, ((CFra
 end
 
 local REACH_STARTUP = 0.16
-local REACH_WINDOW = 0.1 -- the hand stays open this long (slack for ping)
--- Reaches 5.5 studs out in front of him: catches someone about 6 studs away.
+local REACH_WINDOW = 0.1
 local REACH_BOX = Vector3.new(5, 7, 5)
-local REACH_STEP = 6 -- studs per second: the half-step he takes into it
-local REACH_WHIFF = 0.55 -- left open after grabbing at nothing
+local REACH_STEP = 6
+local REACH_WHIFF = 0.55
 
--- The closest person in reach who can be grabbed (not on the floor, not
--- untouchable).
 local function inReach(ctx): Model?
 	local c, character = ctx.combat, ctx.character
 	local box = ctx.root.CFrame * CFrame.new(0, if ctx.airborne then -0.5 else 0, -(0.5 + REACH_BOX.Z / 2))
@@ -810,7 +764,6 @@ local function reachGrab(ctx, grabTime: number, skill: string?): (Model?, (() ->
 		return nil, nil, nil
 	end
 	if not airborne then
-		-- Planted while the hand is out.
 		c.ApplyVelocity(character, Vector3.zero, REACH_WINDOW)
 	end
 
@@ -825,7 +778,6 @@ local function reachGrab(ctx, grabTime: number, skill: string?): (Model?, (() ->
 		target = inReach(ctx)
 	end
 	if not target then
-		-- The hand closes on nothing and he's left open.
 		fx(ctx, name, "Whiff", { airborne = airborne })
 		CombatState.SetCasting(character, REACH_WHIFF)
 		return nil, nil, nil
@@ -837,7 +789,7 @@ local function reachGrab(ctx, grabTime: number, skill: string?): (Model?, (() ->
 	return target, release, hold
 end
 
-local SEIZE_TIME = 0.4 -- the Seize animation's hoist
+local SEIZE_TIME = 0.4
 local SURGE_AT = 0.2
 local METEOR_TICK = 1.5
 local METEOR_SLAM = 4.5
@@ -847,7 +799,6 @@ local METEOR_SPLASH = 9
 local function blackMeteorite(ctx)
 	local c, character = ctx.combat, ctx.character
 	local airborne = ctx.airborne
-	-- (The grab lasts the whole move: spin, flip, the longest dive, landing.)
 	local target, release, hold = reachGrab(ctx, (if airborne then 0.3 else SEIZE_TIME) + MeteorVortex.Length + 1.8)
 	if not target or not release or not hold then
 		return
@@ -904,7 +855,6 @@ local function blackMeteorite(ctx)
 		return true
 	end
 
-	-- The vortex tears at them as it spins: three small hits.
 	for tick = 1, 3 do
 		if not waitUntil(MeteorVortex.Length * tick / 3) then
 			return
@@ -916,7 +866,6 @@ local function blackMeteorite(ctx)
 		)
 	end
 
-	-- Over the top and down, head-first, spinning.
 	hold(HOLD_DRILL)
 	fx(ctx, "BlackMeteorite", "Slam", {
 		target = target,
@@ -928,7 +877,6 @@ local function blackMeteorite(ctx)
 	end
 	release()
 
-	-- The client draws its own (much bigger) crater for this one.
 	local impact = Vector3.new(plan.diveEnd.X, floorY or (plan.diveEnd.Y - 3), plan.diveEnd.Z)
 	fx(ctx, "BlackMeteorite", "Impact", { position = impact, target = target, grounded = floorY ~= nil })
 	local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -936,7 +884,7 @@ local function blackMeteorite(ctx)
 	away = if away.Magnitude > 0.1 then away.Unit else forward
 	local slam = if airborne then METEOR_AIR_SLAM else METEOR_SLAM
 	c.Hit(character, target, {
-		damage = slam, -- plus the seize, the surge and the vortex's three
+		damage = slam,
 		stun = 1,
 		attackType = "Melee",
 		unblockable = true,
@@ -945,7 +893,6 @@ local function blackMeteorite(ctx)
 		ragdoll = 1.6,
 		velocity = away * 25 + UP * 35,
 	})
-	-- The crater catches whoever else is round them (blockable).
 	for _, victim in c.Sphere(character, impact + UP * 2, METEOR_SPLASH) do
 		local victimRoot = victim:FindFirstChild("HumanoidRootPart") :: BasePart?
 		if victim ~= target and victimRoot then
@@ -961,13 +908,12 @@ local function blackMeteorite(ctx)
 			})
 		end
 	end
-	-- He rolls back onto his feet (the rest of the path), then he's free.
 	waitUntil(plan.length)
 	CombatState.SetCasting(character, 0.2)
 end
 
 local DIVIDER_CHARGE = 0.62
-local PERFECT_FROM, PERFECT_TO = 0.36, 0.66 -- generous for ping; client shows the flash at 0.38
+local PERFECT_FROM, PERFECT_TO = 0.36, 0.66
 
 local function blackDivider(ctx)
 	local c, character = ctx.combat, ctx.character
@@ -981,7 +927,6 @@ local function blackDivider(ctx)
 	local start = os.clock()
 	fx(ctx, "BlackDivider", "Charge", { flashAt = 0.38, airborne = airborne })
 
-	-- Only the FIRST press after starting counts, so mashing doesn't work.
 	local firstPress: number? = nil
 	while os.clock() - start < DIVIDER_CHARGE do
 		if interrupted(ctx) then
@@ -1010,7 +955,7 @@ local function blackDivider(ctx)
 			c.Hit(character, victim, {
 				damage = if perfect then 12 else 7,
 				stun = if perfect then 1.2 else 1,
-				attackType = "Melee", -- the air version can be blocked
+				attackType = "Melee",
 				hitsDowned = true,
 				heavy = true,
 				ragdoll = if perfect then 1.6 else 1.3,
@@ -1018,7 +963,6 @@ local function blackDivider(ctx)
 				effect = if perfect then "PerfectDivider" else nil,
 			})
 		end
-		-- The flip carries him up a touch before he drops.
 		c.ApplyVelocity(character, UP * 22 + forward * 6, 0.12)
 		c.ShakeArea(ctx.root.Position, if perfect then 60 else 25, if perfect then 0.8 else 0.35)
 		CombatState.SetCasting(character, 0.35)
@@ -1059,7 +1003,6 @@ local function antiMagicDeflect(ctx)
 	local c, character = ctx.combat, ctx.character
 	local countered = false
 	CombatState.SetCasting(character, DEFLECT_WINDOW + 0.1)
-	-- In the air he hangs there, guard up.
 	local airborne = ctx.airborne
 	if airborne then
 		c.ApplyVelocity(character, HOVER, DEFLECT_WINDOW)
@@ -1076,7 +1019,6 @@ local function antiMagicDeflect(ctx)
 		end
 		local offset = attackerRoot.Position - ctx.root.Position
 		if offset.Magnitude <= 14 then
-			-- Slash them aside, like Manji Kick.
 			fx(ctx, "Deflect", "Counter", { target = attacker })
 			c.Hit(character, attacker, {
 				damage = 7,
@@ -1088,7 +1030,6 @@ local function antiMagicDeflect(ctx)
 				velocity = ctx.root.CFrame.RightVector * 45 + UP * 22,
 			})
 		else
-			-- Ranged attack: send it back as a Black Slash, like Prey's Peril.
 			local direction = c.Flat(offset)
 			fx(ctx, "Deflect", "Reflect", { direction = direction })
 			blackSlash(ctx, ctx.root.Position + direction * 2 + UP * 0.5, direction, { damage = 6 })
@@ -1097,16 +1038,12 @@ local function antiMagicDeflect(ctx)
 
 	task.wait(DEFLECT_WINDOW + 0.02)
 	if not countered then
-		-- Guessed wrong: a moment where he's wide open.
 		c.ClearCounter(character)
 		fx(ctx, "Deflect", "End")
 		CombatState.SetCasting(character, 0.45)
 	end
 end
 
--- Black Form moves
-
--- Black Hurricane. In the air he drills down on them, spinning.
 local function blackHurricane(ctx)
 	local c, character = ctx.combat, ctx.character
 	local forward = look(ctx)
@@ -1124,7 +1061,6 @@ local function blackHurricane(ctx)
 			return
 		end
 		for _, victim in c.Sphere(character, ctx.root.Position, 7) do
-			-- Dragged along with the spin.
 			if
 				c.Hit(character, victim, {
 					damage = 1,
@@ -1148,7 +1084,6 @@ local function blackHurricane(ctx)
 				attackType = "Melee",
 				heavy = true,
 				ragdoll = 1.4,
-				-- In the air they're driven into the ground instead of thrown up.
 				velocity = if airborne then forward * 30 + UP * -60 else forward * 45 + UP * 45,
 			})
 		end
@@ -1236,7 +1171,6 @@ local function blackMoon(ctx)
 		return
 	end
 
-	-- The cutscene takes over from the grab.
 	local plan = BlackMoon.Plan(ctx.root.CFrame, targetRoot.Position)
 	release()
 	local length = BlackMoon.Times.Land
@@ -1255,7 +1189,6 @@ local function blackMoon(ctx)
 	task.wait(length)
 	stop()
 
-	-- The cut lands: they're cut down out of the sky.
 	if CombatState.IsAlive(target) then
 		c.Hit(character, target, {
 			damage = 25,
@@ -1269,7 +1202,6 @@ local function blackMoon(ctx)
 		})
 	end
 	c.ShakeArea(plan.apex, 120, 0.7)
-	-- He glides back down on his wing.
 	c.ApplyVelocity(character, UP * -32 + plan.forward * 4, 1)
 	CombatState.SetCasting(character, 0.7)
 end
@@ -1290,11 +1222,9 @@ function Kit.Entrance(ctx)
 	character:SetAttribute("Rooted", false)
 end
 
--- Special (R): Anti-Magic Leap / Meteor Plunge
-
 local SPECIAL = CombatState.SpecialSlot
 local LEAP_TIME = 0.22
-local PLUNGE_HANG = 0.12 -- the Plunge animation's wind-up
+local PLUNGE_HANG = 0.12
 
 local function plunge(ctx)
 	local c, character = ctx.combat, ctx.character
@@ -1337,7 +1267,7 @@ local function leap(ctx)
 	local c, character = ctx.combat, ctx.character
 	local token = c.MoveToken(character)
 	local start = os.clock()
-	leapedAt[character] = start -- Bull Thrust dives from here
+	leapedAt[character] = start
 	CombatState.SetCasting(character, 0.25)
 	fx(ctx, "Special", "Leap")
 	c.ApplyVelocity(character, look(ctx) * 60 + UP * 62, LEAP_TIME, { steer = 200 })
@@ -1351,7 +1281,6 @@ local function leap(ctx)
 		local up = c.IsAirborne(character)
 		seenAir = seenAir or up
 		if c.PressedSince(character, SPECIAL, since) then
-			-- The press says whether he was in the air (his own client knows).
 			if c.PressedAirborne(character, SPECIAL) then
 				leapedAt[character] = nil
 				plunge(ctx)
@@ -1359,7 +1288,6 @@ local function leap(ctx)
 			end
 			since = os.clock()
 		end
-		-- Landed, once the server (a ping behind) has seen him go up.
 		if seenAir and not up then
 			leapedAt[character] = nil
 			return
@@ -1379,17 +1307,15 @@ function Kit.Special(ctx)
 	end
 end
 
--- Sword moves (Black Form 1 and 2 follow the sword in his hand)
-
 local function rootOf(character: Model): BasePart?
 	return character:FindFirstChild("HumanoidRootPart") :: BasePart?
 end
 
-local RECALL_RELEASE = 0.28 -- the RecallThrow animation lets go here
+local RECALL_RELEASE = 0.28
 local RECALL_RANGE = 34
-local RECALL_OUT = 0.42 -- seconds to fly out
-local RECALL_HANG = 1.2 -- longest it waits before coming back by itself
-local RECALL_SPEED = 95 -- studs per second on the way back
+local RECALL_OUT = 0.42
+local RECALL_HANG = 1.2
+local RECALL_SPEED = 95
 local RECALL_RADIUS = 5
 
 local function slayerRecall(ctx)
@@ -1410,7 +1336,6 @@ local function slayerRecall(ctx)
 	local origin = ctx.root.Position + direction * 2 + UP * 0.5
 	local stop = origin + direction * math.min(waveRange(ctx, origin, direction, RECALL_RANGE), RECALL_RANGE)
 	local thrownAt = os.clock()
-	-- Starting another move snaps it straight back to his hand.
 	local token = c.MoveToken(character)
 	local function moved(): boolean
 		return c.MoveToken(character) ~= token
@@ -1428,7 +1353,6 @@ local function slayerRecall(ctx)
 		end
 	end
 
-	-- Out: fast at first, slowing to a stop.
 	while os.clock() - thrownAt < RECALL_OUT and not moved() do
 		local a = (os.clock() - thrownAt) / RECALL_OUT
 		sweep(origin:Lerp(stop, 1 - (1 - a) ^ 2), function(victim)
@@ -1443,7 +1367,6 @@ local function slayerRecall(ctx)
 		task.wait()
 	end
 
-	-- Hanging there, spinning, until he calls it back.
 	while os.clock() - thrownAt < RECALL_OUT + RECALL_HANG do
 		if c.PressedSince(character, 2, thrownAt) or moved() or not CombatState.IsAlive(character) then
 			break
@@ -1451,7 +1374,6 @@ local function slayerRecall(ctx)
 		task.wait()
 	end
 
-	-- Back, straight at him wherever he's got to, through whoever's between.
 	table.clear(cut)
 	local position = stop
 	if not moved() then
@@ -1489,7 +1411,7 @@ local function slayerRecall(ctx)
 	end
 end
 
-local CAUSALITY_STAB = 0.42 -- the CausalityPlant animation's stab
+local CAUSALITY_STAB = 0.42
 local CAUSALITY_RADIUS = 18
 local CAUSALITY_TARGETS = 4
 
@@ -1522,7 +1444,6 @@ local function causalityBreak(ctx)
 	end
 	fx(ctx, "CausalityBreak", "Break", { targets = targets, airborne = airborne })
 	for _, victim in targets do
-		-- Their magic is broken first, so nothing they had up stops it.
 		c.ClearCounter(victim)
 		c.StopWatchingSkills(victim)
 		CombatState.SetBlocking(victim, false)
@@ -1582,7 +1503,6 @@ local function blackComet(ctx)
 	local distance = if wall then math.max((wall.Position - (origin + UP)).Magnitude - 4, 4) else CometPlan.Distance
 	local plan = CometPlan.Plan(origin, forward, distance, floorAt(ctx, origin, { target }))
 
-	-- The cutscene takes over from the grab.
 	release()
 	CombatState.SetCasting(character, times.Length + 0.3)
 	CombatState.GiveIFrames(character, times.Length)
@@ -1619,7 +1539,6 @@ local function blackComet(ctx)
 			abort()
 			return
 		end
-		-- (The cutscene is their reaction, and the camera stays still.)
 		c.Hit(character, target, {
 			damage = 2,
 			stun = 2,
@@ -1630,7 +1549,6 @@ local function blackComet(ctx)
 		})
 	end
 
-	-- The heave.
 	if not waitUntil(times.Release) then
 		abort()
 		return
@@ -1651,7 +1569,7 @@ local function blackComet(ctx)
 	CombatState.SetCasting(character, 0.3)
 end
 
-local ASCENT_STARTUP = 0.14 -- the Rising swing's cut
+local ASCENT_STARTUP = 0.14
 
 local function blackAscent(ctx)
 	local c, character = ctx.combat, ctx.character
@@ -1712,7 +1630,6 @@ local function blackAscent(ctx)
 	for _, at in times.Cuts do
 		waitUntil(at)
 		if CombatState.IsAlive(target) then
-			-- (They flail in the air on the path: no flinch, no shake.)
 			c.Hit(character, target, {
 				damage = 2,
 				stun = 1.5,
@@ -1766,7 +1683,6 @@ local function zetten(ctx)
 		local from = ctx.root.Position
 		local through = c.Flat(targetRoot.Position - from)
 		local to = targetRoot.Position + through * 4
-		-- Not through a wall.
 		local params = RaycastParams.new()
 		params.FilterType = Enum.RaycastFilterType.Exclude
 		params.FilterDescendantsInstances = { character, target }
@@ -1810,7 +1726,6 @@ local function zetten(ctx)
 	done = true
 	c.StopWatchingSkills(character)
 	c.ClearCounter(character)
-	-- Nobody moved: one quick cut ahead.
 	fx(ctx, "Zetten", "Cut", { airborne = airborne })
 	for _, victim in c.Box(character, ctx.root.CFrame * CFrame.new(0, 0, -4.5), Vector3.new(9, 7, 9)) do
 		c.Hit(character, victim, {
@@ -1846,7 +1761,7 @@ function Kit.AwakenedSpecial(ctx)
 	local character = ctx.character
 	local current = character:GetAttribute("Sword")
 	if character:GetAttribute("SwordAway") then
-		return -- the Slayer's still out (Slayer Recall)
+		return
 	end
 	local index = table.find(SWORD_KINDS, current) or 0
 	local kind = SWORD_KINDS[index % #SWORD_KINDS + 1]
@@ -1857,8 +1772,6 @@ function Kit.AwakenedSpecial(ctx)
 		setSword(character, kind)
 	end
 end
-
--- Awakening: Black Form (Devil Union)
 
 local AWAKEN_BURST = 0.92
 local AWAKEN_TIME = 2.0
@@ -1875,7 +1788,6 @@ function Kit.Awaken(ctx)
 	if CombatState.IsAlive(character) then
 		fx(ctx, "Awaken", "Burst")
 		c.ShakeArea(ctx.root.Position, 90, 0.9)
-		-- The anti-magic burst blows everyone nearby away.
 		for _, victim in c.Sphere(character, ctx.root.Position, 18) do
 			local victimRoot = victim:FindFirstChild("HumanoidRootPart") :: BasePart?
 			if victimRoot and not CombatState.HasIFrames(victim) and not CombatState.IsRagdolled(victim) then
@@ -1893,7 +1805,6 @@ end
 
 function Kit.AwakenEnd(ctx)
 	fx(ctx, "Awaken", "End")
-	-- Out of Black Form he's back to the Demon-Slayer Sword.
 	local character = ctx.character
 	if character:GetAttribute("Sword") ~= "Slayer" and character.Parent then
 		setSword(character, "Slayer")

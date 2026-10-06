@@ -1,5 +1,3 @@
--- Prince of Wind (Yuno), server side: his spells, the Half-Crown and the Full-Crown.
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
@@ -14,8 +12,6 @@ local HOVER = Vector3.new(0, 0.05, 0)
 local ALL_TYPES = { Melee = true, Bolt = true, Explosion = true, Swarm = true, Zone = true }
 
 local Kit = {}
-
--- Helpers
 
 local function fx(ctx, skill: string, phase: string, extra: { [string]: any }?)
 	local data: { [string]: any } = { character = ctx.character, kit = KIT_ID, skill = skill, phase = phase }
@@ -35,7 +31,6 @@ local function rootOf(character: Model): BasePart?
 	return character:FindFirstChild("HumanoidRootPart") :: BasePart?
 end
 
--- Interrupted by getting hit, ragdolled or dying.
 local function interrupted(ctx): boolean
 	local character = ctx.character
 	return not CombatState.IsAlive(character) or CombatState.IsStunned(character) or CombatState.IsRagdolled(character)
@@ -104,15 +99,12 @@ local function aimFrom(ctx, origin: Vector3, target: Model?, dip: number): Vecto
 	return if ctx.airborne then (forward + UP * -dip).Unit else forward
 end
 
--- Everyone along a line (a beam).
 local function lineVictims(ctx, origin: Vector3, direction: Vector3, length: number, width: number): { Model }
 	local box = CFrame.lookAt(origin + direction * (length / 2), origin + direction * length)
 	return ctx.combat.Box(ctx.character, box, Vector3.new(width, width + 1, length))
 end
 
--- Base moves: Prince of Wind
-
-local SHOWER_CAST = 0.6 -- the wind-up: blades gather overhead before the first wave
+local SHOWER_CAST = 0.6
 local SHOWER_WAVES = 6
 local SHOWER_GAP = 0.15
 local SHOWER_RADIUS = 9
@@ -163,7 +155,7 @@ end
 local HAWK_CAST = 0.22
 local HAWK_SPEED = 80
 local HAWK_RANGE = 75
-local HAWK_TURN = math.rad(140) -- per second
+local HAWK_TURN = math.rad(140)
 
 local function swiftWhiteHawk(ctx)
 	local c, character = ctx.combat, ctx.character
@@ -241,7 +233,7 @@ local function swiftWhiteHawk(ctx)
 end
 
 local ARK_CAST = 0.18
-local ARK_RISE = 46 -- studs a second, for ARK_RISE_TIME: about 14 studs up
+local ARK_RISE = 46
 local ARK_RISE_TIME = 0.3
 local ARK_HANG = 0.9
 
@@ -282,7 +274,7 @@ local function heavenlyWindArk(ctx)
 			stun = 1.6,
 			attackType = "Zone",
 			guardBreak = true,
-			hitsDowned = true, -- scoops people up off the floor too
+			hitsDowned = true,
 			heavy = true,
 		})
 		if result == "Hit" then
@@ -312,11 +304,11 @@ local BOW_SLOT = 4
 local BOW_DRAW = 0.5
 local BOW_ARROWS = 6
 local BOW_GAP = 0.12
-local GREAT_MIN = 0.2 -- the great arrow draws at least this much longer
-local GREAT_MAX = 0.6 -- and at most this much (fully drawn)
+local GREAT_MIN = 0.2
+local GREAT_MAX = 0.6
 local GREAT_SPEED = 160
 local GREAT_RANGE = 110
-local GREAT_SLOW = 2.5 -- seconds of SlowUntil from the hit (about half of it after the ragdoll)
+local GREAT_SLOW = 2.5
 
 local function greatArrow(ctx)
 	local c, character = ctx.combat, ctx.character
@@ -360,14 +352,12 @@ local function greatArrow(ctx)
 				ragdoll = 1,
 				velocity = c.Flat(direction) * 60 + UP * 22,
 			})
-			-- Slowed for a moment after it (a broken guard too).
 			if result == "Hit" or result == "GuardBreak" then
 				local slowUntil = math.max(tonumber(victim:GetAttribute("SlowUntil")) or 0, os.clock() + GREAT_SLOW)
 				victim:SetAttribute("SlowUntil", slowUntil)
 			end
 		end,
 	})
-	-- The bow kicks him back a step.
 	c.ApplyVelocity(character, -look(ctx) * 18, 0.12)
 	CombatState.SetCasting(character, 0.35)
 end
@@ -408,7 +398,6 @@ local function galeWhiteBow(ctx)
 			range = 90,
 			size = Vector3.new(2.5, 2.5, 5),
 			onHit = function(victim)
-				-- In the air the arrows pin them there; the last spikes them down.
 				local aloft = c.IsAirborne(victim)
 				local push = if last and aloft
 					then c.Flat(direction) * 12 + UP * -60
@@ -430,8 +419,6 @@ local function galeWhiteBow(ctx)
 	end
 	CombatState.SetCasting(character, 0.2)
 end
-
--- R: Conjunction (star magic)
 
 local STAR_DISTANCE = 22
 local STAR_LIFE = 4
@@ -466,8 +453,6 @@ function Kit.Special(ctx)
 	end
 	fx(ctx, "Conjunction", "Fade", { star = star })
 end
-
--- Half-Crown Spirit of Zephyr
 
 local STORM_CHARGE = 0.45
 local STORM_TICKS = 6
@@ -545,7 +530,6 @@ local function tempestDive(ctx)
 		return
 	end
 
-	-- (From where his body is: he hovers over his root while awakened.)
 	local origin = ctx.root.CFrame + UP * SaintPlan.Lift
 	local plan = DivePlan.Plan(origin, targetRoot.Position, floorUnder(ctx, targetRoot.Position).Y)
 	local times = DivePlan.Times
@@ -578,7 +562,6 @@ local function tempestDive(ctx)
 		end
 	end
 
-	-- Into the ground, hard enough to bounce them.
 	waitUntil(times.Land)
 	stopThem()
 	local impact = Vector3.new(plan.start.X, plan.floorY, plan.start.Z)
@@ -675,19 +658,19 @@ local function quartileScutum(ctx)
 end
 
 local NOVA_SLOT = 4
-local NOVA_CAST = 0.28 -- the star forms in his hand and he flicks it
-local NOVA_SPEED = 120 -- the star's flight
-local NOVA_RANGE = 45 -- how far it reaches for someone to aim at
-local NOVA_AHEAD = 24 -- where it goes with nobody to aim at
-local NOVA_PULL = 22 -- the reach of the vortex
-local NOVA_EYE = 5 -- held in the eye within this
-local NOVA_LIFT = 4 -- how high the eye holds them off the ground
-local NOVA_OPEN = 1.1 -- how long it turns, tapped
-local NOVA_HELD = 2.2 -- the longest it turns, held
+local NOVA_CAST = 0.28
+local NOVA_SPEED = 120
+local NOVA_RANGE = 45
+local NOVA_AHEAD = 24
+local NOVA_PULL = 22
+local NOVA_EYE = 5
+local NOVA_LIFT = 4
+local NOVA_OPEN = 1.1
+local NOVA_HELD = 2.2
 local NOVA_TICK = 0.1
-local NOVA_CUT = 0.25 -- the wind cuts whoever is in the eye this often
-local NOVA_COLLAPSE = 0.15 -- the vortex falling into its eye before the nova
-local NOVA_BLAST = 9 -- the nova's reach
+local NOVA_CUT = 0.25
+local NOVA_COLLAPSE = 0.15
+local NOVA_BLAST = 9
 
 local function novaVortex(ctx)
 	local c, character = ctx.combat, ctx.character
@@ -721,11 +704,10 @@ local function novaVortex(ctx)
 		return
 	end
 
-	-- The vortex: everyone near is dragged in; in its eye, held up and cut.
 	fx(ctx, "NovaVortex", "Open", { eye = eye, ground = ground, reach = NOVA_PULL })
 	local opened = os.clock()
 	local lastCut = -1
-	local hold = ground + UP * (NOVA_LIFT + 3) -- where the eye holds their root
+	local hold = ground + UP * (NOVA_LIFT + 3)
 	while true do
 		local t = os.clock() - opened
 		if not CombatState.IsAlive(character) then
@@ -745,14 +727,12 @@ local function novaVortex(ctx)
 				local offset = hold - victimRoot.Position
 				local level = Vector3.new(offset.X, 0, offset.Z)
 				if level.Magnitude < NOVA_EYE then
-					-- Held up in the eye, turning with it.
 					local pull = offset / 0.15
 					c.ApplyVelocity(victim, if pull.Magnitude > 40 then pull.Unit * 40 else pull, NOVA_TICK + 0.05)
 					if cut then
 						c.Hit(character, victim, { damage = 0.6, stun = 0.6, attackType = "Zone", noShake = true })
 					end
 				elseif level.Magnitude > 1e-3 then
-					-- Dragged in: harder the closer they get.
 					local strength = 16 + 20 * (1 - level.Magnitude / NOVA_PULL)
 					c.ApplyVelocity(victim, level.Unit * strength + UP * 2, NOVA_TICK + 0.05)
 				end
@@ -761,7 +741,6 @@ local function novaVortex(ctx)
 		task.wait(NOVA_TICK)
 	end
 
-	-- It falls into its eye and goes nova.
 	fx(ctx, "NovaVortex", "Nova", { eye = eye, ground = ground })
 	task.wait(NOVA_COLLAPSE)
 	for _, victim in c.Sphere(character, eye + UP * 2, NOVA_BLAST) do
@@ -780,9 +759,7 @@ local function novaVortex(ctx)
 	c.ShakeArea(eye, 45, 0.35)
 end
 
--- Full-Crown Spirit of Zephyr
-
-local BOREAS_RAISE = 0.42 -- the axe forms, raised (BoreasForm, then BoreasChop)
+local BOREAS_RAISE = 0.42
 local BOREAS_REACH = 28
 local BOREAS_WIDTH = 7
 
@@ -810,7 +787,7 @@ local function spiritOfBoreas(ctx)
 			stun = 1.2,
 			attackType = "Melee",
 			guardBreak = true,
-			hitsDowned = true, -- the split runs under people lying on the ground too
+			hitsDowned = true,
 			heavy = true,
 			ragdoll = 1,
 			velocity = if airborne then forward * 10 + UP * -45 else forward * 8 + UP * 38,
@@ -836,7 +813,7 @@ local function spiritOfZephyrus(ctx)
 		elseif airborne then (forward - UP * 0.5).Unit
 		else forward
 	if not airborne then
-		direction = c.Flat(direction) -- a lunge, not a jump
+		direction = c.Flat(direction)
 	end
 	CombatState.SetCasting(character, LUNGE_TIME + 0.3)
 	fx(ctx, "SpiritOfZephyrus", "Lunge", { direction = direction, duration = LUNGE_TIME, airborne = airborne })
@@ -876,7 +853,6 @@ local function spiritOfZephyrus(ctx)
 		return
 	end
 
-	-- The waltz: both of them on the paths, the cuts and the thrust on time.
 	local plan = WaltzPlan.Plan(ctx.root.Position, caughtRoot.Position)
 	local times = WaltzPlan.Times
 	CombatState.SetCasting(character, times.Length + 0.2)
@@ -912,7 +888,6 @@ local function spiritOfZephyrus(ctx)
 			abort()
 			return
 		end
-		-- (The waltz is their reaction; the camera stays still.)
 		c.Hit(character, caught, {
 			damage = 1.2,
 			stun = 1.2,
@@ -926,7 +901,6 @@ local function spiritOfZephyrus(ctx)
 		abort()
 		return
 	end
-	-- Run through: blown away from him, through where he caught them.
 	stopThem()
 	c.Hit(character, caught, {
 		damage = 4.5,
@@ -966,7 +940,7 @@ local function spiritOfEuros(ctx)
 	local direction = aimFrom(ctx, origin, softTarget(ctx, EUROS_RANGE, 20), 0.3)
 	local length = reach(ctx, origin, direction, EUROS_RANGE)
 	fx(ctx, "SpiritOfEuros", "Loose", { origin = origin, direction = direction, length = length })
-	for _, victim in lineVictims(ctx, origin, direction, length, 6) do -- a giant arrow
+	for _, victim in lineVictims(ctx, origin, direction, length, 6) do
 		c.Hit(character, victim, {
 			damage = 16,
 			stun = 1.3,
@@ -980,7 +954,7 @@ local function spiritOfEuros(ctx)
 	c.ShakeArea(origin, 40, 0.35)
 end
 
-local SAINT_FLICK = 0.2 -- the star leaves his hand (Conjunction's point)
+local SAINT_FLICK = 0.2
 local SAINT_BOX = Vector3.new(5, 7, 15)
 
 local function saintSpiritOfZephyr(ctx)
@@ -1019,7 +993,6 @@ local function saintSpiritOfZephyr(ctx)
 		return
 	end
 
-	-- (From where his body is: he hovers over his root in the Full-Crown.)
 	local origin = ctx.root.CFrame + UP * SaintPlan.Lift
 	local plan = SaintPlan.Plan(origin, targetRoot.Position, floorUnder(ctx, targetRoot.Position).Y)
 	local times = SaintPlan.Times
@@ -1066,7 +1039,6 @@ local function saintSpiritOfZephyr(ctx)
 		c.Hit(character, target, { damage = 3, stun = 3, attackType = "Melee", unblockable = true, noShake = true })
 	end
 
-	-- The cuts burst and drive them into the ground.
 	waitUntil(times.Land)
 	stopThem()
 	local center = Vector3.new(plan.start.X, plan.floorY, plan.start.Z)
@@ -1087,8 +1059,6 @@ local function saintSpiritOfZephyr(ctx)
 	stopHim()
 end
 
--- Move sets
-
 Kit.Skills = { windBladesShower, swiftWhiteHawk, heavenlyWindArk, galeWhiteBow }
 
 local HALF_CROWN = { spiritStorm, tempestDive, quartileScutum, novaVortex }
@@ -1100,8 +1070,6 @@ local function stageMove(slot: number): (any) -> ()
 	end
 end
 Kit.AwakenedSkills = { stageMove(1), stageMove(2), stageMove(3), stageMove(4) }
-
--- Half-Crown / Full-Crown Spirit of Zephyr
 
 local TRANSFORM_TIME = 1.5
 local TRANSFORM_BURST = 0.8

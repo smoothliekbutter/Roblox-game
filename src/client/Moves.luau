@@ -1,5 +1,3 @@
--- Plays move animations and VFX on characters, routed to each character's kit (Client/Kits/<KitId>).
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -31,7 +29,6 @@ local function kitOf(character: Model): any
 	return if type(id) == "string" then clientKits[id] else nil
 end
 
--- Default M1s: punches and a kick.
 local function playFistM1(character: Model, index: number, variant: string)
 	local name = M1Animations.NameFor(index, variant)
 	local animation = M1Animations.Clips[name]
@@ -60,9 +57,6 @@ function Moves.PlayM1(character: Model, index: number, variant: string)
 	end
 end
 
--- Getting hit and blocking
-
--- A character's own reaction (Kit.Reactions) or the default one.
 local function reactionFor(character: Model, name: string): PoseAnimator.Animation?
 	local kit = kitOf(character)
 	local own = kit and kit.Reactions and kit.Reactions[name]
@@ -73,15 +67,14 @@ local function asModel(value: unknown): Model?
 	return if typeof(value) == "Instance" and value:IsA("Model") then value else nil
 end
 
--- Characters being held in a grab (see pinGrab), by victim.
 local grabs: { [Model]: { stop: () -> () } } = {}
 
 local function react(character: Model, name: string)
 	if character:GetAttribute("Ragdolled") == true then
-		return -- the ragdoll is the reaction
+		return
 	end
 	if grabs[character] and name ~= "Grabbed" then
-		return -- they keep struggling in the grip
+		return
 	end
 	local animation = reactionFor(character, name)
 	if animation then
@@ -114,7 +107,6 @@ local function onLandedHit(name: string, data)
 		react(victim, "HitHeavy")
 		return
 	end
-	-- Hit from behind throws them forward; otherwise alternate sides.
 	local victimRoot = victim:FindFirstChild("HumanoidRootPart") :: BasePart?
 	local attacker = data.attacker
 	local attackerRoot = if typeof(attacker) == "Instance"
@@ -132,9 +124,9 @@ local function onLandedHit(name: string, data)
 	react(victim, if side then "FlinchA" else "FlinchB")
 end
 
-local GRAB_NECK = 0.85 -- grip point to the victim's root
-local GRAB_REACH = 0.6 -- the victim's root sits this far past the hand
-local GRAB_FLOOR = 2.6 -- lowest the victim's root goes above the ground
+local GRAB_NECK = 0.85
+local GRAB_REACH = 0.6
+local GRAB_FLOOR = 2.6
 
 local function pinGrab(data)
 	local victim, attacker = asModel(data.victim), asModel(data.attacker)
@@ -203,7 +195,6 @@ local function pinGrab(data)
 	react(victim, "Grabbed")
 end
 
--- Holding block shows the guard; letting go fades it out.
 local function watchBlocking(character: Model)
 	local function update()
 		if character:GetAttribute("Blocking") == true then
@@ -219,7 +210,6 @@ local function watchBlocking(character: Model)
 end
 
 local function watchCharacter(character: Model)
-	-- The character can arrive before its joints have replicated.
 	local torso = character:WaitForChild("Torso", 5)
 	if torso then
 		torso:WaitForChild("Right Shoulder", 5)
@@ -233,7 +223,6 @@ local function watchCharacter(character: Model)
 	end
 	local function updateKit()
 		local kit = kitOf(character)
-		-- A kit can choose its idle by state (Yuno hovers when awakened).
 		local set = if kit and kit.IdleFor then kit.IdleFor(character) elseif kit then kit.Idle else nil
 		PoseAnimator.SetIdle(character, set)
 	end
@@ -275,7 +264,6 @@ function Moves.Start()
 			return
 		end
 
-		-- Reactions on whoever got hit.
 		if data.hitConfirm then
 			onLandedHit(name, data)
 		else
@@ -300,7 +288,6 @@ function Moves.Start()
 		end
 
 		if name == "Swing" then
-			-- Our own swing already played the moment we clicked.
 			if character ~= localPlayer.Character then
 				Moves.PlayM1(character, data.index or 1, data.variant or "Normal")
 			end
@@ -312,7 +299,6 @@ function Moves.Start()
 		end
 	end)
 
-	-- Character switch: a flash in the new character's color.
 	VFX.Register("KitSwitch", function(data)
 		local character = data.character
 		local kit = Kits.Get(data.kit)
@@ -330,7 +316,6 @@ function Moves.Start()
 		watchPlayer(player)
 	end
 
-	-- Dummies block too.
 	task.spawn(function()
 		local dummies = workspace:WaitForChild("Dummies", 30)
 		if dummies then

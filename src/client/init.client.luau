@@ -1,7 +1,3 @@
---[[
-	Client entry point.
-]]
-
 local StarterGui = game:GetService("StarterGui")
 
 local CameraShake = require(script.CameraShake)
@@ -12,7 +8,6 @@ local ShiftLock = require(script.ShiftLock)
 local TopBar = require(script.TopBar)
 local VFX = require(script.VFX)
 
--- Our HUD replaces the default health bar.
 pcall(function()
 	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, false)
 end)

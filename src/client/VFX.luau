@@ -1,5 +1,3 @@
--- Client-side VFX: the server sends ("EffectName", data) and this draws it with parts, beams, particles and lights.
-
 local Debris = game:GetService("Debris")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -42,8 +40,6 @@ fxFolder.Parent = workspace
 
 local VFX = {}
 local Effects: { [string]: (data: any) -> () } = {}
-
--- Building blocks
 
 local function newPart(props: { [string]: any }): Part
 	local part = Instance.new("Part")
@@ -127,10 +123,9 @@ type BurstOptions = {
 	acceleration: Vector3?,
 	spread: number?,
 	streaks: boolean?,
-	direction: Vector3?, -- aim the spread cone this way (default: straight up)
+	direction: Vector3?,
 }
 
--- One-shot particle burst at a point.
 local function burst(position: Vector3, options: BurstOptions)
 	local cframe = if options.direction
 		then CFrame.lookAt(position, position + options.direction)
@@ -163,7 +158,6 @@ local function burst(position: Vector3, options: BurstOptions)
 	emitter.Rotation = NumberRange.new(0, 360)
 	emitter.RotSpeed = NumberRange.new(-180, 180)
 	if options.streaks then
-		-- Stretch along travel direction for speed-line sparks.
 		emitter.Orientation = Enum.ParticleOrientation.VelocityParallel
 		emitter.Squash = NumberSequence.new(1.5)
 	end
@@ -174,7 +168,6 @@ local function burst(position: Vector3, options: BurstOptions)
 	Debris:AddItem(holder, lifetime.Max + 0.5)
 end
 
--- Expanding glowing ball.
 local function flash(position: Vector3, color: Color3, size: number, duration: number)
 	local ball = newPart({
 		Shape = Enum.PartType.Ball,
@@ -187,7 +180,6 @@ local function flash(position: Vector3, color: Color3, size: number, duration: n
 	Debris:AddItem(ball, duration + 0.05)
 end
 
--- Ring of thin neon segments expanding outward in the cframe's XZ plane.
 local function ringBurst(
 	cframe: CFrame,
 	color: Color3,
@@ -217,7 +209,6 @@ local function ringBurst(
 	end
 end
 
--- A ring facing along `direction`, for impacts.
 local function impactRing(position: Vector3, direction: Vector3, color: Color3, startRadius, endRadius, duration)
 	local cframe = CFrame.lookAt(position, position + direction) * CFrame.Angles(math.rad(90), 0, 0)
 	ringBurst(cframe, color, startRadius, endRadius, duration, 0.18)
@@ -251,7 +242,6 @@ local function highlight(character: Model?, color: Color3, duration: number, fil
 	Debris:AddItem(h, duration + 0.05)
 end
 
--- Neon ghost copy of a character that fades out (`offset` from where he is).
 local function afterimage(character: Model, color: Color3, duration: number, offset: Vector3?)
 	for _, part in character:GetChildren() do
 		if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" and part.Transparency < 1 then
@@ -285,7 +275,6 @@ local function afterimage(character: Model, color: Color3, duration: number, off
 	end
 end
 
--- Wind trail streaming off a flying character.
 local function bodyTrail(character: Model?, color: Color3, duration: number)
 	local root = getRoot(character)
 	if not root then
@@ -319,7 +308,6 @@ local function bodyTrail(character: Model?, color: Color3, duration: number)
 	end)
 end
 
--- Flying shards (unanchored, local physics only).
 local function shards(position: Vector3, color: Color3, count: number)
 	for _ = 1, count do
 		local shard = newPart({
@@ -337,7 +325,6 @@ local function shards(position: Vector3, color: Color3, count: number)
 	end
 end
 
--- Rocks bursting up from the ground in a ring, plus dust.
 local function groundRocks(position: Vector3, count: number, radius: number, maxSize: number)
 	local ground = groundBelow(position)
 	if not ground then
@@ -387,7 +374,6 @@ local function groundRocks(position: Vector3, count: number, radius: number, max
 	})
 end
 
--- "PERFECT", damage numbers, etc.
 local function popup(position: Vector3, text: string, color: Color3, scale: number?)
 	local holder = newPart({
 		Size = Vector3.one * 0.2,
@@ -434,7 +420,6 @@ local function screenFlash(color: Color3, duration: number)
 	Debris:AddItem(correction, duration + 0.05)
 end
 
--- Four-point star glint facing the camera (metal catching the light).
 local function glint(position: Vector3, scale: number, color: Color3?)
 	local camera = workspace.CurrentCamera
 	local base = CFrame.lookAt(position, camera.CFrame.Position)
@@ -633,7 +618,7 @@ end
 local function debris(position: Vector3, count: number, speed: number, size: number)
 	local ground = groundBelow(position)
 	if not ground then
-		return -- nothing to blast out of in mid-air
+		return
 	end
 	local color = if ground.Instance:IsA("BasePart") then ground.Instance.Color else COLORS.Dust
 	local material = ground.Material
@@ -697,7 +682,6 @@ local function debris(position: Vector3, count: number, speed: number, size: num
 	end)
 end
 
--- A column of energy shooting up out of the ground, then thinning out.
 local function pillar(
 	position: Vector3,
 	color: Color3,
@@ -707,7 +691,6 @@ local function pillar(
 	material: Enum.Material?,
 	transparency: number?
 )
-	-- Cylinders run along X; turn X up.
 	local base = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
 	local column = newPart({
 		Shape = Enum.PartType.Cylinder,
@@ -877,7 +860,6 @@ local function impactSpikes(
 		local width = 0.12 + reach * 0.035
 		for layer = 1, 2 do
 			local w = if layer == 1 then width * 2.6 else width
-			-- (the bright line just in front of its glow, toward the eye)
 			local z = if layer == 1 then 0 else -0.02
 			local spike = newPart({
 				Size = Vector3.new(0.05, w, 0.03),
@@ -954,7 +936,6 @@ local function scorch(position: Vector3, radius: number, glow: Color3?, duration
 		return
 	end
 	local life = duration or 2.5
-	-- Cylinders run along X: X along the ground's normal.
 	local frame = CFrame.lookAt(ground.Position, ground.Position + ground.Normal) * CFrame.Angles(0, math.rad(90), 0)
 	local marks = {
 		{ radius = radius, color = Color3.fromRGB(22, 20, 20), transparency = 0.45, lift = 0.03 },
@@ -1055,9 +1036,6 @@ local function colorGrade(goal: { [string]: any }, fadeIn: number, hold: number,
 	Debris:AddItem(correction, fadeIn + hold + fadeOut + 0.05)
 end
 
--- Effects (names match what the server sends)
-
--- M1 hit for kits with a clean style: a quick body flash and the number.
 local function cleanM1Hit(data, heavy: boolean): boolean
 	local palette = paletteFor(data)
 	if not palette.cleanM1 or data.variant == nil then
@@ -1067,7 +1045,6 @@ local function cleanM1Hit(data, heavy: boolean): boolean
 	if data.damage then
 		popup(data.position, string.format("%g", data.damage), Color3.new(1, 1, 1), if heavy then 1.2 else 1)
 	end
-	-- Finishers get a touch of motion: a small burst in the launch direction.
 	local victimRoot = getRoot(data.victim)
 	if victimRoot and (data.variant == "Uppercut" or data.variant == "Downslam") then
 		local up = data.variant == "Uppercut"
@@ -1275,7 +1252,6 @@ function Effects.Evasive(data)
 	end
 end
 
--- A ragdoll slamming into the floor or a wall.
 function Effects.BodyImpact(data)
 	local position: Vector3 = data.position
 	local strength: number = math.clamp(tonumber(data.strength) or 0.5, 0.2, 1)
@@ -1304,7 +1280,6 @@ end
 function Effects.Crater(data)
 	local position: Vector3 = data.position
 	if data.small then
-		-- M1 downslams: a modest dent, not a skill-sized crater.
 		groundRocks(position, 6, 2, 1.1)
 		ringBurst(CFrame.new(position + Vector3.new(0, 0.2, 0)), Color3.new(1, 1, 1), 0.6, 5, 0.25, 0.15)
 		return
@@ -1314,7 +1289,6 @@ function Effects.Crater(data)
 	flash(position, COLORS.Heavy, 6, 0.2)
 	light(position, COLORS.Heavy, 6, 20, 0.35)
 
-	-- Anyone nearby feels the slam.
 	local myRoot = getRoot(localPlayer.Character)
 	if myRoot then
 		local distance = (myRoot.Position - position).Magnitude
@@ -1324,15 +1298,11 @@ function Effects.Crater(data)
 	end
 end
 
--- Public helpers used by the move animations
-
--- Streak behind a striking limb (fist or foot) for `duration` seconds.
 function VFX.LimbTrail(character: Model, limbName: string, duration: number, color: Color3?)
 	local limbPart = character:FindFirstChild(limbName)
 	if not limbPart or not limbPart:IsA("BasePart") then
 		return
 	end
-	-- Two points near the end of the limb (R6 limbs are 2 studs long).
 	local tip = Instance.new("Attachment")
 	tip.Position = Vector3.new(0, -1.1, 0)
 	tip.Parent = limbPart
@@ -1365,7 +1335,6 @@ function VFX.LimbTrail(character: Model, limbName: string, duration: number, col
 	end)
 end
 
--- Burst of displaced air in front of a punch or kick.
 function VFX.AirPop(character: Model, heavy: boolean)
 	local root = getRoot(character)
 	if not root then
@@ -1389,7 +1358,6 @@ function VFX.AirPop(character: Model, heavy: boolean)
 	end
 end
 
--- Building blocks for character kits (Client/Kits/*).
 VFX.Util = {
 	folder = fxFolder,
 	textures = TEXTURES,
@@ -1428,7 +1396,6 @@ VFX.Util = {
 	groove = groove,
 }
 
--- Adds (or replaces) a named effect the server can trigger.
 function VFX.Register(name: string, effect: (data: any) -> ())
 	Effects[name] = effect
 end

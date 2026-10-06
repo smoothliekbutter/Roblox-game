@@ -1,5 +1,3 @@
--- Ragdolls: Motor6Ds swapped for BallSocketConstraints, the server owning the physics meanwhile.
-
 local PhysicsService = game:GetService("PhysicsService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -8,10 +6,8 @@ local GROUP = "Ragdoll"
 if not PhysicsService:IsCollisionGroupRegistered(GROUP) then
 	PhysicsService:RegisterCollisionGroup(GROUP)
 end
--- Body parts of a ragdoll don't collide with each other (stops jitter at the joints).
 PhysicsService:CollisionGroupSetCollidable(GROUP, GROUP, false)
 
--- The root joint stays a motor so the HumanoidRootPart follows the torso.
 local KEEP_JOINTS = {
 	RootJoint = true,
 	Root = true,
@@ -52,7 +48,6 @@ end
 local function standingCFrame(character: Model, humanoid: Humanoid, root: BasePart): CFrame
 	local facing = root.CFrame.LookVector * Vector3.new(1, 0, 1)
 	if facing.Magnitude < 0.2 then
-		-- Lying on its back/front: the head direction is the best guess.
 		facing = root.CFrame.UpVector * Vector3.new(1, 0, 1)
 	end
 	if facing.Magnitude < 0.01 then
@@ -100,11 +95,9 @@ function Ragdoll.Enable(character: Model)
 
 	local record: Record = { created = {}, motors = {}, groups = {}, physics = {} }
 	active[character] = record
-	-- The Neck motor goes off below: without this a player dies on the spot.
 	humanoid.RequiresNeck = false
 
 	for _, joint in character:GetDescendants() do
-		-- Body joints only: a weapon's grip (Part1 inside the weapon model) stays rigid.
 		if
 			joint:IsA("Motor6D")
 			and not KEEP_JOINTS[joint.Name]
@@ -145,7 +138,6 @@ function Ragdoll.Enable(character: Model)
 		end
 	end
 
-	-- Limbs normally don't collide, so give each one an invisible collider.
 	for _, part in character:GetChildren() do
 		if part:IsA("BasePart") then
 			record.groups[part] = part.CollisionGroup
@@ -252,7 +244,6 @@ function Ragdoll.Disable(character: Model, instant: boolean?)
 	end)
 end
 
--- Drops bookkeeping for a character that was removed from the game.
 function Ragdoll.Forget(character: Model)
 	active[character] = nil
 	local connection = gettingUp[character]

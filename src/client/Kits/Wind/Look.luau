@@ -1,5 +1,3 @@
--- Yuno's Half-Crown / Full-Crown transformations and looks (wings, sword) and his spawn entrance.
-
 local RunService = game:GetService("RunService")
 
 local CameraShake = require(script.Parent.Parent.Parent.CameraShake)
@@ -12,7 +10,6 @@ local U = VFX.Util
 local rad = math.rad
 local UP = Vector3.yAxis
 
--- The palette and the soft wind everything is drawn with (see Soft).
 local WIND, WIND_WHITE = Soft.WIND, Soft.WIND_WHITE
 local STAR, STAR_WHITE = Soft.STAR, Soft.STAR_WHITE
 local SMOKE, SPARKLE = Soft.SMOKE, Soft.SPARKLE
@@ -26,7 +23,6 @@ local twinkle, starDust = Soft.twinkle, Soft.starDust
 local Fx = require(script.Parent.Fx)
 local ANIMS, handlers, play, easeOut, featherBurst = Fx.ANIMS, Fx.handlers, Fx.play, Fx.easeOut, Fx.featherBurst
 
--- His look while crowned, per character; moves can hide his wind sword for a moment (the halberd, the bow).
 local looks: { [Model]: { hideSword: number, blade: BasePart? } } = {}
 
 local function hideSword(character: Model, duration: number)
@@ -36,10 +32,6 @@ local function hideSword(character: Model, duration: number)
 	end
 end
 
--- Half-Crown / Full-Crown: transformations and looks
-
--- Sylph circles in and merges into him at the burst; wind gathers, then
--- blasts out.
 local function transformation(data, character: Model, root: BasePart, full: boolean)
 	if data.phase == "Start" then
 		play(character, if full then ANIMS.Ascend else ANIMS.Awaken)
@@ -242,10 +234,8 @@ local function buildLook(character: Model, full: boolean): () -> ()
 		baseOf[p] = base
 		return p
 	end
-	local sides = if full then { -1, 1 } else { -1 } -- -1: his left
+	local sides = if full then { -1, 1 } else { -1 }
 
-	-- Wings (see Wings): beating slowly as he hovers, swept back into a
-	-- glide as he moves.
 	local wings: { Wings.Wing } = {}
 	local emitters: { ParticleEmitter } = {}
 	local wingTrails: { Trail } = {}
@@ -257,7 +247,7 @@ local function buildLook(character: Model, full: boolean): () -> ()
 			table.insert(wingTrails, trail)
 		end
 		for _, beam in wing.beams do
-			beam.Enabled = false -- (once the wing's in)
+			beam.Enabled = false
 			table.insert(wingBeams, beam)
 		end
 		for _, emitter in wing.emitters do
@@ -265,7 +255,7 @@ local function buildLook(character: Model, full: boolean): () -> ()
 		end
 	end
 	local wingsStarted = false
-	local phase = 0 -- how far through a beat (radians)
+	local phase = 0
 	local glide, gliding = 0, 0
 
 	local spikes: { Spike } = {}
@@ -333,8 +323,6 @@ local function buildLook(character: Model, full: boolean): () -> ()
 		end
 	end
 
-	-- His grimoire: a dark green book with a four-leaf clover of light over
-	-- its open pages.
 	local book: { Page } = {}
 	local function page(props: { [string]: any }, base: number, offset: CFrame, side: number)
 		table.insert(book, { part = part(props, base), offset = offset, side = side })
@@ -385,7 +373,6 @@ local function buildLook(character: Model, full: boolean): () -> ()
 	bookLight.Brightness = 1.5
 	bookLight.Parent = book[#book].part
 
-	-- The wind sword (Full-Crown), in his right hand (see Sword).
 	local sword: Sword.Sword? = nil
 	if full then
 		local made = Sword.new(part)
@@ -394,8 +381,6 @@ local function buildLook(character: Model, full: boolean): () -> ()
 	end
 	local swordShown = true
 
-	-- Hovering: a ring of wind turning on the ground under him and a soft
-	-- downdraft off his feet.
 	local hoverRing = softRing({
 		color = ColorSequence.new(WIND_WHITE, WIND),
 		width0 = 0.9,
@@ -457,7 +442,6 @@ local function buildLook(character: Model, full: boolean): () -> ()
 	end
 	connection = RunService.RenderStepped:Connect(function()
 		if not torso.Parent or not head.Parent or not root.Parent then
-			-- He's gone (died, left): the look goes with him.
 			destroy()
 			return
 		end
@@ -498,14 +482,12 @@ local function buildLook(character: Model, full: boolean): () -> ()
 			Wings.Place(wing, torso.CFrame, hold, phase, glide, t)
 		end
 		if not wingsStarted then
-			-- (The tips are in place now: their trails start here.)
 			wingsStarted = true
 			for _, trail in wingTrails do
 				Soft.beginTrail(trail)
 			end
 		end
 
-		-- Crown.
 		local crown = head.CFrame * CFrame.new(0, 0.3, 0)
 		local function around(a: number): Vector3
 			return Vector3.new(math.sin(a), 0, -math.cos(a))
@@ -528,14 +510,12 @@ local function buildLook(character: Model, full: boolean): () -> ()
 		gem.CFrame =
 			CFrame.new(crown * ((if full then around(0) else around(-math.pi / 2)) * 0.7 + Vector3.new(0, 0.12, 0)))
 
-		-- Mana.
 		for _, shell in shells do
 			if shell.limb.Parent then
 				shell.part.CFrame = shell.limb.CFrame * shell.offset
 			end
 		end
 
-		-- Grimoire: circling him, turned to keep its pages towards him.
 		local orbit = t * 1.15
 		local position = root.Position
 			+ Vector3.new(math.cos(orbit) * 3, 1.3 + math.sin(t * 2.1) * 0.3, math.sin(orbit) * 3)
@@ -549,7 +529,6 @@ local function buildLook(character: Model, full: boolean): () -> ()
 			p.part.CFrame = bookFrame * hinge * spin * p.offset
 		end
 
-		-- Sword (hidden while a move has it put away).
 		if sword then
 			local arm = character:FindFirstChild("Right Arm") :: BasePart?
 			if arm then
@@ -581,8 +560,6 @@ local function buildLook(character: Model, full: boolean): () -> ()
 		end
 	end
 end
-
--- Spawn entrance
 
 type Book = { place: (CFrame, number, number) -> (), fade: (number) -> () }
 

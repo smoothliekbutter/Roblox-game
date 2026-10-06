@@ -1,5 +1,3 @@
--- HUD: health, Evasive and R bars (top right), the move bar (bottom) and the awakening meter.
-
 local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -32,7 +30,7 @@ local COMBO_TIMEOUT = 1.6
 local SLOT_SIZE = 54
 local SLOT_GAP = 6
 local STATUS_WIDTH = 206
-local SPECIAL_WIDTH = 40 -- the R bar
+local SPECIAL_WIDTH = 40
 
 type Slot = {
 	frame: Frame,
@@ -157,7 +155,6 @@ local function slot(parent: Instance, key: string, order: number): Slot
 		ZIndex = 4,
 	})
 
-	-- Dark curtain that shrinks as the cooldown finishes.
 	local overlay = Instance.new("Frame")
 	overlay.AnchorPoint = Vector2.new(0, 1)
 	overlay.Position = UDim2.fromScale(0, 1)
@@ -187,8 +184,6 @@ local function setSlotCooldown(s: Slot, remaining: number, length: number)
 end
 
 local function buildStatus(playerGui: Instance)
-	-- Lives in the top right corner of the screen, at the same height as
-	-- Roblox's top bar buttons.
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "Status"
 	gui.ResetOnSpawn = false
@@ -283,7 +278,6 @@ local function buildStatus(playerGui: Instance)
 	ui.evasiveStroke.Transparency = 1
 	ui.evasiveStroke.Parent = evasiveBack
 
-	-- Same vertical placement as the top bar buttons (see TopBar).
 	local function align()
 		local barHeight = GuiService.TopbarInset.Height
 		if barHeight <= 0 then
@@ -298,7 +292,6 @@ local function buildStatus(playerGui: Instance)
 end
 
 local function buildMoves(gui: ScreenGui)
-	-- Skills 1-4.
 	local width = 4 * SLOT_SIZE + 3 * SLOT_GAP
 
 	local holder = Instance.new("Frame")
@@ -309,7 +302,6 @@ local function buildMoves(gui: ScreenGui)
 	holder.BackgroundTransparency = 1
 	holder.Parent = gui
 
-	-- Awakening bar over the moves, with the key and the form's name.
 	ui.awakening = Instance.new("Frame")
 	ui.awakening.BackgroundTransparency = 1
 	ui.awakening.Size = UDim2.new(1, 0, 0, 18)
@@ -390,9 +382,7 @@ local function build()
 	})
 end
 
--- Kit-dependent labels (skill names, colors) only change on switch/awaken.
 local function refreshKit(character: Model?)
-	-- Just after a respawn the kit is still going on: show the one they play.
 	local kitId = if character
 		then (character:GetAttribute("Kit") or localPlayer:GetAttribute("Kit")) :: string?
 		else nil
@@ -463,7 +453,6 @@ local function update(dt: number)
 		ui.awakeningStroke.Transparency = if awakening >= 1 or awakened then pulse else 1
 		ui.awakeningLabel.TextColor3 = if awakening >= 1 or awakened then awakeningColor else COLORS.SubText
 
-		-- A second stage (Yuno's Full-Crown): how close it is, then G again.
 		local kit = Kits.Of(character)
 		local ascension = kit and kit.ascension
 		if kit and ascension and kit.awakening then
@@ -513,7 +502,6 @@ local function update(dt: number)
 	end
 end
 
--- Short message at the top of the screen.
 function HUD.Toast(text: string, color: Color3?)
 	toastToken += 1
 	local token = toastToken

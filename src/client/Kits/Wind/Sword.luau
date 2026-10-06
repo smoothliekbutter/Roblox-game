@@ -1,5 +1,3 @@
--- Yuno's Full-Crown sword of wind, laid out in grip space (Y up the blade, Z across its edges, X through its flats).
-
 local Soft = require(script.Parent.Parent.Parent.Soft)
 
 local rad = math.rad
@@ -8,7 +6,7 @@ local key = Soft.key
 local WIND, WIND_WHITE = Soft.WIND, Soft.WIND_WHITE
 local STAR, STAR_WHITE = Soft.STAR, Soft.STAR_WHITE
 
-local GRIP = Color3.fromRGB(22, 64, 48) -- the wrapping
+local GRIP = Color3.fromRGB(22, 64, 48)
 local GOLD = STAR
 local GEM = WIND
 
@@ -17,16 +15,16 @@ local Sword = {}
 local BASE, SWELL, TIP = 0.72, 4.6, 6.6
 local BASE_WIDTH, WIDEST = 0.5, 0.86
 local THICK = 0.12
-local CORE = 3.5 -- the middle of the fuller
+local CORE = 3.5
 
 export type Piece = {
 	shape: "Box" | "Wedge" | "Ball" | "Feather",
 	size: Vector3,
 	color: Color3,
 	transparency: number,
-	offset: CFrame, -- where it sits in the grip's space
+	offset: CFrame,
 	material: Enum.Material?,
-	core: boolean?, -- the fuller (moves trail wind off it)
+	core: boolean?,
 }
 
 local PIECES: { Piece } = {}
@@ -34,7 +32,6 @@ local function add(piece: Piece)
 	table.insert(PIECES, piece)
 end
 
--- Grip, bands and pommel.
 add({
 	shape = "Box",
 	size = Vector3.new(0.2, 1.12, 0.2),
@@ -62,7 +59,6 @@ add({
 add({ shape = "Ball", size = Vector3.one * 0.3, color = GOLD, transparency = 0, offset = CFrame.new(0, -0.8, 0) })
 add({ shape = "Ball", size = Vector3.one * 0.16, color = GEM, transparency = 0, offset = CFrame.new(0, -0.95, 0) })
 
--- Crossguard: a gold block with a gem in each face, and its wings.
 local GUARD = 0.56
 add({
 	shape = "Box",
@@ -84,7 +80,6 @@ for _, side in { -1, 1 } do
 	for _, f in GUARD_FEATHERS do
 		add({
 			shape = "Feather",
-			-- (lying in the blade's plane: thin through its flats)
 			size = Vector3.new(0.07, f.length, f.width),
 			color = GOLD,
 			transparency = 0,
@@ -95,7 +90,6 @@ for _, side in { -1, 1 } do
 	end
 end
 
--- Where the blade leaves the guard: a gold diamond, a gem in each face.
 local DIAMOND = 0.95
 add({
 	shape = "Box",
@@ -148,7 +142,6 @@ add({
 	transparency = 0.3,
 	offset = CFrame.new(0, (SWELL + TIP) / 2, -WIDEST / 4),
 })
--- A paler glow inside it, and the white-hot fuller down the middle.
 add({
 	shape = "Box",
 	size = Vector3.new(THICK + 0.015, reach - 0.3, 0.28),
@@ -164,7 +157,6 @@ add({
 	offset = CFrame.new(0, CORE, 0),
 	core = true,
 })
--- Bright edges, along the outline.
 local function edge(fromY: number, fromZ: number, toY: number, toZ: number)
 	local dy, dz = toY - fromY, toZ - fromZ
 	add({
@@ -179,7 +171,6 @@ for _, side in { -1, 1 } do
 	edge(BASE, side * BASE_WIDTH / 2, SWELL, side * WIDEST / 2)
 	edge(SWELL, side * WIDEST / 2, TIP, 0)
 end
--- The shimmer round it.
 add({
 	shape = "Feather",
 	size = Vector3.new(0.42, TIP - BASE + 0.6, WIDEST + 0.45),
@@ -193,14 +184,12 @@ function Sword.Pieces(): { Piece }
 	return PIECES
 end
 
--- The parts
-
 export type Maker = (props: { [string]: any }, base: number, wedge: boolean?) -> BasePart
 
 export type Sword = {
 	parts: { BasePart },
 	frames: { CFrame },
-	blade: BasePart, -- the fuller (moves trail wind off it)
+	blade: BasePart,
 	beams: { Beam },
 	emitters: { ParticleEmitter },
 }
@@ -287,7 +276,6 @@ function Sword.new(make: Maker): Sword
 	}
 end
 
--- Moves the sword to his grip (Y up the blade, Z across it).
 function Sword.Place(sword: Sword, grip: CFrame)
 	for i, piece in PIECES do
 		sword.frames[i] = grip * piece.offset

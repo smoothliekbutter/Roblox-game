@@ -1,5 +1,3 @@
--- Yuno's base moves: Wind Blades Shower, Swift White Hawk, Heavenly Wind Ark, Gale White Bow and Conjunction (R).
-
 local CameraShake = require(script.Parent.Parent.Parent.CameraShake)
 local PoseAnimator = require(script.Parent.Parent.Parent.PoseAnimator)
 local VFX = require(script.Parent.Parent.Parent.VFX)
@@ -12,7 +10,6 @@ local U = VFX.Util
 local rad = math.rad
 local UP = Vector3.yAxis
 
--- The palette and the soft wind everything is drawn with (see Soft).
 local WIND, WIND_WHITE = Soft.WIND, Soft.WIND_WHITE
 local STAR, STAR_WHITE = Soft.STAR, Soft.STAR_WHITE
 local SMOKE, SPARKLE = Soft.SMOKE, Soft.SPARKLE
@@ -28,8 +25,6 @@ local windSlash, twinkle, starDust = Soft.windSlash, Soft.twinkle, Soft.starDust
 local Fx = require(script.Parent.Fx)
 local ANIMS, handlers, play, bump, live, handOf = Fx.ANIMS, Fx.handlers, Fx.play, Fx.bump, Fx.live, Fx.handOf
 local easeOut, featherBurst = Fx.easeOut, Fx.featherBurst
-
--- Base: Prince of Wind
 
 local function featherIn(target: Vector3, radius: number)
 	local from = target + U.randomUnit() * radius
@@ -120,7 +115,6 @@ local function fallingBlade(target: Vector3, formDelay: number, fallAt: number, 
 	end)
 	task.delay(fallAt, function()
 		if not alive() then
-			-- Cancelled during the wind-up: the blade just fades.
 			for _, trail in trails do
 				Soft.endTrail(trail)
 			end
@@ -137,7 +131,7 @@ local function fallingBlade(target: Vector3, formDelay: number, fallAt: number, 
 			end
 			for i, part in parts do
 				if i == 1 then
-					Soft.linger(part, 0, 0.4) -- (the blade carries the trails)
+					Soft.linger(part, 0, 0.4)
 				else
 					part:Destroy()
 				end
@@ -151,7 +145,6 @@ local function fallingBlade(target: Vector3, formDelay: number, fallAt: number, 
 				streaks = true,
 				spread = 70,
 			})
-			-- The cut it left in the ground, glowing as it cools.
 			local across = cframe.UpVector
 			across = Vector3.new(across.X, 0, across.Z)
 			across = if across.Magnitude > 0.1 then across.Unit else Vector3.xAxis
@@ -164,8 +157,6 @@ local function fallingBlade(target: Vector3, formDelay: number, fallAt: number, 
 	end)
 end
 
--- Per cast, so only the Shower's own Cancel (not his next move) stops its
--- blades.
 local showers: { [Model]: number } = setmetatable({}, { __mode = "k" }) :: any
 
 function handlers.WindBladesShower(data, character, root)
@@ -275,7 +266,6 @@ function handlers.WindBladesShower(data, character, root)
 		end)
 		windRing(sky, UP, 1, radius + 4, 0.4)
 		U.light(sky, WIND, 3, radius * 3, length)
-		-- Ribbons of wind spiralling down out of the vortex to the ground.
 		local pouring = Soft.helix(function()
 			return sky, center + UP * 0.5
 		end, radius * 0.8, 4, 0.55, 1.4, 0.55, length, WIND)
@@ -289,7 +279,6 @@ function handlers.WindBladesShower(data, character, root)
 		if hand then
 			gust(hand, 3, UP)
 		end
-		-- The wind-up: wind streams into his raised hand as the blades gather.
 		every(delay, function()
 			local palm = handOf(character, "Right")
 			if not alive() or not palm then
@@ -314,7 +303,6 @@ function handlers.WindBladesShower(data, character, root)
 			windRing(center + UP * 0.3, UP, 1, radius + 5, 0.45)
 			lightRing(center + UP * 0.2, UP, 1, radius + 3, 0.35, WIND_WHITE)
 			U.groundCracks(center, 6, radius * 0.7, WIND, 1)
-			-- The last blades throw it all up: a burst of wind up the middle.
 			U.impactSpikes(center + UP * 1.5, WIND, 12, 9, 0.28, STAR_WHITE)
 			U.dustWave(center, radius + 3)
 			featherBurst(center + UP, 10, 16)
@@ -351,7 +339,6 @@ function handlers.SwiftWhiteHawk(data, character, root)
 			end
 			twinkle(hand, 2, WIND, 0.2)
 		end
-		-- Feathers of wind swirling in to his hand as it takes shape.
 		for i = 0, 7 do
 			task.delay(i * 0.025, function()
 				local palm = handOf(character, "Right")
@@ -392,7 +379,6 @@ function handlers.SwiftWhiteHawk(data, character, root)
 			local step = data.speed * dt
 			state.position += direction * step
 			travelled += step
-			-- Banking into its turns (the wing on the inside of the turn down).
 			local turning = if dt > 0 then before:Cross(direction).Y / dt else 0
 			bank += (math.clamp(turning * 0.35, -0.9, 0.9) - bank) * math.min(dt * 10, 1)
 			beat += dt * 22
@@ -406,7 +392,6 @@ function handlers.SwiftWhiteHawk(data, character, root)
 		end)
 		local hand = handOf(character, "Right")
 		if hand then
-			-- It bursts out of his hand.
 			U.flash(hand, WIND_WHITE, 2.6, 0.12)
 			gust(hand, 3, direction)
 			windRing(hand, direction, 0.4, 4, 0.25)
@@ -446,7 +431,6 @@ function handlers.SwiftWhiteHawk(data, character, root)
 			spread = 180,
 			drag = 3,
 		})
-		-- Wind left swirling where it burst.
 		Soft.helix(function()
 			return position - UP * 1.5, position + UP * 2.5
 		end, 2.2, 3, 0.3, 1.2, 0.45, 0.4, WIND)
@@ -461,7 +445,6 @@ function handlers.HeavenlyWindArk(data, character, root)
 	if data.phase == "Cast" then
 		play(character, if data.airborne then ANIMS.AirArk else ANIMS.Ark)
 	elseif data.phase == "Carry" then
-		-- Up together on a spiral of wind.
 		for _, target in data.targets do
 			local targetRoot = U.getRoot(target)
 			if targetRoot then
@@ -495,8 +478,6 @@ function handlers.HeavenlyWindArk(data, character, root)
 				part:Destroy()
 			end
 		end)
-		-- The soft crescent over the arc, carried with it, and a fainter one
-		-- just behind it.
 		local crescent = windSlash(points[1], points[#points], (if air then -UP else UP) * 6, 1.3, 0.08)
 		crescent.move(shift, 0.45)
 		task.delay(0.15, crescent.fade, 0.35)
@@ -519,7 +500,6 @@ function handlers.HeavenlyWindArk(data, character, root)
 			})
 			windRing(center, UP, 1, 10, 0.35)
 			windPuff(center, 3, -UP)
-			-- It comes down on the ground below.
 			local below = U.groundBelow(center, { character }, 16)
 			if below then
 				local at = below.Position
@@ -535,7 +515,6 @@ function handlers.HeavenlyWindArk(data, character, root)
 			end
 		else
 			U.pillar(center, WIND, 3.5, 14, 0.4, Enum.Material.ForceField, 0.3)
-			-- A column of wind carrying it up.
 			local foot, head = worldAnchor(center, UP), worldAnchor(center + UP * 16, UP)
 			local column = {
 				softBeam(foot, head, {
@@ -572,7 +551,6 @@ function handlers.HeavenlyWindArk(data, character, root)
 			U.debris(center, 6, 30, 0.6)
 			U.dustWave(center, 10)
 			featherBurst(center + UP * 2, 8, 14)
-			-- Ribbons of wind spiralling up the column.
 			Soft.helix(function()
 				return center, center + UP * 16
 			end, 4.5, 3, 0.35, 1.2, 0.7, 0.45, WIND)
@@ -665,7 +643,6 @@ local function makeArrow(scale: number): Arrow
 			part.CFrame = frame * offsets[i]
 		end
 		if not placed then
-			-- (Its trails start here, not wherever it was made.)
 			placed = true
 			for _, trail in trails do
 				Soft.beginTrail(trail)
@@ -731,7 +708,6 @@ local function fly(
 	end, done)
 end
 
--- A wind arrow in flight, spinning (a new one, or one already drawn).
 local function flyingArrow(
 	origin: Vector3,
 	direction: Vector3,
@@ -753,14 +729,13 @@ end
 type Bow = {
 	stop: () -> (),
 	nocked: Arrow?,
-	scale: number, -- of the nocked arrow
-	ends: number, -- os.clock() when the bow goes
-	charging: number?, -- os.clock() the great arrow started drawing
+	scale: number,
+	ends: number,
+	charging: number?,
 	glow: BasePart?,
-	well: BasePart?, -- starlight drawn into the great arrow's head
+	well: BasePart?,
 }
 
--- The bow's glow: wind flowing along its limbs, sparkles along its edge.
 local function bowArc(): Soft.Arc
 	return Soft.softArc({
 		{
@@ -796,7 +771,6 @@ function handlers.GaleWhiteBow(data, character, root)
 		local core = arcParts(table.create(segments + 1, Vector3.zero), 0.08, WIND_WHITE, 0)
 		local strings = { bar(Vector3.zero, UP, 0.05, WIND_WHITE, 0.2), bar(Vector3.zero, UP, 0.05, WIND_WHITE, 0.2) }
 		local soft = bowArc()
-		-- A small wing of wind at each tip: two feathers flicking out past it.
 		local tips: { BasePart } = {}
 		for i = 1, 4 do
 			local long = i % 2 == 1
@@ -854,7 +828,6 @@ function handlers.GaleWhiteBow(data, character, root)
 			local right = forward:Cross(UP).Unit
 			local grow = math.min(elapsed / 0.2, 1)
 			local charge = if bow.charging then math.min((os.clock() - bow.charging) / 0.6, 1) else 0
-			-- The grip stays put in his hand as the bow grows.
 			local radius = (3.4 + 1.4 * charge) * grow + 0.1
 			local center = hand + forward * (2.2 - radius)
 			local points = arcPoints(center, forward, UP, radius, -1.1, 1.1, segments)
@@ -867,7 +840,6 @@ function handlers.GaleWhiteBow(data, character, root)
 				local tip = if top then points[#points] else points[1]
 				local before = if top then points[#points - 1] else points[2]
 				local out = (tip - before).Unit
-				-- (the long one leaning out ahead of the bow, the short one back)
 				local along = (out + forward * (if long then 0.35 else -0.2)).Unit
 				local length = (if long then 1.15 else 0.8) * grow + 0.05
 				feather.Size = Vector3.new(0.05, (if long then 0.34 else 0.28) * grow + 0.02, length)
@@ -882,7 +854,6 @@ function handlers.GaleWhiteBow(data, character, root)
 				local frame = CFrame.lookAt(nock, nock + forward) * CFrame.new(0, 0, -1.6 * bow.scale)
 				bow.nocked.place(frame * CFrame.Angles(0, 0, charge * elapsed * 6))
 				if bow.glow then
-					-- Wind spirals into the head as it draws.
 					local head = (frame * CFrame.new(0, 0, -2.3 * bow.scale)).Position
 					bow.glow.Size = Vector3.one * (0.8 + 2.6 * charge) * (1 + 0.1 * math.sin(elapsed * 30))
 					bow.glow.CFrame = CFrame.new(head)
@@ -904,7 +875,6 @@ function handlers.GaleWhiteBow(data, character, root)
 		local bow = bows[character]
 		local nocked = if bow and not data.last then bow.nocked else nil
 		if bow and nocked then
-			-- The arrow on the string flies; the next one forms there.
 			bow.nocked = nil
 			task.delay(0.06, function()
 				if bows[character] == bow and not bow.nocked then
@@ -916,7 +886,6 @@ function handlers.GaleWhiteBow(data, character, root)
 			bow.nocked = nil
 		end
 		flyingArrow(origin, direction, data.speed, data.range, if data.last then 1.4 else 1, nocked)
-		-- The string snaps: a star of light off the bow.
 		U.impactSpikes(origin, WIND, if data.last then 10 else 6, if data.last then 6 else 3.5, 0.18, STAR_WHITE)
 		gust(origin, if data.last then 4 else 2, direction)
 		U.impactRing(origin, direction, WIND_WHITE, 0.4, if data.last then 4 else 2.4, 0.18)
@@ -926,7 +895,6 @@ function handlers.GaleWhiteBow(data, character, root)
 			CameraShake.FovKick(if data.last then 5 else 2)
 		end
 	elseif data.phase == "Charge" then
-		-- Held on the ground: the arrow on the string becomes a great one.
 		local bow = bows[character]
 		if bow then
 			if bow.nocked then
@@ -937,7 +905,6 @@ function handlers.GaleWhiteBow(data, character, root)
 			bow.charging = os.clock()
 			bow.ends = os.clock() + data.max + 0.6
 			bow.glow = U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one, Color = WIND, Transparency = 0.55 })
-			-- Starlight and wind drawn in to its head.
 			local well = U.newPart({
 				Size = Vector3.one * 7,
 				Transparency = 1,
@@ -984,8 +951,6 @@ function handlers.GaleWhiteBow(data, character, root)
 		flyingArrow(origin, direction, data.speed, data.range, 1.8, drawn)
 		U.flash(origin, WIND_WHITE, 7, 0.18)
 		U.impactSpikes(origin, WIND, 14, 11, 0.3, STAR_WHITE)
-		-- Wind spiralling down its line, and a wake of dust kicked up off the
-		-- ground under it as it goes.
 		Soft.helix(function()
 			return origin, origin + direction * 40
 		end, 1.6, 3, 0.22, 3, 0.5, 0.4, WIND)
@@ -1056,8 +1021,6 @@ function handlers.GaleWhiteBow(data, character, root)
 	end
 end
 
--- R: Conjunction
-
 local stars: { [Model]: Star } = {}
 
 function handlers.Conjunction(data, character, root)
@@ -1126,7 +1089,6 @@ function handlers.Conjunction(data, character, root)
 		local line = bar(from, spot, 0.25, STAR_WHITE, 0.1)
 		local glow = bar(from, spot, 0.9, STAR, 0.6)
 		fadeOut({ line, glow }, 0.25)
-		-- A ghost of him left standing where he was, dissolving into starlight.
 		U.afterimage(character, STAR, 0.45, from - root.Position)
 		starDust(from, 16, 14)
 		featherBurst(spot, 6, 10)

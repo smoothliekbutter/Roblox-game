@@ -1,5 +1,3 @@
--- Asta's base moves: Bull Thrust, Black Meteorite, Black Divider, Anti-Magic Deflect and the R special.
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
@@ -24,11 +22,7 @@ local markAngle, impactFrame, lingerSmoke, partEmitter = Fx.markAngle, Fx.impact
 local trailEmitter, glowBurst, bloomPulse, meteorTail = Fx.trailEmitter, Fx.glowBurst, Fx.bloomPulse, Fx.meteorTail
 type CrescentOptions = Fx.CrescentOptions
 
--- Bull Thrust: propel, catch, then a five-hit sword combo (in the air, a
--- dive that slams the ground if it catches no one)
-
 local COMBO_SWINGS: { [string]: CrescentOptions } = {
-	-- From low behind him on the right, up through them to high on his left.
 	Rising = {
 		center = CFrame.new(1, 0.5, 0) * CFrame.Angles(rad(5), 0, 0),
 		radius = 5.2,
@@ -39,7 +33,6 @@ local COMBO_SWINGS: { [string]: CrescentOptions } = {
 		sweep = 0.06,
 		fade = 0.24,
 	},
-	-- Back across the waist, left to right.
 	Sweep = {
 		center = CFrame.new(1, 0.5, 0) * CFrame.Angles(rad(-5), 0, 0),
 		radius = 5,
@@ -50,7 +43,6 @@ local COMBO_SWINGS: { [string]: CrescentOptions } = {
 		sweep = 0.06,
 		fade = 0.24,
 	},
-	-- The turn: round behind him, then on through them, dipping in front.
 	Spin = {
 		center = CFrame.new(0, 0.5, 0) * CFrame.Angles(rad(-12), 0, 0),
 		radius = 5.9,
@@ -61,7 +53,6 @@ local COMBO_SWINGS: { [string]: CrescentOptions } = {
 		sweep = 0.16,
 		fade = 0.3,
 	},
-	-- Up over his head and straight down through them.
 	Chop = {
 		center = CFrame.new(0.4, 0.8, 0) * CFrame.Angles(0, rad(5), 0),
 		radius = 5,
@@ -81,25 +72,21 @@ local COMBO_CUTS: { [string]: { cut: Vector3, size: number } } = {
 	Chop = { cut = Vector3.new(0, -1, 0.25), size = 1.5 },
 }
 
--- Flat direction from him to them (his facing if they're on top of him).
 local function towardTarget(root: BasePart, targetRoot: BasePart): Vector3
 	local offset = targetRoot.Position - root.Position
 	local flat = Vector3.new(offset.X, 0, offset.Z)
 	return if flat.Magnitude > 0.1 then flat.Unit else root.CFrame.LookVector
 end
 
--- One beat of the combo animation: a swing starting, the coil, the thrust.
 local function comboSwing(character: Model, root: BasePart, event: string)
 	local swing = COMBO_SWINGS[event]
 	if swing then
 		heavyTrail(character, (swing.sweep or 0.06) + 0.06)
-		swing.glow = swing.glow or 0.7 -- the cuts glow
+		swing.glow = swing.glow or 0.7
 		crescent(character, swing)
 		edgeGlow(character, (swing.sweep or 0.06) + 0.1, 0.8)
-		-- His footwork scuffs up a little anti-magic.
 		blackSmoke(feetOf(character, root) + UP * 0.3, 3, 1.6, 5)
 		if event == "Spin" then
-			-- The turn throws a ring of wind off him.
 			U.ringBurst(CFrame.new(root.Position + UP * 0.2), BLACK, 1.5, 7, 0.28, 0.22)
 			task.delay(0.06, U.ringBurst, CFrame.new(root.Position + UP * 0.3), DARK_RED, 1.2, 5.5, 0.24, 0.14)
 			task.delay(0.08, function()
@@ -108,15 +95,12 @@ local function comboSwing(character: Model, root: BasePart, event: string)
 				end
 			end)
 		elseif event == "Chop" then
-			-- The blade catches the light at the top of the swing.
 			local tip = bladePoint(character, 2.1)
 			if tip then
 				U.glint(tip, 1.2, RED)
 			end
 		end
 	elseif event == "Coil" then
-		-- Drawn back for the thrust: anti-magic floods the blade and the air
-		-- pulls in around him.
 		swordGlow(character, RED, 0.18, 0.35)
 		swordAura(character, 0.16, 40)
 		U.ringBurst(CFrame.new(feetOf(character, root) + UP * 0.1), BLACK, 5, 1.2, 0.16, 0.2)
@@ -168,14 +152,12 @@ local function comboImpact(data, character: Model, root: BasePart)
 	blackLightning(center, if k > 1 then 3 else 2, 2 + k, 0.15)
 	U.light(center, RED, 4 * k, 8 + 4 * k, 0.15)
 	if data.kind == "Chop" then
-		-- Driven down through them into the ground at their feet.
 		local feet = feetOf(target, targetRoot)
 		U.groundCracks(feet, 5, 4, RED, 1.2)
 		U.groundRocks(feet, 6, 2.2, 1)
 		U.ringBurst(CFrame.new(feet + UP * 0.1), BLACK, 0.8, 6, 0.3, 0.25)
 		blackSmoke(feet + UP * 0.3, 6, 2.4, 10)
 	elseif data.kind == "Spin" then
-		-- The turn's wind rings out around them.
 		U.ringBurst(CFrame.new(center), WHITE, 0.6, 4.5, 0.2, 0.08)
 	end
 	if involves(data, character) then
@@ -205,7 +187,6 @@ local function pierce(from: Vector3, direction: Vector3, length: number)
 	end)
 end
 
--- The finisher: the thrust goes clean through them and blows them back.
 local function comboFinisher(data, character: Model, root: BasePart)
 	local target = data.target
 	local targetRoot = U.getRoot(target)
@@ -242,7 +223,6 @@ local function comboFinisher(data, character: Model, root: BasePart)
 	U.light(center, RED, 12, 22, 0.35)
 	U.highlight(target, RED, 0.25)
 	U.bodyTrail(target, DARK_RED, 0.35)
-	-- They skid back across the ground, tearing a groove in it.
 	local feet = feetOf(target, targetRoot)
 	U.ringBurst(CFrame.new(feet + UP * 0.1), BLACK, 1, 8, 0.3, 0.3)
 	U.groove(feet, feet + toward * 9, 0.8, RED, 1.8, 40)
@@ -285,7 +265,6 @@ local function bullSlam(data, character: Model)
 	task.delay(0.05, U.ringBurst, CFrame.new(position + UP * 0.3), RED, 1, 13, 0.38, 0.3)
 	task.delay(0.1, U.ringBurst, CFrame.new(position + UP * 0.4), WHITE, 0.5, 9, 0.25, 0.12)
 
-	-- The ground splits open and is thrown up around the blade.
 	U.groundCracks(position, 11, 12, RED, 2.8)
 	U.groundRocks(position, 14, 5.5, 2.6)
 	task.delay(0.05, U.groundRocks, position, 8, 2.6, 1.8)
@@ -317,7 +296,6 @@ local function bullSlam(data, character: Model)
 	U.light(position + UP * 2, RED, 12, 34, 0.5)
 	lingerSmoke(position, 1.2, 6)
 
-	-- The blade, buried in the ground, flares red.
 	swordGlow(character, RED, 0.3, 0.3)
 	task.delay(0.05, function()
 		local point = bladePoint(character, 0)
@@ -348,13 +326,11 @@ function handlers.BullThrust(data, character, root)
 		local direction: Vector3 = if typeof(data.direction) == "Vector3"
 			then data.direction
 			else root.CFrame.LookVector
-		-- The server says how long the (steerable) propel lasts.
 		local duration = if type(data.duration) == "number" then data.duration else 0.55
 		local air = data.airborne == true
 		play(character, if air then ANIMS.AirPropel else ANIMS.Propel)
 		swordTrail(character, duration + 0.05)
 
-		-- Ignition: an anti-magic blast behind him.
 		local back = root.Position - direction * 1.5
 		U.flash(back, BLACK, 6, 0.18)
 		U.impactRing(back, direction, BLACK, 0.8, 5.5, 0.25)
@@ -436,7 +412,7 @@ function handlers.BullThrust(data, character, root)
 				if character.Parent then
 					U.afterimage(character, if i % 2 == 0 then BLACK else DARK_RED, 0.28)
 					if i % 3 == 1 then
-						blackLightning(root.Position, 1, 2.2, 0.12) -- anti-magic crackling off him
+						blackLightning(root.Position, 1, 2.2, 0.12)
 					end
 					if not air then
 						local feet = feetOf(character, root)
@@ -470,7 +446,6 @@ function handlers.BullThrust(data, character, root)
 			CameraShake.Add(0.25)
 		end
 	elseif phase == "Combo" then
-		-- The cuts follow the animation's beats, so they keep time with the blade.
 		local token = bump(character)
 		play(character, ANIMS.BullCombo, function(event)
 			if live(character, token) then
@@ -485,17 +460,13 @@ function handlers.BullThrust(data, character, root)
 			comboImpact(data, character, root)
 		end
 	elseif phase == "Land" then
-		-- Air version, nobody caught: he lands driving the sword into the
-		-- ground and the slam goes off.
 		bump(character)
 		play(character, ANIMS.PlungeImpact)
 		bullSlam(data, character)
 		if data.stuck then
-			-- It hit nobody: the sword sticks in the ground a moment (end lag).
 			task.delay(0.05, PoseAnimator.Freeze, character, data.stuck)
 		end
 	elseif phase == "Interrupted" then
-		-- Cut short (he got hit, or they broke out): no more swings.
 		bump(character)
 		if PoseAnimator.Current(character) == ANIMS.BullCombo then
 			PoseAnimator.FadeOut(character, 0.2)
@@ -503,10 +474,6 @@ function handlers.BullThrust(data, character, root)
 	end
 end
 
--- Black Meteorite: standing grab, carry them up, crater slam (Black Moon's
--- lunge grab is drawn here too)
-
--- His free hand's fist, where the grab closes.
 local function gripPoint(character: Model): Vector3?
 	local hand = character:FindFirstChild("Left Arm")
 	return if hand and hand:IsA("BasePart") then (hand.CFrame * CFrame.new(0, -1, 0)).Position else nil
@@ -557,20 +524,17 @@ local function handSwirl(arm: BasePart, duration: number, alive: () -> boolean)
 		local radius = 1.2 * (1 - 0.6 * t)
 		for i, part in ribbons do
 			local angle = t * math.pi * 6 + (i / #ribbons) * math.pi * 2
-			-- Half round the fist, half further up the forearm.
 			local along = if i % 2 == 0 then -0.95 else -0.4
 			part.CFrame = arm.CFrame * CFrame.new(math.cos(angle) * radius, along, math.sin(angle) * radius)
 		end
 	end)
 end
 
--- Black lightning crawling down his arm, shoulder to fist, hop by hop.
 local function armCrawl(arm: BasePart, duration: number, alive: () -> boolean)
 	local start = os.clock()
 	task.spawn(function()
 		local hop = 0
 		while os.clock() - start < duration and arm.Parent and alive() do
-			-- R6 arms are 2 studs long: the shoulder is at +1, the fist at -1.
 			local from = 0.9 - (hop % 4) * 0.45
 			local a = arm.CFrame:PointToWorldSpace(Vector3.new(0, from, 0) + U.randomUnit() * 0.3)
 			local b = arm.CFrame:PointToWorldSpace(Vector3.new(0, from - 0.65, 0) + U.randomUnit() * 0.35)
@@ -635,7 +599,6 @@ function handlers.BlackMeteorite(data, character, root)
 		if arm and arm:IsA("BasePart") then
 			handSwirl(arm, 0.45, alive)
 			armCrawl(arm, 0.4, alive)
-			-- Black wisps peeling off the arm, red embers.
 			partEmitter(arm, {
 				Texture = U.textures.Smoke,
 				Color = ColorSequence.new(BLACK),
@@ -663,7 +626,6 @@ function handlers.BlackMeteorite(data, character, root)
 				SpreadAngle = Vector2.new(180, 180),
 			}, 0.4)
 		end
-		-- Anti-magic streaking in to the hand as it draws back.
 		for i = 0, 5 do
 			task.delay(i * 0.025, function()
 				local at = gripPoint(character)
@@ -674,8 +636,6 @@ function handlers.BlackMeteorite(data, character, root)
 		end
 		U.light(root.Position, RED, 3, 10, 0.45)
 	elseif phase == "Whiff" then
-		-- Nobody there: the hand closes on nothing and the anti-magic
-		-- gutters out of it.
 		bump(character)
 		local at = gripPoint(character)
 		if at then
@@ -692,7 +652,6 @@ function handlers.BlackMeteorite(data, character, root)
 			})
 		end
 	elseif phase == "Cancel" then
-		-- Hit out of the reach.
 		bump(character)
 		local current = PoseAnimator.Current(character)
 		if current == ANIMS.MeteorReach or current == ANIMS.AirMeteorReach then
@@ -714,7 +673,6 @@ function handlers.BlackMeteorite(data, character, root)
 			redSparks(at, 12, 0.7)
 			U.highlight(target, BLACK, 0.3)
 			if air then
-				-- Nothing under them: the burst rings out around the grip.
 				blackSmoke(at, 6, 2.2, 6)
 				U.ringBurst(CFrame.new(at) * CFrame.Angles(rad(90), 0, 0), BLACK, 0.8, 5, 0.25, 0.2)
 			else
@@ -723,7 +681,6 @@ function handlers.BlackMeteorite(data, character, root)
 			end
 			blackLightning(at, 3, 2.5, 0.2)
 		end)
-		-- The surge (it lands with the server's 2-damage hit).
 		task.delay(0.2, function()
 			local at = gripPoint(character)
 			local targetRoot = U.getRoot(target)
@@ -748,13 +705,11 @@ function handlers.BlackMeteorite(data, character, root)
 		local air = data.airborne == true
 		local length = MeteorVortex.Length
 		if typeof(data.origin) == "CFrame" then
-			-- The whole move from here: spin, flip, head-first dive, landing.
 			local top = if type(data.top) == "number" then data.top else MeteorVortex.Top
 			local floorY = if type(data.floorY) == "number" then data.floorY else nil
 			local plan = MeteorVortex.Plan(data.origin, top, floorY)
 			local start = os.clock()
 			local bind = "CloverVortex" .. tostring(start)
-			-- After shift lock and the camera, so the path has the last word.
 			RunService:BindToRenderStep(bind, Enum.RenderPriority.Camera.Value + 3, function()
 				local t = os.clock() - start
 				if t >= plan.length or not root.Parent then
@@ -765,7 +720,6 @@ function handlers.BlackMeteorite(data, character, root)
 			end)
 		end
 
-		-- Take-off: the ground blows out under them.
 		local ground = U.groundBelow(root.Position, { character })
 		if ground and not air then
 			local feet = ground.Position
@@ -807,7 +761,6 @@ function handlers.BlackMeteorite(data, character, root)
 		}, length)
 		crackle(root, length, 0.08, 5)
 		for turn = 0, MeteorVortex.Turns - 1 do
-			-- A full circle of steel each time round (faster in the middle).
 			local at = length * (0.18 + turn * 0.27)
 			task.delay(at, function()
 				if character.Parent then
@@ -834,7 +787,6 @@ function handlers.BlackMeteorite(data, character, root)
 				if i % 3 == 0 then
 					blackLightning(here, 2, 5, 0.15)
 				end
-				-- The ground below gets torn up into the vortex.
 				local below = if not air then U.groundBelow(here, { character }, 40) else nil
 				if below and i % 2 == 0 then
 					U.ringBurst(CFrame.new(below.Position + UP * 0.2), BLACK, 4, 12, 0.3, 0.35)
@@ -843,7 +795,6 @@ function handlers.BlackMeteorite(data, character, root)
 			end)
 		end
 
-		-- At the top: the blade drinks in anti-magic before the slam.
 		task.delay(MeteorVortex.Length - 0.3, function()
 			if not character.Parent then
 				return
@@ -872,7 +823,6 @@ function handlers.BlackMeteorite(data, character, root)
 		U.speedLines(root, -UP, dive)
 		U.spiral(root, BLACK, 3.4, 3, dive, 4, 0.9, 0.12)
 		U.spiral(root, RED, 2.6, 3, dive, 3, 0.3, 0.12)
-		-- Spinning afterimages all the way down.
 		for i = 0, math.floor((dive - MeteorVortex.Flip) / 0.05) do
 			task.delay(MeteorVortex.Flip + i * 0.05, function()
 				if character.Parent then
@@ -909,7 +859,6 @@ function handlers.BlackMeteorite(data, character, root)
 			Orientation = Enum.ParticleOrientation.VelocityParallel,
 			Squash = NumberSequence.new(1.6),
 		}, dive)
-		-- Air compressing under them on the way down.
 		for i = 0, math.floor(dive / 0.06) do
 			task.delay(i * 0.06, function()
 				if root.Parent then
@@ -926,7 +875,6 @@ function handlers.BlackMeteorite(data, character, root)
 		end
 	elseif phase == "Impact" then
 		local position: Vector3 = data.position
-		-- (He rolls back over onto his feet: the end of the shared path.)
 		play(character, ANIMS.MeteorLand)
 		local victim = data.target
 		U.flash(position + UP, WHITE, 6, 0.08)
@@ -979,8 +927,6 @@ function handlers.BlackMeteorite(data, character, root)
 	end
 end
 
--- Black Divider: charged cleave; press again on the red flash for a perfect
-
 function handlers.BlackDivider(data, character, root)
 	local phase = data.phase
 	local token = bump(character)
@@ -989,7 +935,6 @@ function handlers.BlackDivider(data, character, root)
 		local flashAt = data.flashAt or 0.38
 		swordGlow(character, BLACK, 0.62, 0.35)
 		swordAura(character, 0.62, 30)
-		-- The air gets pulled in toward him (around him when he's hanging in the air).
 		local center = if data.airborne then root.Position else feetOf(character, root) + UP * 0.1
 		U.ringBurst(CFrame.new(center), BLACK, 9, 1.5, 0.6, 0.25)
 		task.delay(0.2, U.ringBurst, CFrame.new(center + UP * 0.02), DARK_RED, 7, 1, 0.42, 0.15)
@@ -998,8 +943,6 @@ function handlers.BlackDivider(data, character, root)
 			task.delay(0.15, U.groundCracks, center, 5, 3.5, RED, 1.2)
 		end
 
-		-- The edges burn brighter as it builds, and a glowing orb swells at
-		-- the point.
 		edgeGlow(character, 0.62, 0.7)
 		local orb = U.newPart({ Shape = Enum.PartType.Ball, Size = Vector3.one * 0.2, Color = HOT, Transparency = 0.2 })
 		local orbHalo =
@@ -1023,7 +966,6 @@ function handlers.BlackDivider(data, character, root)
 			orbHalo.Size = Vector3.one * (0.6 + 2 * grow) * pulse
 		end)
 
-		-- Anti-magic streaming into the blade, crackling as it builds.
 		local start = os.clock()
 		task.spawn(function()
 			while os.clock() - start < 0.6 and live(character, token) do
@@ -1041,7 +983,6 @@ function handlers.BlackDivider(data, character, root)
 			end
 		end)
 
-		-- The timing flash: press 3 right now for a perfect Divider.
 		task.delay(flashAt, function()
 			if not live(character, token) then
 				return
@@ -1067,8 +1008,6 @@ function handlers.BlackDivider(data, character, root)
 			blackSmoke(blade.Position, 6, 2, 5)
 		end
 	elseif phase == "Release" and data.airborne then
-		-- Air version: a front flip, the blade going all the way round and
-		-- down onto whoever is below.
 		local perfect = data.perfect == true
 		local look = root.CFrame.LookVector
 		play(character, ANIMS.AirDividerRelease)
@@ -1097,7 +1036,6 @@ function handlers.BlackDivider(data, character, root)
 			spread = 35,
 			direction = (look - UP * 1.4).Unit,
 		})
-		-- The blow lands on the ground below.
 		task.delay(0.16, function()
 			local ground = U.groundBelow(root.Position + look * 3, { character })
 			if not ground then
@@ -1135,7 +1073,6 @@ function handlers.BlackDivider(data, character, root)
 		local look = root.CFrame.LookVector
 		play(character, ANIMS.DividerRelease)
 		heavyTrail(character, 0.3)
-		-- The cleave: a wide crescent sweeping right to left with the blade.
 		crescent(character, {
 			center = CFrame.new(0, 0.2, 0.3),
 			radius = if perfect then 6.6 else 5.8,
@@ -1160,7 +1097,6 @@ function handlers.BlackDivider(data, character, root)
 				glow = 1,
 			})
 		end
-		-- The cut burns: glowing edges, hot flares along the arc, the bloom swells.
 		edgeGlow(character, 0.3, if perfect then 1.4 else 1)
 		for i, angle in { 60, 0, -60 } do
 			local along = root.CFrame
@@ -1174,7 +1110,6 @@ function handlers.BlackDivider(data, character, root)
 		local feet = feetOf(character, root)
 		U.impactSpikes(front, RED, if perfect then 14 else 10, if perfect then 11 else 8, 0.28, WHITE_HOT)
 		U.dustWave(feet, if perfect then 14 else 10)
-		-- The crescent it burns into the ground in front of him, as it sweeps.
 		local reach = if perfect then 6.6 else 5.8
 		local arc: { Vector3 } = {}
 		for i = 0, 8 do
@@ -1184,7 +1119,6 @@ function handlers.BlackDivider(data, character, root)
 		for i = 1, 8 do
 			task.delay(0.1 * (i - 1) / 8, U.groove, arc[i], arc[i + 1], if perfect then 0.8 else 0.6, RED, 1.8)
 		end
-		-- The cut's wind: rings, dust and a cone of sparks.
 		U.ringBurst(CFrame.new(root.Position + UP * 0.2), WHITE, 2, if perfect then 16 else 10, 0.3, 0.12)
 		U.ringBurst(CFrame.new(root.Position + UP * 0.2), BLACK, 2, if perfect then 20 else 12, 0.4, 0.35)
 		task.delay(
@@ -1233,7 +1167,6 @@ function handlers.BlackDivider(data, character, root)
 				blackLightning(front, 10, 9, 0.28)
 				U.groundCracks(front, 9, 10, RED, 2.5)
 				U.debris(front, 12, 40, 1.1)
-				-- The cut keeps going: a black crescent rushing on ahead.
 				slashWave({
 					origin = root.Position + UP * 0.4 + look * 3,
 					direction = look,
@@ -1254,15 +1187,11 @@ function handlers.BlackDivider(data, character, root)
 	end
 end
 
--- Anti-Magic Deflect: an anti-magic barrier on the blade that counters
--- anything; melee gets slashed aside, projectiles get sent back
-
 local barriers: { [Model]: (shatter: boolean) -> () } = setmetatable({}, { __mode = "k" }) :: any
 
--- A shimmering black disc held up in front of him with a spinning red rim.
 local function openBarrier(character: Model, root: BasePart, duration: number)
 	local offset = CFrame.new(0, 0.6, -2.4)
-	local face = CFrame.Angles(0, rad(90), 0) -- cylinders run along X; turn X forward
+	local face = CFrame.Angles(0, rad(90), 0)
 	local radius = 3.2
 	local disc = U.newPart({
 		Shape = Enum.PartType.Cylinder,
@@ -1425,7 +1354,6 @@ function handlers.Deflect(data, character, root)
 		local flat = Vector3.new(toward.X, 0, toward.Z)
 		flat = if flat.Magnitude > 0.1 then flat.Unit else look
 
-		-- Their attack lands on the anti-magic blade.
 		U.sparks(contact, (flat + UP * 0.6).Unit, 1.6)
 		U.impactSpikes(contact, RED, 14, 10, 0.3, WHITE_HOT)
 		U.flash(contact, WHITE, 6, 0.12)
@@ -1484,7 +1412,6 @@ function handlers.Deflect(data, character, root)
 		play(character, ANIMS.DeflectReflect)
 		local direction: Vector3 = if typeof(data.direction) == "Vector3" then data.direction else look
 		heavyTrail(character, 0.3)
-		-- Wind-up to the left until 0.08s, then the swing across.
 		task.delay(0.07, crescent, character, {
 			center = CFrame.new(0, 0.4, 0),
 			radius = 5.6,
@@ -1518,14 +1445,11 @@ function handlers.Deflect(data, character, root)
 	end
 end
 
--- Special (R): Anti-Magic Leap / Meteor Plunge
-
 function handlers.Special(data, character, root)
 	local phase = data.phase
 	if phase == "Leap" then
 		play(character, ANIMS.Leap)
 		local feet = feetOf(character, root)
-		-- Blasting off a burst of anti-magic.
 		U.flash(feet + UP * 0.5, BLACK, 8, 0.22)
 		U.shockwave(feet, RED, 2, 12, 0.3)
 		U.ringBurst(CFrame.new(feet + UP * 0.15), BLACK, 1, 9, 0.32, 0.4)

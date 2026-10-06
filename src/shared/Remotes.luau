@@ -1,5 +1,3 @@
--- The server creates every RemoteEvent; clients wait for them.
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 

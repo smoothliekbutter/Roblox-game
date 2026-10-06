@@ -1,40 +1,37 @@
--- Black Moon's timeline (shared, so the server and every client agree).
-
 local BlackMoon = {}
 
--- About six seconds, plus the grab before it.
 BlackMoon.Times = {
-	Release = 0.15, -- they leave his hand
-	Night = 0.5, -- night starts to fall
-	Rise = 0.6, -- shot: watching them rise against the moon
-	Leap = 1.0, -- he jumps up after them
-	Apex = 1.35, -- they reach the top
-	Perch = 1.4, -- he's hovering in front of the moon
-	Close = 2.5, -- shot: close on him, the moon behind
-	Point = 2.9, -- he levels the sword at them
-	Glint = 3.4, -- the blade catches the moonlight
-	Fly = 3.75, -- he flies at them
-	Cut = 3.9, -- passing through them
-	Arrive = 4.0, -- stopped past them, back turned; everything goes still
-	Land = 4.9, -- the cut lands; both are let go
-	Done = 5.9, -- the camera comes back
+	Release = 0.15,
+	Night = 0.5,
+	Rise = 0.6,
+	Leap = 1.0,
+	Apex = 1.35,
+	Perch = 1.4,
+	Close = 2.5,
+	Point = 2.9,
+	Glint = 3.4,
+	Fly = 3.75,
+	Cut = 3.9,
+	Arrive = 4.0,
+	Land = 4.9,
+	Done = 5.9,
 }
 
 local UP = Vector3.yAxis
-local DRIFT = 1.2 -- studs a second they keep rising after the top
+local DRIFT = 1.2
 
 export type Plan = {
-	origin: CFrame, -- his root at the throw, level
+	origin: CFrame,
 	forward: Vector3,
 	right: Vector3,
 	victimStart: Vector3,
-	apex: Vector3, -- where they hang in the sky
-	cut: Vector3, -- where they are when he passes through them
-	perch: Vector3, -- where he waits, in front of the moon
-	through: Vector3, -- direction of his flight
-	beyond: Vector3, -- where he stops after the cut
-	moonCamera: Vector3, -- the camera for the moon shot
-	moon: Vector3, -- the moon, behind him from that camera
+	apex: Vector3,
+	cut: Vector3,
+	perch: Vector3,
+	through: Vector3,
+	beyond: Vector3,
+	moonCamera: Vector3,
+	moon: Vector3,
 	moonRadius: number,
 }
 
@@ -53,11 +50,9 @@ function BlackMoon.Plan(origin: CFrame, victimStart: Vector3): Plan
 	local level = CFrame.lookAt(origin.Position, origin.Position + forward)
 	local apex = origin.Position + forward * 5 + UP * 34
 	local perch = apex - forward * 22 - UP * 5 + right * 5
-	-- They keep drifting up while he hovers, so he aims where they'll be.
 	local cut = apex + UP * (BlackMoon.Times.Cut - BlackMoon.Times.Apex) * DRIFT
 	local through = (cut - perch).Unit
 	local beyond = cut + through * 14
-	-- The moon shot looks up at him from below, so the moon sits behind him.
 	local moonCamera = apex + (perch - apex) * 0.2 + right * 2.5 - UP * 7
 	local moon = perch + (perch - moonCamera).Unit * 280 + UP * 10
 	return {
@@ -76,24 +71,20 @@ function BlackMoon.Plan(origin: CFrame, victimStart: Vector3): Plan
 	}
 end
 
--- Where Asta's root is at time t.
 function BlackMoon.Attacker(plan: Plan, t: number): CFrame
 	local T = BlackMoon.Times
 	local toVictim = flat(plan.apex - plan.perch, plan.forward)
 	if t < T.Leap then
 		return plan.origin
 	elseif t < T.Perch then
-		-- The leap: an arc up to the perch.
 		local a = (t - T.Leap) / (T.Perch - T.Leap)
 		local p = plan.origin.Position:Lerp(plan.perch, easeOut(a)) + UP * math.sin(a * math.pi) * 4
 		return CFrame.lookAt(p, p + toVictim)
 	elseif t < T.Fly then
-		-- Hovering on his wings: rising and falling with the beats, drifting.
 		local hover = t - T.Perch
 		local p = plan.perch + UP * math.sin(hover * 5.3) * 0.6 + plan.right * math.sin(hover * 1.8) * 0.35
 		return CFrame.lookAt(p, p + toVictim)
 	elseif t < T.Arrive then
-		-- Straight through them, flat out.
 		local a = (t - T.Fly) / (T.Arrive - T.Fly)
 		local p = plan.perch:Lerp(plan.beyond, a)
 		return CFrame.lookAt(p, p + toVictim)
@@ -129,14 +120,12 @@ function BlackMoon.Camera(plan: Plan, t: number): (CFrame, number)
 		local eye = (plan.origin * CFrame.new(5.5, 1.2, 7)).Position
 		return CFrame.lookAt(eye, (attacker + UP * 2):Lerp(victim, 0.65)), 70
 	elseif t < T.Perch then
-		-- From the ground out in front, looking back up past them at the moon.
 		local eye = plan.origin.Position + plan.forward * 26 + plan.right * 6 + UP * 2.5
 		return CFrame.lookAt(eye, victim:Lerp(plan.perch, 0.35)), 62
 	elseif t < T.Close then
 		local eye = plan.moonCamera:Lerp(plan.perch, 0.05 * (t - T.Perch))
 		return CFrame.lookAt(eye, attacker + UP * 0.5), 45
 	elseif t < T.Fly then
-		-- Close and a little below him, drifting round; the moon fills the back.
 		local start = plan.perch + (plan.moonCamera - plan.perch).Unit * 10 - UP * 1.5
 		local eye = orbit(plan.perch, start, (t - T.Close) * 10 - 6)
 		return CFrame.lookAt(eye, attacker + UP * 1), 38

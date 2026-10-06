@@ -1,19 +1,17 @@
--- Combat state as attributes on the character (the server writes, clients read).
-
 local CombatState = {}
 
 local DEFAULTS = {
 	StunUntil = 0,
-	BusyUntil = 0, -- swinging: slowed, can't jump
-	CastUntil = 0, -- using a skill: locked out of everything else
+	BusyUntil = 0,
+	CastUntil = 0,
 	IFrameUntil = 0,
 	Blocking = false,
 	BlockStart = 0,
 	Ragdolled = false,
 	Evasive = 0,
-	Awakening = 0, -- meter, 0 to Config.Awakening.Max
+	Awakening = 0,
 	Awakened = false,
-	Rooted = false, -- can't move (e.g. during a spawn entrance)
+	Rooted = false,
 }
 
 CombatState.SkillSlots = 4
@@ -68,7 +66,6 @@ function CombatState.IsAwakened(character: Model): boolean
 	return character:GetAttribute("Awakened") == true
 end
 
--- Seconds left on a skill's cooldown, and the cooldown's full length.
 function CombatState.Cooldown(character: Model, slot: number): (number, number)
 	local readyAt = tonumber(character:GetAttribute("CD" .. slot)) or 0
 	local length = tonumber(character:GetAttribute("CDLen" .. slot)) or 1
@@ -87,15 +84,11 @@ function CombatState.HasIFrames(character: Model): boolean
 	return (tonumber(character:GetAttribute("IFrameUntil")) or 0) > now()
 end
 
--- Alive, not stunned and not ragdolled. Busy (mid-swing) and casting are
--- checked separately.
 function CombatState.CanAct(character: Model): boolean
 	return CombatState.IsAlive(character)
 		and not CombatState.IsStunned(character)
 		and not CombatState.IsRagdolled(character)
 end
-
--- Setters below are only meaningful on the server.
 
 function CombatState.Stun(character: Model, duration: number)
 	local untilTime = math.max(tonumber(character:GetAttribute("StunUntil")) or 0, now() + duration)

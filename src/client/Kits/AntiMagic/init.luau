@@ -1,6 +1,3 @@
--- Anti-Magic Knight (Asta), client: M1s, skill events and dash / block effects. The moves are drawn by
--- Base and Form, the Black Form look by Look, the cutscenes by Moon, Comet and Ascent (shared pieces: Fx).
-
 local CameraShake = require(script.Parent.Parent.CameraShake)
 local VFX = require(script.Parent.Parent.VFX)
 
@@ -21,7 +18,7 @@ VFX.SetPalette("AntiMagic", {
 	hit = Color3.fromRGB(220, 50, 60),
 	heavy = Color3.fromRGB(170, 15, 25),
 	flash = Color3.fromRGB(255, 225, 225),
-	cleanM1 = true, -- sleek sword M1s: no sparks or rings on hit
+	cleanM1 = true,
 })
 
 Kit.Idle = {
@@ -35,7 +32,6 @@ Kit.Idle = {
 	walkStride = 6.57,
 }
 
--- Getting hit / blocking, with the sword (see Client/Reactions for the names).
 Kit.Reactions = {
 	FlinchA = ANIMS.FlinchA,
 	FlinchB = ANIMS.FlinchB,
@@ -48,18 +44,13 @@ Kit.Reactions = {
 	Launched = ANIMS.Launched,
 }
 
--- M1
-
 local STRING = { "Slash1", "Slash2", "Slash3" }
 local FINISHERS = { Knockback = "Cleave", Uppercut = "Rising", Downslam = "Chop" }
 
--- M1s are just the sword swinging: no trails, no extra effects.
 function Kit.PlayM1(character: Model, index: number, variant: string)
 	local name = if variant ~= "Normal" then FINISHERS[variant] or "Cleave" else STRING[((index - 1) % #STRING) + 1]
 	play(character, ANIMS[name])
 end
-
--- Skills (each module adds its own to Fx's handlers)
 
 function Kit.OnSkill(data)
 	local character = data.character
@@ -110,7 +101,6 @@ VFX.RegisterKitEffect("AntiMagic", "Dash", function(data)
 		U.dustWave(feet, 4, nil, 8)
 	end
 
-	-- Sparks fly off opposite to the dash.
 	local away = -(root.CFrame:VectorToWorldSpace(DASH_DIRECTIONS[direction] or DASH_DIRECTIONS.Front))
 	U.burst(root.Position - UP * 0.5, {
 		color = RED,
@@ -164,14 +154,12 @@ VFX.RegisterKitEffect("AntiMagic", "PerfectBlock", function(data)
 end)
 
 function Kit.SetAwakened(character: Model, on: boolean)
-	-- During the transformation the look waits for the burst.
 	if on and (revealAt[character] or 0) > os.clock() then
 		return
 	end
 	setAwakened(character, on)
 end
 
--- A brighter, black-lightning version of the heavy hit for perfect Dividers.
 VFX.Register("PerfectDivider", function(data)
 	VFX.Play("HeavyHit", data)
 	local position: Vector3 = data.position

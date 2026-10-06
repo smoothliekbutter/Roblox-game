@@ -1,5 +1,3 @@
--- Soft, see-through effect pieces (beams, rings, arcs, trails, glows, particles), in Yuno's colours by default.
-
 local RunService = game:GetService("RunService")
 
 local VFX = require(script.Parent.VFX)
@@ -67,9 +65,7 @@ local WIND, WIND_DEEP, WIND_WHITE = Soft.WIND, Soft.WIND_DEEP, Soft.WIND_WHITE
 local STAR, STAR_WHITE = Soft.STAR, Soft.STAR_WHITE
 local SMOKE, SPARKLE = Soft.SMOKE, Soft.SPARKLE
 
-local KAPPA = 0.5523 -- a quarter circle as a cubic curve
-
--- Timing and cleanup
+local KAPPA = 0.5523
 
 function Soft.every(duration: number, step: (number, number) -> boolean?, finish: (() -> ())?)
 	local start = os.clock()
@@ -108,9 +104,6 @@ function Soft.quadratic(a: Vector3, b: Vector3, c: Vector3, s: number): Vector3
 end
 local quadratic = Soft.quadratic
 
--- Hard shapes: bars, tubes, wedges, stars
-
--- A straight bar of light or wind between two points.
 function Soft.bar(from: Vector3, to: Vector3, width: number, color: Color3, transparency: number): BasePart
 	if (to - from).Magnitude < 1e-3 then
 		to = from + UP * 0.05
@@ -125,7 +118,6 @@ function Soft.bar(from: Vector3, to: Vector3, width: number, color: Color3, tran
 end
 local bar = Soft.bar
 
--- A round beam (cylinder) between two points.
 function Soft.tube(from: Vector3, to: Vector3, width: number, color: Color3, transparency: number): BasePart
 	if (to - from).Magnitude < 1e-3 then
 		to = from + UP * 0.05
@@ -140,13 +132,11 @@ function Soft.tube(from: Vector3, to: Vector3, width: number, color: Color3, tra
 	})
 end
 
--- Re-poses a bar (from `bar`) to run between two points.
 function Soft.stretch(line: BasePart, from: Vector3, to: Vector3)
 	line.Size = Vector3.new(line.Size.X, line.Size.Y, (to - from).Magnitude + 0.05)
 	line.CFrame = CFrame.lookAt(from:Lerp(to, 0.5), to)
 end
 
--- A neon wedge (U.newPart for wedges), for pointed shapes.
 function Soft.newWedge(props: { [string]: any }): WedgePart
 	local wedge = Instance.new("WedgePart")
 	wedge.Anchored = true
@@ -163,7 +153,6 @@ function Soft.newWedge(props: { [string]: any }): WedgePart
 	return wedge
 end
 
--- Wind streaming into a point from all round it.
 function Soft.inflow(target: Vector3, radius: number, color: Color3?)
 	local from = target + U.randomUnit() * radius
 	local wisp = bar(from, from + (target - from).Unit * 1.2, 0.08, color or WIND_WHITE, 0.3)
@@ -171,7 +160,6 @@ function Soft.inflow(target: Vector3, radius: number, color: Color3?)
 	task.delay(0.25, wisp.Destroy, wisp)
 end
 
--- A burst of pale wind streaks.
 function Soft.gust(position: Vector3, size: number, direction: Vector3?)
 	U.burst(position, {
 		color = WIND_WHITE,
@@ -224,7 +212,6 @@ function Soft.makeStar(size: number, color: Color3?): Star
 	light.Range = size * 6
 	light.Brightness = 2.5
 	light.Parent = parts[1]
-	-- Glitter: sparkles of starlight round it, and a soft halo.
 	local glitter = Instance.new("ParticleEmitter")
 	glitter.Texture = SPARKLE
 	glitter.Color = ColorSequence.new(STAR_WHITE, tint)
@@ -237,7 +224,7 @@ function Soft.makeStar(size: number, color: Color3?): Star
 	glitter.Speed = NumberRange.new(0.5, 1.5)
 	glitter.SpreadAngle = Vector2.new(180, 180)
 	glitter.Rotation = NumberRange.new(0, 90)
-	glitter.Enabled = false -- (until it's first placed)
+	glitter.Enabled = false
 	glitter.Parent = parts[1]
 	local placed, faded = false, false
 	local star = { parts = parts }
@@ -261,7 +248,6 @@ function Soft.makeStar(size: number, color: Color3?): Star
 end
 local makeStar = Soft.makeStar
 
--- A star, softer: its rays see-through.
 function Soft.softStar(size: number, color: Color3?): Star
 	local star = makeStar(size, color)
 	for i, part in star.parts do
@@ -314,7 +300,7 @@ function Soft.makeSprite(scale: number): Sprite
 	trail.LightEmission = 1
 	trail.LightInfluence = 0
 	trail.FaceCamera = true
-	trail.Enabled = false -- (until she's first placed)
+	trail.Enabled = false
 	trail.Parent = body
 	local started = false
 	local sprite = {}
@@ -372,8 +358,6 @@ function Soft.poseArc(parts: { BasePart }, points: { Vector3 })
 	end
 end
 
--- Soft shapes: beams, rings, trails, particles
-
 function Soft.worldAnchor(position: Vector3, axis: Vector3?): Attachment
 	local x = if axis and axis.Magnitude > 1e-3 then axis.Unit else Vector3.xAxis
 	local y = if math.abs(x.Y) > 0.98 then Vector3.zAxis else UP
@@ -385,7 +369,6 @@ function Soft.worldAnchor(position: Vector3, axis: Vector3?): Attachment
 end
 local worldAnchor = Soft.worldAnchor
 
--- Re-aims a world anchor (from `worldAnchor`).
 function Soft.aim(attachment: Attachment, position: Vector3, axis: Vector3?)
 	local x = if axis and axis.Magnitude > 1e-3 then axis.Unit else Vector3.xAxis
 	local y = if math.abs(x.Y) > 0.98 then Vector3.zAxis else UP
@@ -404,7 +387,7 @@ export type BeamStyle = {
 	speed: number?,
 	length: number?,
 	emission: number?,
-	wrap: boolean?, -- tile the texture every `length` studs (a chain of sparkles)
+	wrap: boolean?,
 	segments: number?,
 }
 
@@ -434,7 +417,6 @@ function Soft.softBeam(a0: Attachment, a1: Attachment, style: BeamStyle, parent:
 end
 local softBeam = Soft.softBeam
 
--- Eases beams out to nothing, then removes them (and `extra`).
 function Soft.fadeBeams(beams: { Beam }, duration: number, extra: { any }?)
 	local originals: { { NumberSequenceKeypoint } } = {}
 	for i, beam in beams do
@@ -465,7 +447,6 @@ function Soft.fadeBeams(beams: { Beam }, duration: number, extra: { any }?)
 end
 local fadeBeams = Soft.fadeBeams
 
--- Scales a beam's widths by `scale` (from the widths it was made with).
 function Soft.scaleBeams(beams: { Beam }, scale: number, base: { { number } })
 	for i, beam in beams do
 		beam.Width0 = base[i][1] * scale
@@ -517,7 +498,6 @@ function Soft.softRing(style: BeamStyle): Ring
 end
 local softRing = Soft.softRing
 
--- A ring of wind racing out from `from` to `to` studs across `normal`.
 function Soft.windRing(
 	center: Vector3,
 	normal: Vector3,
@@ -546,7 +526,6 @@ function Soft.windRing(
 	ring.fade(duration)
 end
 
--- A thin bright ring of starlight racing out (sharper than a wind ring).
 function Soft.lightRing(center: Vector3, normal: Vector3, from: number, to: number, duration: number, color: Color3?)
 	local ring = softRing({
 		color = ColorSequence.new(STAR_WHITE, color or STAR),
@@ -604,7 +583,6 @@ function Soft.softArc(styles: { BeamStyle }): Arc
 	return arc
 end
 
--- A particle emitter of soft wind (or sparkles) on `parent`.
 function Soft.windEmitter(parent: Instance, props: { [string]: any }): ParticleEmitter
 	local emitter = Instance.new("ParticleEmitter")
 	emitter.Texture = SMOKE
@@ -638,7 +616,6 @@ function Soft.glow(parent: Instance, color: Color3, size: number, transparency: 
 	})
 end
 
--- A puff of wind: soft gusts thrown out of a point.
 function Soft.windPuff(position: Vector3, size: number, direction: Vector3?)
 	U.burst(position, {
 		texture = SMOKE,
@@ -655,7 +632,6 @@ function Soft.windPuff(position: Vector3, size: number, direction: Vector3?)
 	})
 end
 
--- Sparks of starlight thrown out of a point (glittering four-point stars).
 function Soft.starDust(position: Vector3, count: number, speed: number, direction: Vector3?, color: Color3?)
 	U.burst(position, {
 		color = color or STAR,
@@ -669,7 +645,6 @@ function Soft.starDust(position: Vector3, count: number, speed: number, directio
 	})
 end
 
--- Fast streaks of wind thrown out along `direction` (or every way).
 function Soft.streaks(position: Vector3, count: number, speed: number, direction: Vector3?, spread: number?)
 	U.burst(position, {
 		color = WIND_WHITE,
@@ -702,7 +677,6 @@ function Soft.twinkle(position: Vector3, size: number, color: Color3?, duration:
 	flare.Enabled = false
 	flare.Parent = attachment
 	flare:Emit(1)
-	-- A soft halo under it.
 	local halo = flare:Clone()
 	halo.Texture = SMOKE
 	halo.Color = ColorSequence.new(color or STAR)
@@ -713,7 +687,6 @@ function Soft.twinkle(position: Vector3, size: number, color: Color3?, duration:
 	task.delay(life + 0.1, holder.Destroy, holder)
 end
 
--- A trail between two points on `part` (offsets in its space).
 export type TrailStyle = {
 	color: ColorSequence,
 	transparency: NumberSequence,
@@ -722,7 +695,7 @@ export type TrailStyle = {
 	texture: string?,
 	faceCamera: boolean?,
 	emission: number?,
-	off: boolean?, -- made switched off: start it with beginTrail once its part is in place
+	off: boolean?,
 }
 
 function Soft.trail(part: BasePart, a: Vector3, b: Vector3, style: TrailStyle): Trail
@@ -764,7 +737,6 @@ function Soft.beginTrail(trail: Trail)
 	end
 end
 
--- Stops a trail and removes it once what it left behind has faded.
 function Soft.endTrail(trail: Trail)
 	trail.Enabled = false
 	task.delay(trail.Lifetime + 0.1, trail.Destroy, trail)
@@ -792,7 +764,6 @@ function Soft.helix(
 		task.delay(runner.trail.Lifetime + 0.2, runner.part.Destroy, runner.part)
 	end
 	local function spawnRunner(i: number, at: Vector3, phase: number): Runner
-		-- Placed before its trail is attached, so the trail starts here.
 		local part = U.newPart({ Size = Vector3.one * 0.1, Transparency = 1, CFrame = CFrame.new(at) })
 		local trail = Soft.trail(part, Vector3.new(0, width / 2, 0), Vector3.new(0, -width / 2, 0), {
 			color = ColorSequence.new(if i % 2 == 0 then WIND_WHITE else color or WIND, color or WIND),
@@ -824,7 +795,7 @@ function Soft.helix(
 		local along = top - foot
 		local length = along.Magnitude
 		if length < 1e-3 then
-			return true -- (no axis yet: nothing drawn)
+			return true
 		end
 		local up = along / length
 		local side = up:Cross(if math.abs(up.Y) > 0.9 then Vector3.xAxis else UP).Unit
@@ -836,7 +807,6 @@ function Soft.helix(
 			local position = foot + up * (length * phase) + (side * math.cos(angle) + other * math.sin(angle)) * r
 			local runner = runners[i]
 			if runner and phase < runner.phase then
-				-- Back to the foot: this ribbon is left to fade at the top.
 				retire(runner)
 				runner = nil
 			end
@@ -852,8 +822,6 @@ function Soft.helix(
 	return stop
 end
 
--- A chain of sparkles streaming from one attachment to another (starlight
--- poured along a line).
 function Soft.starStream(a0: Attachment, a1: Attachment, width: number, speed: number, parent: Instance?): Beam
 	return softBeam(a0, a1, {
 		color = ColorSequence.new(STAR_WHITE, STAR),
@@ -866,8 +834,6 @@ function Soft.starStream(a0: Attachment, a1: Attachment, width: number, speed: n
 		speed = speed,
 	}, parent)
 end
-
--- Cuts of wind
 
 export type Slash = {
 	flare: () -> (),
@@ -959,7 +925,6 @@ function Soft.windSlash(from: Vector3, to: Vector3, bend: Vector3, scale: number
 	for _, beam in beams do
 		beam.Enabled = false
 	end
-	-- Wisps of wind drifting off it while it hangs there.
 	local wisps = windEmitter(m, {
 		Size = NumberSequence.new({ key(0, 1.2 * scale), key(1, 3 * scale) }),
 		Transparency = NumberSequence.new({ key(0, 1), key(0.3, 0.8), key(1, 1) }),
@@ -969,7 +934,6 @@ function Soft.windSlash(from: Vector3, to: Vector3, bend: Vector3, scale: number
 		Drag = 2,
 		Rate = 0,
 	})
-	-- The swipe: a ribbon of wind streaking along the curve.
 	local sweep = swipe or 0.06
 	local runner = U.newPart({ Size = Vector3.one * 0.1, Transparency = 1, CFrame = CFrame.new(from) })
 	local swipeTrail = Soft.trail(runner, Vector3.new(0, 1.3 * scale, 0), Vector3.new(0, -1.3 * scale, 0), {
@@ -1002,7 +966,6 @@ function Soft.windSlash(from: Vector3, to: Vector3, bend: Vector3, scale: number
 		wisps.Enabled = false
 		fadeBeams(beams, duration, { a, m, b })
 	end
-	-- Carries it `offset` over `duration` (easing out), as if blown along.
 	function slash.move(offset: Vector3, duration: number)
 		for _, anchor in { a, m, b } do
 			U.tween(anchor, duration, { CFrame = anchor.CFrame + offset })
@@ -1021,7 +984,7 @@ function Soft.focusLines(duration: number)
 	gui.Name = "FocusLines"
 	gui.IgnoreGuiInset = true
 	gui.ResetOnSpawn = false
-	gui.DisplayOrder = 45 -- under the letterbox bars
+	gui.DisplayOrder = 45
 	gui.Parent = playerGui
 	local half = viewport.Magnitude / 2
 	local lines: { Frame } = {}
@@ -1039,7 +1002,6 @@ function Soft.focusLines(duration: number)
 		line.BorderSizePixel = 0
 		line.BackgroundTransparency = 0.1
 		local gradient = Instance.new("UIGradient")
-		-- Faint where it starts nearest the middle, solid at the edge.
 		gradient.Transparency = NumberSequence.new({ key(0, 1), key(0.45, 0.4), key(1, 0) })
 		gradient.Parent = line
 		line.Parent = gui

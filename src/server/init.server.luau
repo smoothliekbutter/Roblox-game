@@ -1,7 +1,3 @@
---[[
-	Server entry point.
-]]
-
 local Players = game:GetService("Players")
 
 local CharacterLoader = require(script.CharacterLoader)
@@ -22,7 +18,6 @@ for _, player in Players:GetPlayers() do
 	task.spawn(onPlayerAdded, player)
 end
 
--- After combat hooks are in place, so the first spawn gets registered.
 CharacterLoader.Start()
 
 Dummies.Start()

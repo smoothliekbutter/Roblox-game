@@ -1,6 +1,3 @@
--- Prince of Wind (Yuno), client: M1s, skill events and dash / air jump effects. The moves are drawn by
--- Base, Half and Full, the Crown looks by Look (shared pieces: Fx; cutscenes: Saint, Nova, Waltz).
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local SaintPlan = require(ReplicatedStorage:WaitForChild("Shared").SaintZephyr)
@@ -12,7 +9,6 @@ local Soft = require(script.Parent.Parent.Soft)
 local U = VFX.Util
 local UP = Vector3.yAxis
 
--- The palette and the soft wind everything is drawn with (see Soft).
 local WIND, WIND_DEEP, WIND_WHITE = Soft.WIND, Soft.WIND_DEEP, Soft.WIND_WHITE
 local STAR_WHITE = Soft.STAR_WHITE
 local windRing, lightRing, windPuff = Soft.windRing, Soft.lightRing, Soft.windPuff
@@ -44,16 +40,13 @@ Kit.Idle = {
 local HOVER = {
 	stand = ANIMS.HoverIdle,
 	move = ANIMS.HoverMove,
-	air = ANIMS.HoverIdle, -- still carried on the wind (so a jump doesn't drop him)
+	air = ANIMS.HoverIdle,
 	moveSpeed = 16,
 }
 
--- The idle set for him right now (Moves asks when the kit is put on).
 function Kit.IdleFor(character: Model): PoseAnimator.IdleSet
 	return if character:GetAttribute("Awakened") == true then HOVER else Kit.Idle
 end
-
--- M1: wind-wrapped strikes (the shared fist string), each with a gust
 
 function Kit.PlayM1(character: Model, index: number, variant: string)
 	local name = M1Animations.NameFor(index, variant)
@@ -83,7 +76,6 @@ function Kit.PlayM1(character: Model, index: number, variant: string)
 					spread = 50,
 					direction = out,
 				})
-				-- A breath of wind off the blow (a ring of it on the heavy ones).
 				windPuff(tip, if heavy then 1.4 else 0.8, out)
 				if heavy then
 					lightRing(tip, out, 0.3, 2.4, 0.16, WIND_WHITE)
@@ -93,8 +85,6 @@ function Kit.PlayM1(character: Model, index: number, variant: string)
 		VFX.AirPop(character, heavy)
 	end)
 end
-
--- Half-Crown / Full-Crown (the looks are built by Look)
 
 local destroyLook: { [Model]: () -> () } = {}
 local stageWatch: { [Model]: RBXScriptConnection } = {}
@@ -111,7 +101,6 @@ function Kit.SetAwakened(character: Model, on: boolean)
 		destroy()
 	end
 	PoseAnimator.SetIdle(character, if on then HOVER else Kit.Idle)
-	-- Hovering under everything he does (attacks too), not only standing.
 	PoseAnimator.SetLift(character, if on then SaintPlan.Lift else 0)
 	if not on then
 		return
@@ -130,8 +119,6 @@ function Kit.SetAwakened(character: Model, on: boolean)
 		end
 	end)
 end
-
--- Movement: a green dash on the wind, and the gust under his air jump
 
 local DASH_VECTORS = {
 	Front = Vector3.new(0, 0, -1),

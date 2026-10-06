@@ -1,25 +1,21 @@
--- Saint Spirit of Zephyr's flight (shared, so the server and every client agree).
-
 local SaintZephyr = {}
 
 local UP = Vector3.yAxis
 
 local PATH = {
-	Lift = 1.0, -- carried up to Height
-	Open = 1.15, -- the constellation has opened round them
-	Hover = 1.2, -- he's up beside them, at his star
-	-- Each cut: the moment he's in the middle of them. The gaps shrink
-	-- (faster and faster).
+	Lift = 1.0,
+	Open = 1.15,
+	Hover = 1.2,
 	Cuts = { 1.62, 1.89, 2.15, 2.4, 2.64, 2.87, 3.09, 3.3 },
-	Cross = 3.6, -- the X (him in the middle of them again)
-	Rise = 3.94, -- high above them, the blade growing
-	Strike = 4.72, -- the one strike, straight down through them
-	Burst = 4.97, -- the hanging cuts detonate
-	Land = 5.32, -- they hit the ground
-	Length = 6.3, -- he's standing, his back to them
+	Cross = 3.6,
+	Rise = 3.94,
+	Strike = 4.72,
+	Burst = 4.97,
+	Land = 5.32,
+	Length = 6.3,
 }
-SaintZephyr.SlowMo = 0.16 -- half the slow motion round the strike (real seconds)
-SaintZephyr.Linger = 0.15 -- how much longer the strike takes than at full speed
+SaintZephyr.SlowMo = 0.16
+SaintZephyr.Linger = 0.15
 
 local function smoother(x: number): number
 	x = math.clamp(x, 0, 1)
@@ -28,20 +24,16 @@ end
 
 local SLOW_FROM = PATH.Strike - SaintZephyr.SlowMo + SaintZephyr.Linger / 2
 
--- The path's clock at real time `t`.
 function SaintZephyr.PathTime(t: number): number
 	return t - SaintZephyr.Linger * smoother((t - SLOW_FROM) / (2 * SaintZephyr.SlowMo))
 end
 
--- The real time at which the path's clock reads `p`.
 function SaintZephyr.RealTime(p: number): number
 	if p <= SLOW_FROM then
 		return p
 	end
 	local t = p + SaintZephyr.Linger / 2
 	for _ = 1, 12 do
-		-- Newton's method on PathTime(t) = p (it only ever speeds up again,
-		-- so this settles at once).
 		local x = (t - SLOW_FROM) / (2 * SaintZephyr.SlowMo)
 		local slope = if x > 0 and x < 1
 			then 1 - SaintZephyr.Linger / (2 * SaintZephyr.SlowMo) * 30 * x * x * (1 - x) * (1 - x)
@@ -63,22 +55,22 @@ SaintZephyr.Times = {
 	Land = SaintZephyr.RealTime(PATH.Land),
 	Length = SaintZephyr.RealTime(PATH.Length),
 }
-SaintZephyr.Height = 32 -- how high they're carried
-SaintZephyr.Ring = 12 -- the constellation's radius round them
-SaintZephyr.Above = 22 -- how far above them he raises the blade
-SaintZephyr.Charge = 0.26 -- from his star to the first cut
-SaintZephyr.Drift = 2 -- how far he rises above the top while the blade grows
-SaintZephyr.Dive = 0.18 -- the strike, from the top to the floor
+SaintZephyr.Height = 32
+SaintZephyr.Ring = 12
+SaintZephyr.Above = 22
+SaintZephyr.Charge = 0.26
+SaintZephyr.Drift = 2
+SaintZephyr.Dive = 0.18
 SaintZephyr.Lift = 1.8
 
 local ELEVATIONS = { 24, -18, 28, -24, 16, -28, 22, -20 }
-local HOVER_ELEVATION = -12 -- his own star, a little below them
-local CROSS_ELEVATION = 38 -- how steeply the X rises
-local HALF_PETAL = math.rad(22.5) -- each petal's half-width round them
-local PASS_REACH = 1.45 -- the speed through them, as rings per half-petal
-local TIP_SPEED = 0.25 -- round a star, against the speed through them
-local SWAY = 0.35 -- how much of each turn he saves for round the star (0: an even turn)
-local LEAN = math.rad(16) -- leaning into the flight at full speed
+local HOVER_ELEVATION = -12
+local CROSS_ELEVATION = 38
+local HALF_PETAL = math.rad(22.5)
+local PASS_REACH = 1.45
+local TIP_SPEED = 0.25
+local SWAY = 0.35
+local LEAN = math.rad(16)
 
 export type Plan = {
 	origin: CFrame,
@@ -86,14 +78,14 @@ export type Plan = {
 	forward: Vector3,
 	right: Vector3,
 	floorY: number,
-	center: Vector3, -- where they hang
-	hover: Vector3, -- his star, beside them, where the first cut starts
-	stars: { Vector3 }, -- the constellation, in the order he goes round it
-	passes: { Vector3 }, -- the way he's going through them at each cut (then the X)
-	speeds: { number }, -- how fast (studs/s) at each of those
-	tangents: { Vector3 }, -- the way he's going round each star
-	top: Vector3, -- where he raises the blade
-	ground: Vector3, -- where the strike ends, his feet on the floor
+	center: Vector3,
+	hover: Vector3,
+	stars: { Vector3 },
+	passes: { Vector3 },
+	speeds: { number },
+	tangents: { Vector3 },
+	top: Vector3,
+	ground: Vector3,
 }
 
 local function smooth(a: number): number
@@ -101,14 +93,11 @@ local function smooth(a: number): number
 	return a * a * (3 - 2 * a)
 end
 
--- Round them at `azimuth` (radians, from `forward` toward `right`) and
--- `elevation` (radians).
 local function direction(plan: Plan, azimuth: number, elevation: number): Vector3
 	local flat = plan.forward * math.cos(azimuth) + plan.right * math.sin(azimuth)
 	return flat * math.cos(elevation) + UP * math.sin(elevation)
 end
 
--- The pass times in order: the eight cuts, then the X.
 local function passTimes(): { number }
 	local times = table.clone(PATH.Cuts)
 	table.insert(times, PATH.Cross)
@@ -179,7 +168,7 @@ function SaintZephyr.Plan(origin: CFrame, victimPosition: Vector3, floorY: numbe
 		plan.tangents[i] = if across.Magnitude > 1e-3 then across.Unit else plan.right
 	end
 
-	local reach = 7 -- (he lands well clear of where they hit)
+	local reach = 7
 	plan.top = center + UP * SaintZephyr.Above + forward * reach
 	plan.ground = start - forward * (reach * SaintZephyr.Height / (SaintZephyr.Above + SaintZephyr.Drift))
 	return plan
@@ -204,7 +193,6 @@ local function petals(plan: Plan, t: number): (Vector3, Vector3)
 	local times = passTimes()
 	local count = #times
 	if t >= times[count] then
-		-- After the X: up and back over to the top.
 		local duration = PATH.Rise - times[count]
 		local s = math.clamp((t - times[count]) / duration, 0, 1)
 		return hermite(plan.center, plan.passes[count] * plan.speeds[count], plan.top, UP * 4, duration, s)
@@ -233,13 +221,10 @@ local function petals(plan: Plan, t: number): (Vector3, Vector3)
 	)
 end
 
--- Up on the blade, above them: turned back toward his side, looking down
--- at them.
 local function poised(plan: Plan, position: Vector3, pitch: number): CFrame
 	return CFrame.new(position) * CFrame.lookAt(Vector3.zero, -plan.forward).Rotation * CFrame.Angles(pitch, 0, 0)
 end
 
--- Leaning into the flight, the faster he goes.
 local function lean(speed: number): CFrame
 	return CFrame.Angles(-LEAN * math.min(speed / 120, 1), 0, 0)
 end
@@ -256,12 +241,10 @@ end
 
 local POISED_PITCH = math.rad(-18)
 
--- The heading (radians round the vertical) a flat direction points along.
 local function yawOf(direction: Vector3): number
 	return math.atan2(-direction.X, -direction.Z)
 end
 
--- An angle taken the short way round (-pi to pi).
 local function wrap(angle: number): number
 	return (angle + math.pi) % (2 * math.pi) - math.pi
 end
@@ -280,18 +263,15 @@ local function flight(plan: Plan, t: number): (Vector3, Vector3)
 	local cuts = times.Cuts
 	local charge = cuts[1] - SaintZephyr.Charge
 	if t < times.Hover then
-		-- Up beside them on the wind, curving out round the column.
 		local a = smooth((t - 0.25) / (times.Hover - 0.25))
 		local from, to = plan.origin.Position, plan.hover
 		local bow = plan.right * 4 + UP * 2
 		local position = from:Lerp(to, a) + bow * math.sin(a * math.pi)
 		return position, Vector3.zero
 	elseif t < charge then
-		-- Waiting at his star (a breath of drift).
 		local u = (t - times.Hover) / (charge - times.Hover)
 		return plan.hover + UP * 0.35 * math.sin(u * math.pi) ^ 2, Vector3.zero
 	elseif t < cuts[1] then
-		-- The charge: from standing still, faster and faster, straight in.
 		local s = (t - charge) / SaintZephyr.Charge
 		local line = plan.center - plan.hover
 		return plan.hover + line * (s * s * s), line * (3 * s * s / SaintZephyr.Charge)
@@ -332,12 +312,10 @@ local function attackerAt(plan: Plan, t: number): CFrame
 		return CFrame.new(position) * CFrame.fromOrientation(pitch, yaw, 0)
 	end
 	if t < cuts[1] then
-		-- At his star and charging from it: facing straight through them.
 		local position, velocity = flight(plan, t)
 		return CFrame.lookAt(position, position + plan.passes[1]) * lean(velocity.Magnitude)
 	end
 	if t < times.Cross then
-		-- Round the petals, turning with them.
 		local position, velocity = flight(plan, t)
 		local passes = passTimes()
 		local index = 1
@@ -351,8 +329,6 @@ local function attackerAt(plan: Plan, t: number): CFrame
 		return CFrame.lookAt(position, position + heading) * lean(velocity.Magnitude)
 	end
 	if t < times.Rise then
-		-- Up out of the X and over to the top, turning round to face down at
-		-- them.
 		local position = flight(plan, t)
 		local count = #plan.passes
 		local x = plan.passes[count]
@@ -362,20 +338,16 @@ local function attackerAt(plan: Plan, t: number): CFrame
 	end
 	local hold, landed = diveTimes()
 	if t < hold then
-		-- High above them, rising a little as the blade grows.
 		local s = math.clamp((t - times.Rise) / (hold - times.Rise), 0, 1)
 		local position =
 			hermite(plan.top, UP * 4, plan.top + UP * SaintZephyr.Drift, Vector3.zero, hold - times.Rise, s)
 		return poised(plan, position, POISED_PITCH)
 	end
 	if t < landed then
-		-- The strike: dropping faster and faster, down through them.
 		local s = (t - hold) / (landed - hold)
 		local from = plan.top + UP * SaintZephyr.Drift
 		return poised(plan, from:Lerp(plan.ground, s * s), POISED_PITCH * (1 - smooth(s)))
 	end
-	-- Landed on his side of them, his back to them, his head turning a
-	-- little.
 	local turn = smooth((t - landed) / 0.9)
 	return CFrame.new(plan.ground)
 		* CFrame.lookAt(Vector3.zero, -plan.forward).Rotation
@@ -390,10 +362,9 @@ local function knock(t: number, at: number, peak: number): number
 	return u * math.exp(1 - u)
 end
 
--- Where they hang, knocked about by each cut (between the lift and the burst).
 local function hanging(plan: Plan, t: number): CFrame
 	local times = PATH
-	local toward = CFrame.lookAt(Vector3.zero, -plan.forward).Rotation -- facing him
+	local toward = CFrame.lookAt(Vector3.zero, -plan.forward).Rotation
 	local offset = Vector3.zero
 	local twist, tip = 0, 0
 	local passes = passTimes()
@@ -404,7 +375,6 @@ local function hanging(plan: Plan, t: number): CFrame
 		twist += (if i % 2 == 1 then 1 else -1) * math.rad(if big then 22 else 12) * k
 		tip += math.rad(if big then -14 else -6) * k
 	end
-	-- Split by the strike: driven down hard.
 	local struck = knock(t, times.Strike, 0.08)
 	offset += -UP * 2.4 * struck
 	tip += math.rad(-25) * struck
@@ -425,24 +395,20 @@ function victimAt(plan: Plan, t: number): CFrame
 	if t <= times.Burst then
 		return hanging(plan, t)
 	end
-	-- Falling like a meteor, faster and faster, into the ground.
 	local from = hanging(plan, times.Burst)
 	local a = math.clamp((t - times.Burst) / (times.Land - times.Burst), 0, 1)
 	local floor = Vector3.new(plan.start.X, plan.floorY + 1.5, plan.start.Z)
 	return CFrame.new(from.Position:Lerp(floor, a * a)) * from.Rotation * CFrame.Angles(math.rad(-70) * smooth(a), 0, 0)
 end
 
--- Where he is at real time `t` (t = 0: the star binding them).
 function SaintZephyr.Attacker(plan: Plan, t: number): CFrame
 	return attackerAt(plan, SaintZephyr.PathTime(t))
 end
 
--- Where they are at real time `t`.
 function SaintZephyr.Victim(plan: Plan, t: number): CFrame
 	return victimAt(plan, SaintZephyr.PathTime(t))
 end
 
--- When the strike's dive starts and when he lands, in real time.
 function SaintZephyr.DiveTimes(): (number, number)
 	local hold, landed = diveTimes()
 	return SaintZephyr.RealTime(hold), SaintZephyr.RealTime(landed)

@@ -1,12 +1,9 @@
--- R6 punch / kick animations for the shared M1 string (played by PoseAnimator).
-
 local PoseAnimator = require(script.Parent.PoseAnimator)
 
 type Animation = PoseAnimator.Animation
 
 local rad = math.rad
 
--- Torso / head / leg rotation. x leans back (+) or forward (-), y twists left (+).
 local function rot(x: number, y: number?, z: number?): CFrame
 	return CFrame.Angles(rad(x), rad(y or 0), rad(z or 0))
 end
@@ -145,7 +142,6 @@ Clips.Hook = {
 			},
 		},
 		{
-			-- Arm swings out wide to the right.
 			time = 0.05,
 			pose = {
 				Torso = rot(0, -28),
@@ -157,7 +153,6 @@ Clips.Hook = {
 			},
 		},
 		{
-			-- ...and sweeps across the body.
 			time = 0.12,
 			easing = Enum.EasingStyle.Back,
 			pose = {
@@ -183,7 +178,6 @@ Clips.Hook = {
 	},
 }
 
--- Knockback finisher: chambered front kick. Legs are fully posed here.
 Clips.Kick = {
 	fadeIn = 0.04,
 	fadeOut = 0.22,
@@ -198,7 +192,6 @@ Clips.Kick = {
 			},
 		},
 		{
-			-- Chamber: knee comes back, body coils.
 			time = 0.09,
 			pose = {
 				Torso = rot(8, -14),
@@ -210,7 +203,6 @@ Clips.Kick = {
 			},
 		},
 		{
-			-- Snap the leg straight out.
 			time = 0.16,
 			easing = Enum.EasingStyle.Back,
 			pose = {
@@ -219,7 +211,7 @@ Clips.Kick = {
 				LeftArm = limb(10, 0, -70),
 				Head = rot(-18, -12),
 				RightLeg = rot(98),
-				LeftLeg = rot(-20), -- cancels the torso lean so the standing leg stays vertical
+				LeftLeg = rot(-20),
 			},
 		},
 		{
@@ -251,7 +243,6 @@ Clips.Uppercut = {
 			},
 		},
 		{
-			-- Dip down and load the right arm low.
 			time = 0.09,
 			pose = {
 				Torso = rot(-18, -18),
@@ -263,7 +254,6 @@ Clips.Uppercut = {
 			},
 		},
 		{
-			-- Rip upward.
 			time = 0.16,
 			easing = Enum.EasingStyle.Back,
 			pose = {
@@ -303,7 +293,6 @@ Clips.Downslam = {
 			},
 		},
 		{
-			-- Both fists raised overhead, body arched back.
 			time = 0.09,
 			pose = {
 				Torso = rot(18),
@@ -315,7 +304,6 @@ Clips.Downslam = {
 			},
 		},
 		{
-			-- Hammer down.
 			time = 0.16,
 			easing = Enum.EasingStyle.Back,
 			pose = {
@@ -341,7 +329,6 @@ Clips.Downslam = {
 	},
 }
 
--- Which limbs leave a trail on each move.
 M1Animations.Strikers = {
 	Jab = { "Right Arm" },
 	Cross = { "Left Arm" },
@@ -354,7 +341,6 @@ M1Animations.Strikers = {
 local STRING = { "Jab", "Cross", "Hook" }
 local FINISHERS = { Knockback = "Kick", Uppercut = "Uppercut", Downslam = "Downslam" }
 
--- Animation name for combo hit `index` with finisher `variant`.
 function M1Animations.NameFor(index: number, variant: string): string
 	if variant ~= "Normal" then
 		return FINISHERS[variant] or "Kick"

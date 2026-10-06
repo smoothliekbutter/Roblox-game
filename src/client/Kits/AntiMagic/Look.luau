@@ -1,5 +1,3 @@
--- Asta's Black Form look (wing, horn, black flames), the awakening into it and his spawn entrance.
-
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
@@ -16,8 +14,6 @@ local rot, ANIMS, handlers, play, feetOf, getSword = Fx.rot, Fx.ANIMS, Fx.handle
 local bladeOf, alongBlade, heavyTrail, blackSmoke = Fx.bladeOf, Fx.alongBlade, Fx.heavyTrail, Fx.blackSmoke
 local redSparks, blackLightning, crackle, crescent = Fx.redSparks, Fx.blackLightning, Fx.crackle, Fx.crescent
 local inflow, impactFrame, lingerSmoke, trailEmitter = Fx.inflow, Fx.impactFrame, Fx.lingerSmoke, Fx.trailEmitter
-
--- Black Form look: a devil wing with its own idle, a horn, black flames
 
 type WingParams = {
 	lift: number,
@@ -52,7 +48,6 @@ local FEATHERS = {
 	{ bone = 2, at = 1.0, angle = 84, length = 2.4, width = 0.45 },
 }
 
--- Horn segments from the base up, curling out and back in.
 local HORN = {
 	{ size = Vector3.new(0.3, 0.42, 0.3), bend = rot(-10, 0, 14) },
 	{ size = Vector3.new(0.23, 0.4, 0.23), bend = rot(-12, 0, 12) },
@@ -60,17 +55,13 @@ local HORN = {
 	{ size = Vector3.new(0.09, 0.32, 0.09), bend = rot(0) },
 }
 
--- Asta's grimoire (defined further down, with his entrance; the sword swap in Form opens it too).
 type Grimoire = { open: (number) -> (), close: () -> (), burst: () -> () }
 local grimoire: (character: Model, root: BasePart, place: ((t: number) -> CFrame)?) -> Grimoire
 
 type BlackFormVisual = {
-	-- His grimoire, circling him while Black Form lasts.
 	book: Grimoire?,
 	flap: (() -> ())?,
-	-- Force a wing pose (a WING_STATES name), or nil to go back to normal.
 	setPose: ((string?) -> ())?,
-	-- A second wing on his right, for cutscenes (he normally has one).
 	setPair: ((boolean) -> ())?,
 	cleanup: { () -> () },
 }
@@ -120,7 +111,6 @@ local function setAwakened(character: Model, on: boolean)
 		return e
 	end
 
-	-- Black flames rolling up off him, licks of dark red at the edges.
 	emitter(torso, {
 		Texture = U.textures.Smoke,
 		Color = ColorSequence.new({
@@ -169,7 +159,6 @@ local function setAwakened(character: Model, on: boolean)
 		Acceleration = Vector3.new(0, 5, 0),
 	})
 
-	-- Anti-magic swallowing the right arm.
 	local arm = character:FindFirstChild("Right Arm")
 	if arm and arm:IsA("BasePart") then
 		local original = arm.Color
@@ -274,7 +263,6 @@ local function setAwakened(character: Model, on: boolean)
 		rimGlow:Destroy()
 	end)
 
-	-- Wing, horn and ground aura: anchored parts posed every frame.
 	local parts: { BasePart } = {}
 	local function piece(props: { [string]: any }): BasePart
 		local part = U.newPart(props)
@@ -335,7 +323,6 @@ local function setAwakened(character: Model, on: boolean)
 			})
 		end
 
-		-- Smoke streaming off the wingtip, embers off the forearm.
 		local wingEmitters = {
 			emitter(feathers[#feathers - 1].tip, {
 				Texture = U.textures.Smoke,
@@ -375,9 +362,8 @@ local function setAwakened(character: Model, on: boolean)
 			t: number,
 			running: boolean
 		)
-			-- Bones.
 			local shoulderFrame = torsoFrame
-				* CFrame.new(-0.6 * m, 0.55, 0.55) -- upper back
+				* CFrame.new(-0.6 * m, 0.55, 0.55)
 				* CFrame.Angles(0, rad(back) * m, 0)
 				* CFrame.Angles(0, 0, rad(-lift) * m)
 			local wristFrame = shoulderFrame
@@ -391,7 +377,6 @@ local function setAwakened(character: Model, on: boolean)
 			wrist.CFrame = wristFrame
 			claw.CFrame = wristFrame * CFrame.Angles(0, 0, rad(40) * m) * CFrame.new(0, 0.4, 0)
 
-			-- Feathers: fanned out, rippling from the root to the tip.
 			for i, feather in FEATHERS do
 				local frame = if feather.bone == 1 then shoulderFrame else wristFrame
 				local length = if feather.bone == 1 then UPPER_BONE else FOREARM
@@ -438,7 +423,6 @@ local function setAwakened(character: Model, on: boolean)
 		Transparency = 0.65,
 	})
 
-	-- Hidden until the first frame poses them (they're built at the origin).
 	for _, part in parts do
 		part.Transparency = 1
 	end
@@ -456,7 +440,6 @@ local function setAwakened(character: Model, on: boolean)
 	local fading: number? = nil
 	local FADE = 0.4
 
-	-- A big beat: the Stance in the awakening, and now and then when idle.
 	visual.flap = function()
 		flapStart = os.clock()
 	end
@@ -468,12 +451,11 @@ local function setAwakened(character: Model, on: boolean)
 		local second = wings[2]
 		second.target = if on then 1 else 0
 		if on and second.shown < 0.5 then
-			-- It forms out of black smoke.
 			blackSmoke(torso.Position + torso.CFrame.RightVector * 2.5 + torso.CFrame.LookVector * -1, 10, 3, 6)
 		end
 	end
 	local hornBase = CFrame.new(0.42, 0.42, -0.1) * rot(0, 0, -34)
-	local face = CFrame.Angles(0, 0, rad(90)) -- cylinder X axis up
+	local face = CFrame.Angles(0, 0, rad(90))
 
 	local connection
 	connection = RunService.RenderStepped:Connect(function(dt)
@@ -485,12 +467,10 @@ local function setAwakened(character: Model, on: boolean)
 			end
 			return
 		end
-		-- The rim breathes: a slow, soft swell.
 		local breath = 0.5 + 0.5 * math.sin((now - born) * 2.2)
 		outline.OutlineTransparency = 0.18 - 0.12 * breath
 		rimGlow.Brightness = 0.45 + 0.35 * breath
 
-		-- What is he doing? Ground check a few times a second.
 		if now >= nextGroundCheck then
 			nextGroundCheck = now + 0.1
 			local ground = U.groundBelow(root.Position, { character })
@@ -500,11 +480,10 @@ local function setAwakened(character: Model, on: boolean)
 		local speed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
 		local newState = if groundY == nil then "air" elseif speed > 4 then "run" else "stand"
 		if newState == "air" and state ~= "air" then
-			phase = 0.25 -- start the first beat from the top
+			phase = 0.25
 		end
 		state = newState
 
-		-- Ease toward the state's pose; unfurl from folded when it appears.
 		local unfurl = math.clamp((now - born) / 0.55, 0, 1)
 		local reveal = TweenService:GetValue(unfurl, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 		local target = lerpParams(WING_STATES.folded, WING_STATES[forcedPose or state], reveal)
@@ -512,7 +491,6 @@ local function setAwakened(character: Model, on: boolean)
 		current = lerpParams(current, target, ease)
 		phase = (phase + dt * current.rate) % 1
 
-		-- Idle stretch every so often.
 		if state == "stand" and now >= nextStretch then
 			nextStretch = now + 7 + math.random() * 5
 			flapStart = now
@@ -528,7 +506,6 @@ local function setAwakened(character: Model, on: boolean)
 		local back = current.back - 10 * flap
 		local fan = current.fan + 0.3 * flap
 
-		-- Both wings (the second only shows in cutscenes).
 		local t = now - born
 		for _, wing in wings do
 			wing.shown += (wing.target - wing.shown) * math.min(dt * 6, 1)
@@ -549,7 +526,6 @@ local function setAwakened(character: Model, on: boolean)
 			end
 		end
 
-		-- Horn.
 		local hornFrame = head.CFrame * hornBase
 		for i, segment in HORN do
 			local height = segment.size.Y
@@ -557,7 +533,6 @@ local function setAwakened(character: Model, on: boolean)
 			hornFrame = hornFrame * CFrame.new(0, height * 0.9, 0) * segment.bend
 		end
 
-		-- Dark pool under his feet (only when standing on something).
 		if groundY then
 			local pulse = 1 + 0.06 * math.sin(t * 2)
 			local spot = Vector3.new(root.Position.X, groundY + 0.06, root.Position.Z)
@@ -570,7 +545,6 @@ local function setAwakened(character: Model, on: boolean)
 		disc.Transparency = if poolShown then 0.55 else 1
 		discRim.Transparency = if poolShown then 0.65 else 1
 
-		-- Little things: crackles off his body, pressure rings on the ground.
 		if not fading and now >= nextCrackle then
 			nextCrackle = now + 0.45 + math.random() * 0.7
 			local from = torso.Position + U.randomUnit() * 1.2
@@ -581,7 +555,6 @@ local function setAwakened(character: Model, on: boolean)
 			U.ringBurst(CFrame.new(root.Position.X, groundY + 0.1, root.Position.Z), DARK_RED, 2, 6, 0.6, 0.08)
 		end
 
-		-- Grow in when it appears, dissolve when Black Form ends.
 		local visible = math.clamp((now - born) / 0.3, 0, 1)
 		if fading then
 			visible = 1 - (now - fading) / FADE
@@ -639,11 +612,8 @@ local function setAwakened(character: Model, on: boolean)
 	end)
 end
 
--- Awakening: the transformation into Black Form
+local AWAKEN_BURST = 0.92
 
-local AWAKEN_BURST = 0.92 -- the roar in the Awaken animation; the server bursts here too
-
--- When the Black Form look should pop in (at the burst, not before).
 local revealAt: { [Model]: number } = setmetatable({}, { __mode = "k" }) :: any
 
 local function refreshAwakened(character: Model)
@@ -654,7 +624,6 @@ local function refreshAwakened(character: Model)
 	setAwakened(character, on)
 end
 
--- What the burst consumes from the gathering: the pool and floating rocks.
 local gathering: { [Model]: { BasePart } } = setmetatable({}, { __mode = "k" }) :: any
 
 local function awakenGather(character: Model, root: BasePart)
@@ -663,7 +632,6 @@ local function awakenGather(character: Model, root: BasePart)
 	local made: { BasePart } = {}
 	gathering[character] = made
 
-	-- Darkness pooling out under him, a red rim at its edge.
 	local face = CFrame.Angles(0, 0, rad(90))
 	local pool = U.newPart({
 		Shape = Enum.PartType.Cylinder,
@@ -685,7 +653,6 @@ local function awakenGather(character: Model, root: BasePart)
 	table.insert(made, pool)
 	table.insert(made, rim)
 
-	-- Rocks tearing loose and floating up around him.
 	local ground = U.groundBelow(feet + UP)
 	local rockColor = if ground and ground.Instance:IsA("BasePart")
 		then ground.Instance.Color
@@ -710,7 +677,6 @@ local function awakenGather(character: Model, root: BasePart)
 		table.insert(made, rock)
 	end
 
-	-- Anti-magic spiralling in and crawling up his body.
 	U.spiral(root, BLACK, 6.5, 2.5, 0.9, 4, 0.7, 0.85)
 	U.spiral(root, RED, 5.5, 2.5, 0.9, 2, 0.2, 0.85)
 	task.delay(0.35, U.groundCracks, feet, 6, 5, RED, 2.5)
@@ -733,7 +699,6 @@ local function awakenGather(character: Model, root: BasePart)
 		end
 	end)
 
-	-- For whoever is transforming: the world dims and the view closes in.
 	if mine then
 		U.colorGrade({
 			Brightness = -0.12,
@@ -749,7 +714,6 @@ local function awakenGather(character: Model, root: BasePart)
 				{ FieldOfView = 56 }
 			)
 			:Play()
-		-- The burst kicks it back out; if the burst never comes, restore it.
 		task.delay(AWAKEN_BURST + 0.6, function()
 			if camera.FieldOfView < 69 then
 				TweenService:Create(camera, TweenInfo.new(0.3), { FieldOfView = 70 }):Play()
@@ -762,7 +726,6 @@ local function awakenBurst(character: Model, root: BasePart)
 	local feet = feetOf(character, root)
 	local center = root.Position
 
-	-- The gathering gets blown away.
 	local consumed = gathering[character]
 	if consumed then
 		for _, part in consumed do
@@ -783,7 +746,6 @@ local function awakenBurst(character: Model, root: BasePart)
 	end
 	gathering[character] = nil
 
-	-- The blast.
 	U.flash(center, WHITE, 5, 0.08)
 	U.flash(center, BLACK, 24, 0.45)
 	U.flash(center, RED, 14, 0.3)
@@ -796,12 +758,10 @@ local function awakenBurst(character: Model, root: BasePart)
 	U.impactRing(center, root.CFrame.LookVector, BLACK, 2, 18, 0.5)
 	U.impactRing(center, root.CFrame.RightVector, RED, 2, 14, 0.45)
 
-	-- A black pillar punching up into the sky.
 	U.pillar(feet, BLACK, 4.5, 80, 1.1, Enum.Material.SmoothPlastic, 0.1)
 	U.pillar(feet, RED, 2.4, 90, 0.9)
 	task.delay(0.05, U.pillar, feet, WHITE, 1, 95, 0.4)
 
-	-- The ground splits and erupts.
 	U.groundCracks(feet, 16, 18, RED, 4)
 	U.groundRocks(feet, 18, 8, 3)
 	task.delay(0.06, U.groundRocks, feet, 10, 4, 2.2)
@@ -833,7 +793,6 @@ local function awakenBurst(character: Model, root: BasePart)
 	U.popup(center + UP * 6, "BLACK FORM", RED, 2.4)
 	lingerSmoke(feet, 2, 10)
 
-	-- He keeps erupting while he roars.
 	trailEmitter(root, {
 		Texture = U.textures.Smoke,
 		Color = ColorSequence.new(BLACK),
@@ -865,7 +824,6 @@ local function awakenBurst(character: Model, root: BasePart)
 	end
 end
 
--- The sword comes down into his Black Form stance and the wing beats once.
 local function awakenStance(character: Model, root: BasePart)
 	heavyTrail(character, 0.3)
 	crescent(character, {
@@ -887,7 +845,6 @@ local function awakenStance(character: Model, root: BasePart)
 	end
 	local torso = character:FindFirstChild("Torso")
 	if torso and torso:IsA("BasePart") then
-		-- Loose feathers shaken off by the beat.
 		U.burst(torso.Position - torso.CFrame.RightVector * 2 - torso.CFrame.LookVector, {
 			color = BLACK,
 			count = 16,
@@ -907,7 +864,6 @@ end
 function handlers.Awaken(data, character, root)
 	local phase = data.phase
 	if phase == "Start" then
-		-- The look pops in at the burst, not before.
 		revealAt[character] = os.clock() + AWAKEN_BURST
 		if awakenedVisuals[character] then
 			setAwakened(character, false)
@@ -927,8 +883,6 @@ function handlers.Awaken(data, character, root)
 		U.ringBurst(CFrame.new(feetOf(character, root) + UP * 0.1), DARK_RED, 1, 6, 0.4, 0.15)
 	end
 end
-
--- Spawn entrance
 
 local function easeInOut(alpha: number): number
 	return TweenService:GetValue(alpha, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
@@ -960,13 +914,11 @@ function grimoire(character: Model, root: BasePart, place: ((t: number) -> CFram
 	end
 	local cover = Color3.fromRGB(24, 22, 26)
 	local paper = Color3.fromRGB(205, 195, 170)
-	-- side -1 = left half (rotates open one way), 1 = right half, 0 = fixed
 	piece(Vector3.new(1.1, 1.45, 0.08), cover, Enum.Material.Fabric, CFrame.new(-0.55, 0, 0), -1)
 	piece(Vector3.new(1.1, 1.45, 0.08), cover, Enum.Material.Fabric, CFrame.new(0.55, 0, 0), 1)
 	piece(Vector3.new(1, 1.35, 0.12), paper, Enum.Material.SmoothPlastic, CFrame.new(-0.5, 0, -0.08), -1)
 	piece(Vector3.new(1, 1.35, 0.12), paper, Enum.Material.SmoothPlastic, CFrame.new(0.5, 0, -0.08), 1)
 	piece(Vector3.new(0.14, 1.45, 0.14), cover, Enum.Material.Fabric, CFrame.new(0, 0, 0.02), 0)
-	-- Five-leaf clover hovering over the pages.
 	for i = 1, 5 do
 		local angle = (i / 5) * math.pi * 2
 		piece(
@@ -1003,7 +955,6 @@ function grimoire(character: Model, root: BasePart, place: ((t: number) -> CFram
 	local connection
 	connection = RunService.RenderStepped:Connect(function()
 		if not root.Parent then
-			-- He's gone (died, left): the book goes with him.
 			connection:Disconnect()
 			for _, entry in parts do
 				entry.part:Destroy()
@@ -1016,7 +967,6 @@ function grimoire(character: Model, root: BasePart, place: ((t: number) -> CFram
 			base, flutter = place(t), math.sin(t * 6) * 7 + math.sin(t * 13) * 3
 		else
 			local position = (root.CFrame * anchorOffset).Position + Vector3.new(0, math.sin(t * 3) * 0.12, 0)
-			-- Faces Asta, tilted back like it's being read.
 			base = CFrame.lookAt(position, root.Position + Vector3.new(0, 0.6, 0)) * CFrame.Angles(rad(-20), 0, 0)
 			flutter = 0
 		end
@@ -1090,7 +1040,6 @@ function handlers.Entrance(data, character, root)
 			book.close()
 		end
 	end
-	-- Whatever happens (death, interruption), never leave the sword hidden.
 	task.delay(3, cleanup)
 
 	play(character, ANIMS.Entrance, function(event)

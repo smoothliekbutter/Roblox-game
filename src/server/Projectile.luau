@@ -1,5 +1,3 @@
--- Server-simulated projectiles: moved every frame, swept hitboxes, stopped by walls.
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
@@ -11,8 +9,8 @@ export type Options = {
 	direction: Vector3,
 	speed: number,
 	range: number,
-	size: Vector3, -- hitbox: X width, Y height, Z extra length
-	pierce: boolean?, -- keep going through people
+	size: Vector3,
+	pierce: boolean?,
 	onHit: (victim: Model, position: Vector3) -> (),
 	onEnd: ((position: Vector3) -> ())?,
 }
@@ -56,7 +54,6 @@ function Projectile.Fire(options: Options)
 		local wall = workspace:Raycast(position, direction * step, params)
 		local nextPosition = if wall then wall.Position else position + direction * step
 
-		-- Sweep the hitbox over everything covered this frame.
 		local center = (position + nextPosition) / 2
 		local length = (nextPosition - position).Magnitude + options.size.Z
 		local box = CFrame.lookAt(center, center + direction)

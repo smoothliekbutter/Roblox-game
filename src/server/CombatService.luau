@@ -1,5 +1,3 @@
--- Server-authoritative combat: M1s, blocking, guard breaks, dashes, ragdolls, Evasive and the kit layer.
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -18,7 +16,6 @@ type Counter = {
 	untilTime: number,
 	types: { [string]: boolean },
 	onCounter: (attacker: Model, hit: HitInfo) -> (),
-	-- Only hits this accepts are countered (e.g. from the front); the rest land.
 	filter: ((attacker: Model, hit: HitInfo) -> boolean)?,
 }
 
@@ -31,13 +28,12 @@ export type CharData = {
 	nextDash: number,
 	nextSideDash: number,
 	ragdollToken: number,
-	juggleUntil: number, -- launched by an uppercut: can still be hit in the air until then
+	juggleUntil: number,
 	awakenToken: number,
-	lastDamaged: number, -- last time this character took damage
-	lastCombat: number, -- last time it dealt or took a hit (blocks character switching)
+	lastDamaged: number,
+	lastCombat: number,
 	counter: Counter?,
 	skillInputs: { [number]: number },
-	-- Whether that press was made in the air (the player's own client says).
 	skillInputAir: { [number]: boolean },
 	skillHeld: { [number]: boolean },
 	moveToken: number,
@@ -47,23 +43,22 @@ export type CharData = {
 export type HitInfo = {
 	damage: number,
 	stun: number,
-	attackType: string?, -- "Melee" (default) | "Bolt" | "Explosion" | "Swarm" | "Zone"
+	attackType: string?,
 	guardBreak: boolean?,
 	unblockable: boolean?,
-	variant: string?, -- M1 finishers: "Normal" | "Knockback" | "Uppercut" | "Downslam"
-	airborne: boolean?, -- M1 hit while in the air
-	velocity: Vector3?, -- knockback (world space)
+	variant: string?,
+	airborne: boolean?,
+	velocity: Vector3?,
 	velocityTime: number?,
-	ragdoll: number?, -- seconds of ragdoll
-	hitsDowned: boolean?, -- can hit someone lying on the floor (the air Black Divider)
-	noShake: boolean?, -- no camera shake for either of them (Black Meteorite)
-	noReaction: boolean?, -- no flinch on them (they're held in a cutscene pose: Black Comet)
-	reflected: boolean?, -- sent back by a barrier (Quartile Scutum): never reflected again
-	heavy: boolean?, -- bigger hit effect
-	effect: string?, -- VFX name to play instead of Hit / HeavyHit
+	ragdoll: number?,
+	hitsDowned: boolean?,
+	noShake: boolean?,
+	noReaction: boolean?,
+	reflected: boolean?,
+	heavy: boolean?,
+	effect: string?,
 }
 
--- Handed to kit skill functions.
 export type Context = {
 	character: Model,
 	humanoid: Humanoid,
@@ -73,14 +68,13 @@ export type Context = {
 	kit: Kits.KitInfo,
 	awakened: boolean,
 	airborne: boolean,
-	combat: any, -- this module
+	combat: any,
 }
 
 local DASH_DIRECTIONS = { Front = true, Back = true, Left = true, Right = true }
 
 local registry: { [Model]: CharData } = {}
 
--- Server kit modules, by kit id.
 local serverKits: { [string]: any } = {}
 for _, module in script.Parent:WaitForChild("Kits"):GetChildren() do
 	if module:IsA("ModuleScript") then
@@ -89,8 +83,6 @@ for _, module in script.Parent:WaitForChild("Kits"):GetChildren() do
 end
 
 local CombatService = {}
-
--- Helpers
 
 local function getRoot(character: Model): BasePart?
 	return character:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -109,7 +101,6 @@ local function addMeter(character: Model, attribute: string, amount: number, max
 	end
 end
 
--- Kit-specific M1 tuning, falling back to Config.M1.
 local function m1Value(character: Model, key: string): any
 	local kit = Kits.Of(character)
 	local override = kit and kit.m1[key]
@@ -130,7 +121,6 @@ local function awakeningOf(character: Model)
 	return kit.awakening
 end
 
--- The second stage a character can still reach in this awakening, if any.
 local function pendingAscension(character: Model)
 	local kit = Kits.Of(character)
 	if kit and kit.ascension and CombatState.IsAwakened(character) and character:GetAttribute("Ascended") ~= true then
@@ -170,7 +160,6 @@ function CombatService.Shake(character: Model, intensity: number)
 	end
 end
 
--- Shakes everyone's camera near a point, falling off with distance.
 function CombatService.ShakeArea(position: Vector3, radius: number, intensity: number)
 	for _, player in Players:GetPlayers() do
 		local root = player.Character and getRoot(player.Character)
@@ -292,7 +281,6 @@ function CombatService.IsAirborne(character: Model): boolean
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = { character }
-	-- R6 stands with its root 3 studs up; a little more than that is air.
 	return workspace:Raycast(root.Position, Vector3.new(0, -3.6, 0), params) == nil
 end
 
@@ -322,12 +310,9 @@ function CombatService.Ragdoll(character: Model, duration: number)
 	end)
 end
 
--- Characters in a box / sphere, excluding `attacker`.
 CombatService.Box = Hitbox.Box
 CombatService.Sphere = Hitbox.Sphere
 
--- While active, a hit of one of `types` on `character` calls onCounter
--- instead of landing.
 function CombatService.SetCounter(
 	character: Model,
 	duration: number,
@@ -380,14 +365,11 @@ function CombatService.PressedAirborne(character: Model, slot: number): boolean
 	return data ~= nil and data.skillInputAir[slot] == true
 end
 
--- Changes whenever another skill, special or awakening starts.
 function CombatService.MoveToken(character: Model): number
 	local data = registry[character]
 	return if data then data.moveToken else -1
 end
 
--- Whether a skill key is still held down (released keys are reported by
--- the client, see Input).
 function CombatService.IsHeld(character: Model, slot: number): boolean
 	local data = registry[character]
 	return data ~= nil and data.skillHeld[slot] == true
@@ -519,7 +501,6 @@ function CombatService.Cutscene(paths: { [Model]: (number) -> CFrame }, length: 
 	return stop
 end
 
--- Fires the crater effect roughly when a downslammed victim reaches the ground.
 local function scheduleCrater(victim: Model, attacker: Model)
 	local root = getRoot(victim)
 	if not root then
@@ -539,8 +520,6 @@ local function scheduleCrater(victim: Model, attacker: Model)
 		CombatService.Shake(attacker, 0.4)
 	end)
 end
-
--- Hits
 
 function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	local humanoid = victim:FindFirstChildOfClass("Humanoid")
@@ -580,7 +559,6 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	local toAttacker = flat(attackerRoot.Position - victimRoot.Position)
 	local look = flat(attackerRoot.CFrame.LookVector)
 	local contact = victimRoot.Position + toAttacker * 1.2
-	-- Whose weapons met, so clients can draw the right clash (sword sparks...).
 	local clash = {
 		position = contact,
 		victim = victim,
@@ -618,7 +596,6 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 		return "Blocked"
 	end
 
-	-- The hit lands.
 	local awakening = awakeningOf(attacker)
 	local damage = hit.damage * (if awakening then awakening.damageMultiplier else 1)
 	if stateActive(attacker, "PowerUntil") then
@@ -638,7 +615,6 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	if not CombatState.IsAwakened(attacker) then
 		addMeter(attacker, "Awakening", damage * Config.Awakening.GainPerDamageDealt, Config.Awakening.Max)
 	else
-		-- Fighting in the first stage charges the second (Yuno's Full-Crown).
 		local ascension = pendingAscension(attacker)
 		if ascension and not ascension.chargeByKit then
 			addMeter(attacker, "Ascension", damage, ascension.charge)
@@ -650,7 +626,6 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 
 	local variant = hit.variant
 	local heavy = hit.heavy == true or (variant ~= nil and variant ~= "Normal")
-	-- The finishers that knock them down end a juggle.
 	if victimData and (variant == "Knockback" or variant == "Downslam") then
 		victimData.juggleUntil = 0
 	end
@@ -680,7 +655,6 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 		scheduleCrater(victim, attacker)
 	elseif variant == "Normal" then
 		if juggled and victimData then
-			-- Kept up in the air (and limp) while the hits keep coming.
 			CombatService.Ragdoll(victim, Config.M1.AirFloat + 0.9)
 			victimData.juggleUntil = now + Config.M1.AirFloat + 0.6
 		end
@@ -692,7 +666,6 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 			CombatService.ApplyVelocity(victim, look * Config.M1.Push, Config.M1.PushTime)
 		end
 	else
-		-- Skill hits.
 		if hit.ragdoll then
 			CombatService.Ragdoll(victim, hit.ragdoll)
 		end
@@ -724,9 +697,6 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	return "Hit"
 end
 
--- Core moves
-
--- One swing of the M1 string. `jump` = jump held, turns the finisher into an uppercut.
 function CombatService.M1(character: Model, jump: boolean?, clientAirborne: boolean?, clientIndex: number?)
 	local data = registry[character]
 	if
@@ -773,9 +743,9 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 	CombatState.SetBusy(
 		character,
 		if variant == "Uppercut"
-			then Config.M1.UppercutJumpAfter + 0.05 -- free to jump after them almost at once
+			then Config.M1.UppercutJumpAfter + 0.05
 			elseif finisher then Config.M1.FinisherBusy
-			elseif index == Config.M1.ComboLength - 1 then Config.M1.DownslamJumpAfter -- jump for the downslam
+			elseif index == Config.M1.ComboLength - 1 then Config.M1.DownslamJumpAfter
 			else Config.M1.Busy
 	)
 
@@ -787,7 +757,6 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 	})
 
 	task.delay(if finisher then m1Value(character, "FinisherWindUp") else m1Value(character, "WindUp"), function()
-		-- Getting hit during wind-up cancels the swing.
 		if not CombatState.CanAct(character) then
 			return
 		end
@@ -798,7 +767,6 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 		local hitboxCFrame = root.CFrame * CFrame.new(0, 0, -m1Value(character, "HitboxOffset"))
 		local hitboxSize = m1Value(character, "HitboxSize")
 		if variant == "Downslam" then
-			-- Swung down from the top of a jump: reaches the ground below.
 			hitboxCFrame *= CFrame.new(0, -3.5, -0.5)
 			hitboxSize += Vector3.new(1, 7, 1)
 		end
@@ -851,7 +819,6 @@ function CombatService.Dash(character: Model, direction: string): boolean
 	then
 		return false
 	end
-	-- Front/back and side dashes have separate cooldowns.
 	local t = os.clock()
 	local side = direction == "Left" or direction == "Right"
 	if t < (if side then data.nextSideDash else data.nextDash) - Config.Dash.Tolerance then
@@ -868,7 +835,6 @@ function CombatService.Dash(character: Model, direction: string): boolean
 	return true
 end
 
--- Breaks out of a combo or ragdoll when the Evasive bar is full.
 function CombatService.Evasive(character: Model): boolean
 	local data = registry[character]
 	if not data or not CombatState.IsAlive(character) then
@@ -896,8 +862,6 @@ function CombatService.Evasive(character: Model): boolean
 	CombatService.FireVFX("Evasive", { character = character })
 	return true
 end
-
--- Kits: skills, awakening, switching
 
 local function makeContext(character: Model, airborne: boolean?): Context?
 	local data = registry[character]
@@ -931,7 +895,6 @@ function CombatService.UseSkill(character: Model, slot: number, clientAirborne: 
 	if not info or not run then
 		return
 	end
-	-- Small tolerance for clients whose clock/ping makes them a hair early.
 	if CombatState.Cooldown(character, slot) > 0.1 then
 		ctx.data.skillInputs[slot] = os.clock()
 		ctx.data.skillInputAir[slot] = ctx.airborne
@@ -955,7 +918,6 @@ function CombatService.UseSpecial(character: Model, clientAirborne: boolean?)
 	if not ctx then
 		return
 	end
-	-- Awakened, a kit can have a different special (Asta swaps swords).
 	local serverKit = serverKits[ctx.kit.id]
 	local awakenedSpecial = ctx.awakened and ctx.kit.awakenedSpecial ~= nil and serverKit and serverKit.AwakenedSpecial
 	local info = if awakenedSpecial then ctx.kit.awakenedSpecial else ctx.kit.special
@@ -981,7 +943,6 @@ function CombatService.UseSpecial(character: Model, clientAirborne: boolean?)
 	task.spawn(run, ctx)
 end
 
--- Play testing: the player turned on infinite awakening (Config.PlayTest).
 local function infiniteAwakening(character: Model): boolean
 	if not Config.PlayTest.InfiniteAwakening then
 		return false
@@ -1017,7 +978,7 @@ local function drainAwakening(character: Model, data: CharData, duration: number
 		local start = os.clock()
 		while data.awakenToken == token and registry[character] == data do
 			if infiniteAwakening(character) then
-				start = os.clock() -- (play testing) never runs out
+				start = os.clock()
 			end
 			local remaining = 1 - (os.clock() - start) / duration
 			if remaining <= 0 then
@@ -1076,14 +1037,13 @@ function CombatService.Awaken(character: Model)
 	local data = ctx.data
 	character:SetAttribute("Awakened", true)
 	character:SetAttribute("Ascension", 0)
-	CombatState.ResetCooldowns(character) -- fresh awakened move set
+	CombatState.ResetCooldowns(character)
 	ctx.awakened = true
 	data.moveToken += 1
 	drainAwakening(character, data, awakening.duration)
 	task.spawn(serverKit.Awaken, ctx)
 end
 
--- Puts `kitId` on a character: weapon model, fresh cooldowns, no awakening.
 function CombatService.EquipKit(character: Model, kitId: string)
 	local oldId = character:GetAttribute("Kit")
 	if type(oldId) == "string" and serverKits[oldId] and serverKits[oldId].Unequip then
@@ -1100,7 +1060,6 @@ function CombatService.EquipKit(character: Model, kitId: string)
 		serverKit.Equip(character)
 	end
 	character:SetAttribute("Kit", kitId)
-	-- Players come back as this character when they respawn.
 	local player = Players:GetPlayerFromCharacter(character)
 	if player then
 		player:SetAttribute("Kit", kitId)
@@ -1125,7 +1084,7 @@ function CombatService.SelectKit(player: Player, kitId: string)
 	local character = player.Character
 	local data = character and registry[character]
 	if not character or not data or not CombatState.IsAlive(character) then
-		player:SetAttribute("Kit", kitId) -- applies on next spawn
+		player:SetAttribute("Kit", kitId)
 		return
 	end
 	if
@@ -1143,8 +1102,6 @@ function CombatService.SelectKit(player: Player, kitId: string)
 	CombatService.PlayEntrance(character)
 	CombatService.Notify(character, "Now playing: " .. kit.title, kit.color)
 end
-
--- Registration and the main loop
 
 function CombatService.Register(character: Model)
 	local humanoid = character:WaitForChild("Humanoid", 10) :: Humanoid?
@@ -1183,9 +1140,7 @@ function CombatService.Register(character: Model)
 	registry[character] = data
 
 	humanoid.Died:Connect(function()
-		data.ragdollToken += 1 -- stop any pending get-up
-		-- They respawn as the same character with the awakening bar where it
-		-- was (see below).
+		data.ragdollToken += 1
 		local owner = Players:GetPlayerFromCharacter(character)
 		if owner then
 			owner:SetAttribute("SavedAwakening", tonumber(character:GetAttribute("Awakening")) or 0)
@@ -1202,11 +1157,8 @@ function CombatService.Register(character: Model)
 		end
 	end)
 
-	-- Players get their chosen character's kit. Dummies stay kit-less.
 	local player = Players:GetPlayerFromCharacter(character)
 	if player then
-		-- Wait for the avatar to be applied: it can replace the limbs a
-		-- weapon would be welded to.
 		local waited = 0
 		while character:GetAttribute("AvatarLoaded") ~= true and waited < 6 and character.Parent do
 			waited += task.wait(0.1)
@@ -1221,8 +1173,6 @@ function CombatService.Register(character: Model)
 			player:SetAttribute("Kit", kitId)
 		end
 		CombatService.EquipKit(character, kitId :: string)
-		-- Back after dying as the same character: the awakening bar is where
-		-- it was.
 		local saved = player:GetAttribute("SavedAwakening")
 		if type(saved) == "number" and player:GetAttribute("SavedAwakeningKit") == kitId then
 			character:SetAttribute("Awakening", math.clamp(saved, 0, Config.Awakening.Max))
@@ -1272,7 +1222,6 @@ local function onAction(player: Player, action: unknown, payload: unknown, extra
 		CombatService.SetBlock(character, payload == true)
 	elseif action == "Dash" then
 		if type(payload) == "string" and CombatService.Dash(character, payload) then
-			-- The dasher already drew their own effect.
 			for _, other in Players:GetPlayers() do
 				if other ~= player then
 					Remotes.VFX:FireClient(other, "Dash", { character = character, direction = payload })
@@ -1308,7 +1257,6 @@ local function onAction(player: Player, action: unknown, payload: unknown, extra
 	end
 end
 
--- Movement speed follows combat state every frame.
 local function updateMovement()
 	for character, data in registry do
 		local humanoid = data.humanoid
@@ -1363,7 +1311,6 @@ function CombatService.Start()
 		end)
 	end
 
-	-- Body impacts: a fast ragdoll that suddenly stops hit the floor or a wall.
 	local lastVelocity: { [Model]: Vector3 } = {}
 	local lastImpact: { [Model]: number } = {}
 	local function detectImpacts()
@@ -1371,7 +1318,6 @@ function CombatService.Start()
 		for character in registry do
 			local root = getRoot(character)
 			local data = registry[character]
-			-- (Coming down from an uppercut is a soft landing, not a slam.)
 			local juggling = data ~= nil and now < data.juggleUntil + 0.6
 			if root and Ragdoll.IsActive(character) and not root.Anchored and not juggling then
 				local velocity = root.AssemblyLinearVelocity
@@ -1404,7 +1350,6 @@ function CombatService.Start()
 		updateMovement()
 		detectImpacts()
 
-		-- Attribute writes replicate, so the passive regen ticks 4 times a second.
 		regenTimer += dt
 		if regenTimer >= 0.25 then
 			for character in registry do

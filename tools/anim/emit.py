@@ -209,5 +209,5 @@ import sys
 from compact import write
 
 # Emit the planted versions (see the bottom of asta_anims.py).
-write(sys.argv[1], 'Anti-Magic Knight', ['Torso', 'Head', 'RightArm', 'Sword', 'LeftArm', 'RightLeg', 'LeftLeg'],
+write(sys.argv[1], ['Torso', 'Head', 'RightArm', 'Sword', 'LeftArm', 'RightLeg', 'LeftLeg'],
       [(name, spec, ALL[name]) for name, spec in SPEC.items()])

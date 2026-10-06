@@ -12,8 +12,6 @@ All code lives in `src/` as Luau files and gets synced into Roblox Studio with [
 
 Everyone spawns as R6 wearing their own avatar (`src/server/CharacterLoader.luau`). You don't need to change Game Settings.
 
-The scripts in the place file are a compressed copy of `src/` (see [Building the place file](#building-the-place-file)). They run exactly like the readable code in `src/`, and an error's line number still points to the right line there.
-
 ## Live sync (for development)
 
 With live sync, every code change shows up in Studio instantly, without re-downloading anything.
@@ -194,7 +192,7 @@ src/
       Wind/       init, Fx, Base, Half and Full (the moves), Look (Crown looks, entrance),
                   Saint, Nova, Waltz (big moves), Hawk, Wings, Sword (models), Animations
 tools/
-  build.py  builds the place file from a minified copy of src (below)
+  build.py  builds the place file and checks script sizes (below)
   anim/     the animation generators and the R6 checker
 ```
 
@@ -206,14 +204,8 @@ tools/
 
 ## Building the place file
 
-Roblox won't take a script whose source is longer than 200,000 characters (plugins like Rojo and tools that write `Script.Source` hit this limit). So no script in `src/` comes near it (the largest is about 70,000), and the place file ships them compressed:
-
 ```
 python3 tools/build.py
 ```
 
-1. [darklua](https://github.com/seaofvoices/darklua) writes a minified copy of `src/` to `build/min` (rules in `.darklua.json5`): comments and spacing removed, local names shortened, every line kept in place.
-2. Every minified script is compiled next to its source with `luau-compile -g0` (no debug info, so local names aren't in the output) at `-O1` and `-O2`, and the bytecode must be identical. If one differs, the build stops.
-3. Rojo builds `build/CloverBattlegrounds.rbxlx` from `build/min` (the same layout as `default.project.json`).
-
-It needs `darklua`, `rojo` and `luau-compile` (set `LUAU_COMPILE` if it isn't on your PATH). `python3 tools/build.py --readable` builds from `src/` directly. Live sync (`rojo serve`) always uses the readable `src/`.
+This builds `build/CloverBattlegrounds.rbxlx` from `src/` with Rojo and lists the largest scripts. Roblox won't take a script longer than 200,000 characters (plugins like Rojo and tools that write `Script.Source` hit this limit), so the build fails if one gets there. To stay well under it, the scripts have no comments and each character's client kit is split into modules (the largest script is about 66,000 characters).

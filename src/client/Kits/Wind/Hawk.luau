@@ -1,5 +1,3 @@
--- Swift White Hawk's bird of wind. Pose is plain geometry (-Z where it flies); new/Place make and move the parts.
-
 local Soft = require(script.Parent.Parent.Parent.Soft)
 
 local rad = math.rad
@@ -10,11 +8,10 @@ local STAR = Soft.STAR
 
 local Hawk = {}
 
--- The wing's bones (arm and hand), and the beat.
 local ARM, HAND = 1.25, 1.45
 local SHOULDER = Vector3.new(0.35, 0.12, -0.25)
-local FLAP = 38 -- degrees the arm beats up and down
-local FLICK = 30 -- degrees more at the hand, a little after
+local FLAP = 38
+local FLICK = 30
 
 export type Piece = {
 	shape: "Feather" | "Box" | "Wedge",
@@ -34,13 +31,12 @@ local WING: { Feather } = {
 	{ bone = 2, at = 0.6, angle = 47, length = 1.55, width = 0.44 },
 	{ bone = 2, at = 0.82, angle = 60, length = 1.55, width = 0.4 },
 	{ bone = 2, at = 1, angle = 74, length = 1.35, width = 0.34 },
-	-- Coverts.
 	{ bone = 1, at = 0.3, angle = 8, length = 0.6, width = 0.5, lift = 0.05 },
 	{ bone = 1, at = 0.75, angle = 12, length = 0.62, width = 0.5, lift = 0.05 },
 	{ bone = 2, at = 0.25, angle = 30, length = 0.66, width = 0.45, lift = 0.05 },
 	{ bone = 2, at = 0.65, angle = 50, length = 0.6, width = 0.4, lift = 0.05 },
 }
-local OUTERMOST = 9 -- (in WING: wind streams off its tip)
+local OUTERMOST = 9
 local TAIL = { -28, -14, 0, 14, 28 }
 
 local PIECES: { Piece } = {
@@ -67,7 +63,6 @@ for _ = 1, 2 do
 		})
 	end
 end
--- Where the outermost primary of the right wing sits in PIECES.
 local TIP = 4 + #TAIL + 2 + OUTERMOST
 
 function Hawk.Pieces(): { Piece }
@@ -75,7 +70,6 @@ function Hawk.Pieces(): { Piece }
 end
 
 function Hawk.Pose(frames: { CFrame }, frame: CFrame, phase: number, bank: number)
-	-- It rises a little on each downstroke.
 	local body = frame * CFrame.new(0, -0.1 * math.sin(phase), 0) * CFrame.Angles(0, 0, bank)
 	frames[1] = body
 	frames[2] = body
@@ -109,8 +103,6 @@ function Hawk.Pose(frames: { CFrame }, frame: CFrame, phase: number, bank: numbe
 		end
 	end
 end
-
--- The parts
 
 export type Hawk = {
 	parts: { BasePart },
@@ -167,14 +159,11 @@ function Hawk.new(start: CFrame): Hawk
 	return hawk
 end
 
--- Poses a hawk (see Pose) and moves its parts there.
 function Hawk.Place(hawk: Hawk, frame: CFrame, phase: number, bank: number)
 	Hawk.Pose(hawk.frames, frame, phase, bank)
 	workspace:BulkMoveTo(hawk.parts, hawk.frames, Enum.BulkMoveMode.FireCFrameChanged)
 end
 
--- Lets it go: the trails fade on their own, the body and wings linger
--- (hidden) until they have.
 function Hawk.Release(hawk: Hawk, fade: number)
 	for _, trail in hawk.trails do
 		Soft.endTrail(trail)

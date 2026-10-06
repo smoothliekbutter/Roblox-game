@@ -1,5 +1,3 @@
--- Asta's Black Ascent (Black Form, Slasher 1), drawn along Shared/BlackAscent's paths.
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
@@ -22,11 +20,10 @@ local DUST = Color3.fromRGB(150, 138, 122)
 type Animation = PoseAnimator.Animation
 type Wings = { flap: (() -> ())?, setPose: ((string?) -> ())?, setPair: ((boolean) -> ())? }
 
--- What the kit lends this module.
 export type Context = {
 	anims: { [string]: Animation },
 	play: (Model, Animation) -> (),
-	launched: (Model) -> Animation?, -- their thrown-in-the-air flail
+	launched: (Model) -> Animation?,
 	wings: (Model) -> Wings?,
 	crescent: (Model, { [string]: any }) -> (),
 	cutLine: (Vector3, Vector3, number, number) -> (),
@@ -50,7 +47,6 @@ local function smooth(u: number): number
 	return u * u * (3 - 2 * u)
 end
 
--- A soft ring racing out across `normal`, smoke flowing round it.
 local function smokeRing(
 	center: Vector3,
 	normal: Vector3,
@@ -80,7 +76,6 @@ local function smokeRing(
 	ring.fade(duration)
 end
 
--- A streak trailing off someone for a moment: black smoke and a red trail.
 local function streak(ctx: Context, part: BasePart, duration: number)
 	ctx.trailEmitter(part, {
 		Texture = U.textures.Smoke,
@@ -103,7 +98,6 @@ local function streak(ctx: Context, part: BasePart, duration: number)
 	task.delay(duration, Soft.endTrail, trail)
 end
 
--- Draws it (t = 0 now). Returns stop(), which cuts it short.
 function Ascent.Play(ctx: Context, data, character: Model, root: BasePart): (() -> ())?
 	if typeof(data.origin) ~= "CFrame" or typeof(data.start) ~= "Vector3" then
 		return nil
@@ -132,7 +126,6 @@ function Ascent.Play(ctx: Context, data, character: Model, root: BasePart): (() 
 		return AscentPlan.Victim(plan, math.min(t, times.Land)).Position
 	end
 
-	-- Both of them on the paths.
 	local bind = "CloverBlackAscent" .. tostring(started)
 	local stop: () -> ()
 	function stop()
@@ -199,7 +192,6 @@ function Ascent.Play(ctx: Context, data, character: Model, root: BasePart): (() 
 		streak(ctx, victimRoot, times.Rise)
 	end
 
-	-- He springs up after them on a beat of his wings.
 	at(0.08, function()
 		local feet = Vector3.new(root.Position.X, plan.floorY, root.Position.Z)
 		U.ringBurst(CFrame.new(feet + UP * 0.2), DUST, 1, 7, 0.35, 0.3)
@@ -211,7 +203,6 @@ function Ascent.Play(ctx: Context, data, character: Model, root: BasePart): (() 
 	ctx.heavyTrail(character, times.Length)
 	ctx.swordAura(character, times.Length, 30)
 
-	-- The two cuts in the air, left hanging as an X until the last cut.
 	local cuts = {
 		{ from = 70, to = -110, tilt = 12, side = -right, line = right * 5.5 + UP * 0.8 },
 		{ from = -100, to = 80, tilt = 62, side = right + UP * 0.6, line = right * 4.5 + UP * 4 },
@@ -246,8 +237,6 @@ function Ascent.Play(ctx: Context, data, character: Model, root: BasePart): (() 
 		end)
 	end
 
-	-- Over the top and one cut straight down: the X bursts and they're
-	-- driven into the ground.
 	at(times.Spike - 0.07, function()
 		wing("spread", true)
 		ctx.edgeGlow(character, 0.25, 1.2)
@@ -281,7 +270,6 @@ function Ascent.Play(ctx: Context, data, character: Model, root: BasePart): (() 
 		end
 	end)
 
-	-- The crater.
 	at(times.Land, function()
 		U.shockwave(floor, RED, 2, 18, 0.4)
 		U.shockwave(floor, BLACK, 2, 13, 0.5)
@@ -302,7 +290,6 @@ function Ascent.Play(ctx: Context, data, character: Model, root: BasePart): (() 
 			CameraShake.Add(0.2)
 		end
 	end)
-	-- He lands beside it.
 	at(times.Land + 0.15, function()
 		local feet = Vector3.new(root.Position.X, plan.floorY, root.Position.Z)
 		U.ringBurst(CFrame.new(feet + UP * 0.2), DUST, 1, 6, 0.3, 0.25)
@@ -354,8 +341,6 @@ function Ascent.Camera(plan: AscentPlan.Plan): () -> ()
 		local around = -forward * math.cos(angle) + right * math.sin(angle)
 		local height = plan.start.Y + 0.5 + (top.Y - 1.5 - plan.start.Y - 0.5) * up
 		local eye = Vector3.new(top.X, height, top.Z) + around * (11 + 3 * up)
-		-- After the cut down: held there, craning down onto the crater and
-		-- sinking toward the ground.
 		local fall = smooth((t - times.Spike) / (times.Land + 0.2 - times.Spike))
 		eye = eye:Lerp(ground + around * 13 + UP * 4, fall * 0.75)
 		local pair = them(t):Lerp(him(t), 0.4)

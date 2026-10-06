@@ -1,5 +1,3 @@
--- Yuno's wings of wind: a three-bone bird wing that beats while he hovers and lies back into a glide as he moves.
-
 local Soft = require(script.Parent.Parent.Parent.Soft)
 
 local rad = math.rad
@@ -10,8 +8,6 @@ local STAR, STAR_WHITE = Soft.STAR, Soft.STAR_WHITE
 
 local Wings = {}
 
--- How big the whole wing is, and its bones: the upper arm, the forearm and
--- the hand.
 local SCALE = 0.92
 local BONES = { 1.3 * SCALE, 1.8 * SCALE, 1.4 * SCALE }
 
@@ -53,8 +49,8 @@ type Feather = {
 	color: Color3,
 	transparency: number,
 	quill: boolean,
-	flex: number, -- how far it bends against the air as the wing beats
-	trail: boolean, -- wind streams off its tip
+	flex: number,
+	trail: boolean,
 }
 
 local FEATHERS: { Feather } = {}
@@ -66,7 +62,6 @@ local function row(style: { [string]: any }, list: { { number } })
 			angle = f[3],
 			length = f[4] * SCALE,
 			width = f[5] * SCALE,
-			-- (a hair apart, so neighbours never lie flat in each other)
 			layer = style.layer + i * 0.006,
 			drop = style.drop,
 			color = style.color,
@@ -78,13 +73,11 @@ local function row(style: { [string]: any }, list: { { number } })
 	end
 end
 
--- Tertials: off the upper arm by the elbow, hanging down toward his back.
 row({ layer = 0, drop = 0.1, color = WIND:Lerp(WIND_DEEP, 0.25), transparency = 0.56, quill = true, flex = 0.6 }, {
 	{ 1, 0.48, -75, 1.4, 0.48 },
 	{ 1, 0.7, -72, 1.62, 0.5 },
 	{ 1, 0.92, -68, 1.8, 0.52 },
 })
--- Secondaries: along the forearm, the trailing edge.
 row({ layer = 0.03, drop = 0.1, color = WIND, transparency = 0.56, quill = true, flex = 0.8 }, {
 	{ 2, 0.06, -46, 1.95, 0.54 },
 	{ 2, 0.21, -42, 2.02, 0.54 },
@@ -113,7 +106,6 @@ row({
 	{ 3, 0.92, 86, 2.75, 0.4 },
 	{ 3, 1, 96, 2.4, 0.36 },
 })
--- Greater coverts: over the roots of the secondaries and the inner primaries.
 row({ layer = 0.16, drop = 0.04, color = WIND:Lerp(WIND_WHITE, 0.25), transparency = 0.54, flex = 0.4 }, {
 	{ 2, 0.08, -42, 1.05, 0.48 },
 	{ 2, 0.3, -36, 1.1, 0.48 },
@@ -125,7 +117,6 @@ row({ layer = 0.16, drop = 0.04, color = WIND:Lerp(WIND_WHITE, 0.25), transparen
 	{ 3, 0.52, 56, 1.24, 0.42 },
 	{ 3, 0.74, 68, 1.16, 0.4 },
 })
--- Median coverts: a shorter row over those.
 row({ layer = 0.24, drop = 0, color = WIND:Lerp(WIND_WHITE, 0.35), transparency = 0.52, flex = 0.2 }, {
 	{ 1, 0.55, -62, 0.7, 0.38 },
 	{ 1, 0.95, -48, 0.72, 0.4 },
@@ -136,7 +127,6 @@ row({ layer = 0.24, drop = 0, color = WIND:Lerp(WIND_WHITE, 0.35), transparency 
 	{ 3, 0.5, 46, 0.7, 0.36 },
 	{ 3, 0.8, 62, 0.62, 0.32 },
 })
--- Lesser coverts: small and close-set along the leading edge.
 row({ layer = 0.32, drop = -0.06, color = WIND:Lerp(WIND_WHITE, 0.5), transparency = 0.48, flex = 0 }, {
 	{ 1, 0.2, -70, 0.46, 0.3 },
 	{ 1, 0.55, -58, 0.46, 0.3 },
@@ -225,7 +215,6 @@ local SHOULDER_GLOW = CFrame.new(0, 0, 0.05)
 function Wings.Bones(torso: CFrame, side: number, hold: Hold, phase: number): (CFrame, CFrame, CFrame)
 	local offsets = OFFSETS[side]
 	local beat = hold.beat
-	-- Down and forward, then up and back: the stroke rolling out along it.
 	local lift = hold.lift + 10 * beat * math.sin(phase)
 	local sweep = hold.sweep + 12 * beat * math.sin(phase - 0.5)
 	local elbow = hold.elbow + 7 * beat * math.sin(phase - 0.9)
@@ -235,7 +224,6 @@ function Wings.Bones(torso: CFrame, side: number, hold: Hold, phase: number): (C
 		* CFrame.Angles(0, rad(-sweep) * side, rad(lift) * side)
 		* CFrame.Angles(rad(-hold.twist), 0, 0)
 	local elbowFrame = shoulder * offsets.bones[1] * CFrame.Angles(0, 0, rad(elbow) * side)
-	-- (the hand angled back a little, so the tip trails)
 	local wristFrame = elbowFrame * offsets.bones[2] * CFrame.Angles(0, rad(-10) * side, rad(wrist) * side)
 	return shoulder, elbowFrame, wristFrame
 end
@@ -278,8 +266,6 @@ function Wings.Pose(
 	frames[n] = shoulder * SHOULDER_GLOW
 end
 
--- The parts
-
 export type Maker = (props: { [string]: any }, base: number, wedge: boolean?) -> BasePart
 
 export type Wing = {
@@ -300,7 +286,6 @@ function Wings.new(make: Maker, side: number): Wing
 			Color = piece.color,
 		}, piece.transparency)
 		if piece.shape == "Feather" then
-			-- (a flat ellipsoid: the feather's outline, round-tipped)
 			local mesh = Instance.new("SpecialMesh")
 			mesh.MeshType = Enum.MeshType.Sphere
 			mesh.Parent = part
@@ -359,7 +344,6 @@ function Wings.new(make: Maker, side: number): Wing
 		})
 	)
 
-	-- Wind flowing out along the leading edge, bone by bone.
 	local beams: { Beam } = {}
 	for i = 1, 3 do
 		local bone = parts[n + i]
@@ -387,7 +371,6 @@ function Wings.new(make: Maker, side: number): Wing
 	return { parts = parts, frames = frames, trails = trails, emitters = emitters, beams = beams, side = side }
 end
 
--- Poses a wing (see Pose) and moves its parts there.
 function Wings.Place(wing: Wing, torso: CFrame, hold: Hold, phase: number, flutter: number, t: number)
 	Wings.Pose(wing.frames, torso, wing.side, hold, phase, flutter, t)
 	workspace:BulkMoveTo(wing.parts, wing.frames, Enum.BulkMoveMode.FireCFrameChanged)

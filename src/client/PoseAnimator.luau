@@ -1,5 +1,3 @@
--- Keyframe animations defined in code, played by overriding Motor6D.Transform every frame.
-
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
@@ -8,8 +6,8 @@ export type Pose = { [string]: CFrame }
 export type Keyframe = {
 	time: number,
 	pose: Pose,
-	easing: Enum.EasingStyle?, -- easing INTO this keyframe (default Quad)
-	direction: Enum.EasingDirection?, -- (default Out)
+	easing: Enum.EasingStyle?,
+	direction: Enum.EasingDirection?,
 }
 
 export type Animation = {
@@ -23,10 +21,10 @@ export type Animation = {
 }
 
 export type IdleSet = {
-	stand: Animation?, -- played while standing still
-	move: Animation?, -- played while moving (a run cycle)
-	walk: Animation?, -- played while moving slowly; blends into `move` as speed picks up
-	air: Animation?, -- played while jumping or falling
+	stand: Animation?,
+	move: Animation?,
+	walk: Animation?,
+	air: Animation?,
 	moveSpeed: number?,
 	walkSpeed: number?,
 	moveStride: number?,
@@ -43,11 +41,11 @@ local JOINTS = {
 	Sword = "SwordGrip",
 }
 
-local STAND_SPEED = 1.5 -- studs/s; slower than this counts as standing still
-local STANCE_BLEND = 8 -- how fast the idle switches between stand and move
-local AIR_HEIGHT = 3.6 -- no ground this far under the root counts as airborne (R6 stands at 3)
+local STAND_SPEED = 1.5
+local STANCE_BLEND = 8
+local AIR_HEIGHT = 3.6
 local AIR_BLEND = 10
-local TURN_BLEND = 10 -- how fast the legs swing round to a new movement direction
+local TURN_BLEND = 10
 
 type Track = {
 	animation: Animation,
@@ -57,10 +55,8 @@ type Track = {
 	onEvent: ((name: string) -> ())?,
 	firedEvents: { [number]: boolean },
 	from: { [string]: CFrame },
-	-- Hit-stop: the animation holds still until this time.
 	freezeUntil: number,
 	frozenAt: number,
-	-- Set when the track is told to stop early (FadeOut).
 	fadeOutOverride: number?,
 }
 
@@ -102,7 +98,6 @@ local function ease(alpha: number, style: Enum.EasingStyle?, direction: Enum.Eas
 	return TweenService:GetValue(alpha, style or Enum.EasingStyle.Quad, direction or Enum.EasingDirection.Out)
 end
 
--- Smooth 0..1 ramp (no sudden starts/stops) for fading tracks in and out.
 local function smooth(x: number): number
 	x = math.clamp(x, 0, 1)
 	return x * x * (3 - 2 * x)
@@ -159,7 +154,6 @@ local function sample(animation: Animation, poseName: string, t: number): CFrame
 	return previous.pose[poseName] or CFrame.identity
 end
 
--- Parent-part-space pose -> the joint's own space.
 local function toJointSpace(joint: Motor6D, pose: CFrame): CFrame
 	local c0 = joint.C0.Rotation
 	return c0:Inverse() * pose * c0
@@ -210,7 +204,6 @@ local function release(track: Track, character: Model)
 	end
 end
 
--- One idle animation's value for a joint (joint space), or nil if it doesn't pose it.
 local function layer(animation: Animation?, poseName: string, joint: Motor6D, time: number): CFrame?
 	if animation and posed(animation)[poseName] then
 		return toJointSpace(joint, sample(animation, poseName, time))
@@ -218,7 +211,6 @@ local function layer(animation: Animation?, poseName: string, joint: Motor6D, ti
 	return nil
 end
 
--- The idle layer's value for every joint it covers this frame (joint space).
 local function idleValues(character: Model, idle: Idle, now: number, dt: number): { [string]: CFrame }
 	if now >= idle.nextJointScan then
 		idle.nextJointScan = now + 0.25
@@ -263,7 +255,6 @@ local function idleValues(character: Model, idle: Idle, now: number, dt: number)
 	idle.moveYaw += (yawTarget - idle.moveYaw) * turn
 	idle.backWeight += (backTarget - idle.backWeight) * turn
 
-	-- Walk when slow, run when fast, both on the same step phase.
 	local runLength = if set.move then lengthOf(set.move) else 1
 	local walkLength = if set.walk then lengthOf(set.walk) else runLength
 	local runSpeed = set.moveSpeed or 16
@@ -288,7 +279,6 @@ local function idleValues(character: Model, idle: Idle, now: number, dt: number)
 			continue
 		end
 		local base = animatorBase(joint)
-		-- Moving (or the default walk), blended toward standing, then air.
 		local value = base
 		local run = if set.move and posed(set.move)[poseName]
 			then sample(set.move, poseName, idle.phase * runLength)
@@ -385,7 +375,6 @@ local function step(dt: number)
 			local lift = if poseName == "Torso" then liftFor(character, joint, dt) else nil
 			local start = base
 			if fadingIn and track.from[poseName] then
-				-- (What the joint really was includes the lift; take it off.)
 				start = if lift then lift:Inverse() * track.from[poseName] else track.from[poseName]
 			end
 			local value = start:Lerp(target, weight)
@@ -411,7 +400,6 @@ function PoseAnimator.SettleLift(character: Model, duration: number)
 	end
 end
 
--- Plays `animation` on `character`, replacing whatever this module was playing on it.
 function PoseAnimator.Play(character: Model, animation: Animation, onEvent: ((name: string) -> ())?)
 	local wanted = posed(animation)
 	local joints = {}
@@ -419,7 +407,7 @@ function PoseAnimator.Play(character: Model, animation: Animation, onEvent: ((na
 	for poseName, joint in findJoints(character) do
 		if wanted[poseName] then
 			joints[poseName] = joint
-			from[poseName] = joint.Transform -- captured before the old track lets go
+			from[poseName] = joint.Transform
 		end
 	end
 
@@ -429,7 +417,7 @@ function PoseAnimator.Play(character: Model, animation: Animation, onEvent: ((na
 		release(existing, character)
 	end
 	if next(joints) == nil then
-		return -- not an R6 rig
+		return
 	end
 
 	tracks[character] = {
@@ -453,13 +441,11 @@ function PoseAnimator.Stop(character: Model)
 	end
 end
 
--- The animation currently playing on a character, if any.
 function PoseAnimator.Current(character: Model): Animation?
 	local track = tracks[character]
 	return if track then track.animation else nil
 end
 
--- Ends the current animation early, fading out from wherever it is now.
 function PoseAnimator.FadeOut(character: Model, duration: number?)
 	local track = tracks[character]
 	if not track then
@@ -486,7 +472,6 @@ function PoseAnimator.Freeze(character: Model, duration: number)
 	track.start += duration
 end
 
--- Sets (or clears, with nil) a character's idle layer.
 function PoseAnimator.SetIdle(character: Model, set: IdleSet?)
 	local old = idles[character]
 	if old then

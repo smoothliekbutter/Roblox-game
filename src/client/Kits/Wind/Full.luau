@@ -1,5 +1,3 @@
--- Yuno's Full-Crown moves: Spirit of Euros, Saint Spirit of Zephyr, Spirit of Boreas and Spirit of Zephyrus.
-
 local CameraShake = require(script.Parent.Parent.Parent.CameraShake)
 local VFX = require(script.Parent.Parent.Parent.VFX)
 local Saint = require(script.Parent.Saint)
@@ -10,7 +8,6 @@ local U = VFX.Util
 local rad = math.rad
 local UP = Vector3.yAxis
 
--- The palette and the soft wind everything is drawn with (see Soft).
 local WIND, WIND_WHITE = Soft.WIND, Soft.WIND_WHITE
 local STAR, STAR_WHITE = Soft.STAR, Soft.STAR_WHITE
 local SMOKE, SPARKLE = Soft.SMOKE, Soft.SPARKLE
@@ -29,7 +26,7 @@ local makeArrow, flyingArrow, bowArc = Base.makeArrow, Base.flyingArrow, Base.bo
 local Look = require(script.Parent.Look)
 local looks, hideSword = Look.looks, Look.hideSword
 
-local EUROS_SCALE = 3.6 -- the arrow, against a normal wind arrow
+local EUROS_SCALE = 3.6
 function handlers.SpiritOfEuros(data, character, root)
 	if data.phase == "Draw" then
 		play(character, ANIMS.EurosDraw)
@@ -81,14 +78,12 @@ function handlers.SpiritOfEuros(data, character, root)
 			end
 			local forward = root.CFrame.LookVector
 			local center = hand - forward * 1.3
-			-- Recurve: the tips curl forward again.
 			local points = arcPoints(center, forward, UP, 3.6, -1.2, 1.2, segments)
 			points[1] += forward * 0.7
 			points[#points] += forward * 0.7
 			poseArc(limbs, points)
 			soft.set(center, forward, UP, 3.6, -1.2, 1.2)
 			local tip = hand + forward * 1.6
-			-- Nocked at his hand, the head far out past the bow.
 			local frame = CFrame.lookAt(pull, tip) * CFrame.new(0, 0, -1.7 * EUROS_SCALE)
 			arrow.place(frame * CFrame.Angles(0, 0, elapsed * 2))
 			local point = (frame * CFrame.new(0, 0, -2.1 * EUROS_SCALE)).Position
@@ -172,12 +167,11 @@ function handlers.SaintSpiritOfZephyr(data, character, root)
 end
 
 local AXE_HAFT = 7
--- The middle of the head's edge, in the axe's space (the haft runs up +Y).
 local AXE_EDGE = Vector3.new(0, AXE_HAFT - 2.4, -4)
-local AXE_RAISED = -18 -- degrees round from straight up toward his front: over his head
-local AXE_DOWN = 122 -- as far round as it comes (with nothing in reach to bite)
-local AXE_BITE = 1 -- studs the edge bites into the ground
-local AXE_SWING = 0.1 -- seconds from raised to the bite (BoreasChop's strike)
+local AXE_RAISED = -18
+local AXE_DOWN = 122
+local AXE_BITE = 1
+local AXE_SWING = 0.1
 
 type Axe = {
 	chop: (duration: number, floorY: number?, bite: (Vector3, boolean) -> ()) -> (),
@@ -208,8 +202,6 @@ end
 
 local function windAxe(character: Model, root: BasePart): Axe
 	local hub = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1 })
-	-- In the hub's space the haft runs up +Y from his hands and the head's
-	-- edge faces -Z.
 	local function at(position: Vector3, axis: Vector3): Attachment
 		local x = axis.Unit
 		local y = if math.abs(x.Y) > 0.98 then Vector3.zAxis else UP
@@ -222,7 +214,6 @@ local function windAxe(character: Model, root: BasePart): Axe
 	local h = AXE_HAFT
 	local butt = at(Vector3.new(0, -1.5, 0), UP)
 	local crown = at(Vector3.new(0, h, 0), UP)
-	-- The head's crescent, from high on the haft out to the edge and back.
 	local headTop = at(Vector3.new(0, h - 0.4, 0), Vector3.new(0, -2, -8))
 	local edge = at(Vector3.new(0, h - 2.4, -4), Vector3.new(0, -1, 0))
 	local headLow = at(Vector3.new(0, h - 4.4, 0), Vector3.new(0, -2, 8))
@@ -284,7 +275,6 @@ local function windAxe(character: Model, root: BasePart): Axe
 			length = 3,
 		}, hub),
 	}
-	-- The blade itself: see-through wind filling the crescent.
 	local upper = newWedge({
 		Size = Vector3.new(0.1, 2, 4),
 		Color = WIND_WHITE,
@@ -303,7 +293,7 @@ local function windAxe(character: Model, root: BasePart): Axe
 		Speed = NumberRange.new(2, 6),
 		Drag = 3,
 		Rate = 30,
-		Enabled = false, -- (until the axe is in his hands)
+		Enabled = false,
 	})
 	for _, pair in { { headTop, edge }, { edge, headLow } } do
 		table.insert(
@@ -347,7 +337,6 @@ local function windAxe(character: Model, root: BasePart): Axe
 			return false
 		end
 		if planted then
-			-- Buried: the haft shudders from the blow (about the buried edge).
 			local since = os.clock() - bitAt
 			local shudder = math.sin(since * 70) * math.exp(-since * 16) * rad(3)
 			hub.CFrame = planted * CFrame.new(AXE_EDGE) * CFrame.Angles(shudder, 0, 0) * CFrame.new(-AXE_EDGE)
@@ -371,7 +360,7 @@ local function windAxe(character: Model, root: BasePart): Axe
 				bite(hub.CFrame * AXE_EDGE, buried)
 			end
 		end
-		Soft.beginTrail(sheet) -- (once it's in his hands)
+		Soft.beginTrail(sheet)
 		pour.Enabled = true
 		local grow = math.min(elapsed / 0.2, 1)
 		upper.CFrame = hub.CFrame * CFrame.new(0, h - 1.4, -2)
@@ -396,7 +385,6 @@ local function windAxe(character: Model, root: BasePart): Axe
 		glow.Enabled = false
 		light.Enabled = false
 		Soft.endTrail(sheet)
-		-- It breaks up into wind, head first.
 		windPuff((hub.CFrame * CFrame.new(0, h - 2.4, -2)).Position, 3)
 		for i = 1, 3 do
 			windPuff((hub.CFrame * CFrame.new(0, h * i / 4, 0)).Position, 1.4)
@@ -404,7 +392,7 @@ local function windAxe(character: Model, root: BasePart): Axe
 		twinkle((hub.CFrame * CFrame.new(0, h - 2.4, -3)).Position, 3, WIND, 0.2)
 		fadeOut({ upper, lower }, 0.25)
 		fadeBeams(beams, 0.25)
-		task.delay(0.6, hub.Destroy, hub) -- (after the sheet it swept has gone)
+		task.delay(0.6, hub.Destroy, hub)
 	end
 	return axe
 end
@@ -461,7 +449,7 @@ local function groundSplit(first: Vector3, last: Vector3, side: Vector3)
 		return
 	end
 	local steps = math.max(math.floor(span / 3), 1)
-	local pace = 0.018 -- seconds a step
+	local pace = 0.018
 	U.groove(first, last, 0.8, WIND_WHITE, 2.4, span / (steps * pace))
 	for i = 0, steps do
 		local point = first:Lerp(last, i / steps)
@@ -469,7 +457,6 @@ local function groundSplit(first: Vector3, last: Vector3, side: Vector3)
 			windPuff(point + UP * 0.6, 2.4, UP)
 			if i % 2 == 0 then
 				U.groundRocks(point, 3, 2.2, 0.9)
-				-- A blade of wind bursting up out of the split.
 				local blade =
 					windSlash(point - side * 1.8 + UP * 0.2, point + side * 1.8 + UP * 0.2, UP * 2.8, 0.55, 0.04)
 				blade.move(UP * 4.5, 0.35)
@@ -579,7 +566,6 @@ function handlers.SpiritOfBoreas(data, character, root)
 		local axe = axes[character]
 		if axe then
 			axe.chop(AXE_SWING, if ahead then ahead.Position.Y else nil, strike)
-			-- It stays buried a beat, then breaks up into wind.
 			task.delay(AXE_SWING + 0.4, function()
 				if axes[character] == axe then
 					axes[character] = nil
@@ -628,7 +614,6 @@ local function longSword(character: Model, duration: number): LongSword
 			length = 6,
 		}, hub),
 	}
-	-- Glitter running up its edge and a glow at its point.
 	table.insert(beams, Soft.starStream(hilt, point, 0.5, 10, hub))
 	local shine = windEmitter(point, {
 		Color = ColorSequence.new(WIND_WHITE),
@@ -673,7 +658,6 @@ local function longSword(character: Model, duration: number): LongSword
 		if not alive or not arm or os.clock() > untilTime then
 			return false
 		end
-		-- The same grip as his sword of wind (see the look below).
 		local grip = arm.CFrame * CFrame.new(0, -1.1, 0) * CFrame.Angles(rad(-90), 0, 0)
 		hub.CFrame = CFrame.lookAt(grip.Position, grip.Position + grip.UpVector)
 		return true
@@ -695,7 +679,6 @@ local function longSword(character: Model, duration: number): LongSword
 			fadeBeams(beams, 0.2, { hub })
 		end
 	end
-	-- Keeps it out at least `seconds` longer.
 	function sword.hold(seconds: number)
 		untilTime = math.max(untilTime, os.clock() + seconds)
 	end
@@ -747,13 +730,11 @@ function handlers.SpiritOfZephyrus(data, character, root)
 			CameraShake.FovKick(8)
 		end
 	elseif phase == "Waltz" then
-		-- Caught: the waltz of the west wind (the Waltz module).
 		local stop = Waltz.Play(waltzContext, data, character, root)
 		if stop then
 			waltzStops[character] = stop
 		end
 	elseif phase == "Abort" then
-		-- Cut short (one of them went down).
 		local stop = waltzStops[character]
 		waltzStops[character] = nil
 		if stop then

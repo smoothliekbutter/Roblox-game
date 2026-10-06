@@ -1,5 +1,3 @@
--- Our own shift lock (LeftShift or the top bar button).
-
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -16,11 +14,10 @@ local localPlayer = Players.LocalPlayer
 local ShiftLock = {}
 
 local enabled = false
-local suspended = false -- e.g. a menu is open and needs the mouse
+local suspended = false
 local listeners: { (boolean) -> () } = {}
 local dot: Frame? = nil
 
--- Small aiming dot in the middle of the screen (replaces the mouse cursor).
 local function buildDot()
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "ShiftLockDot"
@@ -93,7 +90,6 @@ function ShiftLock.Toggle()
 	ShiftLock.Set(not enabled)
 end
 
--- Temporarily frees the mouse (menus) without turning shift lock off.
 function ShiftLock.SetSuspended(value: boolean)
 	suspended = value
 	apply()
@@ -112,8 +108,6 @@ function ShiftLock.Start()
 		return Enum.ContextActionResult.Sink
 	end, false, Enum.KeyCode.LeftShift)
 
-	-- After the camera has updated: keep the mouse locked and turn the
-	-- character to match the camera.
 	RunService:BindToRenderStep("CloverShiftLock", Enum.RenderPriority.Camera.Value + 2, function()
 		if not enabled or suspended then
 			return
@@ -125,7 +119,6 @@ function ShiftLock.Start()
 			return
 		end
 		local character = localPlayer.Character :: Model
-		-- Ragdolled, a skill is steering the body (Bull Thrust), or a cutscene.
 		if
 			CombatState.IsRagdolled(character)
 			or character:GetAttribute("Steering") == true

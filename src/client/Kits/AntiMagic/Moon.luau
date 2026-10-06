@@ -1,5 +1,3 @@
--- Asta's Black Moon (Black Form 4) cutscene: the night, the moon, the cut and the crater.
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -32,7 +30,7 @@ local awakenedVisuals = Look.awakenedVisuals
 local MOON_LIGHT = Color3.fromRGB(238, 234, 220)
 local MOON_SHADE = Color3.fromRGB(212, 207, 194)
 local MOON_HALO = Color3.fromRGB(255, 226, 214)
-local MOON_CUT = rad(35) -- angle of the cut across the moon's face
+local MOON_CUT = rad(35)
 local MOON_SEGMENTS = 24
 
 local function smoothstep(x: number): number
@@ -99,7 +97,7 @@ local function buildMoon(radius: number): Moon
 			table.insert(pieces, { part = part, offset = tri.cframe, side = side, alpha = 0 })
 		end
 	end
-	local face = CFrame.Angles(0, rad(90), 0) -- cylinders run along X; turn them to face the camera
+	local face = CFrame.Angles(0, rad(90), 0)
 	local cut = Vector2.new(math.cos(MOON_CUT), math.sin(MOON_CUT))
 	for _, sea in
 		{
@@ -121,7 +119,6 @@ local function buildMoon(radius: number): Moon
 		local side = if cut.X * y - cut.Y * x > 0 then 1 else -1
 		table.insert(pieces, { part = part, offset = CFrame.new(x, y, -0.35) * face, side = side, alpha = 0.15 })
 	end
-	-- A thin blood-red rim, split with the halves.
 	local rimSegments = 36
 	for i = 0, rimSegments - 1 do
 		local angle = MOON_CUT + ((i + 0.5) / rimSegments) * math.pi * 2
@@ -137,7 +134,6 @@ local function buildMoon(radius: number): Moon
 			alpha = 0.3,
 		})
 	end
-	-- Pale rays fanning out from behind it, slowly turning.
 	for i = 1, 14 do
 		local angle = (i / 14) * math.pi * 2 + (if i % 2 == 0 then 0.1 else -0.07)
 		local length = radius * (if i % 2 == 0 then 1.9 else 1.4)
@@ -166,7 +162,7 @@ local function buildMoon(radius: number): Moon
 	local scarGlow = U.newPart({ Size = Vector3.new(radius * 2.3, 1, 0.3), Color = RED, Transparency = 1 })
 	local scarCore = U.newPart({ Size = Vector3.new(radius * 2.3, 1, 0.3), Color = WHITE, Transparency = 1 })
 
-	local across = Vector3.new(-math.sin(MOON_CUT), math.cos(MOON_CUT), 0) -- toward side 1
+	local across = Vector3.new(-math.sin(MOON_CUT), math.cos(MOON_CUT), 0)
 	return {
 		update = function(center: CFrame, visible: number, split: number, scar: number, spin: number)
 			for _, piece in pieces do
@@ -207,7 +203,6 @@ local function launchedFor(victim: Model): Animation?
 	return Reactions.Launched
 end
 
--- A straight streak hanging in the air along his flight path.
 local function flightStreak(from: Vector3, to: Vector3)
 	local length = (to - from).Magnitude
 	local cframe = CFrame.lookAt((from + to) / 2, to)
@@ -226,7 +221,6 @@ local function flightStreak(from: Vector3, to: Vector3)
 	end)
 end
 
--- The crater where they come down.
 local function moonCrater(position: Vector3)
 	U.flash(position + UP, BLACK, 14, 0.3)
 	U.flash(position + UP, RED, 8, 0.22)
@@ -280,7 +274,6 @@ local function buildNightSetting(plan: BlackMoon.Plan): NightSetting
 	end
 	local center = plan.origin.Position + UP * 30
 
-	-- Stars over the whole sky, thickest toward the moon.
 	type Star = { part: BasePart, phase: number, speed: number, base: number }
 	local stars: { Star } = {}
 	local toMoon = (plan.moon - center).Unit
@@ -307,7 +300,6 @@ local function buildNightSetting(plan: BlackMoon.Plan): NightSetting
 		)
 	end
 
-	-- Cloud banks drifting across the face of the moon, and one low on the horizon.
 	local function clouds(position: Vector3, size: Vector3, color: Color3, scale: number, count: number)
 		local part = holder(CFrame.lookAt(position, plan.moonCamera), size)
 		local emitter = Instance.new("ParticleEmitter")
@@ -352,7 +344,6 @@ local function buildNightSetting(plan: BlackMoon.Plan): NightSetting
 		12
 	)
 
-	-- Mist creeping over the ground (if there's ground under the fight at all).
 	local ground = U.groundBelow(plan.origin.Position, nil, 300)
 	local floorY = if ground then ground.Position.Y else plan.origin.Position.Y - 3
 	local groundMist: ParticleEmitter? = nil
@@ -381,7 +372,6 @@ local function buildNightSetting(plan: BlackMoon.Plan): NightSetting
 		groundMist = mist
 	end
 
-	-- Ash and embers drifting through the air around the fight.
 	local airHolder = holder(CFrame.new((plan.apex + plan.perch) / 2), Vector3.new(70, 40, 70))
 	local ash = Instance.new("ParticleEmitter")
 	ash.Texture = U.textures.Spark
@@ -413,14 +403,12 @@ local function buildNightSetting(plan: BlackMoon.Plan): NightSetting
 	if groundMist then
 		table.insert(emitters, groundMist)
 	end
-	-- Each emitter's own fade curve, so the live particles can fade with the night.
 	local baseFade: { { NumberSequenceKeypoint } } = {}
 	for i, emitter in emitters do
 		baseFade[i] = emitter.Transparency.Keypoints
 	end
 	local lastFade = -1
 
-	-- Rocks tearing loose from the ground and floating up.
 	type Rock = { part: BasePart, from: CFrame, rise: number, spin: Vector3 }
 	local rocks: { Rock } = {}
 	local rockColor = if ground and ground.Instance:IsA("BasePart")
@@ -447,7 +435,6 @@ local function buildNightSetting(plan: BlackMoon.Plan): NightSetting
 		table.insert(rocks, { part = part, from = from, rise = 3 + math.random() * 7, spin = U.randomUnit() * 0.8 })
 	end
 
-	-- Shooting stars streaking across behind the moon.
 	local function shootingStar()
 		local side = plan.right * (if math.random() < 0.5 then 1 else -1)
 		local from = plan.moon + side * 220 + UP * (60 + math.random() * 60)
@@ -531,7 +518,6 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 	local nearby = mine or (myRoot ~= nil and (myRoot.Position - plan.origin.Position).Magnitude < 180)
 	local cutAt = plan.cut
 
-	-- Runs `fn` at `time` seconds into the cutscene (if he's still around).
 	local function at(time: number, fn: () -> ())
 		task.delay(math.max(time - (os.clock() - start), 0), function()
 			if character.Parent then
@@ -540,10 +526,7 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		end)
 	end
 
-	-- Both of them on the shared paths (smooth on every screen), the moon
-	-- and the night around it.
 	local moon = buildMoon(plan.moonRadius)
-	-- The sky dressing only for people near enough to see the night fall.
 	local setting = if nearby then buildNightSetting(plan) else nil
 	local bind = "CloverBlackMoon" .. tostring(start)
 	local done = false
@@ -585,19 +568,16 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 	end)
 	task.delay(T.Land + 3, finish)
 
-	-- The camera, for the two of them.
 	if mine then
 		Cinematic.Camera(function(t)
 			if t < T.Land then
 				return BlackMoon.Camera(plan, t)
 			end
-			-- Following them down out of the sky.
 			local v = if victimRoot and victimRoot.Parent then victimRoot.Position else plan.apex
 			return CFrame.lookAt(v + plan.right * 14 + UP * 7 - plan.forward * 4, v), 65
 		end, T.Done)
 	end
 
-	-- Night falls over everyone nearby.
 	local lift: ((number?) -> ())? = nil
 	if nearby then
 		at(T.Night, function()
@@ -611,7 +591,7 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 	end
 
 	local moonlights: { PointLight } = {}
-	local MOONLIT = { 1.1, 2 } -- him, them
+	local MOONLIT = { 1.1, 2 }
 	for _, part in { root, victimRoot } :: { BasePart? } do
 		if part then
 			local light = Instance.new("PointLight")
@@ -635,7 +615,6 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		end
 	end)
 
-	-- Afterwards the wings go back to normal (the second one dissolves).
 	task.delay(T.Land + 0.9, function()
 		local visual = awakenedVisuals[character]
 		if visual then
@@ -648,7 +627,6 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		end
 	end)
 
-	-- The throw.
 	play(character, ANIMS.MoonThrow)
 	at(T.Release, function()
 		if victim then
@@ -702,7 +680,6 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		end
 	end)
 
-	-- He leaps up after them.
 	at(T.Leap, function()
 		play(character, ANIMS.Leap)
 		local feet = feetOf(character, root)
@@ -723,8 +700,6 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		end
 	end)
 
-	-- Perched in front of the moon: shadowed, with a red rim (his avatar
-	-- still shows through).
 	local silhouette: Highlight? = nil
 	at(T.Perch, function()
 		play(character, ANIMS.MoonPerch)
@@ -735,10 +710,9 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		outline.OutlineColor = RIM_RED
 		outline.OutlineTransparency = 0.05
 		outline.DepthMode = Enum.HighlightDepthMode.Occluded
-		outline.Parent = character -- goes with him if he leaves mid-cutscene
+		outline.Parent = character
 		silhouette = outline
 		task.delay(T.Fly - T.Perch + 0.1, outline.Destroy, outline)
-		-- Both wings out, wide open, beating slowly in front of the moon.
 		local visual = awakenedVisuals[character]
 		if visual then
 			if visual.setPair then
@@ -751,13 +725,11 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 				visual.flap()
 			end
 		end
-		-- No moonlight on him here: he's a silhouette against the moon.
 		if moonlights[1] then
 			U.tween(moonlights[1], 0.2, { Brightness = 0 })
 		end
 		blackSmoke(root.Position, 14, 3.5, 7)
 		redSparks(root.Position, 14, 0.8)
-		-- Each wing beat sheds smoke and embers and pulses the aura.
 		for beat = 0, 4 do
 			at(T.Perch + 0.15 + beat * 0.42, function()
 				local back = root.Position - root.CFrame.LookVector * 1.5 + UP
@@ -795,7 +767,6 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		}, T.Fly - T.Perch)
 	end)
 
-	-- He levels the sword at them: anti-magic flares off him and the blade.
 	at(T.Point, function()
 		swordGlow(character, RED, 0.5, 0.5)
 		swordAura(character, T.Fly - T.Point, 40)
@@ -818,7 +789,6 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		end
 	end)
 
-	-- The blade catches the moonlight.
 	at(T.Glint, function()
 		local tip = bladePoint(character, 2.1)
 		if tip then
@@ -829,7 +799,6 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		end
 	end)
 
-	-- He flies straight through them.
 	at(T.Fly, function()
 		play(character, ANIMS.MoonFlight)
 		if silhouette then
@@ -838,7 +807,7 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		end
 		local visual = awakenedVisuals[character]
 		if visual and visual.setPose then
-			visual.setPose("glide") -- swept back for speed
+			visual.setPose("glide")
 		end
 		if moonlights[1] then
 			U.tween(moonlights[1], 0.15, { Brightness = MOONLIT[1] })
@@ -865,11 +834,9 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		end
 	end)
 
-	-- The cut.
 	at(T.Cut, function()
 		PoseAnimator.Freeze(character, 0.1)
 		if victim then
-			-- They hang there, stopped mid-tumble, until the cut lands.
 			PoseAnimator.Freeze(victim, T.Land - T.Cut + 0.4)
 		end
 		flightStreak(plan.perch, plan.beyond)
@@ -897,7 +864,6 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		end
 	end)
 
-	-- Past them, back turned. Everything goes still.
 	at(T.Arrive, function()
 		swordAura(character, T.Land - T.Arrive, 20)
 		local hang = U.newPart({ Size = Vector3.new(3, 4, 3), Transparency = 1, CFrame = CFrame.new(cutAt) })
@@ -916,15 +882,13 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		task.delay(T.Land - T.Arrive + 1.5, hang.Destroy, hang)
 		local visual = awakenedVisuals[character]
 		if visual and visual.setPose then
-			visual.setPose("spread") -- flared open as he stops
+			visual.setPose("spread")
 		end
 		if mine then
-			-- Drained of colour, not of light: he mustn't wash out white.
 			U.colorGrade({ Saturation = -0.7, Contrast = 0.25, Brightness = 0.02 }, 0.05, T.Land - T.Arrive - 0.1, 0.15)
 		end
 	end)
 
-	-- The cut lands.
 	at(T.Land, function()
 		slashMark(cutAt, 0.6, 18, 0.6)
 		task.delay(0.04, slashMark, cutAt, -0.5, 18, 0.6)
@@ -955,12 +919,10 @@ local function playBlackMoon(data, character: Model, root: BasePart)
 		})
 		lingerSmoke(cutAt, 2.5, 14)
 		if mine then
-			-- A sharp frame, not a white-out.
 			impactFrame(0.9)
 			U.screenFlash(RED, 0.35)
 			CameraShake.Add(0.8)
 		end
-		-- Watch them fall and make the crater where they hit.
 		if victimRoot then
 			local fallStart = os.clock()
 			local connection
@@ -983,12 +945,10 @@ function handlers.BlackMoon(data, character, root)
 	if data.phase == "Begin" then
 		playBlackMoon(data, character, root)
 	else
-		-- The lunge and the seize are drawn with Black Meteorite's.
 		handlers.BlackMeteorite(data, character, root)
 	end
 end
 
--- The cut landing (damage numbers; the cutscene draws the rest).
 VFX.Register("BlackMoonCut", function(data)
 	U.highlight(data.victim, RED, 0.4)
 	if data.damage and typeof(data.position) == "Vector3" then

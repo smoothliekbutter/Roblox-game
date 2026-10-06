@@ -1,5 +1,3 @@
--- Default hit / block reaction animations, for characters that bring none of their own.
-
 local PoseAnimator = require(script.Parent.PoseAnimator)
 
 type Animation = PoseAnimator.Animation
@@ -135,7 +133,6 @@ local GUARD_PUSHED = {
 	LeftArm = limb(100, -36),
 }
 
--- Held for a minute; the block ending fades it out early.
 Reactions.Guard = clip({
 	{ 0, { Torso = rot(0), Head = rot(0), RightArm = limb(0), LeftArm = limb(0) } },
 	{ 0.08, GUARD, QUART, OUT },
@@ -198,7 +195,7 @@ do
 		}
 	end
 	local keys: { any } = { { 0, launched(0) } }
-	for i = 1, 24 do -- long enough for the whole of Black Moon
+	for i = 1, 24 do
 		table.insert(keys, { i * 0.25, launched(if i % 2 == 1 then 6 else -6), SINE, IN_OUT })
 	end
 	Reactions.Launched = clip(keys, { fadeIn = 0.1, fadeOut = 0.2 })

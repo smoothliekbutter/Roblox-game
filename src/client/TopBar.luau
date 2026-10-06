@@ -1,5 +1,3 @@
--- Buttons in the top bar: the character picker and shift lock.
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
@@ -34,7 +32,6 @@ local function corner(parent: Instance, radius: UDim)
 	c.Parent = parent
 end
 
--- A pill-shaped button styled like Roblox's own top bar buttons.
 local function pillButton(parent: Instance, text: string, order: number): TextButton
 	local button = Instance.new("TextButton")
 	button.AutoButtonColor = true
@@ -151,7 +148,6 @@ local function buildCard(parent: Instance, kit: Kits.KitInfo, order: number)
 		if not kit.playable then
 			return
 		end
-		-- Picking the character you already are re-equips it (a refresh).
 		Remotes.Action:FireServer("SelectKit", kit.id)
 		setOpen(false)
 	end)
@@ -209,7 +205,6 @@ end
 function TopBar.Start()
 	local playerGui = localPlayer:WaitForChild("PlayerGui")
 
-	-- Lives in the free part of Roblox's top bar, next to the chat button.
 	local bar = Instance.new("ScreenGui")
 	bar.Name = "TopBar"
 	bar.ResetOnSpawn = false
@@ -236,7 +231,7 @@ function TopBar.Start()
 		else nil
 
 	local rowPadding = Instance.new("UIPadding")
-	rowPadding.PaddingLeft = UDim.new(0, 10) -- small gap after Roblox's chat button
+	rowPadding.PaddingLeft = UDim.new(0, 10)
 	rowPadding.Parent = row
 	local function align()
 		local barHeight = row.AbsoluteSize.Y
@@ -251,7 +246,6 @@ function TopBar.Start()
 	row:GetPropertyChangedSignal("AbsoluteSize"):Connect(align)
 	align()
 
-	-- The picker opens below the top bar.
 	local menus = Instance.new("ScreenGui")
 	menus.Name = "Menus"
 	menus.ResetOnSpawn = false
@@ -265,7 +259,6 @@ function TopBar.Start()
 
 	shiftLockButton.Activated:Connect(ShiftLock.Toggle)
 
-	-- Play testing: the server keeps the state (the player's attribute).
 	if infiniteButton then
 		local function show()
 			local on = localPlayer:GetAttribute("InfiniteAwakening") == true
@@ -283,7 +276,6 @@ function TopBar.Start()
 		shiftLockButton.TextColor3 = if on then COLORS.On else COLORS.Text
 	end)
 
-	-- Keep the "SELECTED" badge right after a switch or respawn.
 	local function watch(character: Model)
 		character:GetAttributeChangedSignal("Kit"):Connect(refreshCards)
 		refreshCards()

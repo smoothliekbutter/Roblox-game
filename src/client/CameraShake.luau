@@ -1,13 +1,11 @@
--- Trauma-based camera shake (shake = trauma squared, so small hits stay subtle) and FOV kicks.
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local Remotes = require(ReplicatedStorage:WaitForChild("Shared").Remotes)
 
-local MAX_ANGLE = 4 -- degrees at full trauma (math.noise is roughly -0.5..0.5)
-local DECAY = 1.8 -- trauma lost per second
+local MAX_ANGLE = 4
+local DECAY = 1.8
 local FREQUENCY = 25
 local BASE_FOV = 70
 
@@ -20,7 +18,6 @@ function CameraShake.Add(amount: number)
 	trauma = math.clamp(trauma + amount, 0, 1)
 end
 
--- Quick field-of-view punch for dashes and heavy hits.
 function CameraShake.FovKick(amount: number)
 	local camera = workspace.CurrentCamera
 	camera.FieldOfView = BASE_FOV + amount

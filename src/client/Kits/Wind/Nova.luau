@@ -1,5 +1,3 @@
--- Yuno's Nova Vortex (Half-Crown 4), drawn: the star, the galaxy of wind and the nova.
-
 local RunService = game:GetService("RunService")
 
 local PoseAnimator = require(script.Parent.Parent.Parent.PoseAnimator)
@@ -15,7 +13,6 @@ local SMOKE = Soft.SMOKE
 
 type Animation = PoseAnimator.Animation
 
--- What the kit lends this module.
 export type Context = {
 	anims: { [string]: Animation },
 	play: (Model, Animation) -> (),
@@ -24,9 +21,9 @@ export type Context = {
 local Nova = {}
 
 local ARMS = 4
-local SPIRAL_IN, SPIRAL_OUT = 1.2, 14 -- studs from the eye the arms run between
-local TWIST = 2.4 -- radians each arm curls round on its way out
-local COLLAPSE = 0.15 -- (as the server's NOVA_COLLAPSE)
+local SPIRAL_IN, SPIRAL_OUT = 1.2, 14
+local TWIST = 2.4
+local COLLAPSE = 0.15
 
 local function smooth(u: number): number
 	u = math.clamp(u, 0, 1)
@@ -38,12 +35,9 @@ local function handOf(character: Model): Vector3?
 	return if arm and arm:IsA("BasePart") then (arm.CFrame * CFrame.new(0, -1.3, 0)).Position else nil
 end
 
--- The star in his hand, and its flight
-
 type Forming = { stop: () -> () }
 local forming: { [Model]: Forming } = setmetatable({}, { __mode = "k" }) :: any
 
--- A star grows over his open hand, wind streaming into it.
 local function formStar(character: Model): Forming
 	local star = Soft.makeStar(1.1)
 	local alive = true
@@ -78,7 +72,6 @@ local function formStar(character: Model): Forming
 	}
 end
 
--- The star flies from his hand to where the galaxy opens.
 local function throwStar(from: Vector3, eye: Vector3, flight: number)
 	local star = Soft.makeStar(1.5)
 	local holder = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.new(from) })
@@ -119,12 +112,9 @@ local function throwStar(from: Vector3, eye: Vector3, flight: number)
 	end)
 end
 
--- The galaxy
-
 type Galaxy = { collapse: () -> (), fade: () -> () }
 local galaxies: { [Model]: Galaxy } = setmetatable({}, { __mode = "k" }) :: any
 
--- Wind rushing in across the ground to the eye.
 local function drawIn(eye: Vector3, ground: Vector3, radius: number)
 	local angle = math.random() * math.pi * 2
 	local from = ground + Vector3.new(math.cos(angle), 0, math.sin(angle)) * radius + UP * (0.4 + math.random() * 2.2)
@@ -141,8 +131,6 @@ local function openGalaxy(eye: Vector3, ground: Vector3, reach: number): Galaxy
 	local collapsing: number? = nil
 	local spin = 0
 
-	-- Where along an arm `s` (0 at the eye, 1 at the rim) is, and which way
-	-- the arm runs there.
 	local function spiral(base: number, s: number, scale: number): (Vector3, Vector3)
 		local r = (SPIRAL_IN + (SPIRAL_OUT - SPIRAL_IN) * s) * scale
 		local theta = base + TWIST * s
@@ -152,7 +140,6 @@ local function openGalaxy(eye: Vector3, ground: Vector3, reach: number): Galaxy
 		return plane + radial * r, tangent
 	end
 
-	-- The arms: two curved spans each, wind with starlight running along it.
 	type Span = { a: Attachment, b: Attachment, beams: { Beam }, from: number, to: number, arm: number }
 	local spans: { Span } = {}
 	for arm = 1, ARMS do
@@ -180,7 +167,6 @@ local function openGalaxy(eye: Vector3, ground: Vector3, reach: number): Galaxy
 		end
 	end
 
-	-- Stars strewn along the arms, glittering.
 	type Mote = { part: BasePart, arm: number, s: number, lift: number, out: number, phase: number }
 	local motes: { Mote } = {}
 	for i = 1, 40 do
@@ -201,14 +187,11 @@ local function openGalaxy(eye: Vector3, ground: Vector3, reach: number): Galaxy
 		})
 	end
 
-	-- The bright core in its eye.
 	local core = Soft.makeStar(3)
 	for _, part in core.parts do
 		table.insert(made, part)
 	end
 
-	-- Rings of wind turning round it, and a ring of light at the edge of
-	-- its pull.
 	local rings = {
 		Soft.softRing({
 			color = ColorSequence.new(WIND_WHITE, WIND),
@@ -241,7 +224,6 @@ local function openGalaxy(eye: Vector3, ground: Vector3, reach: number): Galaxy
 		table.insert(made, ring.hub)
 	end
 
-	-- The column of wind twisting up out of its eye.
 	local foot, top = Soft.worldAnchor(ground, UP), Soft.worldAnchor(ground + UP * 13, UP)
 	table.insert(made, foot)
 	table.insert(made, top)
@@ -259,7 +241,6 @@ local function openGalaxy(eye: Vector3, ground: Vector3, reach: number): Galaxy
 		return ground, ground + UP * 12
 	end, 1.8, 3, 0.45, 1.5, 0.7, 3, WIND_WHITE)
 
-	-- Dust lifting off the ground under it.
 	local floor = U.newPart({
 		Size = Vector3.new(reach * 1.4, 0.2, reach * 1.4),
 		Transparency = 1,
@@ -303,7 +284,6 @@ local function openGalaxy(eye: Vector3, ground: Vector3, reach: number): Galaxy
 			destroy()
 			return
 		end
-		-- Faster the longer it's open (and fastest as it falls in).
 		spin += dt * (1.6 + 1.2 * math.min(t, 2) + (if collapsing then 10 else 0))
 
 		for _, span in spans do
@@ -336,7 +316,6 @@ local function openGalaxy(eye: Vector3, ground: Vector3, reach: number): Galaxy
 		column.Width0 = 2.6 * scale
 		column.Width1 = 6 * scale
 
-		-- Wind rushing in from all round, faster as it goes.
 		if not collapsing and t >= nextDraw then
 			nextDraw = t + 0.05
 			drawIn(eye, ground, reach * (0.6 + math.random() * 0.4))
@@ -347,7 +326,6 @@ local function openGalaxy(eye: Vector3, ground: Vector3, reach: number): Galaxy
 	function galaxy.collapse()
 		if not collapsing then
 			collapsing = os.clock()
-			-- The core flares as everything falls into it.
 			Soft.twinkle(eye, 10, STAR, COLLAPSE + 0.05)
 			U.flash(eye, STAR_WHITE, 5, COLLAPSE)
 		end
@@ -360,10 +338,7 @@ local function openGalaxy(eye: Vector3, ground: Vector3, reach: number): Galaxy
 	return galaxy
 end
 
--- The nova
-
 local function nova(eye: Vector3, ground: Vector3)
-	-- A pillar of starlight bursting up into the sky, twisting with wind.
 	local foot, top = Soft.worldAnchor(ground, UP), Soft.worldAnchor(ground + UP * 46, UP)
 	local pillar = {
 		Soft.softBeam(foot, top, {
@@ -390,7 +365,6 @@ local function nova(eye: Vector3, ground: Vector3)
 	}
 	table.insert(pillar, Soft.starStream(foot, top, 2.4, -30))
 	local widths = Soft.widths(pillar)
-	-- Thin to wide in a flash, then thinning out as it fades.
 	Soft.every(0.6, function(elapsed)
 		local k = if elapsed < 0.06 then 0.2 + 1.1 * elapsed / 0.06 else 1.3 - 0.9 * (elapsed - 0.06) / 0.54
 		Soft.scaleBeams(pillar, k, widths)
@@ -402,14 +376,12 @@ local function nova(eye: Vector3, ground: Vector3)
 	end, 3.2, 4, 0.35, 2, 1.1, 0.45, STAR)
 	task.delay(0.5, stopSpiral)
 
-	-- Out over the ground: a ring of wind and light, the ground cracked gold.
 	Soft.windRing(ground + UP * 0.4, UP, 2, 22, 0.5)
 	Soft.lightRing(ground + UP * 0.3, UP, 1, 18, 0.4, STAR)
 	U.shockwave(ground, STAR, 2, 30, 0.45)
 	U.groundCracks(ground, 10, 8, STAR, 1.6)
 	U.debris(ground, 14, 40, 0.8)
 
-	-- And the burst itself: light, stars scattering.
 	U.flash(eye, STAR_WHITE, 10, 0.25)
 	Soft.twinkle(eye, 16, STAR, 0.4)
 	Soft.starDust(eye, 40, 50)

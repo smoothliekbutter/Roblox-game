@@ -1,5 +1,3 @@
--- Puts every player in an R6 body that keeps their own avatar look.
-
 local Players = game:GetService("Players")
 local StarterPlayer = game:GetService("StarterPlayer")
 
@@ -16,7 +14,6 @@ local function getDescription(player: Player): HumanoidDescription
 		return Players:GetHumanoidDescriptionFromUserIdAsync(player.UserId)
 	end)
 	if not ok or not description then
-		-- Local test servers use fake negative user ids with no avatar.
 		description = Instance.new("HumanoidDescription")
 	end
 	descriptions[player] = description
@@ -68,7 +65,6 @@ function CharacterLoader.Start()
 	Players.PlayerRemoving:Connect(function(player)
 		descriptions[player] = nil
 	end)
-	-- Anyone who joined before this ran may have auto-spawned as R15: respawn them.
 	for _, player in Players:GetPlayers() do
 		task.spawn(spawnCharacter, player)
 	end

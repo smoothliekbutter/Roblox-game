@@ -1,5 +1,3 @@
--- Keyboard / mouse / gamepad / touch controls, sent to the server as actions.
-
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -33,13 +31,11 @@ local Input = {}
 local m1Held = false
 local blockHeld = false
 local lastBlockSent = 0
-local dashReadyAt = 0 -- front and back
--- The front dash's push while it lasts: an M1 cuts it short.
+local dashReadyAt = 0
 local frontDash: Instance? = nil
--- Extra jumps in the air (Kits airJumps), used since leaving the ground.
 local airJumpsUsed = 0
 local jumpReleasedInAir = false
-local sideDashReadyAt = 0 -- left and right: their own, shorter cooldown
+local sideDashReadyAt = 0
 
 local predictedCombo = 0
 local lastM1 = 0
@@ -59,7 +55,6 @@ local function getCharacter(): (Model?, Humanoid?, BasePart?)
 		character:FindFirstChild("HumanoidRootPart") :: BasePart
 end
 
--- Camera yaw only, so "forward" means where you're looking, flat on the ground.
 local function cameraBasis(): CFrame
 	local look = workspace.CurrentCamera.CFrame.LookVector
 	local flat = Vector3.new(look.X, 0, look.Z)
@@ -130,7 +125,7 @@ local function tryM1()
 		not CombatState.CanAct(character)
 		or CombatState.IsBlocking(character)
 		or CombatState.IsCasting(character)
-		or character:GetAttribute("SwordAway") == true -- thrown (Slayer Recall)
+		or character:GetAttribute("SwordAway") == true
 	then
 		return
 	end
@@ -138,7 +133,6 @@ local function tryM1()
 	if t < nextM1 then
 		return
 	end
-	-- An M1 during a front dash cuts the dash short and swings out of it.
 	if frontDash then
 		if frontDash.Parent then
 			frontDash:Destroy()
@@ -153,7 +147,6 @@ local function tryM1()
 
 	local index = predictedCombo
 	local inAir = humanoid.FloorMaterial == Enum.Material.Air
-	-- Jump only means uppercut on the ground; in the air it's the downslam.
 	local jump = not inAir and jumpHeld(humanoid)
 	local variant = "Normal"
 	if index >= Config.M1.ComboLength then
@@ -164,7 +157,6 @@ local function tryM1()
 		if inAir then
 			variant = "Downslam"
 		elseif jump then
-			-- A launcher: back in action quickly, and free to jump after them.
 			variant = "Uppercut"
 			nextM1 = t + Config.M1.UppercutEndLag
 			noJumpUntil = t + Config.M1.UppercutJumpAfter
@@ -180,17 +172,14 @@ local function tryM1()
 		end
 	end
 
-	-- Our count of the string goes along, so the server's swing is the one we see.
 	Remotes.Action:FireServer("M1", { jump = jump, airborne = inAir, index = index })
 	Moves.PlayM1(character, index, variant)
 
-	-- Step into the swing a little so strings stay connected.
 	local look = root.CFrame.LookVector
 	local forward = Vector3.new(look.X, 0, look.Z).Unit
 	Impulse.Apply(root, forward * Config.M1.LungeSpeed, Config.M1.LungeTime, "Lunge", 0.6)
 end
 
--- Someone right in front, for a front dash to stop at.
 local function enemyAhead(character: Model, root: BasePart): boolean
 	local params = OverlapParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
@@ -213,7 +202,6 @@ local function performDash(direction: string)
 	local speed = Config.Dash.Speed[direction]
 	local localVector = DASH_VECTORS[direction]
 	local basis = cameraBasis()
-	-- Side dashes are a quicker, smaller hop.
 	local duration = if direction == "Left" or direction == "Right"
 		then Config.Dash.SideDuration
 		else Config.Dash.Duration
@@ -222,7 +210,6 @@ local function performDash(direction: string)
 		frontDash = mover.Parent
 	end
 
-	-- Front dash steers with the camera, side and back dashes keep their line.
 	local start = os.clock()
 	local connection
 	connection = RunService.Heartbeat:Connect(function()
@@ -235,8 +222,6 @@ local function performDash(direction: string)
 		end
 		if direction == "Front" then
 			basis = cameraBasis()
-			-- Every front dash goes into an M1: reaching someone, it stops
-			-- and swings at them.
 			if enemyAhead(character, root) then
 				connection:Disconnect()
 				if mover.Parent then
@@ -261,7 +246,6 @@ local function tryDash()
 		return
 	end
 
-	-- While stunned or ragdolled, Q is the Evasive breakout instead.
 	if CombatState.IsStunned(character) or CombatState.IsRagdolled(character) then
 		if (tonumber(character:GetAttribute("Evasive")) or 0) >= Config.Evasive.Max then
 			Remotes.Action:FireServer("Evasive")
@@ -352,9 +336,7 @@ local function onCharacterAdded(character: Model)
 			humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
 		end
 	end)
-	-- Ragdolls disable the Neck motor: don't die of a "broken neck".
 	humanoid.RequiresNeck = false
-	-- Don't let the default "fall over" states interrupt combat.
 	humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
 	humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
 end
@@ -390,7 +372,6 @@ function Input.Start()
 	ContextActionService:SetTitle("CloverDash", "Dash")
 	ContextActionService:SetTitle("CloverBlock", "Block")
 
-	-- Skills 1-4 and awakening. The server checks cooldowns and state.
 	local skillKeys = { Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four }
 	for slot, key in skillKeys do
 		local action = "CloverSkill" .. slot
@@ -403,7 +384,6 @@ function Input.Start()
 				end
 				Remotes.Action:FireServer("Skill", slot, { airborne = inAir })
 			elseif state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
-				-- Some moves do something else when the key is held.
 				Remotes.Action:FireServer("SkillRelease", slot)
 			end
 			return Enum.ContextActionResult.Sink
@@ -440,7 +420,6 @@ function Input.Start()
 			jumpNeedsRelease = false
 			uppercutPrimedUntil = 0
 		end
-		-- Air jumps come back on landing, and need a fresh press in the air.
 		if humanoid then
 			if humanoid.FloorMaterial ~= Enum.Material.Air then
 				airJumpsUsed = 0
@@ -470,7 +449,6 @@ function Input.Start()
 			end
 		end
 
-		-- Holding F through a swing or stun: block as soon as it's allowed.
 		if blockHeld and character and not CombatState.IsBlocking(character) then
 			if os.clock() - lastBlockSent > BLOCK_RETRY then
 				lastBlockSent = os.clock()
@@ -484,7 +462,6 @@ function Input.Start()
 		if not (character and humanoid and root) or typeof(velocity) ~= "Vector3" or type(duration) ~= "number" then
 			return
 		end
-		-- Plain knockback eases out; dives and steered pushes keep their speed.
 		local plain = type(options) ~= "table"
 		local mover =
 			Impulse.Apply(root, velocity, math.clamp(duration, 0, 1), "Knockback", if plain then 0.45 else nil)
@@ -511,7 +488,6 @@ function Input.Start()
 
 	UserInputService.JumpRequest:Connect(function()
 		lastJumpRequest = os.clock()
-		-- One more jump in the air for kits that ride the wind (Yuno).
 		local character, humanoid, root = getCharacter()
 		local kit = character and Kits.Of(character)
 		if

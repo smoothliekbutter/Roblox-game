@@ -1,5 +1,3 @@
--- Cutscene tools: scripted cameras, letterbox bars and scene settings (night, dawn).
-
 local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -7,8 +5,8 @@ local TweenService = game:GetService("TweenService")
 
 local localPlayer = Players.LocalPlayer
 
-local BASE_FOV = 70 -- same as CameraShake
-local BAR_HEIGHT = 0.11 -- letterbox bars, fraction of the screen each
+local BASE_FOV = 70
+local BAR_HEIGHT = 0.11
 
 local Cinematic = {}
 
@@ -22,14 +20,11 @@ local function tween(instance: Instance, duration: number, goals: { [string]: an
 	return t
 end
 
--- Camera
-
 function Cinematic.Camera(shot: (number) -> (CFrame?, number?), length: number): () -> ()
 	local camera = workspace.CurrentCamera
 	local playerGui = localPlayer:FindFirstChildOfClass("PlayerGui")
 	local character = localPlayer.Character
 
-	-- Everything else on screen goes away.
 	local hidden: { ScreenGui } = {}
 	if playerGui then
 		for _, gui in playerGui:GetChildren() do
@@ -89,7 +84,6 @@ function Cinematic.Camera(shot: (number) -> (CFrame?, number?), length: number):
 		end)
 	end
 
-	-- At camera priority, so CameraShake (just after) still shakes it.
 	RunService:BindToRenderStep("CloverCinematic", Enum.RenderPriority.Camera.Value, function()
 		local t = os.clock() - start
 		if t > length then
@@ -108,16 +102,14 @@ function Cinematic.Camera(shot: (number) -> (CFrame?, number?), length: number):
 			camera.FieldOfView = fov
 		end
 	end)
-	task.delay(length + 1, finish) -- whatever happens, give the camera back
+	task.delay(length + 1, finish)
 	return finish
 end
 
--- Settings: the sky and the light change for a cutscene (Night, Dawn)
-
-local depth = 0 -- settings in force (they nest: the latest one's light wins)
+local depth = 0
 local saved: { [string]: any }? = nil
 local grade: ColorCorrectionEffect? = nil
-local generation = 0 -- bumped whenever a setting starts or lifts
+local generation = 0
 
 type Preset = {
 	lighting: { [string]: any },
@@ -125,7 +117,6 @@ type Preset = {
 	grade: { [string]: any },
 }
 
--- Moonlit rather than pitch black: dark sky, but you can still read the fight.
 local NIGHT: Preset = {
 	lighting = {
 		ClockTime = 23.8,
@@ -134,7 +125,6 @@ local NIGHT: Preset = {
 		OutdoorAmbient = Color3.fromRGB(106, 110, 148),
 		ExposureCompensation = 0.3,
 	},
-	-- A clear night: the moon shouldn't fade into the haze.
 	atmosphere = { Density = 0.06, Haze = 0, Color = Color3.fromRGB(82, 90, 132) },
 	grade = { Saturation = -0.2, Contrast = 0.1, Brightness = 0.07, TintColor = Color3.fromRGB(224, 230, 255) },
 }
@@ -184,7 +174,6 @@ local function setting(preset: Preset, fadeIn: number): (fadeOut: number?) -> ()
 		tween(atmosphere, fadeIn, preset.atmosphere)
 	end
 	tween(Lighting, fadeIn, preset.lighting, Enum.EasingStyle.Sine)
-	-- Still fading back from the last one? Bring the same grade back.
 	local effect = if grade and grade.Parent then grade else Instance.new("ColorCorrectionEffect")
 	effect.Name = "CinematicSetting"
 	effect.Parent = Lighting
@@ -218,7 +207,7 @@ local function setting(preset: Preset, fadeIn: number): (fadeOut: number?) -> ()
 		end
 		task.delay(duration + 0.05, function()
 			if generation ~= lifting then
-				return -- another setting started before this one finished lifting
+				return
 			end
 			saved = nil
 			if effect then
@@ -231,8 +220,6 @@ local function setting(preset: Preset, fadeIn: number): (fadeOut: number?) -> ()
 	end
 end
 
--- Night falls: the sky turns to midnight, the light goes cold and dim.
--- Returns lift(fadeOut).
 function Cinematic.Night(fadeIn: number): (fadeOut: number?) -> ()
 	return setting(NIGHT, fadeIn)
 end
@@ -241,8 +228,6 @@ function Cinematic.Dawn(fadeIn: number): (fadeOut: number?) -> ()
 	return setting(DAWN, fadeIn)
 end
 
--- Where the sun is in the Dawn (a unit vector toward it), for dressing the
--- sky round it.
 function Cinematic.DawnSun(): Vector3
 	local before = Lighting.ClockTime
 	Lighting.ClockTime = DAWN.lighting.ClockTime

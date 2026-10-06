@@ -390,7 +390,7 @@ def verify(name, keys):
 
 def emit(path):
     from compact import write
-    write(path, 'Prince of Wind (Yuno)', ['Torso', 'Head', 'RightArm', 'LeftArm', 'RightLeg', 'LeftLeg'],
+    write(path, ['Torso', 'Head', 'RightArm', 'LeftArm', 'RightLeg', 'LeftLeg'],
           [(name, spec, ALL[name]) for name, spec in SPEC.items()])
 
 if __name__ == '__main__':

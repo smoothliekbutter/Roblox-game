@@ -1,5 +1,3 @@
--- Yuno's Half-Crown moves: Spirit Storm, Tempest Dive, Quartile Scutum and Nova Vortex.
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
@@ -15,7 +13,6 @@ local U = VFX.Util
 local rad = math.rad
 local UP = Vector3.yAxis
 
--- The palette and the soft wind everything is drawn with (see Soft).
 local WIND, WIND_DEEP, WIND_WHITE = Soft.WIND, Soft.WIND_DEEP, Soft.WIND_WHITE
 local STAR, STAR_WHITE = Soft.STAR, Soft.STAR_WHITE
 local SMOKE, SPARKLE = Soft.SMOKE, Soft.SPARKLE
@@ -186,7 +183,6 @@ function handlers.SpiritStorm(data, character, root)
 			end
 			table.insert(strands, strand)
 		end
-		-- Streaks racing down the beam.
 		local muzzle = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1, CFrame = CFrame.lookAt(origin, finish) })
 		local racing = Instance.new("ParticleEmitter")
 		racing.Texture = U.textures.Spark
@@ -248,7 +244,6 @@ function handlers.SpiritStorm(data, character, root)
 			if not live(character, token) then
 				return false
 			end
-			-- Three helices of wind, twisting round the beam and spinning.
 			local spin = elapsed * 14
 			for k, strand in strands do
 				local phase = k * (math.pi * 2 / STORM_STRANDS) + spin
@@ -284,14 +279,12 @@ function handlers.SpiritStorm(data, character, root)
 				windRing(origin + direction * 2, direction, 1.5, 6, 0.25)
 			end
 			if elapsed >= nextSplash then
-				-- Where it strikes, wind and glitter blast out of it.
 				nextSplash = elapsed + 0.09
 				windPuff(finish, 3, -direction)
 				streaks(finish, 6, 50, -direction, 60)
 			end
 			return true
 		end, function()
-			-- The helices unwind outward and it all collapses.
 			for _, strand in strands do
 				for _, segment in strand do
 					local out = segment.Position - (origin + direction * direction:Dot(segment.Position - origin))
@@ -321,7 +314,6 @@ function handlers.SpiritStorm(data, character, root)
 			lightRing(finish, direction, 1, 12, 0.3, WIND_WHITE)
 		end)
 
-		-- The ground it passes over is scarred.
 		for along = 6, length, 6 do
 			local ground = U.groundBelow(origin + direction * along, { character }, 7)
 			if ground then
@@ -380,7 +372,6 @@ local function makeTornado(base: Vector3, height: number): Tornado
 			panel.Color = TORNADO_SHADES[shade]
 			panel.Transparency = 1
 			panel.Size = Vector3.new(width, height / TORNADO_BANDS + 0.8, 0.5)
-			-- Leaning into the spin, like streaks of wind.
 			panel.CFrame = hub.CFrame
 				* CFrame.Angles(0, j / TORNADO_PANELS * math.pi * 2, 0)
 				* CFrame.new(0, 0, -radius)
@@ -484,8 +475,6 @@ local function playTempestDive(data, character: Model, root: BasePart)
 	U.ringBurst(CFrame.new(base + UP * 0.2), WIND, 1, 9, 0.4, 0.3)
 	windRing(base + UP * 0.3, UP, 1, 12, 0.45)
 	windPuff(base + UP, 4, UP)
-	-- Up on a whirl of wind: ribbons of wind round the two of them and a
-	-- soft wake of wind behind.
 	Soft.helix(function()
 		local at = root.Position
 		return at - UP * 6, at + UP * 3
@@ -511,7 +500,7 @@ local function playTempestDive(data, character: Model, root: BasePart)
 	end)
 
 	local tornado = makeTornado(base, DivePlan.Height + 4)
-	local formFrom = times.Flip - 0.25 -- it rises out of the ground as he turns them over
+	local formFrom = times.Flip - 0.25
 	local standUntil = times.Land + 0.6
 	local finishAt = standUntil + 0.4
 	local bind = "CloverTempestDive" .. tostring(started)
@@ -607,13 +596,10 @@ local function playTempestDive(data, character: Model, root: BasePart)
 			local focus = DivePlan.Victim(plan, math.min(t, times.Land)).Position
 			local right = plan.forward:Cross(UP)
 			if t < times.Flip - 0.05 then
-				-- From the side, rising a little with them on the way up.
 				local lift = -2 + 5 * easeInOut(t / times.Lift)
 				local offset = right * 18 - plan.forward * 6 + UP * lift
 				return CFrame.lookAt(focus + offset, focus), 72
 			end
-			-- Inside the tornado on the way down, then easing up and out of it
-			-- as it stands over the crater.
 			local after = easeInOut((t - times.Land) / 0.6)
 			local eye = focus + UP * (9 + 7 * after) + right * (1.5 + 4 * after) - plan.forward * (0.5 + 3 * after)
 			return CFrame.lookAt(eye, focus), 88 - 12 * after
@@ -683,8 +669,6 @@ function handlers.QuartileScutum(data, character, root)
 			Transparency = 0.82,
 			Material = Enum.Material.ForceField,
 		})
-		-- Streams of starlight running round its edges, glitter drifting off
-		-- the pane.
 		local anchors: { Attachment } = {}
 		for _ = 1, 4 do
 			table.insert(anchors, worldAnchor(root.Position))
@@ -786,7 +770,6 @@ function handlers.QuartileScutum(data, character, root)
 			barrier.drop()
 		end
 	elseif data.phase == "Reflect" then
-		-- What it stopped goes back, twice as hard.
 		local origin: Vector3 = data.origin
 		local barrier = barriers[character]
 		if barrier then
@@ -794,7 +777,6 @@ function handlers.QuartileScutum(data, character, root)
 		end
 		U.flash(origin, STAR_WHITE, 6, 0.2)
 		if data.direction then
-			-- A bolt of starlight back at whoever cast it.
 			local direction: Vector3 = data.direction
 			local star = makeStar(2.2)
 			local position = origin
@@ -820,7 +802,6 @@ function handlers.QuartileScutum(data, character, root)
 				})
 			end)
 		else
-			-- Straight back into them.
 			local target: Vector3 = data.target
 			local ray = bar(origin, target, 0.4, STAR_WHITE, 0)
 			local glow = bar(origin, target, 1.4, STAR, 0.5)
@@ -842,7 +823,6 @@ function handlers.QuartileScutum(data, character, root)
 	end
 end
 
--- Nova Vortex (Half-Crown 4): drawn by the Nova module.
 local novaContext: Nova.Context = { anims = ANIMS, play = play }
 
 function handlers.NovaVortex(data, character, root)

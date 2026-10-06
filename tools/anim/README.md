@@ -19,7 +19,10 @@ Needs Python 3 with numpy (`pip install numpy`). From the repo root:
 python3 tools/anim/asta_anims.py
 python3 tools/anim/emit.py src/client/Kits/AntiMagic/Animations.luau
 stylua src/client/Kits/AntiMagic/Animations.luau
+stylua src/client/Kits/AntiMagic/Animations.luau
 ```
+
+(StyLua needs two passes on a fresh file: the first leaves some long tables on one line.)
 
 The check should end with `ALL CLEAN`. A few cases are allowed on purpose
 (see `rules` in `asta_anims.py`): the entrance sword isn't checked before it's

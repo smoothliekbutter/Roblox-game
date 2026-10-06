@@ -1,5 +1,3 @@
--- Asta's Black Comet (Black Form, Destroyer 2), drawn along Shared/BlackComet's paths.
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
@@ -24,11 +22,10 @@ type Animation = PoseAnimator.Animation
 
 export type Wings = { flap: (() -> ())?, setPose: ((string?) -> ())?, setPair: ((boolean) -> ())? }
 
--- What the kit lends this module.
 export type Context = {
 	anims: { [string]: Animation },
 	play: (Model, Animation) -> (),
-	held: (Model) -> Animation?, -- their "held by the throat" struggle
+	held: (Model) -> Animation?,
 	wings: (Model) -> Wings?,
 	blackSmoke: (Vector3, number, number, number?) -> (),
 	redSparks: (Vector3, number, number?, Vector3?) -> (),
@@ -82,8 +79,6 @@ local function groove(a: Vector3, b: Vector3, width: number, life: number)
 	end)
 end
 
--- An emitter on a little invisible part that's moved along with whatever
--- it's spraying off.
 local function sprayer(props: { [string]: any }): (BasePart, ParticleEmitter)
 	local holder = U.newPart({ Size = Vector3.one * 0.2, Transparency = 1 })
 	local emitter = Instance.new("ParticleEmitter")
@@ -96,7 +91,6 @@ local function sprayer(props: { [string]: any }): (BasePart, ParticleEmitter)
 	return holder, emitter
 end
 
--- A soft ring racing out across `normal`, smoke flowing round it.
 local function smokeRing(
 	center: Vector3,
 	normal: Vector3,
@@ -130,12 +124,10 @@ local function smokeRing(
 	ring.fade(duration)
 end
 
--- A thin bright ring (white-hot inside, red out) racing out across `normal`.
 local function redRing(center: Vector3, normal: Vector3, from: number, to: number, duration: number)
 	Soft.lightRing(center, normal, from, to, duration, RED)
 end
 
--- Draws it (t = 0 now). Returns stop(), which cuts it short.
 function Comet.Play(ctx: Context, data, character: Model, root: BasePart): (() -> ())?
 	if typeof(data.origin) ~= "Vector3" or typeof(data.forward) ~= "Vector3" then
 		return nil
@@ -274,7 +266,6 @@ function Comet.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 			dirt.Enabled = touching
 			cloud.Enabled = touching
 			sparks.Enabled = touching and low < 0.6
-			-- The trench they tear open, wider where they're slammed flat.
 			if touching and t >= nextTrench then
 				nextTrench = t + 1 / 45
 				if lastTrench then
@@ -290,7 +281,6 @@ function Comet.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 	end)
 	task.delay(times.Length + 0.5, stop)
 
-	-- Take-off: the wings beat and he's gone.
 	local start = CometPlan.Attacker(plan, 0)
 	local feetAt = ground(start.Position)
 	local backOf = start.Position - forward * 1.4 + UP * 0.8
@@ -317,8 +307,6 @@ function Comet.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 	})
 	U.light(start.Position, RED, 6, 16, 0.35)
 
-	-- In flight: black flame streaming off him, the Destroyer burning, and
-	-- the air torn past him.
 	ctx.trailEmitter(root, {
 		Texture = U.textures.Smoke,
 		Color = ColorSequence.new(BLACK, Color3.fromRGB(30, 8, 10)),
@@ -347,7 +335,6 @@ function Comet.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 	ctx.swordAura(character, times.Length, 30)
 	U.speedLines(root, forward, times.Plant - 0.1, Color3.fromRGB(255, 235, 235))
 
-	-- Each slam into the ground, harder than the last.
 	for i, slam in times.Slams do
 		at(slam, function()
 			local where = CometPlan.Victim(plan, slam).Position
@@ -373,8 +360,6 @@ function Comet.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 		end)
 	end
 
-	-- Landing: his feet plough two furrows as he skids to a stop; the wings
-	-- flare open to brake.
 	at(times.Plant, function()
 		if wings and wings.setPose then
 			wings.setPose("spread")
@@ -416,14 +401,12 @@ function Comet.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 		ctx.blackSmoke(ground(root.Position) + UP * 0.5, 8, 3, 8)
 	end)
 
-	-- The haul: black smoke wound round him as he twists.
 	at(times.Release - 0.08, function()
 		local hand = gripPoint(character) or root.Position
 		ctx.blackSmoke(hand, 6, 2.5, 6)
 		ctx.blackLightning(hand, 3, 3, 0.15)
 	end)
 
-	-- The heave: they're thrown away as a black comet.
 	at(times.Release, function()
 		local hand = gripPoint(character) or root.Position + forward * 2 + UP
 		local direction = (forward * 85 + UP * 30).Unit
@@ -461,7 +444,6 @@ function Comet.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 		if mine then
 			ctx.impactFrame(0.7)
 		end
-		-- The comet: a black tail and red embers streaming off them.
 		if victimRoot and victimRoot.Parent then
 			ctx.trailEmitter(victimRoot, {
 				Texture = U.textures.Smoke,
@@ -505,7 +487,6 @@ function Comet.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 			end
 		end
 	end)
-	-- (If it's cut short, the wings still go back.)
 	task.delay(times.Length + 0.6, function()
 		if wings and finished then
 			if wings.setPose then
@@ -517,8 +498,6 @@ function Comet.Play(ctx: Context, data, character: Model, root: BasePart): (() -
 		end
 	end)
 
-	-- For the two of them: the light deepens a touch (never dark) and the
-	-- reds bloom.
 	if mine then
 		U.colorGrade(
 			{ Contrast = 0.12, Saturation = -0.12, TintColor = Color3.fromRGB(255, 238, 238) },
@@ -547,7 +526,6 @@ function Comet.Camera(plan: CometPlan.Plan): () -> ()
 		if t <= times.Release then
 			return CometPlan.Victim(plan, t).Position
 		end
-		-- Thrown: where they're flying, roughly.
 		local s = t - times.Release
 		local from = CometPlan.Victim(plan, times.Release).Position
 		return from + forward * 85 * s + UP * (30 * s - 70 * s * s)
@@ -565,18 +543,14 @@ function Comet.Camera(plan: CometPlan.Plan): () -> ()
 	local release = times.Release
 	return Cinematic.Camera(function(elapsed)
 		local t = math.min(elapsed, times.Length)
-		-- Riding along with them, a touch behind (more as they take off).
 		local lag = 0.05 * smooth(t / 0.2) * (1 - smooth((t - 0.6) / 0.3))
 		local anchor = level(him(t - lag):Lerp(them(math.min(t - lag, release)), 0.5), 2.2, t)
-		-- Round from in front of them at their side to behind his
-		-- shoulder for the heave.
 		local swing = smooth((t - 0.05) / 0.75) * 0.55 + smooth((t - 0.78) / 0.4) * 0.45
 		local angle = rad(55 + 95 * swing)
 		local around = forward * math.cos(angle) - right * math.sin(angle)
 		local distance = 8.5 + 1.5 * smooth((t - 0.8) / 0.4)
 		local eye = anchor + around * distance + UP * (1.6 + 1.4 * smooth((t - 0.75) / 0.5))
 		eye = Vector3.new(eye.X, math.max(eye.Y, plan.floorY + 1), eye.Z)
-		-- Looking at the pair, then after them as they fly.
 		local pair = level(him(t):Lerp(them(math.min(t, release)), 0.5), 1.6, t) + forward * 1.2
 		local follow = smooth((t - release) / 0.3)
 		local focus = pair:Lerp(him(t):Lerp(them(t), 0.55), follow)

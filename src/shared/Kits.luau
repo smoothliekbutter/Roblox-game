@@ -1,5 +1,3 @@
--- The character roster: names, colours, M1 tuning and skills.
-
 export type SkillInfo = {
 	name: string,
 	cooldown: number,
@@ -14,18 +12,14 @@ export type SwordInfo = {
 
 export type KitInfo = {
 	id: string,
-	title: string, -- shown in the character picker
+	title: string,
 	description: string,
 	color: Color3,
 	playable: boolean,
-	-- Overrides for Config.M1 (hitbox, damage, ...). Missing keys use Config.M1.
 	m1: { [string]: any },
 	skills: { SkillInfo },
-	-- The R special: one per character, kept through awakening.
 	special: SkillInfo?,
-	-- Awakening swaps the move set (like Vessel -> Sukuna, Hero Hunter -> Rampage).
 	awakenedSkills: { SkillInfo }?,
-	-- A different R while awakened (Asta: swap to another of his swords).
 	awakenedSpecial: SkillInfo?,
 	swords: { [string]: SwordInfo }?,
 	awakening: {
@@ -35,7 +29,6 @@ export type KitInfo = {
 		cooldownMultiplier: number,
 		speedBonus: number,
 	}?,
-	-- Extra jumps in the air (Yuno rides the wind: one more).
 	airJumps: number?,
 	ascension: {
 		name: string,
@@ -53,7 +46,6 @@ local Kits = {}
 
 Kits.Default = "AntiMagic"
 
--- Picker order.
 Kits.Order = { "AntiMagic", "Wind", "Water", "Dark", "Flame", "Lightning" }
 
 local function comingSoon(id: string, title: string, description: string, color: Color3): KitInfo
@@ -76,12 +68,10 @@ Kits.List = {
 		color = Color3.fromRGB(205, 35, 45),
 		playable = true,
 		m1 = {
-			-- The greatsword reaches further than fists.
 			HitboxSize = Vector3.new(7, 6, 7),
 			HitboxOffset = 3.75,
 			Damage = 4,
 			FinisherDamage = 6,
-			-- Hits land as the blade sweeps through the middle of the swing.
 			WindUp = 0.11,
 			FinisherWindUp = 0.18,
 		},
@@ -91,7 +81,6 @@ Kits.List = {
 			{ name = "Black Divider", cooldown = 11, type = "Melee", airHold = true },
 			{ name = "Anti-Magic Deflect", cooldown = 14, type = "Counter", airHold = true },
 		},
-		-- Leap off a blast of anti-magic; R again in the air to plunge.
 		special = { name = "Anti-Magic Leap", cooldown = 10, type = "Melee", airHold = true },
 		awakenedSkills = {
 			{ name = "Black Hurricane", cooldown = 9, type = "Melee", airHold = true },
@@ -139,10 +128,8 @@ Kits.List = {
 		color = Color3.fromRGB(90, 220, 150),
 		playable = true,
 		m1 = {
-			-- Wind-wrapped strikes reach a little further than bare fists.
 			HitboxOffset = 3.5,
 		},
-		-- He rides the wind: one more jump in the air, for chasing air combos.
 		airJumps = 1,
 		skills = {
 			{ name = "Wind Blades Shower", cooldown = 11, type = "Swarm", airHold = true },
@@ -150,9 +137,7 @@ Kits.List = {
 			{ name = "Heavenly Wind Ark", cooldown = 12, type = "Zone", airHold = true },
 			{ name = "Gale White Bow", cooldown = 15, type = "Bolt", airHold = true },
 		},
-		-- Star magic: place a star, press R again to be there.
 		special = { name = "Conjunction", cooldown = 10, type = "Melee" },
-		-- Half-Crown Spirit of Zephyr (G): Sylph on his left side.
 		awakenedSkills = {
 			{ name = "Spirit Storm", cooldown = 12, type = "Bolt", airHold = true },
 			{ name = "Tempest Dive", cooldown = 16, type = "Melee", airHold = true },
@@ -195,7 +180,6 @@ function Kits.Get(id: string?): KitInfo?
 	return Kits.List[id]
 end
 
--- The move list a character has right now (awakened moves while awakened).
 function Kits.SkillsOf(character: Model): { SkillInfo }
 	local kit = Kits.Of(character)
 	if not kit then
@@ -205,7 +189,6 @@ function Kits.SkillsOf(character: Model): { SkillInfo }
 		return kit.ascension.skills
 	end
 	if character:GetAttribute("Awakened") == true and kit.awakenedSkills then
-		-- Moves 1 and 2 come from the sword in his hand.
 		local sword = character:GetAttribute("Sword")
 		local weapon = if kit.swords and type(sword) == "string" then kit.swords[sword] else nil
 		if weapon then
@@ -220,7 +203,6 @@ function Kits.SkillsOf(character: Model): { SkillInfo }
 	return kit.skills
 end
 
--- The kit a character is using (nil for kit-less NPCs like the dummies).
 function Kits.Of(character: Model): KitInfo?
 	return Kits.Get(character:GetAttribute("Kit") :: string?)
 end

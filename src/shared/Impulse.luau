@@ -1,5 +1,3 @@
--- Pushes a character for a moment with a LinearVelocity (a plain velocity gets eaten by the Humanoid).
-
 local RunService = game:GetService("RunService")
 
 local Impulse = {}

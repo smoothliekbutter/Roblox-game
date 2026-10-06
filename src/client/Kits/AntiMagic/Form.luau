@@ -1,5 +1,3 @@
--- Asta's Black Form moves: Black Hurricane, Black Slash, Grand Divider, the sword swap and each sword's moves.
-
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
@@ -30,8 +28,6 @@ local Look = require(script.Parent.Look)
 local grimoire, awakenedVisuals = Look.grimoire, Look.awakenedVisuals
 local Moon = require(script.Parent.Moon)
 local launchedFor = Moon.launchedFor
-
--- Black Form moves
 
 local hurricaneEmitters: { [Model]: { ParticleEmitter } } = setmetatable({}, { __mode = "k" }) :: any
 
@@ -86,7 +82,6 @@ function handlers.BlackHurricane(data, character, root)
 			}, duration)
 		end
 		crackle(root, duration, 0.05, 4.5)
-		-- A full circle of steel each turn (the body turns clockwise, blade out right).
 		for i = 0, 3 do
 			task.delay(0.1 + i * 0.2, function()
 				if live(character, token) then
@@ -104,7 +99,6 @@ function handlers.BlackHurricane(data, character, root)
 			end)
 		end
 		if air then
-			-- Drilling down out of the sky.
 			local dive = root.CFrame.LookVector * 40 - UP * 35
 			U.speedLines(root, dive.Unit, duration)
 			U.bodyTrail(character, BLACK, duration)
@@ -147,14 +141,12 @@ function handlers.BlackHurricane(data, character, root)
 			CameraShake.FovKick(8)
 		end
 	elseif data.phase == "Stop" then
-		-- Knocked out of the spin: the trails above are already cut off.
 		blackSmoke(root.Position, 8, 3, 8)
 	elseif data.phase == "Finish" then
 		local position = root.Position
 		local ground = U.groundBelow(position, { character })
 		local grounded = ground ~= nil and position.Y - ground.Position.Y < 4.5
 		local feet = if ground and grounded then ground.Position else position - UP * 3
-		-- The last turn carries on round into the finishing cut (right to back-left).
 		crescent(character, {
 			center = CFrame.new(0, 0.2, 0),
 			radius = 7,
@@ -175,7 +167,6 @@ function handlers.BlackHurricane(data, character, root)
 			U.groundCracks(feet, 10, 8, RED, 2.5)
 			U.debris(feet, 14, 45, 1.1)
 		else
-			-- In the air: the cut spikes them down, a blast ringing out beneath.
 			U.impactRing(position - UP * 2, -UP, BLACK, 1.5, 16, 0.45)
 			task.delay(0.04, U.impactRing, position - UP * 3, -UP, RED, 1, 11, 0.35)
 			redSparks(position, 20, 1, -UP)
@@ -191,8 +182,6 @@ function handlers.BlackHurricane(data, character, root)
 	end
 end
 
--- Black Slash: anti-magic floods the blade as he winds up, then the wave
--- is thrown off it.
 function handlers.BlackSlash(data, character, root)
 	if data.phase == "Windup" then
 		play(character, ANIMS.BlackSlash)
@@ -290,7 +279,6 @@ local function fissure(start: Vector3, direction: Vector3, length: number)
 	end
 end
 
--- A giant anti-magic blade grown out of the sword while Grand Divider charges.
 local grandBlades: { [Model]: () -> () } = setmetatable({}, { __mode = "k" }) :: any
 
 local function growGrandBlade(character: Model, duration: number)
@@ -348,7 +336,6 @@ function handlers.GrandDivider(data, character, root)
 		swordAura(character, 0.75, 50)
 		growGrandBlade(character, 0.6)
 		if air then
-			-- Hanging in the sky: the rings close in around him instead.
 			U.ringBurst(CFrame.new(root.Position), BLACK, 12, 2, 0.7, 0.35)
 			task.delay(0.3, U.ringBurst, CFrame.new(root.Position), DARK_RED, 10, 1.5, 0.4, 0.2)
 			U.ringBurst(CFrame.new(root.Position) * CFrame.Angles(rad(90), 0, 0), BLACK, 10, 2, 0.7, 0.3)
@@ -360,7 +347,6 @@ function handlers.GrandDivider(data, character, root)
 			task.delay(0.25, U.groundCracks, feet, 8, 6, RED, 2)
 			blackSmoke(feet + UP * 0.3, 12, 3, 8)
 		end
-		-- Anti-magic piling in from everywhere, a column rising off the blade.
 		local start = os.clock()
 		task.spawn(function()
 			while os.clock() - start < 0.7 and live(character, token) do
@@ -403,7 +389,7 @@ function handlers.GrandDivider(data, character, root)
 			center = CFrame.new(0, 0.6, 0),
 			radius = 10,
 			from = 100,
-			to = if air then -260 else -40, -- in the air, a whole front flip of steel
+			to = if air then -260 else -40,
 			tilt = 90,
 			width = 3.6,
 			sweep = if air then 0.16 else 0.1,
@@ -417,7 +403,6 @@ function handlers.GrandDivider(data, character, root)
 		end)
 		local look = root.CFrame.LookVector
 		local forward = Vector3.new(look.X, 0, look.Z).Unit
-		-- The ground takes the blow (in the air, wherever the cleave comes down).
 		local function groundStrike(strike: Vector3)
 			U.flash(strike + UP, WHITE, 6, 0.08)
 			U.flash(strike + UP, BLACK, 16, 0.35)
@@ -439,7 +424,6 @@ function handlers.GrandDivider(data, character, root)
 				return
 			end
 			if air then
-				-- The cleave bursts out below and in front of him.
 				local burst = root.Position + forward * 4 - UP * 3
 				U.flash(burst, WHITE, 5, 0.08)
 				U.flash(burst, BLACK, 13, 0.3)
@@ -468,8 +452,6 @@ function handlers.GrandDivider(data, character, root)
 		end)
 	end
 end
-
--- Sword swap (R in Black Form): another of his swords out of the grimoire
 
 local SWORD_NAMES = {
 	Slayer = "DEMON-SLAYER SWORD",
@@ -512,7 +494,6 @@ function handlers.SwordSwap(data, character, root)
 		arrived = true
 		connection:Disconnect()
 		task.defer(function()
-			-- It forms out of anti-magic.
 			for _, part in child:GetDescendants() do
 				if part:IsA("BasePart") then
 					local shown = part.Transparency
@@ -541,8 +522,6 @@ function handlers.SwordSwap(data, character, root)
 		end
 	end)
 end
-
--- Sword moves (Black Form 1 and 2 follow the sword in his hand)
 
 local function cutLine(from: Vector3, to: Vector3, width: number, hold: number)
 	local length = (to - from).Magnitude
@@ -575,7 +554,6 @@ local function cutLine(from: Vector3, to: Vector3, width: number, hold: number)
 	end)
 end
 
--- Hides his sword, returning a function that puts it back as it was.
 local function hideSword(character: Model): () -> ()
 	local sword = getSword(character)
 	local shown: { [BasePart]: number } = {}
@@ -631,12 +609,12 @@ type Recall = {
 	target: Vector3,
 	out: number,
 	position: Vector3,
-	phase: string, -- "out" | "hang" | "back" | "home"
+	phase: string,
 	speed: number,
 	born: number,
 }
 local recalls: { [Model]: Recall } = {}
-local RECALL_MIDDLE = 2.6 -- grip to the middle of the Slayer's blade
+local RECALL_MIDDLE = 2.6
 
 local function endRecall(character: Model)
 	local recall = recalls[character]
@@ -783,7 +761,7 @@ function handlers.SlayerRecall(data, character, root)
 	elseif phase == "Catch" then
 		endRecall(character)
 		if data.instant then
-			return -- snapped back for another move: that move's animation plays
+			return
 		end
 		play(character, ANIMS.RecallCatch)
 		local point = bladePoint(character, 0.5) or root.Position
@@ -798,7 +776,6 @@ function handlers.SlayerRecall(data, character, root)
 	end
 end
 
--- Causality Break: the Demon-Destroyer's clover guard and plate flare up.
 local function destroyerFlare(character: Model, duration: number)
 	local sword = getSword(character)
 	if not sword then
@@ -842,7 +819,6 @@ function handlers.CausalityBreak(data, character, root)
 		Soft.lightRing(point + UP * 0.4, UP, 1, 20, 0.45, RED)
 		task.delay(0.06, Soft.lightRing, point + UP * 0.6, UP, 1, 14, 0.4, RED)
 		blackLightning(point, 6, 5)
-		-- It runs through the ground to each of them and breaks what they had.
 		for i, target in data.targets do
 			local targetRoot = U.getRoot(target)
 			if targetRoot then
@@ -911,7 +887,6 @@ function handlers.BlackComet(data, character, root)
 			cometStops[character] = stop
 		end
 	elseif phase == "Abort" then
-		-- Cut short (one of them went down): let them go.
 		local stop = cometStops[character]
 		cometStops[character] = nil
 		if stop then
@@ -922,7 +897,6 @@ function handlers.BlackComet(data, character, root)
 	end
 end
 
--- Black Ascent: a rising cut; caught, the cutscene is the Ascent module.
 local ascentContext: Ascent.Context = {
 	anims = ANIMS,
 	play = play,
@@ -976,7 +950,6 @@ function handlers.Zetten(data, character, root)
 		local duration = data.duration or 1
 		play(character, ANIMS.ZettenStance)
 		edgeGlow(character, duration, 0.4)
-		-- Reading ki: faint rings washing out to the edge of what he senses.
 		task.spawn(function()
 			local start = os.clock()
 			while live(character, token) and os.clock() - start < duration do

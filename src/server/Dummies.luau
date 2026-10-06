@@ -1,5 +1,3 @@
--- Test dummies in front of spawn (standing, blocking, attacking), on the real combat rules.
-
 local Players = game:GetService("Players")
 
 local CombatService = require(script.Parent.CombatService)
@@ -65,7 +63,6 @@ local function runBehavior(model: Model, spec: Spec, humanoid: Humanoid, root: B
 	while model.Parent and humanoid.Health > 0 do
 		local data = CombatService.GetData(model)
 
-		-- Heal back to full when left alone.
 		if data and os.clock() - data.lastDamaged > REGEN_DELAY and humanoid.Health < humanoid.MaxHealth then
 			humanoid.Health = humanoid.MaxHealth
 		end
@@ -85,7 +82,6 @@ local function runBehavior(model: Model, spec: Spec, humanoid: Humanoid, root: B
 			if target and canAct then
 				face(root, target.Position)
 				if (target.Position - root.Position).Magnitude <= ATTACK_RANGE then
-					-- A full 4 hit string, then a breather.
 					for _ = 1, 4 do
 						if not CombatState.CanAct(model) then
 							break

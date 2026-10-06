@@ -1,15 +1,13 @@
--- Black Ascent's paths (shared, so the server and every client agree).
-
 local BlackAscent = {}
 
 local UP = Vector3.yAxis
 
 BlackAscent.Times = {
-	Rise = 0.32, -- they're carried up
-	Cuts = { 0.4, 0.58 }, -- the two cuts in the air
-	Spike = 0.8, -- the cut back down
-	Land = 0.95, -- they hit the ground
-	Length = 1.3, -- he's landed and risen
+	Rise = 0.32,
+	Cuts = { 0.4, 0.58 },
+	Spike = 0.8,
+	Land = 0.95,
+	Length = 1.3,
 }
 BlackAscent.Height = 11
 
@@ -21,7 +19,7 @@ export type Plan = {
 	right: Vector3,
 	floorY: number,
 	top: Vector3,
-	keys: { Key }, -- his path
+	keys: { Key },
 }
 
 local function flat(v: Vector3, fallback: Vector3): Vector3
@@ -29,7 +27,6 @@ local function flat(v: Vector3, fallback: Vector3): Vector3
 	return if f.Magnitude > 1e-3 then f.Unit else fallback
 end
 
--- A shove from a cut: out to `amount` fast, easing back (u e^(1-u)).
 local function knock(t: number, at: number, time: number): number
 	if t <= at then
 		return 0
@@ -113,7 +110,6 @@ end
 function BlackAscent.Attacker(plan: Plan, t: number): CFrame
 	local p: Vector3 = through(plan.keys, t, position)
 	if t > BlackAscent.Times.Land then
-		-- Landed: on his feet, not an inch lower.
 		p = Vector3.new(p.X, math.max(p.Y, plan.floorY + 3), p.Z)
 	end
 	local turn = math.rad(through(plan.keys, t, yaw) :: number)
@@ -126,10 +122,8 @@ function BlackAscent.Victim(plan: Plan, t: number): CFrame
 	local times = BlackAscent.Times
 	local cut1, cut2 = times.Cuts[1], times.Cuts[2]
 	local toward = CFrame.lookAt(Vector3.zero, -plan.forward).Rotation
-	-- Carried up off the cut, slowing to the top, drifting on up a little.
 	local rise = 1 - (1 - math.clamp(t / times.Rise, 0, 1)) ^ 2.5
 	local p = plan.start:Lerp(plan.top, rise) + UP * 0.7 * math.max(t - times.Rise, 0)
-	-- Knocked away by each cut: off to their side, then up and the other way.
 	local first = knock(t, cut1, 0.09)
 	local second = knock(t, cut2, 0.1)
 	p += -plan.right * 1.1 * first + UP * 0.3 * first + plan.right * 0.9 * second + UP * 0.9 * second
@@ -140,8 +134,6 @@ function BlackAscent.Victim(plan: Plan, t: number): CFrame
 	if t <= times.Spike then
 		return CFrame.new(p) * toward * CFrame.Angles(math.rad(tumble), 0, math.rad(roll))
 	end
-	-- Cut down: driven straight into the ground (fast from the cut, faster
-	-- still), turning face down.
 	local held = BlackAscent.Victim(plan, times.Spike)
 	local a = math.clamp((t - times.Spike) / (times.Land - times.Spike), 0, 1)
 	local floor = Vector3.new(plan.start.X, plan.floorY + 1.2, plan.start.Z)
