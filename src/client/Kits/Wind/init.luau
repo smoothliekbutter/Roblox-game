@@ -1,7 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local SaintPlan = require(ReplicatedStorage:WaitForChild("Shared").SaintZephyr)
-local M1Animations = require(script.Parent.Parent.M1Animations)
 local PoseAnimator = require(script.Parent.Parent.PoseAnimator)
 local VFX = require(script.Parent.Parent.VFX)
 local Soft = require(script.Parent.Parent.Soft)
@@ -16,6 +15,7 @@ local twinkle = Soft.twinkle
 
 local Fx = require(script.Fx)
 local ANIMS, handlers, play, featherBurst = Fx.ANIMS, Fx.handlers, Fx.play, Fx.featherBurst
+local gust = Soft.gust
 require(script.Base)
 require(script.Half)
 local Look = require(script.Look)
@@ -48,41 +48,78 @@ function Kit.IdleFor(character: Model): PoseAnimator.IdleSet
 	return if character:GetAttribute("Awakened") == true then HOVER else Kit.Idle
 end
 
+local SWIPES = { "Swipe1", "Swipe2", "Swipe3" }
+local FINISHERS = { Knockback = "GalePush", Uppercut = "GaleRise", Downslam = "GaleFall" }
+local ARCS: { [string]: { from: Vector3?, to: Vector3?, limbs: { string } } } = {
+	Swipe1 = { from = Vector3.new(3.2, 0.6, -1.4), to = Vector3.new(-3.2, 0.6, -1.4), limbs = { "Right Arm" } },
+	Swipe2 = { from = Vector3.new(-3.2, 0.4, -1.4), to = Vector3.new(3.2, 0.6, -1.4), limbs = { "Left Arm" } },
+	Swipe3 = { from = Vector3.new(-2.6, -1.4, -1.6), to = Vector3.new(2.4, 2.8, -1.6), limbs = { "Right Arm" } },
+	GalePush = { limbs = { "Right Arm", "Left Arm" } },
+	GaleRise = {
+		from = Vector3.new(0.4, -2.4, -2),
+		to = Vector3.new(-0.4, 4.2, -2),
+		limbs = { "Right Arm", "Left Arm" },
+	},
+	GaleFall = {
+		from = Vector3.new(-0.4, 3.6, -2),
+		to = Vector3.new(0.4, -3.4, -2.6),
+		limbs = { "Right Arm", "Left Arm" },
+	},
+}
+
 function Kit.PlayM1(character: Model, index: number, variant: string)
-	local name = M1Animations.NameFor(index, variant)
-	local animation = M1Animations.Clips[name]
-	if not animation then
+	local name = if variant ~= "Normal" then FINISHERS[variant] or "GalePush" else SWIPES[((index - 1) % #SWIPES) + 1]
+	local animation = ANIMS[name]
+	local arc = ARCS[name]
+	if not animation or not arc then
 		return
 	end
 	local heavy = variant ~= "Normal"
-	local strikers = M1Animations.Strikers[name] or {}
 	play(character, animation, function(event)
-		if event ~= "Strike" then
+		local root = U.getRoot(character)
+		if event ~= "Strike" or not root then
 			return
 		end
-		for _, limbName in strikers do
+		for _, limbName in arc.limbs do
 			VFX.LimbTrail(character, limbName, if heavy then 0.2 else 0.13, WIND)
-			local limb = character:FindFirstChild(limbName)
-			if limb and limb:IsA("BasePart") then
-				local tip = (limb.CFrame * CFrame.new(0, -1, 0)).Position
-				local out = (limb.CFrame.LookVector * -1 + limb.CFrame.UpVector * -1).Unit
-				U.burst(tip, {
-					color = WIND_WHITE,
-					count = if heavy then 10 else 5,
-					size = 0.35,
-					speed = NumberRange.new(10, 24),
-					lifetime = NumberRange.new(0.1, 0.22),
-					streaks = true,
-					spread = 50,
-					direction = out,
-				})
-				windPuff(tip, if heavy then 1.4 else 0.8, out)
-				if heavy then
-					lightRing(tip, out, 0.3, 2.4, 0.16, WIND_WHITE)
-				end
-			end
 		end
-		VFX.AirPop(character, heavy)
+		local frame = root.CFrame
+		local forward = frame.LookVector
+		if arc.from and arc.to then
+			local from, to = frame * arc.from, frame * arc.to
+			local slash =
+				Soft.windSlash(from, to, forward * (if heavy then 2.6 else 2), if heavy then 0.7 else 0.42, 0.05)
+			if heavy then
+				slash.flare()
+			end
+			task.delay(if heavy then 0.18 else 0.08, slash.fade, if heavy then 0.3 else 0.2)
+			local middle = from:Lerp(to, 0.5) + forward * 1.6
+			windPuff(middle, if heavy then 1.6 else 0.8, forward)
+			Soft.streaks(middle, if heavy then 8 else 4, 26, forward, 30)
+		end
+		if name == "GalePush" then
+			local at = frame * Vector3.new(0, 0.4, -2.6)
+			gust(at, 3.2, forward)
+			windRing(at, forward, 0.6, 4.5, 0.3)
+			lightRing(at + forward * 0.6, forward, 0.4, 3.2, 0.22, WIND_WHITE)
+			Soft.streaks(at, 12, 44, forward, 18)
+			featherBurst(at, 5, 14)
+			U.flash(at, WIND_WHITE, 3.2, 0.12)
+		elseif name == "GaleRise" then
+			windRing(frame.Position - UP * 2.6, UP, 0.8, 5.5, 0.3)
+			gust(frame * Vector3.new(0, -0.5, -2.4), 3, UP)
+			featherBurst(frame * Vector3.new(0, 1, -2.4), 4, 12)
+		elseif name == "GaleFall" then
+			local below = U.groundBelow(frame.Position + forward * 2, { character }, 30)
+			if below then
+				task.delay(0.08, windRing, below.Position + UP * 0.2, UP, 1, 6.5, 0.35)
+				task.delay(0.08, windPuff, below.Position + UP * 0.6, 2.4, UP)
+			end
+			gust(frame * Vector3.new(0, -1, -2.4), 3, -UP)
+		end
+		if heavy then
+			twinkle(frame * Vector3.new(0, 0.5, -3), 2.5, WIND, 0.2)
+		end
 	end)
 end
 

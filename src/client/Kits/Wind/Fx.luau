@@ -25,7 +25,9 @@ local function build(raw: { [string]: any }): Animation
 		loop = raw.loop,
 		fadeIn = raw.fadeIn,
 		fadeOut = raw.fadeOut,
+		additive = raw.additive,
 		delays = raw.delays,
+		events = raw.events,
 	}
 end
 

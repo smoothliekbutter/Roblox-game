@@ -70,8 +70,8 @@ Kits.List = {
 		m1 = {
 			HitboxSize = Vector3.new(7, 6, 7),
 			HitboxOffset = 3.75,
-			Damage = 4,
-			FinisherDamage = 6,
+			Damage = 3,
+			FinisherDamage = 4.5,
 			WindUp = 0.11,
 			FinisherWindUp = 0.18,
 		},
@@ -124,7 +124,7 @@ Kits.List = {
 	Wind = {
 		id = "Wind",
 		title = "Prince of Wind",
-		description = "Wind magic blessed by the spirit Sylph, and star magic. Fights from range and is never where you left him.",
+		description = "Wind magic blessed by the spirit Sylph, and star magic. Fights from range, with tornadoes and blades of wind.",
 		color = Color3.fromRGB(90, 220, 150),
 		playable = true,
 		m1 = {
@@ -137,7 +137,7 @@ Kits.List = {
 			{ name = "Heavenly Wind Ark", cooldown = 12, type = "Zone", airHold = true },
 			{ name = "Gale White Bow", cooldown = 15, type = "Bolt", airHold = true },
 		},
-		special = { name = "Shooting Star", cooldown = 10, type = "Melee", airHold = true },
+		special = { name = "Tornado Fang", cooldown = 10, type = "Zone", airHold = true },
 		awakenedSkills = {
 			{ name = "Spirit Storm", cooldown = 12, type = "Bolt", airHold = true },
 			{ name = "Tempest Dive", cooldown = 16, type = "Melee", airHold = true },

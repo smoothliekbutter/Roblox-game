@@ -538,16 +538,18 @@ local COMBO = {
 	{ kind = "Chop", at = 0.76, damage = 2, reach = 4.6, drift = 0 },
 	{ kind = "Thrust", at = 1.1, damage = 3, reach = 0, drift = 0 },
 }
-local THRUST_PUSH = 17
+local THRUST_PUSH = 24
+local DIVE_THRUST = 60
+local DIVE_THRUST_LIFT = 26
 local MAX_PULL = 30
 
-local DIVE_HEIGHT = 9
 local DIVE_AFTER_LEAP = 2.5
 local leapedAt: { [Model]: number } = setmetatable({}, { __mode = "k" }) :: any
 local SLAM_RADIUS = 11
 local SLAM_DAMAGE = 6
 local SLAM_RECOVERY = 0.45
-local SLAM_WHIFF_RECOVERY = 1.1
+local SLAM_WHIFF_RECOVERY = 1.6
+local DIVE_WHIFF_RECOVERY = 1.4
 local LAND_WINDOW = 0.5
 
 local function holdInFront(ctx, target: Model, forward: Vector3, reach: number, drift: number, time: number): Vector3
@@ -562,25 +564,6 @@ local function holdInFront(ctx, target: Model, forward: Vector3, reach: number, 
 		velocity += pull
 	end
 	return velocity
-end
-
-local function heightAboveFloor(ctx): number
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	local ignore: { Instance } = { ctx.character }
-	for _ = 1, 4 do
-		params.FilterDescendantsInstances = ignore
-		local hit = workspace:Raycast(ctx.root.Position, UP * -80, params)
-		if not hit then
-			return math.huge
-		end
-		local model = hit.Instance:FindFirstAncestorWhichIsA("Model")
-		if not (model and model:FindFirstChildOfClass("Humanoid")) then
-			return ctx.root.Position.Y - hit.Position.Y
-		end
-		table.insert(ignore, model)
-	end
-	return math.huge
 end
 
 local function landsWithin(ctx, timeout: number): boolean
@@ -622,7 +605,7 @@ local function bullSlam(ctx)
 				guardBreak = true,
 				heavy = true,
 				ragdoll = 1,
-				velocity = out * 62 + UP * 46,
+				velocity = out * 85 + UP * 60,
 			})
 		end
 	end
@@ -634,8 +617,7 @@ local function bullThrust(ctx)
 	local forward = look(ctx)
 	local leaped = leapedAt[character]
 	leapedAt[character] = nil
-	local airborne = ctx.airborne
-		and ((leaped ~= nil and os.clock() - leaped < DIVE_AFTER_LEAP) or heightAboveFloor(ctx) > DIVE_HEIGHT)
+	local airborne = ctx.airborne and leaped ~= nil and os.clock() - leaped < DIVE_AFTER_LEAP
 	local direction = if airborne then (forward + UP * -0.6).Unit else forward
 
 	CombatState.SetCasting(character, PROPEL_TIME + 0.25)
@@ -652,7 +634,7 @@ local function bullThrust(ctx)
 			return
 		end
 		fx(ctx, "BullThrust", "Whiff")
-		CombatState.SetCasting(character, if airborne then 0.9 else 0.45)
+		CombatState.SetCasting(character, if airborne then DIVE_WHIFF_RECOVERY else 0.45)
 		return
 	end
 
@@ -687,6 +669,11 @@ local function bullThrust(ctx)
 		if nextCut then
 			hit.velocity = holdInFront(ctx, target, forward, cut.reach, cut.drift, nextCut.at - cut.at)
 			hit.velocityTime = nextCut.at - cut.at
+		elseif airborne then
+			hit.stun = 1.1
+			hit.heavy = true
+			hit.ragdoll = 1.2
+			hit.velocity = forward * DIVE_THRUST + UP * DIVE_THRUST_LIFT
 		else
 			hit.stun = 1.1
 			hit.heavy = true
@@ -791,10 +778,13 @@ end
 
 local SEIZE_TIME = 0.4
 local SURGE_AT = 0.2
-local METEOR_TICK = 1.5
-local METEOR_SLAM = 4.5
-local METEOR_AIR_SLAM = 2.5
-local METEOR_SPLASH = 9
+local METEOR_TICKS = 2
+local METEOR_TICK = 1
+local METEOR_SLAM = 6
+local METEOR_AIR_SLAM = 3.5
+local METEOR_SPLASH = 11
+local METEOR_SPLASH_DAMAGE = 4
+local METEOR_AIR_SPLASH_DAMAGE = 2.5
 
 local function blackMeteorite(ctx)
 	local c, character = ctx.combat, ctx.character
@@ -855,8 +845,8 @@ local function blackMeteorite(ctx)
 		return true
 	end
 
-	for tick = 1, 3 do
-		if not waitUntil(MeteorVortex.Length * tick / 3) then
+	for tick = 1, METEOR_TICKS do
+		if not waitUntil(MeteorVortex.Length * tick / METEOR_TICKS) then
 			return
 		end
 		c.Hit(
@@ -899,9 +889,10 @@ local function blackMeteorite(ctx)
 			local out = victimRoot.Position - impact
 			out = if Vector3.new(out.X, 0, out.Z).Magnitude > 0.5 then c.Flat(out) else forward
 			c.Hit(character, victim, {
-				damage = slam,
+				damage = if airborne then METEOR_AIR_SPLASH_DAMAGE else METEOR_SPLASH_DAMAGE,
 				stun = 0.9,
 				attackType = "Melee",
+				guardBreak = true,
 				heavy = true,
 				ragdoll = 1,
 				velocity = out * 45 + UP * 30,
@@ -1263,11 +1254,30 @@ local function plunge(ctx)
 	CombatState.SetCasting(character, 0.35)
 end
 
+local function forgetLeapOnLanding(ctx, start: number)
+	local c, character = ctx.combat, ctx.character
+	task.spawn(function()
+		local seenAir = false
+		while leapedAt[character] == start and os.clock() - start < DIVE_AFTER_LEAP do
+			local up = c.IsAirborne(character)
+			seenAir = seenAir or up
+			if seenAir and not up then
+				break
+			end
+			task.wait()
+		end
+		if leapedAt[character] == start then
+			leapedAt[character] = nil
+		end
+	end)
+end
+
 local function leap(ctx)
 	local c, character = ctx.combat, ctx.character
 	local token = c.MoveToken(character)
 	local start = os.clock()
 	leapedAt[character] = start
+	forgetLeapOnLanding(ctx, start)
 	CombatState.SetCasting(character, 0.25)
 	fx(ctx, "Special", "Leap")
 	c.ApplyVelocity(character, look(ctx) * 60 + UP * 62, LEAP_TIME, { steer = 200 })

@@ -101,6 +101,70 @@ WALK = cycle(walk_pose, 12)
 # Jumping or falling: riding the wind, arms out, one knee up.
 AIR = [(0.0, pose(R(-6), R(4), L(40, 0, 30), L(40, 0, -30), R(30), R(-12)))]
 
+# ---------------- M1: wind swipes ----------------
+# Each swipe throws a crescent of wind off the hand. Timed like Asta's swings
+# (see asta_anims.py): held in the wind-up while the clip fades in, then
+# through, strike, settle; legs layered on whatever he's doing (a counter-
+# twist as he turns).
+def LEGS(y):
+    return {'RightLeg': R(0, y, 0), 'LeftLeg': R(0, y, 0)}
+
+def M1POSE(torso, head, rarm, larm, legs):
+    return {'Torso': torso, 'Head': head, 'RightArm': rarm, 'LeftArm': larm, **legs}
+
+SWING_TIMES = (0.1, 0.15, 0.21, 0.4)
+HEAVY_SWING_TIMES = (0.14, 0.21, 0.28, 0.52)
+
+def swing(windup, through, strike, settle, heavy=False):
+    t = HEAVY_SWING_TIMES if heavy else SWING_TIMES
+    return [(0.0, windup), (t[0], windup), (t[1], through), (t[2], strike), (t[3], settle)]
+
+# Right hand from his right across to his left at chest height.
+SWIPE1 = swing(
+    M1POSE(R(2, -38), R(0, 30), L(84, -95, 0), L(50, 20, -10), LEGS(38)),
+    M1POSE(R(-4, -5), R(0, 4), L(88, -20, 0), L(40, 10, -14), LEGS(5)),
+    M1POSE(R(-8, 36), R(0, -26), L(84, 70, 0), L(30, -20, -20), LEGS(-34)),
+    M1POSE(R(-6, 26), R(0, -18), L(72, 55, 6), L(32, -18, -20), LEGS(-24)),
+)
+# The left hand back the other way.
+SWIPE2 = swing(
+    M1POSE(R(2, 34), R(0, -26), L(45, -20, 10), L(84, 95, 0), LEGS(-32)),
+    M1POSE(R(-4, 2), R(0, -2), L(40, -10, 14), L(88, 20, 0), LEGS(-2)),
+    M1POSE(R(-8, -36), R(0, 26), L(30, 20, 20), L(84, -70, 0), LEGS(34)),
+    M1POSE(R(-6, -26), R(0, 18), L(32, 18, 20), L(72, -55, -6), LEGS(24)),
+)
+# Rising: the right hand from low on his left up past his right shoulder.
+SWIPE3 = swing(
+    M1POSE(R(-14, 24), R(10, -16), L(30, 40, -10), L(50, -10, -20), LEGS(-22)),
+    M1POSE(R(-4, 4), R(2, -2), L(95, 10, 0), L(40, -10, -20), LEGS(-4)),
+    M1POSE(R(8, -26), R(-10, 16), L(160, -30, 10), L(26, 10, -24), LEGS(24)),
+    M1POSE(R(4, -18), R(-6, 12), L(140, -22, 10), L(30, 8, -22), LEGS(16)),
+)
+# Finisher: both palms driven out together, a gale off them.
+GALE_PUSH = swing(
+    M1POSE(R(6), R(-4), L(-10, 0, 14), L(-10, 0, -14), LEGS(0)),
+    M1POSE(R(-6), R(2), L(70, 18, 6), L(70, -18, -6), LEGS(0)),
+    M1POSE(R(-14), R(8), L(92, 10, 0), L(92, -10, 0), LEGS(0)),
+    M1POSE(R(-10), R(6), L(84, 12, 4), L(84, -12, -4), LEGS(0)),
+    heavy=True,
+)
+# Finisher (jump held): both hands swept up, an updraft under them.
+GALE_RISE = swing(
+    M1POSE(R(-18), R(10), L(10, 20, 10), L(10, -20, -10), LEGS(0)),
+    M1POSE(R(-6), R(2), L(90, 10, 6), L(90, -10, -6), LEGS(0)),
+    M1POSE(R(12), R(-16), L(170, 10, 10), L(170, -10, -10), LEGS(0)),
+    M1POSE(R(8), R(-12), L(155, 10, 10), L(155, -10, -10), LEGS(0)),
+    heavy=True,
+)
+# Finisher (in the air): both hands brought down like a hammer, a downdraft.
+GALE_FALL = swing(
+    {'Torso': R(16), 'Head': R(-10), 'RightArm': L(172, 8, 6), 'LeftArm': L(172, -8, -6)},
+    {'Torso': R(0), 'Head': R(0), 'RightArm': L(110, 8, 0), 'LeftArm': L(110, -8, 0)},
+    {'Torso': R(-34), 'Head': R(18), 'RightArm': L(36, 8, 0), 'LeftArm': L(36, -8, 0)},
+    {'Torso': R(-28), 'Head': R(14), 'RightArm': L(44, 8, 0), 'LeftArm': L(44, -8, 0)},
+    heavy=True,
+)
+
 # ---------------- Base: Prince of Wind ----------------
 # Wind Blades Shower: right hand up to the sky as the blades form (0.2), then
 # brought down and forward to send them (0.35).
@@ -130,28 +194,18 @@ BOW_AIM = pose(R(-4, -68), R(4, 62), L(92, 70, 0), L(90, 64, 0), R(-16, 20, 8), 
 BOW_FULL = pose(R(-6, -72), R(4, 66), L(90, 50, -2), L(90, 70, 0), R(-18, 22, 8), R(18, 22, -6))
 BOW = [(0.0, STANCE), (0.25, BOW_AIM), (0.5, BOW_FULL), (1.35, BOW_FULL)]
 
+# Tornado (R): the right hand swung low across him (0.14), then swept up and
+# out at where the tornado rises (0.3), the left hand circling back.
+TORNADO_COIL = pose(R(-8, 28), R(4, -20), L(20, 50, -10), L(40, -10, -20), R(-10, 0, 6), R(12, 0, -6))
+TORNADO_SEND = pose(R(2, -18), R(6, 12), L(120, -20, 20), L(30, 10, -30), R(-14, 0, 8), R(14, 0, -8))
+TORNADO = [(0.0, STANCE), (0.14, TORNADO_COIL), (0.3, TORNADO_SEND), (0.6, TORNADO_SEND)]
+TORNADO_COIL_AIR = pose(R(-8, 28), R(6, -20), L(20, 50, -10), L(40, -10, -20), R(36, 0, 8), R(12, 0, -6))
+TORNADO_SEND_AIR = pose(R(-4, -18), R(10, 12), L(100, -20, 20), L(30, 10, -30), R(30, 0, 8), R(8, 0, -6))
+TORNADO_AIR = [(0.0, AIR[0][1]), (0.14, TORNADO_COIL_AIR), (0.3, TORNADO_SEND_AIR), (0.6, TORNADO_SEND_AIR)]
+
 # Points where a star goes (0.12): Saint Spirit of Zephyr's flick.
 POINT = pose(R(-4, -10), R(6, 10), L(104, 14, 4), L(20, 0, -18), R(-10, 0, 6), R(12, 0, -6))
 POINTING = [(0.0, STANCE), (0.12, POINT), (0.4, POINT)]
-
-# Shooting Star (R): coiled low like a sprinter, the right hand drawn back at
-# the hip like a blade (0.1); then the rush, a low streaking stride with that
-# hand leading and the free arm flung back (0.15). (Legs: +x swings the foot
-# forward, -x back.) He arrives in a skid, his back to whoever he went
-# through, the hand swept out to the side, glancing back over his shoulder;
-# it carries on a little past the stop, then he rises.
-STAR_COIL = pose(R(-24, -16), R(16, 14), L(-34, 0, 22), L(58, -16, -14), R(-30, 0, 8), R(38, 0, -6))
-STAR_RUSH = pose(R(-40, 12), R(30, -10), L(124, -8, 4), L(-46, 0, -22), R(-48, 0, 6), R(30, 0, -6))
-STAR_SKID = pose(R(-22, -24), R(6, -40), L(70, -30, 72), L(30, 8, -20), R(44, 0, 12), R(-40, 0, -14))
-STAR_SKID_OVER = pose(R(-26, -28), R(6, -46), L(66, -34, 80), L(26, 8, -22), R(46, 0, 12), R(-42, 0, -14))
-STAR_SKID_SETTLE = pose(R(-14, -18), R(4, -30), L(44, -20, 56), L(26, 6, -18), R(30, 0, 10), R(-28, 0, -12))
-STAR_DASH = [(0.0, STANCE), (0.1, STAR_COIL), (0.15, STAR_RUSH), (0.34, STAR_RUSH)]
-STAR_LAND = [(0.0, STAR_RUSH), (0.06, STAR_SKID), (0.18, STAR_SKID_OVER), (0.45, STAR_SKID_SETTLE), (0.8, STANCE)]
-# In the air: knees up for the coil, then a dive down at the ground ahead,
-# legs streaming out behind.
-STAR_COIL_AIR = pose(R(-12, -16), R(12, 14), L(-30, 0, 22), L(56, -16, -14), R(40, 0, 8), R(14, 0, -6))
-STAR_RUSH_AIR = pose(R(-60, 10), R(36, -10), L(118, -8, 4), L(-50, 0, -22), R(-62, 0, 6), R(-44, 0, -6))
-STAR_DASH_AIR = [(0.0, AIR[0][1]), (0.1, STAR_COIL_AIR), (0.15, STAR_RUSH_AIR), (0.34, STAR_RUSH_AIR)]
 
 # ---------------- Half-Crown Spirit of Zephyr ----------------
 # Spirit Storm: palm out, the left hand bracing the wrist, mana gathering
@@ -283,6 +337,8 @@ def snap(n):
     """Wind-up then a snappy hit, then hold."""
     return [None, SINE_OUT, QUART_OUT] + [SINE_IO] * (n - 3)
 
+SWING_EASE = [None, None, SINE_IO, QUAD_IN, QUART_OUT]
+
 SPEC = {
     'Idle': dict(keys=IDLE, ease=[None, SINE_IO, SINE_IO], loop=True, delays={'Head': 0.12, 'RightArm': 0.1, 'LeftArm': 0.2},
                  doc="Standing: calm, turned a little, the left hand loose in front where the wind gathers."),
@@ -295,15 +351,26 @@ SPEC = {
                       doc="Awakened: hovering on the wind, rising and settling slowly."),
     'HoverMove': dict(keys=HOVER_MOVE, ease=[None, SINE_IO, SINE_IO], loop=True,
                       doc="Awakened: gliding on the wind, leaning into it, legs swept back."),
+    'Swipe1': dict(keys=SWIPE1, ease=SWING_EASE, additive=['RightLeg', 'LeftLeg'], fadeIn=SWING_TIMES[0], fadeOut=0.22,
+                   events=[(SWING_TIMES[1], 'Strike')], doc="M1 1: the right hand swept across, a crescent of wind off it."),
+    'Swipe2': dict(keys=SWIPE2, ease=SWING_EASE, additive=['RightLeg', 'LeftLeg'], fadeIn=SWING_TIMES[0], fadeOut=0.22,
+                   events=[(SWING_TIMES[1], 'Strike')], doc="M1 2: the left hand back the other way."),
+    'Swipe3': dict(keys=SWIPE3, ease=SWING_EASE, additive=['RightLeg', 'LeftLeg'], fadeIn=SWING_TIMES[0], fadeOut=0.22,
+                   events=[(SWING_TIMES[1], 'Strike')], doc="M1 3: a rising swipe."),
+    'GalePush': dict(keys=GALE_PUSH, ease=SWING_EASE, additive=['RightLeg', 'LeftLeg'], fadeIn=HEAVY_SWING_TIMES[0], fadeOut=0.28,
+                     events=[(HEAVY_SWING_TIMES[1], 'Strike')], doc="Finisher: both palms driven out in a gale."),
+    'GaleRise': dict(keys=GALE_RISE, ease=SWING_EASE, additive=['RightLeg', 'LeftLeg'], fadeIn=HEAVY_SWING_TIMES[0], fadeOut=0.28,
+                     events=[(HEAVY_SWING_TIMES[1], 'Strike')], doc="Finisher (jump held): an updraft."),
+    'GaleFall': dict(keys=GALE_FALL, ease=SWING_EASE, fadeIn=HEAVY_SWING_TIMES[0], fadeOut=0.28,
+                     events=[(HEAVY_SWING_TIMES[1], 'Strike')], doc="Finisher (in the air): a downdraft, hands brought down like a hammer."),
+    'Tornado': dict(keys=TORNADO, ease=[None, SINE_OUT, QUART_OUT, LINEAR], fadeOut=0.25, doc="Tornado: hand swung low across him, then swept up at it."),
+    'TornadoAir': dict(keys=TORNADO_AIR, ease=[None, SINE_OUT, QUART_OUT, LINEAR], fadeOut=0.25, doc="Tornado in the air: the same, knees up."),
     'Shower': dict(keys=SHOWER, ease=[None, SINE_OUT, SINE_IO, QUART_OUT, SINE_IO], fadeOut=0.25, doc="Wind Blades Shower: hand to the sky, then down to send the blades."),
     'Hawk': dict(keys=HAWK, ease=snap(4), fadeOut=0.25, doc="Swift White Hawk: wound back, then the palm thrust out."),
     'Ark': dict(keys=ARK, ease=snap(4), fadeOut=0.3, doc="Heavenly Wind Ark: low and wide, then both arms sweep up."),
     'AirArk': dict(keys=AIR_ARK, ease=snap(4), fadeOut=0.3, doc="Heavenly Wind Ark in the air: both arms sweep down."),
     'Bow': dict(keys=BOW, ease=[None, SINE_OUT, SINE_IO, LINEAR], fadeOut=0.25, doc="Gale White Bow: archer's stance, held through the volley."),
     'Point': dict(keys=POINTING, ease=snap(3), fadeOut=0.2, doc="Points where a star goes (Saint Spirit of Zephyr's flick)."),
-    'StarDash': dict(keys=STAR_DASH, ease=[None, SINE_OUT, QUART_OUT, LINEAR], fadeIn=0.03, fadeOut=0.05, doc="Shooting Star: coiled low, then the rush, hand leading like a blade."),
-    'StarDashAir': dict(keys=STAR_DASH_AIR, ease=[None, SINE_OUT, QUART_OUT, LINEAR], fadeIn=0.03, fadeOut=0.05, doc="Shooting Star in the air: knees up, then the dive."),
-    'StarLand': dict(keys=STAR_LAND, ease=[None, QUART_OUT, SINE_OUT, SINE_IO, SINE_IO], fadeIn=0.03, fadeOut=0.25, doc="Shooting Star: the skid stop, his back to them, glancing back, then up."),
     'StormCharge': dict(keys=STORM_CHARGE, ease=[None, SINE_OUT, LINEAR], fadeOut=0.05, doc="Spirit Storm: palm out, mana gathering."),
     'StormFire': dict(keys=STORM_FIRE, ease=[None, QUART_OUT, LINEAR], fadeIn=0.02, fadeOut=0.3, doc="Spirit Storm: leaning into the beam."),
     'Scutum': dict(keys=SCUTUM, ease=[None, SINE_OUT, LINEAR], fadeOut=0.2, doc="Quartile Scutum: hands out, holding the barrier."),
@@ -391,7 +458,7 @@ for _name in ('Shower', 'Hawk', 'Ark', 'AirArk', 'Bow', 'Point', 'StormCharge', 
     lively(SPEC[_name])
 
 # Played in the air (not planted, feet not checked); the run sets its own height.
-AIRBORNE = {'Air', 'AirArk', 'StarDashAir', 'TempestDrag', 'NovaFormAir', 'NovaFlickAir', 'HoverIdle', 'HoverMove', 'SaintCut', 'SaintCutBack', 'SaintAscend', 'SaintPoise', 'SaintRise', 'SaintStrike', 'ZephyrusDraw', 'ZephyrusSkewer'}
+AIRBORNE = {'Air', 'AirArk', 'GaleFall', 'TornadoAir', 'TempestDrag', 'NovaFormAir', 'NovaFlickAir', 'HoverIdle', 'HoverMove', 'SaintCut', 'SaintCutBack', 'SaintAscend', 'SaintPoise', 'SaintRise', 'SaintStrike', 'ZephyrusDraw', 'ZephyrusSkewer'}
 OWN_HEIGHT = {'Run'}
 ALL = {name: spec['keys'] if name in AIRBORNE or name in OWN_HEIGHT else plant(spec['keys']) for name, spec in SPEC.items()}
 

@@ -778,6 +778,7 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 					elseif index == Config.M1.ComboLength - 1 then Config.M1.SetupStun
 					else Config.M1.HitStun,
 				attackType = "Melee",
+				unblockable = variant == "Downslam",
 				variant = variant,
 				airborne = airborne,
 			})
@@ -1352,8 +1353,21 @@ function CombatService.Start()
 
 		regenTimer += dt
 		if regenTimer >= 0.25 then
-			for character in registry do
+			local now = os.clock()
+			for character, data in registry do
 				addMeter(character, "Evasive", Config.Evasive.RegenPerSecond * regenTimer, Config.Evasive.Max)
+				local humanoid = data.humanoid
+				if
+					Players:GetPlayerFromCharacter(character)
+					and humanoid.Health > 0
+					and humanoid.Health < humanoid.MaxHealth
+				then
+					local rate = if now - data.lastCombat < Config.Regen.CombatTime
+						then Config.Regen.CombatRate
+						else Config.Regen.Rate
+					humanoid.Health =
+						math.min(humanoid.Health + humanoid.MaxHealth * rate * regenTimer, humanoid.MaxHealth)
+				end
 			end
 			regenTimer = 0
 		end

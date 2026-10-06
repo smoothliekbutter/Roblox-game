@@ -29,6 +29,11 @@
         "Client": {
           "$path": "src/client"
         }
+      },
+      "StarterCharacterScripts": {
+        "Health": {
+          "$className": "Script"
+        }
       }
     },
 

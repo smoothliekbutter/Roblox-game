@@ -1,4 +1,3 @@
-local PhysicsService = game:GetService("PhysicsService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
@@ -105,8 +104,31 @@ local function lineVictims(ctx, origin: Vector3, direction: Vector3, length: num
 	return ctx.combat.Box(ctx.character, box, Vector3.new(width, width + 1, length))
 end
 
+local TORNADO_CAST = 0.3
+local TORNADO_LIFE = 3.2
+local TORNADO_AHEAD = 14
+local TORNADO_RANGE = 30
+local TORNADO_PULL = 11
+local TORNADO_EYE = 4
+local TORNADO_HOLD = 5
+local TORNADO_TICK = 0.15
+local TORNADO_CUT = 0.45
+local TORNADO_BURST = 8
+local CYCLONE_REACH = 14
+local CYCLONE_EYE = 6
+local CYCLONE_BURST = 12
+local CYCLONE_TAIL = 0.45
+
+type Storm = { ground: Vector3, expires: number, cyclone: boolean }
+local storms: { [Model]: Storm } = setmetatable({}, { __mode = "k" }) :: any
+
+local function liveStorm(character: Model): Storm?
+	local storm = storms[character]
+	return if storm and os.clock() < storm.expires then storm else nil
+end
+
 local SHOWER_CAST = 0.6
-local SHOWER_WAVES = 6
+local SHOWER_WAVES = 5
 local SHOWER_GAP = 0.15
 local SHOWER_RADIUS = 9
 
@@ -116,16 +138,26 @@ local function windBladesShower(ctx)
 	if ctx.airborne then
 		c.ApplyVelocity(character, HOVER, SHOWER_CAST + 0.3)
 	end
-	local target = softTarget(ctx, 40, 50)
-	local targetRoot = target and rootOf(target)
-	local center = floorUnder(ctx, if targetRoot then targetRoot.Position else ctx.root.Position + look(ctx) * 18)
+	local storm = liveStorm(character)
+	local center: Vector3
+	if storm then
+		storm.cyclone = true
+		storm.expires = os.clock() + SHOWER_CAST + SHOWER_WAVES * SHOWER_GAP + CYCLONE_TAIL
+		center = storm.ground
+	else
+		local target = softTarget(ctx, 40, 50)
+		local targetRoot = target and rootOf(target)
+		center = floorUnder(ctx, if targetRoot then targetRoot.Position else ctx.root.Position + look(ctx) * 18)
+	end
+	local radius = if storm then CYCLONE_REACH - 2 else SHOWER_RADIUS
 	fx(ctx, "WindBladesShower", "Cast", {
 		center = center,
-		radius = SHOWER_RADIUS,
+		radius = radius,
 		waves = SHOWER_WAVES,
 		gap = SHOWER_GAP,
 		delay = SHOWER_CAST,
 		airborne = ctx.airborne,
+		cyclone = storm ~= nil,
 	})
 	task.wait(SHOWER_CAST)
 	if interrupted(ctx) then
@@ -134,17 +166,22 @@ local function windBladesShower(ctx)
 	end
 	for wave = 1, SHOWER_WAVES do
 		local last = wave == SHOWER_WAVES
-		for _, victim in c.Sphere(character, center + UP * 3, SHOWER_RADIUS + 2) do
+		for _, victim in c.Sphere(character, center + UP * 3, radius + 2) do
 			local victimRoot = rootOf(victim)
 			local offset = if victimRoot then victimRoot.Position - center else Vector3.zero
-			if victimRoot and Vector3.new(offset.X, 0, offset.Z).Magnitude <= SHOWER_RADIUS then
+			if victimRoot and Vector3.new(offset.X, 0, offset.Z).Magnitude <= radius then
 				local aloft = c.IsAirborne(victim)
 				c.Hit(character, victim, {
 					damage = if last then 2.5 else 1.4,
 					stun = if last then 0.8 else 0.5,
 					attackType = "Swarm",
+					hitsDowned = true,
 					heavy = last,
-					velocity = if last then UP * (if aloft then 40 else 26) elseif aloft then HOVER else nil,
+					velocity = if storm
+						then nil
+						elseif last then UP * (if aloft then 40 else 26)
+						elseif aloft then HOVER
+						else nil,
 					velocityTime = if last then 0.15 else 0.2,
 				})
 			end
@@ -421,166 +458,99 @@ local function galeWhiteBow(ctx)
 	CombatState.SetCasting(character, 0.2)
 end
 
-local STAR_COIL = 0.1
-local STAR_TRAVEL = 0.18
-local STAR_REACH = 26
-local STAR_PAST = 7
-local STAR_WIDTH = 6
-local STAR_DIP = 0.7
-local STAR_DELAY = 0.42
-local STAR_RIPPLE = 0.24
-local STAR_TAPER = 1 - 0.45 / 2
-local STAR_GROUP = "StarPhase"
-
-if not PhysicsService:IsCollisionGroupRegistered(STAR_GROUP) then
-	PhysicsService:RegisterCollisionGroup(STAR_GROUP)
-end
-
-local function phase(character: Model): () -> ()
-	for _, group in PhysicsService:GetRegisteredCollisionGroups() do
-		PhysicsService:CollisionGroupSetCollidable(STAR_GROUP, group.name, false)
-	end
-	local saved: { [BasePart]: string } = {}
-	for _, part in character:GetDescendants() do
-		if part:IsA("BasePart") then
-			saved[part] = part.CollisionGroup
-			part.CollisionGroup = STAR_GROUP
-		end
-	end
-	return function()
-		for part, group in saved do
-			if part.Parent and part.CollisionGroup == STAR_GROUP then
-				part.CollisionGroup = group
-			end
-		end
-	end
-end
-
-local function clearance(ctx, origin: Vector3, direction: Vector3, length: number, heights: { number }): number
-	local params = rayParams(ctx)
-	for _, height in heights do
-		local from = origin + UP * height
-		local hit = workspace:Raycast(from, direction * (length + 3), params)
-		if hit and not isCharacterPart(hit.Instance) then
-			length = math.min(length, math.max((hit.Position - from).Magnitude - 3, 0))
-		end
-	end
-	return length
-end
-
 function Kit.Special(ctx)
 	local c, character = ctx.combat, ctx.character
 	local airborne = ctx.airborne
-	CombatState.SetCasting(character, STAR_COIL + STAR_TRAVEL + 0.25)
-	CombatState.GiveIFrames(character, STAR_COIL + STAR_TRAVEL + 0.05)
+	CombatState.SetCasting(character, TORNADO_CAST + 0.15)
 	if airborne then
-		c.ApplyVelocity(character, HOVER, STAR_COIL + 0.05)
+		c.ApplyVelocity(character, HOVER, TORNADO_CAST + 0.1)
 	end
-	fx(ctx, "ShootingStar", "Coil", { airborne = airborne })
-	task.wait(STAR_COIL)
+	fx(ctx, "TornadoFang", "Cast", { airborne = airborne })
+	task.wait(TORNADO_CAST)
 	if interrupted(ctx) then
-		fx(ctx, "ShootingStar", "Cancel")
+		fx(ctx, "TornadoFang", "Cancel")
 		return
 	end
 
-	local origin = ctx.root.Position
-	local aimed = softTarget(ctx, STAR_REACH, 35)
+	local forward = look(ctx)
+	local aimed = softTarget(ctx, TORNADO_RANGE, 40)
 	local aimedRoot = aimed and rootOf(aimed)
-	local direction = aimFrom(ctx, origin, aimed, STAR_DIP)
-	if not airborne then
-		local flat = c.Flat(direction)
-		direction = if flat.Magnitude > 1e-3 then flat.Unit else look(ctx)
-	end
-	local length = STAR_REACH
-	if aimedRoot then
-		length = math.clamp((aimedRoot.Position - origin):Dot(direction) + STAR_PAST, 10, STAR_REACH)
-	end
-	length = clearance(ctx, origin, direction, length, if airborne then { 0 } else { 0, -1.8 })
-	local finish = origin + direction * length
+	local spot = if aimedRoot then aimedRoot.Position else ctx.root.Position + forward * TORNADO_AHEAD
+	local flat = c.Flat(spot - ctx.root.Position)
+	local along = if flat.Magnitude > 1e-3 then flat.Unit else forward
+	local distance = math.min(flat.Magnitude, reach(ctx, ctx.root.Position, along, TORNADO_RANGE))
+	local ground = floorUnder(ctx, ctx.root.Position + along * math.max(distance, 4))
+	local storm: Storm = { ground = ground, expires = os.clock() + TORNADO_LIFE, cyclone = false }
+	storms[character] = storm
+	fx(ctx, "TornadoFang", "Form", { ground = ground })
 
-	fx(ctx, "ShootingStar", "Dash", { from = origin, to = finish, travel = STAR_TRAVEL, airborne = airborne })
-	local solid = phase(character)
-	if airborne then
-		c.ApplyVelocity(
-			character,
-			direction * (length / STAR_TRAVEL) + HOVER,
-			STAR_TRAVEL,
-			{ landStop = direction.Y < 0, landKeep = 0.2 }
-		)
-	else
-		c.ApplyVelocity(character, direction * (length / STAR_TRAVEL / STAR_TAPER) + HOVER, STAR_TRAVEL)
-	end
-
-	local marked: { [Model]: boolean } = {}
-	local caught: { Model } = {}
-	local start = os.clock()
-	while true do
-		local t = math.min((os.clock() - start) / STAR_TRAVEL, 1)
-		local covered = length * t
-		if covered > 0.5 then
-			local box = CFrame.lookAt(origin + direction * (covered / 2), origin + direction * covered)
-			for _, victim in c.Box(character, box, Vector3.new(STAR_WIDTH, STAR_WIDTH + 1, covered + 3)) do
-				if not marked[victim] then
-					marked[victim] = true
-					local result = c.Hit(character, victim, {
-						damage = 1,
-						stun = STAR_DELAY + STAR_RIPPLE + 0.5,
-						attackType = "Melee",
-						velocity = Vector3.zero,
-						noShake = true,
-					})
-					if result == "Hit" then
-						table.insert(caught, victim)
-						fx(ctx, "ShootingStar", "Mark", { victim = victim })
+	local started = os.clock()
+	local lastCut = -TORNADO_CUT
+	while os.clock() < storm.expires and CombatState.IsAlive(character) and storms[character] == storm do
+		local t = os.clock() - started
+		local cut = t - lastCut >= TORNADO_CUT
+		if cut then
+			lastCut = t
+		end
+		local pull = if storm.cyclone then CYCLONE_REACH else TORNADO_PULL
+		local eye = if storm.cyclone then CYCLONE_EYE else TORNADO_EYE
+		local hold = ground + UP * TORNADO_HOLD
+		for _, victim in c.Sphere(character, ground + UP * 4, pull + 4) do
+			local victimRoot = rootOf(victim)
+			if victimRoot then
+				local offset = hold - victimRoot.Position
+				local level = Vector3.new(offset.X, 0, offset.Z)
+				if level.Magnitude <= eye then
+					local lift = offset / 0.25
+					local around = if level.Magnitude > 0.5 then level.Unit:Cross(UP) * 10 else Vector3.zero
+					c.ApplyVelocity(
+						victim,
+						(if lift.Magnitude > 30 then lift.Unit * 30 else lift) + around,
+						TORNADO_TICK + 0.05
+					)
+					if cut then
+						c.Hit(character, victim, {
+							damage = if storm.cyclone then 0.8 else 0.5,
+							stun = 0.7,
+							attackType = "Zone",
+							hitsDowned = true,
+							noShake = true,
+						})
 					end
+				elseif level.Magnitude <= pull then
+					local strength = 10 + 14 * (1 - level.Magnitude / pull)
+					c.ApplyVelocity(victim, level.Unit * strength + UP * 2, TORNADO_TICK + 0.05)
 				end
 			end
 		end
-		if t >= 1 then
-			break
-		end
-		task.wait()
+		task.wait(TORNADO_TICK)
 	end
-	solid()
-	c.ApplyVelocity(character, HOVER, 0.06)
-	CombatState.SetCasting(character, 0.15)
-	fx(ctx, "ShootingStar", "Arrive", { direction = direction, caught = #caught })
-
-	task.wait(STAR_DELAY)
+	if storms[character] == storm then
+		storms[character] = nil
+	end
 	if not CombatState.IsAlive(character) then
-		fx(ctx, "ShootingStar", "Cancel")
+		fx(ctx, "TornadoFang", "Fizzle")
 		return
 	end
-	local bursting: { Model } = {}
-	for _, victim in caught do
-		if CombatState.IsAlive(victim) and CombatState.IsStunned(victim) then
-			table.insert(bursting, victim)
-		end
-	end
-	fx(ctx, "ShootingStar", "Burst", { from = origin, to = finish, victims = bursting, ripple = STAR_RIPPLE })
-	local outward = c.Flat(direction)
-	for _, victim in bursting do
+
+	local cyclone = storm.cyclone
+	fx(ctx, "TornadoFang", "Burst", { ground = ground, cyclone = cyclone })
+	for _, victim in c.Sphere(character, ground + UP * 4, if cyclone then CYCLONE_BURST else TORNADO_BURST) do
 		local victimRoot = rootOf(victim)
-		local along = if victimRoot
-			then math.clamp((victimRoot.Position - origin):Dot(direction) / math.max(length, 1), 0, 1)
-			else 1
-		task.delay(STAR_RIPPLE * along, function()
-			if CombatState.IsAlive(victim) then
-				c.Hit(character, victim, {
-					damage = 5,
-					stun = 1,
-					attackType = "Explosion",
-					unblockable = true,
-					heavy = true,
-					ragdoll = 1,
-					velocity = UP * 58 + (if outward.Magnitude > 1e-3 then outward.Unit * 8 else Vector3.zero),
-				})
-			end
-		end)
+		local out = if victimRoot then c.Flat(victimRoot.Position - ground) else Vector3.zero
+		c.Hit(character, victim, {
+			damage = if cyclone then 3.5 else 2,
+			stun = 0.9,
+			attackType = "Zone",
+			guardBreak = cyclone,
+			hitsDowned = true,
+			heavy = true,
+			ragdoll = if cyclone then 1.3 else 1,
+			velocity = UP * (if cyclone then 68 else 44)
+				+ (if out.Magnitude > 1e-3 then out.Unit * (if cyclone then 14 else 8) else Vector3.zero),
+		})
 	end
-	if #bursting > 0 then
-		c.ShakeArea((origin + finish) / 2, 45, 0.35)
-	end
+	c.ShakeArea(ground, if cyclone then 55 else 35, if cyclone then 0.45 else 0.25)
 end
 
 local STORM_CHARGE = 0.45

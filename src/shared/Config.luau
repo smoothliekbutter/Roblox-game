@@ -21,8 +21,8 @@ Config.Movement = {
 
 Config.M1 = {
 	ComboLength = 4,
-	Damage = 3.5,
-	FinisherDamage = 5,
+	Damage = 2.5,
+	FinisherDamage = 4,
 
 	SwingCooldown = 0.36,
 	ResetTime = 1.2,
@@ -107,6 +107,12 @@ Config.Physics = {
 	RagdollCarry = 0.7,
 	RagdollHoldSpeed = 20,
 	ImpactSpeed = 35,
+}
+
+Config.Regen = {
+	Rate = 0.01,
+	CombatRate = 0.0025,
+	CombatTime = 8,
 }
 
 Config.Evasive = {

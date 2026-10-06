@@ -727,8 +727,8 @@ Config.Movement = {
 
 Config.M1 = {
 	ComboLength = 4,
-	Damage = 3.5,
-	FinisherDamage = 5,
+	Damage = 2.5,
+	FinisherDamage = 4,
 
 	SwingCooldown = 0.36,
 	ResetTime = 1.2,
@@ -813,6 +813,12 @@ Config.Physics = {
 	RagdollCarry = 0.7,
 	RagdollHoldSpeed = 20,
 	ImpactSpeed = 35,
+}
+
+Config.Regen = {
+	Rate = 0.01,
+	CombatRate = 0.0025,
+	CombatTime = 8,
 }
 
 Config.Evasive = {
@@ -975,8 +981,8 @@ Kits.List = {
 		m1 = {
 			HitboxSize = Vector3.new(7, 6, 7),
 			HitboxOffset = 3.75,
-			Damage = 4,
-			FinisherDamage = 6,
+			Damage = 3,
+			FinisherDamage = 4.5,
 			WindUp = 0.11,
 			FinisherWindUp = 0.18,
 		},
@@ -1029,7 +1035,7 @@ Kits.List = {
 	Wind = {
 		id = "Wind",
 		title = "Prince of Wind",
-		description = "Wind magic blessed by the spirit Sylph, and star magic. Fights from range and is never where you left him.",
+		description = "Wind magic blessed by the spirit Sylph, and star magic. Fights from range, with tornadoes and blades of wind.",
 		color = Color3.fromRGB(90, 220, 150),
 		playable = true,
 		m1 = {
@@ -1042,7 +1048,7 @@ Kits.List = {
 			{ name = "Heavenly Wind Ark", cooldown = 12, type = "Zone", airHold = true },
 			{ name = "Gale White Bow", cooldown = 15, type = "Bolt", airHold = true },
 		},
-		special = { name = "Shooting Star", cooldown = 10, type = "Melee", airHold = true },
+		special = { name = "Tornado Fang", cooldown = 10, type = "Zone", airHold = true },
 		awakenedSkills = {
 			{ name = "Spirit Storm", cooldown = 12, type = "Bolt", airHold = true },
 			{ name = "Tempest Dive", cooldown = 16, type = "Melee", airHold = true },
@@ -2825,6 +2831,7 @@ function CombatService.M1(character: Model, jump: boolean?, clientAirborne: bool
 					elseif index == Config.M1.ComboLength - 1 then Config.M1.SetupStun
 					else Config.M1.HitStun,
 				attackType = "Melee",
+				unblockable = variant == "Downslam",
 				variant = variant,
 				airborne = airborne,
 			})
@@ -3399,8 +3406,21 @@ function CombatService.Start()
 
 		regenTimer += dt
 		if regenTimer >= 0.25 then
-			for character in registry do
+			local now = os.clock()
+			for character, data in registry do
 				addMeter(character, "Evasive", Config.Evasive.RegenPerSecond * regenTimer, Config.Evasive.Max)
+				local humanoid = data.humanoid
+				if
+					Players:GetPlayerFromCharacter(character)
+					and humanoid.Health > 0
+					and humanoid.Health < humanoid.MaxHealth
+				then
+					local rate = if now - data.lastCombat < Config.Regen.CombatTime
+						then Config.Regen.CombatRate
+						else Config.Regen.Rate
+					humanoid.Health =
+						math.min(humanoid.Health + humanoid.MaxHealth * rate * regenTimer, humanoid.MaxHealth)
+				end
 			end
 			regenTimer = 0
 		end
@@ -4201,16 +4221,18 @@ local COMBO = {
 	{ kind = "Chop", at = 0.76, damage = 2, reach = 4.6, drift = 0 },
 	{ kind = "Thrust", at = 1.1, damage = 3, reach = 0, drift = 0 },
 }
-local THRUST_PUSH = 17
+local THRUST_PUSH = 24
+local DIVE_THRUST = 60
+local DIVE_THRUST_LIFT = 26
 local MAX_PULL = 30
 
-local DIVE_HEIGHT = 9
 local DIVE_AFTER_LEAP = 2.5
 local leapedAt: { [Model]: number } = setmetatable({}, { __mode = "k" }) :: any
 local SLAM_RADIUS = 11
 local SLAM_DAMAGE = 6
 local SLAM_RECOVERY = 0.45
-local SLAM_WHIFF_RECOVERY = 1.1
+local SLAM_WHIFF_RECOVERY = 1.6
+local DIVE_WHIFF_RECOVERY = 1.4
 local LAND_WINDOW = 0.5
 
 local function holdInFront(ctx, target: Model, forward: Vector3, reach: number, drift: number, time: number): Vector3
@@ -4225,25 +4247,6 @@ local function holdInFront(ctx, target: Model, forward: Vector3, reach: number, 
 		velocity += pull
 	end
 	return velocity
-end
-
-local function heightAboveFloor(ctx): number
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	local ignore: { Instance } = { ctx.character }
-	for _ = 1, 4 do
-		params.FilterDescendantsInstances = ignore
-		local hit = workspace:Raycast(ctx.root.Position, UP * -80, params)
-		if not hit then
-			return math.huge
-		end
-		local model = hit.Instance:FindFirstAncestorWhichIsA("Model")
-		if not (model and model:FindFirstChildOfClass("Humanoid")) then
-			return ctx.root.Position.Y - hit.Position.Y
-		end
-		table.insert(ignore, model)
-	end
-	return math.huge
 end
 
 local function landsWithin(ctx, timeout: number): boolean
@@ -4285,7 +4288,7 @@ local function bullSlam(ctx)
 				guardBreak = true,
 				heavy = true,
 				ragdoll = 1,
-				velocity = out * 62 + UP * 46,
+				velocity = out * 85 + UP * 60,
 			})
 		end
 	end
@@ -4297,8 +4300,7 @@ local function bullThrust(ctx)
 	local forward = look(ctx)
 	local leaped = leapedAt[character]
 	leapedAt[character] = nil
-	local airborne = ctx.airborne
-		and ((leaped ~= nil and os.clock() - leaped < DIVE_AFTER_LEAP) or heightAboveFloor(ctx) > DIVE_HEIGHT)
+	local airborne = ctx.airborne and leaped ~= nil and os.clock() - leaped < DIVE_AFTER_LEAP
 	local direction = if airborne then (forward + UP * -0.6).Unit else forward
 
 	CombatState.SetCasting(character, PROPEL_TIME + 0.25)
@@ -4315,7 +4317,7 @@ local function bullThrust(ctx)
 			return
 		end
 		fx(ctx, "BullThrust", "Whiff")
-		CombatState.SetCasting(character, if airborne then 0.9 else 0.45)
+		CombatState.SetCasting(character, if airborne then DIVE_WHIFF_RECOVERY else 0.45)
 		return
 	end
 
@@ -4350,6 +4352,11 @@ local function bullThrust(ctx)
 		if nextCut then
 			hit.velocity = holdInFront(ctx, target, forward, cut.reach, cut.drift, nextCut.at - cut.at)
 			hit.velocityTime = nextCut.at - cut.at
+		elseif airborne then
+			hit.stun = 1.1
+			hit.heavy = true
+			hit.ragdoll = 1.2
+			hit.velocity = forward * DIVE_THRUST + UP * DIVE_THRUST_LIFT
 		else
 			hit.stun = 1.1
 			hit.heavy = true
@@ -4454,10 +4461,13 @@ end
 
 local SEIZE_TIME = 0.4
 local SURGE_AT = 0.2
-local METEOR_TICK = 1.5
-local METEOR_SLAM = 4.5
-local METEOR_AIR_SLAM = 2.5
-local METEOR_SPLASH = 9
+local METEOR_TICKS = 2
+local METEOR_TICK = 1
+local METEOR_SLAM = 6
+local METEOR_AIR_SLAM = 3.5
+local METEOR_SPLASH = 11
+local METEOR_SPLASH_DAMAGE = 4
+local METEOR_AIR_SPLASH_DAMAGE = 2.5
 
 local function blackMeteorite(ctx)
 	local c, character = ctx.combat, ctx.character
@@ -4518,8 +4528,8 @@ local function blackMeteorite(ctx)
 		return true
 	end
 
-	for tick = 1, 3 do
-		if not waitUntil(MeteorVortex.Length * tick / 3) then
+	for tick = 1, METEOR_TICKS do
+		if not waitUntil(MeteorVortex.Length * tick / METEOR_TICKS) then
 			return
 		end
 		c.Hit(
@@ -4562,9 +4572,10 @@ local function blackMeteorite(ctx)
 			local out = victimRoot.Position - impact
 			out = if Vector3.new(out.X, 0, out.Z).Magnitude > 0.5 then c.Flat(out) else forward
 			c.Hit(character, victim, {
-				damage = slam,
+				damage = if airborne then METEOR_AIR_SPLASH_DAMAGE else METEOR_SPLASH_DAMAGE,
 				stun = 0.9,
 				attackType = "Melee",
+				guardBreak = true,
 				heavy = true,
 				ragdoll = 1,
 				velocity = out * 45 + UP * 30,
@@ -4926,11 +4937,30 @@ local function plunge(ctx)
 	CombatState.SetCasting(character, 0.35)
 end
 
+local function forgetLeapOnLanding(ctx, start: number)
+	local c, character = ctx.combat, ctx.character
+	task.spawn(function()
+		local seenAir = false
+		while leapedAt[character] == start and os.clock() - start < DIVE_AFTER_LEAP do
+			local up = c.IsAirborne(character)
+			seenAir = seenAir or up
+			if seenAir and not up then
+				break
+			end
+			task.wait()
+		end
+		if leapedAt[character] == start then
+			leapedAt[character] = nil
+		end
+	end)
+end
+
 local function leap(ctx)
 	local c, character = ctx.combat, ctx.character
 	local token = c.MoveToken(character)
 	local start = os.clock()
 	leapedAt[character] = start
+	forgetLeapOnLanding(ctx, start)
 	CombatState.SetCasting(character, 0.25)
 	fx(ctx, "Special", "Leap")
 	c.ApplyVelocity(character, look(ctx) * 60 + UP * 62, LEAP_TIME, { steer = 200 })
@@ -5481,8 +5511,7 @@ return Kit
         <Item class="ModuleScript" referent="27">
           <Properties>
             <string name="Name">Wind</string>
-            <string name="Source"><![CDATA[local PhysicsService = game:GetService("PhysicsService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+            <string name="Source"><![CDATA[local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
 local SaintPlan = require(ReplicatedStorage:WaitForChild("Shared").SaintZephyr)
@@ -5588,8 +5617,31 @@ local function lineVictims(ctx, origin: Vector3, direction: Vector3, length: num
 	return ctx.combat.Box(ctx.character, box, Vector3.new(width, width + 1, length))
 end
 
+local TORNADO_CAST = 0.3
+local TORNADO_LIFE = 3.2
+local TORNADO_AHEAD = 14
+local TORNADO_RANGE = 30
+local TORNADO_PULL = 11
+local TORNADO_EYE = 4
+local TORNADO_HOLD = 5
+local TORNADO_TICK = 0.15
+local TORNADO_CUT = 0.45
+local TORNADO_BURST = 8
+local CYCLONE_REACH = 14
+local CYCLONE_EYE = 6
+local CYCLONE_BURST = 12
+local CYCLONE_TAIL = 0.45
+
+type Storm = { ground: Vector3, expires: number, cyclone: boolean }
+local storms: { [Model]: Storm } = setmetatable({}, { __mode = "k" }) :: any
+
+local function liveStorm(character: Model): Storm?
+	local storm = storms[character]
+	return if storm and os.clock() < storm.expires then storm else nil
+end
+
 local SHOWER_CAST = 0.6
-local SHOWER_WAVES = 6
+local SHOWER_WAVES = 5
 local SHOWER_GAP = 0.15
 local SHOWER_RADIUS = 9
 
@@ -5599,16 +5651,26 @@ local function windBladesShower(ctx)
 	if ctx.airborne then
 		c.ApplyVelocity(character, HOVER, SHOWER_CAST + 0.3)
 	end
-	local target = softTarget(ctx, 40, 50)
-	local targetRoot = target and rootOf(target)
-	local center = floorUnder(ctx, if targetRoot then targetRoot.Position else ctx.root.Position + look(ctx) * 18)
+	local storm = liveStorm(character)
+	local center: Vector3
+	if storm then
+		storm.cyclone = true
+		storm.expires = os.clock() + SHOWER_CAST + SHOWER_WAVES * SHOWER_GAP + CYCLONE_TAIL
+		center = storm.ground
+	else
+		local target = softTarget(ctx, 40, 50)
+		local targetRoot = target and rootOf(target)
+		center = floorUnder(ctx, if targetRoot then targetRoot.Position else ctx.root.Position + look(ctx) * 18)
+	end
+	local radius = if storm then CYCLONE_REACH - 2 else SHOWER_RADIUS
 	fx(ctx, "WindBladesShower", "Cast", {
 		center = center,
-		radius = SHOWER_RADIUS,
+		radius = radius,
 		waves = SHOWER_WAVES,
 		gap = SHOWER_GAP,
 		delay = SHOWER_CAST,
 		airborne = ctx.airborne,
+		cyclone = storm ~= nil,
 	})
 	task.wait(SHOWER_CAST)
 	if interrupted(ctx) then
@@ -5617,17 +5679,22 @@ local function windBladesShower(ctx)
 	end
 	for wave = 1, SHOWER_WAVES do
 		local last = wave == SHOWER_WAVES
-		for _, victim in c.Sphere(character, center + UP * 3, SHOWER_RADIUS + 2) do
+		for _, victim in c.Sphere(character, center + UP * 3, radius + 2) do
 			local victimRoot = rootOf(victim)
 			local offset = if victimRoot then victimRoot.Position - center else Vector3.zero
-			if victimRoot and Vector3.new(offset.X, 0, offset.Z).Magnitude <= SHOWER_RADIUS then
+			if victimRoot and Vector3.new(offset.X, 0, offset.Z).Magnitude <= radius then
 				local aloft = c.IsAirborne(victim)
 				c.Hit(character, victim, {
 					damage = if last then 2.5 else 1.4,
 					stun = if last then 0.8 else 0.5,
 					attackType = "Swarm",
+					hitsDowned = true,
 					heavy = last,
-					velocity = if last then UP * (if aloft then 40 else 26) elseif aloft then HOVER else nil,
+					velocity = if storm
+						then nil
+						elseif last then UP * (if aloft then 40 else 26)
+						elseif aloft then HOVER
+						else nil,
 					velocityTime = if last then 0.15 else 0.2,
 				})
 			end
@@ -5904,166 +5971,99 @@ local function galeWhiteBow(ctx)
 	CombatState.SetCasting(character, 0.2)
 end
 
-local STAR_COIL = 0.1
-local STAR_TRAVEL = 0.18
-local STAR_REACH = 26
-local STAR_PAST = 7
-local STAR_WIDTH = 6
-local STAR_DIP = 0.7
-local STAR_DELAY = 0.42
-local STAR_RIPPLE = 0.24
-local STAR_TAPER = 1 - 0.45 / 2
-local STAR_GROUP = "StarPhase"
-
-if not PhysicsService:IsCollisionGroupRegistered(STAR_GROUP) then
-	PhysicsService:RegisterCollisionGroup(STAR_GROUP)
-end
-
-local function phase(character: Model): () -> ()
-	for _, group in PhysicsService:GetRegisteredCollisionGroups() do
-		PhysicsService:CollisionGroupSetCollidable(STAR_GROUP, group.name, false)
-	end
-	local saved: { [BasePart]: string } = {}
-	for _, part in character:GetDescendants() do
-		if part:IsA("BasePart") then
-			saved[part] = part.CollisionGroup
-			part.CollisionGroup = STAR_GROUP
-		end
-	end
-	return function()
-		for part, group in saved do
-			if part.Parent and part.CollisionGroup == STAR_GROUP then
-				part.CollisionGroup = group
-			end
-		end
-	end
-end
-
-local function clearance(ctx, origin: Vector3, direction: Vector3, length: number, heights: { number }): number
-	local params = rayParams(ctx)
-	for _, height in heights do
-		local from = origin + UP * height
-		local hit = workspace:Raycast(from, direction * (length + 3), params)
-		if hit and not isCharacterPart(hit.Instance) then
-			length = math.min(length, math.max((hit.Position - from).Magnitude - 3, 0))
-		end
-	end
-	return length
-end
-
 function Kit.Special(ctx)
 	local c, character = ctx.combat, ctx.character
 	local airborne = ctx.airborne
-	CombatState.SetCasting(character, STAR_COIL + STAR_TRAVEL + 0.25)
-	CombatState.GiveIFrames(character, STAR_COIL + STAR_TRAVEL + 0.05)
+	CombatState.SetCasting(character, TORNADO_CAST + 0.15)
 	if airborne then
-		c.ApplyVelocity(character, HOVER, STAR_COIL + 0.05)
+		c.ApplyVelocity(character, HOVER, TORNADO_CAST + 0.1)
 	end
-	fx(ctx, "ShootingStar", "Coil", { airborne = airborne })
-	task.wait(STAR_COIL)
+	fx(ctx, "TornadoFang", "Cast", { airborne = airborne })
+	task.wait(TORNADO_CAST)
 	if interrupted(ctx) then
-		fx(ctx, "ShootingStar", "Cancel")
+		fx(ctx, "TornadoFang", "Cancel")
 		return
 	end
 
-	local origin = ctx.root.Position
-	local aimed = softTarget(ctx, STAR_REACH, 35)
+	local forward = look(ctx)
+	local aimed = softTarget(ctx, TORNADO_RANGE, 40)
 	local aimedRoot = aimed and rootOf(aimed)
-	local direction = aimFrom(ctx, origin, aimed, STAR_DIP)
-	if not airborne then
-		local flat = c.Flat(direction)
-		direction = if flat.Magnitude > 1e-3 then flat.Unit else look(ctx)
-	end
-	local length = STAR_REACH
-	if aimedRoot then
-		length = math.clamp((aimedRoot.Position - origin):Dot(direction) + STAR_PAST, 10, STAR_REACH)
-	end
-	length = clearance(ctx, origin, direction, length, if airborne then { 0 } else { 0, -1.8 })
-	local finish = origin + direction * length
+	local spot = if aimedRoot then aimedRoot.Position else ctx.root.Position + forward * TORNADO_AHEAD
+	local flat = c.Flat(spot - ctx.root.Position)
+	local along = if flat.Magnitude > 1e-3 then flat.Unit else forward
+	local distance = math.min(flat.Magnitude, reach(ctx, ctx.root.Position, along, TORNADO_RANGE))
+	local ground = floorUnder(ctx, ctx.root.Position + along * math.max(distance, 4))
+	local storm: Storm = { ground = ground, expires = os.clock() + TORNADO_LIFE, cyclone = false }
+	storms[character] = storm
+	fx(ctx, "TornadoFang", "Form", { ground = ground })
 
-	fx(ctx, "ShootingStar", "Dash", { from = origin, to = finish, travel = STAR_TRAVEL, airborne = airborne })
-	local solid = phase(character)
-	if airborne then
-		c.ApplyVelocity(
-			character,
-			direction * (length / STAR_TRAVEL) + HOVER,
-			STAR_TRAVEL,
-			{ landStop = direction.Y < 0, landKeep = 0.2 }
-		)
-	else
-		c.ApplyVelocity(character, direction * (length / STAR_TRAVEL / STAR_TAPER) + HOVER, STAR_TRAVEL)
-	end
-
-	local marked: { [Model]: boolean } = {}
-	local caught: { Model } = {}
-	local start = os.clock()
-	while true do
-		local t = math.min((os.clock() - start) / STAR_TRAVEL, 1)
-		local covered = length * t
-		if covered > 0.5 then
-			local box = CFrame.lookAt(origin + direction * (covered / 2), origin + direction * covered)
-			for _, victim in c.Box(character, box, Vector3.new(STAR_WIDTH, STAR_WIDTH + 1, covered + 3)) do
-				if not marked[victim] then
-					marked[victim] = true
-					local result = c.Hit(character, victim, {
-						damage = 1,
-						stun = STAR_DELAY + STAR_RIPPLE + 0.5,
-						attackType = "Melee",
-						velocity = Vector3.zero,
-						noShake = true,
-					})
-					if result == "Hit" then
-						table.insert(caught, victim)
-						fx(ctx, "ShootingStar", "Mark", { victim = victim })
+	local started = os.clock()
+	local lastCut = -TORNADO_CUT
+	while os.clock() < storm.expires and CombatState.IsAlive(character) and storms[character] == storm do
+		local t = os.clock() - started
+		local cut = t - lastCut >= TORNADO_CUT
+		if cut then
+			lastCut = t
+		end
+		local pull = if storm.cyclone then CYCLONE_REACH else TORNADO_PULL
+		local eye = if storm.cyclone then CYCLONE_EYE else TORNADO_EYE
+		local hold = ground + UP * TORNADO_HOLD
+		for _, victim in c.Sphere(character, ground + UP * 4, pull + 4) do
+			local victimRoot = rootOf(victim)
+			if victimRoot then
+				local offset = hold - victimRoot.Position
+				local level = Vector3.new(offset.X, 0, offset.Z)
+				if level.Magnitude <= eye then
+					local lift = offset / 0.25
+					local around = if level.Magnitude > 0.5 then level.Unit:Cross(UP) * 10 else Vector3.zero
+					c.ApplyVelocity(
+						victim,
+						(if lift.Magnitude > 30 then lift.Unit * 30 else lift) + around,
+						TORNADO_TICK + 0.05
+					)
+					if cut then
+						c.Hit(character, victim, {
+							damage = if storm.cyclone then 0.8 else 0.5,
+							stun = 0.7,
+							attackType = "Zone",
+							hitsDowned = true,
+							noShake = true,
+						})
 					end
+				elseif level.Magnitude <= pull then
+					local strength = 10 + 14 * (1 - level.Magnitude / pull)
+					c.ApplyVelocity(victim, level.Unit * strength + UP * 2, TORNADO_TICK + 0.05)
 				end
 			end
 		end
-		if t >= 1 then
-			break
-		end
-		task.wait()
+		task.wait(TORNADO_TICK)
 	end
-	solid()
-	c.ApplyVelocity(character, HOVER, 0.06)
-	CombatState.SetCasting(character, 0.15)
-	fx(ctx, "ShootingStar", "Arrive", { direction = direction, caught = #caught })
-
-	task.wait(STAR_DELAY)
+	if storms[character] == storm then
+		storms[character] = nil
+	end
 	if not CombatState.IsAlive(character) then
-		fx(ctx, "ShootingStar", "Cancel")
+		fx(ctx, "TornadoFang", "Fizzle")
 		return
 	end
-	local bursting: { Model } = {}
-	for _, victim in caught do
-		if CombatState.IsAlive(victim) and CombatState.IsStunned(victim) then
-			table.insert(bursting, victim)
-		end
-	end
-	fx(ctx, "ShootingStar", "Burst", { from = origin, to = finish, victims = bursting, ripple = STAR_RIPPLE })
-	local outward = c.Flat(direction)
-	for _, victim in bursting do
+
+	local cyclone = storm.cyclone
+	fx(ctx, "TornadoFang", "Burst", { ground = ground, cyclone = cyclone })
+	for _, victim in c.Sphere(character, ground + UP * 4, if cyclone then CYCLONE_BURST else TORNADO_BURST) do
 		local victimRoot = rootOf(victim)
-		local along = if victimRoot
-			then math.clamp((victimRoot.Position - origin):Dot(direction) / math.max(length, 1), 0, 1)
-			else 1
-		task.delay(STAR_RIPPLE * along, function()
-			if CombatState.IsAlive(victim) then
-				c.Hit(character, victim, {
-					damage = 5,
-					stun = 1,
-					attackType = "Explosion",
-					unblockable = true,
-					heavy = true,
-					ragdoll = 1,
-					velocity = UP * 58 + (if outward.Magnitude > 1e-3 then outward.Unit * 8 else Vector3.zero),
-				})
-			end
-		end)
+		local out = if victimRoot then c.Flat(victimRoot.Position - ground) else Vector3.zero
+		c.Hit(character, victim, {
+			damage = if cyclone then 3.5 else 2,
+			stun = 0.9,
+			attackType = "Zone",
+			guardBreak = cyclone,
+			hitsDowned = true,
+			heavy = true,
+			ragdoll = if cyclone then 1.3 else 1,
+			velocity = UP * (if cyclone then 68 else 44)
+				+ (if out.Magnitude > 1e-3 then out.Unit * (if cyclone then 14 else 8) else Vector3.zero),
+		})
 	end
-	if #bursting > 0 then
-		c.ShakeArea((origin + finish) / 2, 45, 0.35)
-	end
+	c.ShakeArea(ground, if cyclone then 55 else 35, if cyclone then 0.45 else 0.25)
 end
 
 local STORM_CHARGE = 0.45
@@ -7102,11 +7102,21 @@ return Ragdoll
       <string name="Name">StarterPlayer</string>
       <bool name="EnableMouseLockOption">false</bool>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="31">
+    <Item class="StarterCharacterScripts" referent="31">
+      <Properties>
+        <string name="Name">StarterCharacterScripts</string>
+      </Properties>
+      <Item class="Script" referent="32">
+        <Properties>
+          <string name="Name">Health</string>
+        </Properties>
+      </Item>
+    </Item>
+    <Item class="StarterPlayerScripts" referent="33">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="LocalScript" referent="32">
+      <Item class="LocalScript" referent="34">
         <Properties>
           <string name="Name">Client</string>
           <string name="Source"><![CDATA[local StarterGui = game:GetService("StarterGui")
@@ -7132,7 +7142,7 @@ ShiftLock.Start()
 TopBar.Start()
 ]]></string>
         </Properties>
-        <Item class="ModuleScript" referent="33">
+        <Item class="ModuleScript" referent="35">
           <Properties>
             <string name="Name">CameraShake</string>
             <string name="Source"><![CDATA[local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -7191,7 +7201,7 @@ return CameraShake
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="34">
+        <Item class="ModuleScript" referent="36">
           <Properties>
             <string name="Name">Cinematic</string>
             <string name="Source"><![CDATA[local Lighting = game:GetService("Lighting")
@@ -7436,7 +7446,7 @@ return Cinematic
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="35">
+        <Item class="ModuleScript" referent="37">
           <Properties>
             <string name="Name">HUD</string>
             <string name="Source"><![CDATA[local GuiService = game:GetService("GuiService")
@@ -7975,7 +7985,7 @@ return HUD
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="36">
+        <Item class="ModuleScript" referent="38">
           <Properties>
             <string name="Name">Input</string>
             <string name="Source"><![CDATA[local ContextActionService = game:GetService("ContextActionService")
@@ -8508,11 +8518,11 @@ return Input
 ]]></string>
           </Properties>
         </Item>
-        <Item class="Folder" referent="37">
+        <Item class="Folder" referent="39">
           <Properties>
             <string name="Name">Kits</string>
           </Properties>
-          <Item class="ModuleScript" referent="38">
+          <Item class="ModuleScript" referent="40">
             <Properties>
               <string name="Name">AntiMagic</string>
               <string name="Source"><![CDATA[local CameraShake = require(script.Parent.Parent.CameraShake)
@@ -8691,7 +8701,7 @@ end)
 return Kit
 ]]></string>
             </Properties>
-            <Item class="ModuleScript" referent="39">
+            <Item class="ModuleScript" referent="41">
               <Properties>
                 <string name="Name">Animations</string>
                 <string name="Source"><![CDATA[local rad = math.rad
@@ -9639,7 +9649,7 @@ return Animations
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="40">
+            <Item class="ModuleScript" referent="42">
               <Properties>
                 <string name="Name">Ascent</string>
                 <string name="Source"><![CDATA[local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -10002,7 +10012,7 @@ return Ascent
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="41">
+            <Item class="ModuleScript" referent="43">
               <Properties>
                 <string name="Name">Base</string>
                 <string name="Source"><![CDATA[local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11556,7 +11566,7 @@ return {}
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="42">
+            <Item class="ModuleScript" referent="44">
               <Properties>
                 <string name="Name">Comet</string>
                 <string name="Source"><![CDATA[local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -12129,7 +12139,7 @@ return Comet
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="43">
+            <Item class="ModuleScript" referent="45">
               <Properties>
                 <string name="Name">Form</string>
                 <string name="Source"><![CDATA[local RunService = game:GetService("RunService")
@@ -13163,7 +13173,7 @@ return {}
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="44">
+            <Item class="ModuleScript" referent="46">
               <Properties>
                 <string name="Name">Fx</string>
                 <string name="Source"><![CDATA[local Lighting = game:GetService("Lighting")
@@ -14121,7 +14131,7 @@ return {
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="45">
+            <Item class="ModuleScript" referent="47">
               <Properties>
                 <string name="Name">Look</string>
                 <string name="Source"><![CDATA[local RunService = game:GetService("RunService")
@@ -15211,7 +15221,7 @@ return {
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="46">
+            <Item class="ModuleScript" referent="48">
               <Properties>
                 <string name="Name">Moon</string>
                 <string name="Source"><![CDATA[local Players = game:GetService("Players")
@@ -16179,13 +16189,12 @@ return {
               </Properties>
             </Item>
           </Item>
-          <Item class="ModuleScript" referent="47">
+          <Item class="ModuleScript" referent="49">
             <Properties>
               <string name="Name">Wind</string>
               <string name="Source"><![CDATA[local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local SaintPlan = require(ReplicatedStorage:WaitForChild("Shared").SaintZephyr)
-local M1Animations = require(script.Parent.Parent.M1Animations)
 local PoseAnimator = require(script.Parent.Parent.PoseAnimator)
 local VFX = require(script.Parent.Parent.VFX)
 local Soft = require(script.Parent.Parent.Soft)
@@ -16200,6 +16209,7 @@ local twinkle = Soft.twinkle
 
 local Fx = require(script.Fx)
 local ANIMS, handlers, play, featherBurst = Fx.ANIMS, Fx.handlers, Fx.play, Fx.featherBurst
+local gust = Soft.gust
 require(script.Base)
 require(script.Half)
 local Look = require(script.Look)
@@ -16232,41 +16242,78 @@ function Kit.IdleFor(character: Model): PoseAnimator.IdleSet
 	return if character:GetAttribute("Awakened") == true then HOVER else Kit.Idle
 end
 
+local SWIPES = { "Swipe1", "Swipe2", "Swipe3" }
+local FINISHERS = { Knockback = "GalePush", Uppercut = "GaleRise", Downslam = "GaleFall" }
+local ARCS: { [string]: { from: Vector3?, to: Vector3?, limbs: { string } } } = {
+	Swipe1 = { from = Vector3.new(3.2, 0.6, -1.4), to = Vector3.new(-3.2, 0.6, -1.4), limbs = { "Right Arm" } },
+	Swipe2 = { from = Vector3.new(-3.2, 0.4, -1.4), to = Vector3.new(3.2, 0.6, -1.4), limbs = { "Left Arm" } },
+	Swipe3 = { from = Vector3.new(-2.6, -1.4, -1.6), to = Vector3.new(2.4, 2.8, -1.6), limbs = { "Right Arm" } },
+	GalePush = { limbs = { "Right Arm", "Left Arm" } },
+	GaleRise = {
+		from = Vector3.new(0.4, -2.4, -2),
+		to = Vector3.new(-0.4, 4.2, -2),
+		limbs = { "Right Arm", "Left Arm" },
+	},
+	GaleFall = {
+		from = Vector3.new(-0.4, 3.6, -2),
+		to = Vector3.new(0.4, -3.4, -2.6),
+		limbs = { "Right Arm", "Left Arm" },
+	},
+}
+
 function Kit.PlayM1(character: Model, index: number, variant: string)
-	local name = M1Animations.NameFor(index, variant)
-	local animation = M1Animations.Clips[name]
-	if not animation then
+	local name = if variant ~= "Normal" then FINISHERS[variant] or "GalePush" else SWIPES[((index - 1) % #SWIPES) + 1]
+	local animation = ANIMS[name]
+	local arc = ARCS[name]
+	if not animation or not arc then
 		return
 	end
 	local heavy = variant ~= "Normal"
-	local strikers = M1Animations.Strikers[name] or {}
 	play(character, animation, function(event)
-		if event ~= "Strike" then
+		local root = U.getRoot(character)
+		if event ~= "Strike" or not root then
 			return
 		end
-		for _, limbName in strikers do
+		for _, limbName in arc.limbs do
 			VFX.LimbTrail(character, limbName, if heavy then 0.2 else 0.13, WIND)
-			local limb = character:FindFirstChild(limbName)
-			if limb and limb:IsA("BasePart") then
-				local tip = (limb.CFrame * CFrame.new(0, -1, 0)).Position
-				local out = (limb.CFrame.LookVector * -1 + limb.CFrame.UpVector * -1).Unit
-				U.burst(tip, {
-					color = WIND_WHITE,
-					count = if heavy then 10 else 5,
-					size = 0.35,
-					speed = NumberRange.new(10, 24),
-					lifetime = NumberRange.new(0.1, 0.22),
-					streaks = true,
-					spread = 50,
-					direction = out,
-				})
-				windPuff(tip, if heavy then 1.4 else 0.8, out)
-				if heavy then
-					lightRing(tip, out, 0.3, 2.4, 0.16, WIND_WHITE)
-				end
-			end
 		end
-		VFX.AirPop(character, heavy)
+		local frame = root.CFrame
+		local forward = frame.LookVector
+		if arc.from and arc.to then
+			local from, to = frame * arc.from, frame * arc.to
+			local slash =
+				Soft.windSlash(from, to, forward * (if heavy then 2.6 else 2), if heavy then 0.7 else 0.42, 0.05)
+			if heavy then
+				slash.flare()
+			end
+			task.delay(if heavy then 0.18 else 0.08, slash.fade, if heavy then 0.3 else 0.2)
+			local middle = from:Lerp(to, 0.5) + forward * 1.6
+			windPuff(middle, if heavy then 1.6 else 0.8, forward)
+			Soft.streaks(middle, if heavy then 8 else 4, 26, forward, 30)
+		end
+		if name == "GalePush" then
+			local at = frame * Vector3.new(0, 0.4, -2.6)
+			gust(at, 3.2, forward)
+			windRing(at, forward, 0.6, 4.5, 0.3)
+			lightRing(at + forward * 0.6, forward, 0.4, 3.2, 0.22, WIND_WHITE)
+			Soft.streaks(at, 12, 44, forward, 18)
+			featherBurst(at, 5, 14)
+			U.flash(at, WIND_WHITE, 3.2, 0.12)
+		elseif name == "GaleRise" then
+			windRing(frame.Position - UP * 2.6, UP, 0.8, 5.5, 0.3)
+			gust(frame * Vector3.new(0, -0.5, -2.4), 3, UP)
+			featherBurst(frame * Vector3.new(0, 1, -2.4), 4, 12)
+		elseif name == "GaleFall" then
+			local below = U.groundBelow(frame.Position + forward * 2, { character }, 30)
+			if below then
+				task.delay(0.08, windRing, below.Position + UP * 0.2, UP, 1, 6.5, 0.35)
+				task.delay(0.08, windPuff, below.Position + UP * 0.6, 2.4, UP)
+			end
+			gust(frame * Vector3.new(0, -1, -2.4), 3, -UP)
+		end
+		if heavy then
+			twinkle(frame * Vector3.new(0, 0.5, -3), 2.5, WIND, 0.2)
+		end
 	end)
 end
 
@@ -16410,7 +16457,7 @@ end
 return Kit
 ]]></string>
             </Properties>
-            <Item class="ModuleScript" referent="48">
+            <Item class="ModuleScript" referent="50">
               <Properties>
                 <string name="Name">Animations</string>
                 <string name="Source"><![CDATA[local rad = math.rad
@@ -16537,6 +16584,117 @@ Animations.HoverMove = clip(
 ]]
 )
 
+Animations.Swipe1 = clip(
+	{
+		fadeIn = 0.1,
+		fadeOut = 0.22,
+		additive = { RightLeg = true, LeftLeg = true },
+		events = { { time = 0.15, name = "Strike" } },
+	},
+	[[
+0|b.037 2 -38|r0 30|l84 -95|l50 20 -10|r0 38|r0 38
+.1|b.037 2 -38|r0 30|l84 -95|l50 20 -10|r0 38|r0 38
+.15 Sx|b.034 -4 -5|r0 4|l88 -20|l40 10 -14|r0 5|r0 5
+.21 Qi|b.12 -8 36|r0 -26|l84 70|l30 -20 -20|r0 -34|r0 -34
+.4 To|b.08 -6 26|r0 -18|l72 55 6|l32 -18 -20|r0 -24|r0 -24
+]]
+)
+
+Animations.Swipe2 = clip(
+	{
+		fadeIn = 0.1,
+		fadeOut = 0.22,
+		additive = { RightLeg = true, LeftLeg = true },
+		events = { { time = 0.15, name = "Strike" } },
+	},
+	[[
+0|b.035 2 34|r0 -26|l45 -20 10|l84 95|r0 -32|r0 -32
+.1|b.035 2 34|r0 -26|l45 -20 10|l84 95|r0 -32|r0 -32
+.15 Sx|b.03 -4 2|r0 -2|l40 -10 14|l88 20|r0 -2|r0 -2
+.21 Qi|b.12 -8 -36|r0 26|l30 20 20|l84 -70|r0 34|r0 34
+.4 To|b.08 -6 -26|r0 18|l32 18 20|l72 -55 -6|r0 24|r0 24
+]]
+)
+
+Animations.Swipe3 = clip(
+	{
+		fadeIn = 0.1,
+		fadeOut = 0.22,
+		additive = { RightLeg = true, LeftLeg = true },
+		events = { { time = 0.15, name = "Strike" } },
+	},
+	[[
+0|b.126 -14 24|r10 -16|l30 40 -10|l50 -10 -20|r0 -22|r0 -22
+.1|b.126 -14 24|r10 -16|l30 40 -10|l50 -10 -20|r0 -22|r0 -22
+.15 Sx|b.032 -4 4|r2 -2|l95 10|l40 -10 -20|r0 -4|r0 -4
+.21 Qi|b.099 8 -26|r-10 16|l160 -30 10|l26 10 -24|r0 24|r0 24
+.4 To|b.048 4 -18|r-6 12|l140 -22 10|l30 8 -22|r0 16|r0 16
+]]
+)
+
+Animations.GalePush = clip(
+	{
+		fadeIn = 0.14,
+		fadeOut = 0.28,
+		additive = { RightLeg = true, LeftLeg = true },
+		events = { { time = 0.21, name = "Strike" } },
+	},
+	[[
+0|b.036 6|r-4|l-10 0 14|l-10 0 -14|r0|r0
+.14|b.036 6|r-4|l-10 0 14|l-10 0 -14|r0|r0
+.21 Sx|b.036 -6|r2|l70 18 6|l70 -18 -6|r0|r0
+.28 Qi|b.032 -14|r8|l92 10|l92 -10|r0|r0
+.52 To|b.041 -10|r6|l84 12 4|l84 -12 -4|r0|r0
+]]
+)
+
+Animations.GaleRise = clip(
+	{
+		fadeIn = 0.14,
+		fadeOut = 0.28,
+		additive = { RightLeg = true, LeftLeg = true },
+		events = { { time = 0.21, name = "Strike" } },
+	},
+	[[
+0|r-18|r10|l10 20 10|l10 -20 -10|r0|r0
+.14|r-18|r10|l10 20 10|l10 -20 -10|r0|r0
+.21 Sx|b.036 -6|r2|l90 10 6|l90 -10 -6|r0|r0
+.28 Qi|b.038 12|r-16|l170 10 10|l170 -10 -10|r0|r0
+.52 To|b.04 8|r-12|l155 10 10|l155 -10 -10|r0|r0
+]]
+)
+
+Animations.GaleFall = clip(
+	{ fadeIn = 0.14, fadeOut = 0.28, events = { { time = 0.21, name = "Strike" } } },
+	[[
+0|r16|r-10|l172 8 6|l172 -8 -6
+.14|r16|r-10|l172 8 6|l172 -8 -6
+.21 Sx|r0|r0|l110 8|l110 -8
+.28 Qi|r-34|r18|l36 8|l36 -8
+.52 To|r-28|r14|l44 8|l44 -8
+]]
+)
+
+Animations.Tornado = clip(
+	{ fadeOut = 0.25 },
+	[[
+0|b.093 -3 12|r2 -10|l12 4 10|l30 -8 -16|r-4 0 6|r6 0 -7
+.14 So|b.13 -8 28|r4 -20|l20 50 -10|l40 -10 -20|r-10 0 6|r12 0 -6
+.3 To|b.117 2 -18|r6 12|l120 -20 20|l30 10 -30|r-14 0 8|r14 0 -8
+.6 Lo|b.117 2 -18|r6 12|l120 -20 20|l30 10 -30|r-14 0 8|r14 0 -8
+]]
+)
+
+Animations.TornadoAir = clip(
+	{ fadeOut = 0.25 },
+	[[
+0|r-6|r4|l40 0 30|l40 0 -30|r30|r-12
+.14 So|r-8 28|r6 -20|l20 50 -10|l40 -10 -20|r36 0 8|r12 0 -6
+.3 To|r-4 -18|r10 12|l100 -20 20|l30 10 -30|r30 0 8|r8 0 -6
+.6 Lo|r-4 -18|r10 12|l100 -20 20|l30 10 -30|r30 0 8|r8 0 -6
+]]
+)
+
 Animations.Shower = clip(
 	{ fadeOut = 0.25 },
 	[[
@@ -16607,37 +16765,6 @@ Animations.Point = clip(
 .19 So|b.102 -4.14 -13.08|r6.56 12.8|l116.88 15.4 3.16|l18.6 1.12 -18.28|r-10.84 0 6|r12.84 0 -5.86
 .316 Sx|b.097 -4 -10|r6 10|l104 14 4|l20 0 -18|r-10 0 6|r12 0 -6
 .4 Sx|b.097 -4 -10|r6 10|l104 14 4|l20 0 -18|r-10 0 6|r12 0 -6
-]]
-)
-
-Animations.StarDash = clip(
-	{ fadeIn = 0.03, fadeOut = 0.05 },
-	[[
-0|b.093 -3 12|r2 -10|l12 4 10|l30 -8 -16|r-4 0 6|r6 0 -7
-.1 So|b.081 -24 -16|r16 14|l-34 0 22|l58 -16 -14|r-30 0 8|r38 0 -6
-.15 To|b-.252 -40 12|r30 -10|l124 -8 4|l-46 0 -22|r-48 0 6|r30 0 -6
-.34 Lo|b-.252 -40 12|r30 -10|l124 -8 4|l-46 0 -22|r-48 0 6|r30 0 -6
-]]
-)
-
-Animations.StarDashAir = clip(
-	{ fadeIn = 0.03, fadeOut = 0.05 },
-	[[
-0|r-6|r4|l40 0 30|l40 0 -30|r30|r-12
-.1 So|r-12 -16|r12 14|l-30 0 22|l56 -16 -14|r40 0 8|r14 0 -6
-.15 To|r-60 10|r36 -10|l118 -8 4|l-50 0 -22|r-62 0 6|r-44 0 -6
-.34 Lo|r-60 10|r36 -10|l118 -8 4|l-50 0 -22|r-62 0 6|r-44 0 -6
-]]
-)
-
-Animations.StarLand = clip(
-	{ fadeIn = 0.03, fadeOut = 0.25 },
-	[[
-0|b-.252 -40 12|r30 -10|l124 -8 4|l-46 0 -22|r-48 0 6|r30 0 -6
-.06 To|b-.151 -22 -24|r6 -40|l70 -30 72|l30 8 -20|r44 0 12|r-40 0 -14
-.18 So|b-.243 -26 -28|r6 -46|l66 -34 80|l26 8 -22|r46 0 12|r-42 0 -14
-.45 Sx|b.014 -14 -18|r4 -30|l44 -20 56|l26 6 -18|r30 0 10|r-28 0 -12
-.8 Sx|b.093 -3 12|r2 -10|l12 4 10|l30 -8 -16|r-4 0 6|r6 0 -7
 ]]
 )
 
@@ -16936,7 +17063,7 @@ return Animations
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="49">
+            <Item class="ModuleScript" referent="51">
               <Properties>
                 <string name="Name">Base</string>
                 <string name="Source"><![CDATA[local CameraShake = require(script.Parent.Parent.Parent.CameraShake)
@@ -16944,8 +17071,6 @@ local PoseAnimator = require(script.Parent.Parent.Parent.PoseAnimator)
 local VFX = require(script.Parent.Parent.Parent.VFX)
 local Hawk = require(script.Parent.Hawk)
 local Soft = require(script.Parent.Parent.Parent.Soft)
-
-type Star = Soft.Star
 
 local U = VFX.Util
 local rad = math.rad
@@ -16957,7 +17082,6 @@ local SMOKE, SPARKLE = Soft.SMOKE, Soft.SPARKLE
 local every, fadeOut, key = Soft.every, Soft.fadeOut, Soft.key
 local bar, newWedge = Soft.bar, Soft.newWedge
 local inflow, gust = Soft.inflow, Soft.gust
-local makeStar = Soft.makeStar
 local arcPoints, arcParts, poseArc = Soft.arcPoints, Soft.arcParts, Soft.poseArc
 local worldAnchor, softBeam, fadeBeams, softRing = Soft.worldAnchor, Soft.softBeam, Soft.fadeBeams, Soft.softRing
 local windRing, lightRing, windEmitter, windPuff = Soft.windRing, Soft.lightRing, Soft.windEmitter, Soft.windPuff
@@ -16966,6 +17090,9 @@ local windSlash, twinkle, starDust = Soft.windSlash, Soft.twinkle, Soft.starDust
 local Fx = require(script.Parent.Fx)
 local ANIMS, handlers, play, bump, live, handOf = Fx.ANIMS, Fx.handlers, Fx.play, Fx.bump, Fx.live, Fx.handOf
 local easeOut, featherBurst = Fx.easeOut, Fx.featherBurst
+
+type Twister = { cyclone: (delay: number) -> (), burst: (cyclone: boolean) -> (), stop: () -> () }
+local twisters: { [Model]: Twister } = {}
 
 local function featherIn(target: Vector3, radius: number)
 	local from = target + U.randomUnit() * radius
@@ -17103,6 +17230,11 @@ local showers: { [Model]: number } = setmetatable({}, { __mode = "k" }) :: any
 function handlers.WindBladesShower(data, character, root)
 	if data.phase == "Cast" then
 		play(character, ANIMS.Shower)
+		local cyclone = data.cyclone == true
+		local twist = twisters[character]
+		if cyclone and twist then
+			twist.cyclone(data.delay)
+		end
 		local id = (showers[character] or 0) + 1
 		showers[character] = id
 		local function alive(): boolean
@@ -17228,11 +17360,12 @@ function handlers.WindBladesShower(data, character, root)
 			inflow(palm, 5)
 			return true
 		end)
+		local spread = if cyclone then 3.5 else radius
 		for wave = 1, data.waves do
 			for _ = 1, 3 do
 				local angle = math.random() * math.pi * 2
 				local spot = center
-					+ Vector3.new(math.cos(angle), 0, math.sin(angle)) * radius * math.sqrt(math.random())
+					+ Vector3.new(math.cos(angle), 0, math.sin(angle)) * spread * math.sqrt(math.random())
 				fallingBlade(spot, math.random() * delay * 0.6, delay + (wave - 1) * data.gap, alive)
 			end
 		end
@@ -17962,346 +18095,345 @@ function handlers.GaleWhiteBow(data, character, root)
 	end
 end
 
-type StarRun = {
-	parts: { BasePart },
-	beams: { Beam },
-	anchors: { Attachment },
-	trails: { Trail },
-	marks: { [Model]: () -> () },
-	travelling: boolean,
-}
+local TWISTER_HEIGHT = 14
+local TWISTER_RINGS = 8
+local TWISTER_LIFE = 9
+local DUST = Color3.fromRGB(176, 192, 178)
 
-local starRuns: { [Model]: StarRun } = {}
-
-local function endStarRun(character: Model, duration: number)
-	local run = starRuns[character]
-	if not run then
-		return
-	end
-	starRuns[character] = nil
-	run.travelling = false
-	for _, trail in run.trails do
-		Soft.endTrail(trail)
-	end
-	fadeOut(run.parts, duration)
-	fadeBeams(run.beams, duration, run.anchors)
-	for _, pop in run.marks do
-		pop()
-	end
+local function funnelRadius(f: number, wide: number): number
+	return (1 + 5 * f ^ 1.4) * wide
 end
 
-local function starlightBody(character: Model, duration: number)
-	local parts: { BasePart } = {}
-	for _, part in character:GetDescendants() do
-		if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-			part.LocalTransparencyModifier = 0.7
-			table.insert(parts, part)
-		end
-	end
-	U.highlight(character, STAR, duration + 0.25, 0.45)
-	task.delay(duration, function()
-		for _, part in parts do
-			if part.Parent then
-				U.tween(part, 0.15, { LocalTransparencyModifier = 0 })
-			end
-		end
-	end)
-end
-
-local function starMark(victim: Model): () -> ()
-	local star = makeStar(1.3)
-	local halo = softRing({
-		color = ColorSequence.new(STAR_WHITE, STAR),
-		width0 = 0.22,
-		width1 = 0.22,
-		transparency = NumberSequence.new(0.3),
-		texture = SPARKLE,
-		wrap = true,
-		length = 0.8,
-		speed = 1.5,
-	})
+local function twister(ground: Vector3): Twister
+	local start = os.clock()
+	local wide = 1
+	local cycloneAt: number? = nil
 	local done = false
-	local function pop()
-		if not done then
-			done = true
-			star.fade(0.12)
-			halo.fade(0.12)
-		end
+	local rings = {}
+	for i = 1, TWISTER_RINGS do
+		local f = (i - 1) / (TWISTER_RINGS - 1)
+		local bright = i % 2 == 0
+		local ring = softRing(if bright
+			then {
+				color = ColorSequence.new(WIND_WHITE),
+				width0 = 0.18,
+				width1 = 0.18,
+				transparency = NumberSequence.new(0.35),
+			}
+			else {
+				color = ColorSequence.new(WIND_WHITE, WIND),
+				width0 = 1 + f * 1.6,
+				width1 = 1 + f * 1.6,
+				transparency = NumberSequence.new(0.5),
+				texture = SMOKE,
+				speed = 4,
+				length = 4,
+			})
+		table.insert(rings, { ring = ring, f = f, spin = (if bright then 5 else 3.4) + f * 2 })
 	end
-	every(3, function(elapsed)
-		local torso = victim:FindFirstChild("Torso") or victim:FindFirstChild("HumanoidRootPart")
-		if done or not (torso and torso:IsA("BasePart")) then
+	local foot, top = worldAnchor(ground, UP), worldAnchor(ground + UP * TWISTER_HEIGHT, UP)
+	local core = softBeam(foot, top, {
+		color = ColorSequence.new(WIND_WHITE, WIND),
+		width0 = 1.6,
+		width1 = 5,
+		transparency = NumberSequence.new({ key(0, 0.8), key(0.3, 0.62), key(1, 0.9) }),
+		texture = SMOKE,
+		speed = 14,
+		length = 7,
+	})
+	local base = U.newPart({ Size = Vector3.new(4, 0.2, 4), Transparency = 1, CFrame = CFrame.new(ground) })
+	local dust = windEmitter(base, {
+		Color = ColorSequence.new(DUST),
+		Size = NumberSequence.new({ key(0, 1.5), key(1, 4) }),
+		Transparency = NumberSequence.new({ key(0, 1), key(0.2, 0.6), key(1, 1) }),
+		Lifetime = NumberRange.new(0.5, 0.9),
+		Speed = NumberRange.new(6, 12),
+		SpreadAngle = Vector2.new(70, 70),
+		Acceleration = UP * 8,
+		Rate = 40,
+	})
+	local glow = Instance.new("PointLight")
+	glow.Color = WIND
+	glow.Range = 16
+	glow.Brightness = 1.6
+	glow.Parent = base
+	local rocks: { BasePart } = {}
+	for _ = 1, 6 do
+		table.insert(
+			rocks,
+			U.newPart({
+				Size = Vector3.new(0.4, 0.3, 0.5) * (1 + math.random()),
+				Color = Color3.fromRGB(92, 86, 78),
+				Material = Enum.Material.Slate,
+				Transparency = 0,
+			})
+		)
+	end
+	local feathers: { BasePart } = {}
+	for _ = 1, 5 do
+		table.insert(
+			feathers,
+			newWedge({
+				Size = Vector3.new(0.05, 0.3, 1),
+				Color = WIND_WHITE,
+				Material = Enum.Material.ForceField,
+				Transparency = 0.1,
+			})
+		)
+	end
+	local blades: { BasePart } = {}
+	type Runner = { part: BasePart, trail: Trail, phase: number }
+	local runners: { [number]: Runner } = {}
+	local function sway(f: number, t: number): Vector3
+		return Vector3.new(math.sin(t * 1.3 + f * 2.2), 0, math.cos(t * 1.1 + f * 2.2)) * 0.7 * f
+	end
+
+	local function clear(duration: number)
+		done = true
+		for _, entry in rings do
+			entry.ring.fade(duration)
+		end
+		fadeBeams({ core }, duration, { foot, top })
+		dust.Enabled = false
+		glow.Enabled = false
+		task.delay(1.2, base.Destroy, base)
+		for _, runner in runners do
+			Soft.endTrail(runner.trail)
+			task.delay(0.5, runner.part.Destroy, runner.part)
+		end
+		table.clear(runners)
+	end
+
+	every(TWISTER_LIFE, function(elapsed)
+		if done then
 			return false
 		end
-		local at = torso.Position
-		star.place(at + UP * 0.3, elapsed * 5)
-		halo.set(CFrame.new(at) * CFrame.Angles(rad(18), elapsed * 2.5, rad(-12)), 2.3 + math.sin(elapsed * 9) * 0.15)
-		return true
-	end, pop)
-	local torso = victim:FindFirstChild("Torso")
-	if torso and torso:IsA("BasePart") then
-		local at = torso.Position
-		local across = (torso.CFrame.RightVector + UP * 0.7).Unit
-		local cut = bar(at - across * 2.6, at + across * 2.6, 0.12, STAR_WHITE, 0)
-		local sheen = bar(at - across * 2.8, at + across * 2.8, 0.7, STAR, 0.6)
-		fadeOut({ cut, sheen }, 0.3)
-		U.glint(at, 1.1, STAR_WHITE)
-		twinkle(at, 4, STAR, 0.3)
-	end
-	U.highlight(victim, STAR, 0.5, 0.65)
-	return pop
-end
-
-local function starBurst(at: Vector3, big: boolean, involved: boolean)
-	local floor = U.groundBelow(at, nil, 8)
-	local base = if floor then floor.Position else at - UP * 3
-	local k = if big then 1 else 0.45
-	U.flash(at, STAR_WHITE, 7 * k, 0.22)
-	twinkle(at, 6 * k, STAR, 0.35)
-	U.impactSpikes(at, STAR, if big then 10 else 6, 7 * k, 0.3, STAR_WHITE)
-	lightRing(base + UP * 0.2, UP, 0.5, 8 * k, 0.35)
-	windRing(base + UP * 0.3, UP, 1, 7 * k, 0.35)
-	starDust(at, math.floor(20 * k), 30 * k, UP)
-	U.light(at, STAR, 6 * k, 18 * k, 0.4)
-	if big then
-		U.pillar(base, STAR, 1.1, 22, 0.5, Enum.Material.Neon, 0.35)
-		U.pillar(base, WIND, 2.6, 16, 0.45, Enum.Material.ForceField, 0.4)
-		U.shards(at, STAR, 8)
-		featherBurst(at, 6, 14)
-		gust(at, 4, UP)
-	end
-	if involved then
-		CameraShake.Add(if big then 0.35 else 0.12)
-	end
-end
-
-function handlers.ShootingStar(data, character, root)
-	local phase = data.phase
-	if phase == "Coil" then
-		endStarRun(character, 0.1)
-		play(character, if data.airborne then ANIMS.StarDashAir else ANIMS.StarDash)
-		local feet = root.Position - UP * 2.8
-		for _ = 1, 6 do
-			inflow(root.Position, 5, STAR)
+		local rise = easeOut(elapsed / 0.35)
+		if cycloneAt and elapsed >= cycloneAt then
+			wide = math.min(wide + 0.04, 1.35)
 		end
-		lightRing(feet + UP * 0.1, UP, 4.5, 1, 0.12)
-		task.delay(0.07, function()
-			local hand = handOf(character, "Right")
-			if hand then
-				U.glint(hand, 0.9, STAR_WHITE)
+		local height = TWISTER_HEIGHT * rise
+		for _, entry in rings do
+			local f = entry.f
+			local center = ground + UP * (height * f + 0.2) + sway(f, elapsed)
+			entry.ring.set(
+				CFrame.new(center) * CFrame.Angles(math.sin(elapsed * 2 + f * 4) * 0.08, elapsed * entry.spin, 0),
+				funnelRadius(f, wide) * rise + 0.05
+			)
+		end
+		Soft.aim(top, ground + UP * height + sway(1, elapsed), UP)
+		for i = 1, 4 do
+			local phase = (elapsed * 0.9 + (i - 1) / 4) % 1
+			local angle = elapsed * 7 + i * math.pi / 2 + phase * math.pi * 4
+			local r = funnelRadius(phase, wide) * 0.85
+			local position = ground
+				+ UP * (height * phase)
+				+ sway(phase, elapsed)
+				+ Vector3.new(math.cos(angle), 0, math.sin(angle)) * r
+			local runner = runners[i]
+			if runner and phase < runner.phase then
+				Soft.endTrail(runner.trail)
+				task.delay(0.4, runner.part.Destroy, runner.part)
+				runner = nil
+				runners[i] = nil
 			end
-		end)
-		if U.isLocal(character) then
-			CameraShake.FovKick(-4)
-		end
-	elseif phase == "Dash" then
-		local from: Vector3 = data.from
-		local to: Vector3 = data.to
-		local travel: number = data.travel
-		local offset = to - from
-		local reach = offset.Magnitude
-		local direction = if reach > 1e-3 then offset.Unit else root.CFrame.LookVector
-		local core = bar(from, from + direction * 0.1, 0.1, STAR_WHITE, 0)
-		local glow = bar(from, from + direction * 0.1, 0.6, STAR, 0.72)
-		local a0, a1 = worldAnchor(from, direction), worldAnchor(from, direction)
-		local stream = Soft.starStream(a0, a1, 0.9, 10)
-		local mist = softBeam(a0, a1, {
-			color = ColorSequence.new(WIND_WHITE, WIND),
-			width0 = 1.8,
-			width1 = 1.8,
-			transparency = NumberSequence.new({ key(0, 0.75), key(0.5, 0.55), key(1, 0.75) }),
-			texture = SMOKE,
-			speed = 6,
-			length = 5,
-		})
-		local run: StarRun = {
-			parts = { core, glow },
-			beams = { stream, mist },
-			anchors = { a0, a1 },
-			trails = {},
-			marks = {},
-			travelling = true,
-		}
-		starRuns[character] = run
-		local torso = character:FindFirstChild("Torso")
-		if torso and torso:IsA("BasePart") then
-			table.insert(
-				run.trails,
-				Soft.trail(torso, Vector3.new(0, 1.4, 0), Vector3.new(0, -1.4, 0), {
-					color = ColorSequence.new(STAR_WHITE, STAR),
-					transparency = NumberSequence.new({ key(0, 0.15), key(1, 1) }),
-					width = NumberSequence.new({ key(0, 1), key(1, 0.15) }),
-					lifetime = 0.3,
-				})
-			)
-			table.insert(
-				run.trails,
-				Soft.trail(torso, Vector3.new(0, 2.4, 0), Vector3.new(0, -2.4, 0), {
-					color = ColorSequence.new(WIND_WHITE, WIND),
-					transparency = NumberSequence.new({ key(0, 0.5), key(1, 1) }),
-					width = NumberSequence.new({ key(0, 1), key(1, 0.4) }),
-					lifetime = 0.45,
-					texture = SMOKE,
-				})
-			)
-		end
-		starlightBody(character, travel + 0.05)
-		local carried = Instance.new("PointLight")
-		carried.Color = STAR
-		carried.Range = 16
-		carried.Brightness = 3
-		carried.Parent = root
-		task.delay(travel + 0.15, carried.Destroy, carried)
-		local head = makeStar(2.4)
-		local headLit = true
-		local ghosts = 0
-		local reached = 0
-		every(travel + 0.2, function(elapsed)
-			if not run.travelling then
-				reached = reach
-				if headLit then
-					headLit = false
-					head.fade(0.15)
-				end
+			if runner then
+				runner.part.CFrame = CFrame.new(position)
+				runner.phase = phase
 			else
-				reached = math.max(reached, math.clamp((root.Position - from):Dot(direction), 0, reach))
-				head.place(root.Position + direction * 1.4, elapsed * 14)
-				if elapsed >= ghosts * 0.04 and ghosts < 5 then
-					ghosts += 1
-					U.afterimage(character, if ghosts % 2 == 0 then WIND_WHITE else STAR, 0.32)
-					Soft.streaks(root.Position, 3, 30, -direction, 25)
-				end
+				local part = U.newPart({ Size = Vector3.one * 0.1, Transparency = 1, CFrame = CFrame.new(position) })
+				runners[i] = {
+					part = part,
+					trail = Soft.trail(part, Vector3.new(0, 0.35, 0), Vector3.new(0, -0.35, 0), {
+						color = ColorSequence.new(if i % 2 == 0 then WIND_WHITE else WIND, WIND),
+						transparency = NumberSequence.new({ key(0, 0.2), key(1, 1) }),
+						width = NumberSequence.new({ key(0, 1), key(1, 0.2) }),
+						lifetime = 0.3,
+					}),
+					phase = phase,
+				}
 			end
-			local tip = from + direction * math.max(reached, 0.1)
-			Soft.stretch(core, from, tip)
-			Soft.stretch(glow, from, tip)
-			Soft.aim(a1, tip, direction)
-			return starRuns[character] == run
-		end, function()
-			if headLit then
-				headLit = false
-				head.fade(0.15)
+		end
+		for i, rock in rocks do
+			local angle = elapsed * (6 + i % 3) + i * 1.7
+			local r = 2.2 + (i % 3) * 0.9
+			rock.CFrame = CFrame.new(ground + UP * (0.8 + (i % 4) * 0.9 + math.sin(elapsed * 3 + i) * 0.4))
+				* CFrame.new(math.cos(angle) * r, 0, math.sin(angle) * r)
+				* CFrame.Angles(elapsed * 5 + i, elapsed * 3, 0)
+		end
+		for i, feather in feathers do
+			local f = 0.25 + i * 0.13
+			local angle = -elapsed * 5 + i * 1.3
+			local r = funnelRadius(f, wide) * 0.9
+			local at = ground + UP * (height * f) + Vector3.new(math.cos(angle), 0, math.sin(angle)) * r
+			feather.CFrame = CFrame.lookAt(at, at + Vector3.new(-math.sin(angle), 0.3, math.cos(angle)))
+		end
+		for i, blade in blades do
+			local f = (i - 0.5) / #blades
+			local angle = elapsed * 9 + i * (math.pi * 2 / #blades) * 3
+			local r = funnelRadius(f, wide) * 0.75
+			local at = ground + UP * (height * f * 0.92 + 0.6) + sway(f, elapsed)
+			local out = Vector3.new(math.cos(angle), 0, math.sin(angle))
+			blade.CFrame = CFrame.lookAt(at + out * r, at + out * r + out:Cross(UP)) * CFrame.Angles(0, 0, rad(70))
+		end
+		if math.random() < 0.35 then
+			inflow(ground + UP * 0.5, 10 * wide, WIND_WHITE)
+		end
+		return true
+	end, function()
+		if not done then
+			clear(0.4)
+			fadeOut(rocks, 0.3)
+			fadeOut(feathers, 0.3)
+			fadeOut(blades, 0.3)
+		end
+	end)
+
+	local twist = {}
+	function twist.cyclone(delay: number)
+		if cycloneAt then
+			return
+		end
+		cycloneAt = os.clock() - start + delay
+		task.delay(delay, function()
+			if done then
+				return
 			end
+			for _ = 1, 9 do
+				local blade = U.newPart({
+					Size = Vector3.new(0.12, 0.08, 2.6),
+					Color = WIND_WHITE,
+					Transparency = 0.05,
+				})
+				local sheen = Soft.glow(blade, WIND, 2.4, 0.55)
+				sheen.Rate = 30
+				table.insert(blades, blade)
+			end
+			core.Color = ColorSequence.new(STAR_WHITE, WIND)
+			glow.Brightness = 3
+			U.flash(ground + UP * 6, WIND_WHITE, 9, 0.2)
+			windRing(ground + UP * 0.3, UP, 2, 16, 0.4)
+			twinkle(ground + UP * 8, 6, WIND_WHITE, 0.35)
 		end)
-		if not data.airborne then
-			local start = U.groundBelow(from, { character }, 8)
-			local finish = U.groundBelow(to, { character }, 8)
-			if start and finish then
-				U.groove(start.Position, finish.Position, 0.5, STAR, 1.6, reach / travel)
-			end
-			U.dustWave(from, 4, nil, 6)
+	end
+	function twist.burst(cyclone: boolean)
+		if done then
+			return
 		end
-		featherBurst(from, 6, 10)
-		windPuff(from, 2.5, -direction)
-		U.flash(from, STAR_WHITE, 4, 0.15)
-		lightRing(from, direction, 0.4, 4, 0.25)
-		U.ringBurst(CFrame.lookAt(from, from + direction) * CFrame.Angles(rad(90), 0, 0), STAR, 0.6, 4, 0.25, 0.12)
-		if U.isLocal(character) then
-			U.speedLines(root, direction, travel + 0.05, STAR_WHITE)
-			CameraShake.FovKick(10)
-		end
-	elseif phase == "Mark" then
-		local run = starRuns[character]
-		local victim = data.victim
-		if run and typeof(victim) == "Instance" and victim:IsA("Model") and not run.marks[victim] then
-			run.marks[victim] = starMark(victim)
-		end
-	elseif phase == "Arrive" then
-		local run = starRuns[character]
-		play(character, ANIMS.StarLand)
-		local direction: Vector3 = data.direction
-		local flat = Vector3.new(direction.X, 0, direction.Z)
-		local ahead = if flat.Magnitude > 1e-3 then flat.Unit else root.CFrame.LookVector
-		if run then
-			run.travelling = false
-			for _, trail in run.trails do
-				Soft.endTrail(trail)
-			end
-			run.trails = {}
-		end
-		local at = root.Position
-		local feet = at - UP * 2.8
-		windPuff(feet + UP * 0.5, 3, ahead)
-		featherBurst(at, 8, 12)
-		twinkle(at, 4, STAR, 0.3)
-		U.flash(at, STAR_WHITE, 5, 0.2)
-		lightRing(feet + UP * 0.1, UP, 0.5, 6, 0.3)
-		U.dustWave(at, 5, nil, 8)
-		U.groove(feet - ahead * 3, feet + ahead * 1.5, 0.6, STAR, 1.4)
-		if (data.caught or 0) > 0 then
-			local involved = U.isLocal(character)
-			if not involved and run then
-				for victim in run.marks do
-					if U.isLocal(victim) then
-						involved = true
-					end
-				end
-			end
-			if involved then
-				Soft.focusLines(0.35)
-				CameraShake.FovKick(-6)
-			end
-		end
-	elseif phase == "Burst" then
-		local run = starRuns[character]
-		local from: Vector3 = data.from
-		local to: Vector3 = data.to
-		local ripple: number = data.ripple
-		local offset = to - from
-		local reach = offset.Magnitude
-		local direction = if reach > 1e-3 then offset.Unit else root.CFrame.LookVector
-		local steps = math.max(math.floor(reach / 2.5), 1)
-		for i = 0, steps do
-			local point = from + direction * (reach * i / steps)
-			task.delay(ripple * i / steps, function()
-				twinkle(point, 3.5, STAR, 0.3)
-				U.flash(point, STAR_WHITE, 2.4, 0.14)
-				lightRing(point, direction, 0.2, 2.6, 0.28)
-				starDust(point, 5, 12, UP)
-				if i % 2 == 0 then
-					windPuff(point, 1.6, UP)
-				end
+		local mid = ground + UP * 6
+		local k = if cyclone then 1.4 else 1
+		clear(0.3)
+		for _, entry in rings do
+			local f = entry.f
+			local frame = CFrame.new(ground + UP * (TWISTER_HEIGHT * f + 0.2))
+			local from = funnelRadius(f, wide)
+			every(0.3, function(elapsed)
+				entry.ring.set(frame, from + (from * 2.2 + 4) * easeOut(elapsed / 0.3))
+				return true
 			end)
 		end
-		task.delay(ripple, function()
-			if starRuns[character] == run then
-				endStarRun(character, 0.3)
+		for _, rock in rocks do
+			local out = (rock.Position - ground) * Vector3.new(1, 0, 1)
+			local away = if out.Magnitude > 1e-3 then out.Unit else U.randomUnit()
+			U.tween(rock, 0.5, { CFrame = rock.CFrame + away * 14 * k + UP * 6 * k })
+		end
+		fadeOut(rocks, 0.55)
+		for _, feather in feathers do
+			U.tween(feather, 0.45, { CFrame = feather.CFrame + U.randomUnit() * 10 })
+		end
+		fadeOut(feathers, 0.45)
+		for _, blade in blades do
+			local out = (blade.Position - ground) * Vector3.new(1, 0, 1)
+			local away = if out.Magnitude > 1e-3 then out.Unit else U.randomUnit()
+			U.tween(blade, 0.3, { CFrame = blade.CFrame + away * 18 + UP * 4 })
+		end
+		fadeOut(blades, 0.35)
+		gust(mid, 6 * k, UP)
+		windRing(ground + UP * 0.3, UP, 2, 14 * k, 0.45)
+		lightRing(ground + UP * 0.2, UP, 1, 11 * k, 0.35, WIND_WHITE)
+		U.pillar(ground, WIND, 3 * k, 22 * k, 0.5, Enum.Material.ForceField, 0.35)
+		U.dustWave(ground, 10 * k)
+		featherBurst(mid, if cyclone then 14 else 8, 18)
+		U.light(mid, WIND, 5 * k, 26 * k, 0.4)
+		if cyclone then
+			U.impactSpikes(mid, WIND, 14, 12, 0.32, STAR_WHITE)
+			U.flash(mid, WIND_WHITE, 14, 0.25)
+			starDust(mid, 24, 34)
+			U.groundCracks(ground, 8, 7, WIND, 1.4)
+		end
+		if (workspace.CurrentCamera.CFrame.Position - ground).Magnitude < 45 then
+			CameraShake.Add(if cyclone then 0.3 else 0.15)
+		end
+	end
+	function twist.stop()
+		if not done then
+			clear(0.35)
+			fadeOut(rocks, 0.3)
+			fadeOut(feathers, 0.3)
+			fadeOut(blades, 0.3)
+		end
+	end
+	return twist
+end
+
+function handlers.TornadoFang(data, character, root)
+	local phase = data.phase
+	if phase == "Cast" then
+		play(character, if data.airborne then ANIMS.TornadoAir else ANIMS.Tornado)
+		local hand = handOf(character, "Right")
+		if hand then
+			for _ = 1, 5 do
+				inflow(hand, 4)
 			end
-			twinkle(to, 6, STAR, 0.4)
+		end
+		task.delay(0.28, function()
+			local palm = handOf(character, "Right")
+			if palm then
+				gust(palm, 2.5, root.CFrame.LookVector)
+				windPuff(palm, 1.6, root.CFrame.LookVector)
+			end
 		end)
-		local victims = if type(data.victims) == "table" then data.victims else {}
-		local involved = U.isLocal(character)
-		for _, victim in victims do
-			if typeof(victim) == "Instance" and victim:IsA("Model") then
-				involved = involved or U.isLocal(victim)
+	elseif phase == "Form" then
+		local old = twisters[character]
+		if old then
+			old.stop()
+		end
+		local ground: Vector3 = data.ground
+		twisters[character] = twister(ground)
+		local hand = handOf(character, "Right") or root.Position
+		local a0, a1 = worldAnchor(hand, ground - hand), worldAnchor(ground + UP * 2, ground - hand)
+		fadeBeams({
+			softBeam(a0, a1, {
+				color = ColorSequence.new(WIND_WHITE, WIND),
+				width0 = 1.2,
+				width1 = 3.5,
+				transparency = NumberSequence.new({ key(0, 0.5), key(1, 0.8) }),
+				texture = SMOKE,
+				speed = 12,
+				length = 5,
+			}),
+		}, 0.35, { a0, a1 })
+		windRing(ground + UP * 0.3, UP, 1, 9, 0.4)
+		lightRing(ground + UP * 0.2, UP, 0.5, 6, 0.3, WIND_WHITE)
+		U.dustWave(ground, 6)
+		windPuff(ground + UP, 3, UP)
+	elseif phase == "Burst" then
+		local twist = twisters[character]
+		twisters[character] = nil
+		if twist then
+			twist.burst(data.cyclone == true)
+		end
+	elseif phase == "Fizzle" or phase == "Cancel" then
+		local twist = twisters[character]
+		twisters[character] = nil
+		if twist then
+			twist.stop()
+		end
+		if phase == "Cancel" then
+			local current = PoseAnimator.Current(character)
+			if current == ANIMS.Tornado or current == ANIMS.TornadoAir then
+				PoseAnimator.FadeOut(character, 0.15)
 			end
-		end
-		for _, victim in victims do
-			local victimRoot = if typeof(victim) == "Instance" and victim:IsA("Model") then U.getRoot(victim) else nil
-			if victimRoot then
-				local along = math.clamp((victimRoot.Position - from):Dot(direction) / math.max(reach, 1), 0, 1)
-				task.delay(ripple * along, function()
-					local pop = run and run.marks[victim]
-					if pop then
-						run.marks[victim] = nil
-						pop()
-					end
-					if victimRoot.Parent then
-						starBurst(victimRoot.Position, true, involved)
-					end
-				end)
-			end
-		end
-		if #victims == 0 then
-			task.delay(ripple, starBurst, to, false, false)
-		elseif involved then
-			task.delay(ripple * 0.5, CameraShake.FovKick, 5)
-		end
-	elseif phase == "Cancel" then
-		endStarRun(character, 0.2)
-		local current = PoseAnimator.Current(character)
-		if current == ANIMS.StarDash or current == ANIMS.StarDashAir then
-			PoseAnimator.FadeOut(character, 0.15)
 		end
 	end
 end
@@ -18314,7 +18446,7 @@ return {
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="50">
+            <Item class="ModuleScript" referent="52">
               <Properties>
                 <string name="Name">Full</string>
                 <string name="Source"><![CDATA[local CameraShake = require(script.Parent.Parent.Parent.CameraShake)
@@ -19078,7 +19210,7 @@ return {}
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="51">
+            <Item class="ModuleScript" referent="53">
               <Properties>
                 <string name="Name">Fx</string>
                 <string name="Source"><![CDATA[local PoseAnimator = require(script.Parent.Parent.Parent.PoseAnimator)
@@ -19108,7 +19240,9 @@ local function build(raw: { [string]: any }): Animation
 		loop = raw.loop,
 		fadeIn = raw.fadeIn,
 		fadeOut = raw.fadeOut,
+		additive = raw.additive,
 		delays = raw.delays,
+		events = raw.events,
 	}
 end
 
@@ -19185,7 +19319,7 @@ return {
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="52">
+            <Item class="ModuleScript" referent="54">
               <Properties>
                 <string name="Name">Half</string>
                 <string name="Source"><![CDATA[local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -20023,7 +20157,7 @@ return {}
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="53">
+            <Item class="ModuleScript" referent="55">
               <Properties>
                 <string name="Name">Hawk</string>
                 <string name="Source"><![CDATA[local Soft = require(script.Parent.Parent.Parent.Soft)
@@ -20205,7 +20339,7 @@ return Hawk
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="54">
+            <Item class="ModuleScript" referent="56">
               <Properties>
                 <string name="Name">Look</string>
                 <string name="Source"><![CDATA[local RunService = game:GetService("RunService")
@@ -20914,7 +21048,7 @@ return {
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="55">
+            <Item class="ModuleScript" referent="57">
               <Properties>
                 <string name="Name">Nova</string>
                 <string name="Source"><![CDATA[local RunService = game:GetService("RunService")
@@ -21379,7 +21513,7 @@ return Nova
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="56">
+            <Item class="ModuleScript" referent="58">
               <Properties>
                 <string name="Name">Saint</string>
                 <string name="Source"><![CDATA[local Players = game:GetService("Players")
@@ -23548,7 +23682,7 @@ return Saint
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="57">
+            <Item class="ModuleScript" referent="59">
               <Properties>
                 <string name="Name">Sword</string>
                 <string name="Source"><![CDATA[local Soft = require(script.Parent.Parent.Parent.Soft)
@@ -23840,7 +23974,7 @@ return Sword
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="58">
+            <Item class="ModuleScript" referent="60">
               <Properties>
                 <string name="Name">Waltz</string>
                 <string name="Source"><![CDATA[local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -24166,7 +24300,7 @@ return Waltz
 ]]></string>
               </Properties>
             </Item>
-            <Item class="ModuleScript" referent="59">
+            <Item class="ModuleScript" referent="61">
               <Properties>
                 <string name="Name">Wings</string>
                 <string name="Source"><![CDATA[local Soft = require(script.Parent.Parent.Parent.Soft)
@@ -24553,7 +24687,7 @@ return Wings
             </Item>
           </Item>
         </Item>
-        <Item class="ModuleScript" referent="60">
+        <Item class="ModuleScript" referent="62">
           <Properties>
             <string name="Name">M1Animations</string>
             <string name="Source"><![CDATA[local PoseAnimator = require(script.Parent.PoseAnimator)
@@ -24910,7 +25044,7 @@ return M1Animations
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="61">
+        <Item class="ModuleScript" referent="63">
           <Properties>
             <string name="Name">Moves</string>
             <string name="Source"><![CDATA[local Players = game:GetService("Players")
@@ -25252,7 +25386,7 @@ return Moves
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="62">
+        <Item class="ModuleScript" referent="64">
           <Properties>
             <string name="Name">PoseAnimator</string>
             <string name="Source"><![CDATA[local RunService = game:GetService("RunService")
@@ -25785,7 +25919,7 @@ return PoseAnimator
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="63">
+        <Item class="ModuleScript" referent="65">
           <Properties>
             <string name="Name">Reactions</string>
             <string name="Source"><![CDATA[local PoseAnimator = require(script.Parent.PoseAnimator)
@@ -25995,7 +26129,7 @@ return Reactions
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="64">
+        <Item class="ModuleScript" referent="66">
           <Properties>
             <string name="Name">ShiftLock</string>
             <string name="Source"><![CDATA[local ContextActionService = game:GetService("ContextActionService")
@@ -26143,7 +26277,7 @@ return ShiftLock
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="65">
+        <Item class="ModuleScript" referent="67">
           <Properties>
             <string name="Name">Soft</string>
             <string name="Source"><![CDATA[local RunService = game:GetService("RunService")
@@ -27165,7 +27299,7 @@ return Soft
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="66">
+        <Item class="ModuleScript" referent="68">
           <Properties>
             <string name="Name">TopBar</string>
             <string name="Source"><![CDATA[local Players = game:GetService("Players")
@@ -27460,7 +27594,7 @@ return TopBar
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="67">
+        <Item class="ModuleScript" referent="69">
           <Properties>
             <string name="Name">VFX</string>
             <string name="Source"><![CDATA[local Debris = game:GetService("Debris")
@@ -28922,13 +29056,13 @@ return VFX
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="68">
+  <Item class="Workspace" referent="70">
     <Properties>
       <string name="Name">Workspace</string>
       <float name="Gravity">225</float>
       <bool name="NeedsPivotMigration">false</bool>
     </Properties>
-    <Item class="Part" referent="69">
+    <Item class="Part" referent="71">
       <Properties>
         <string name="Name">Baseplate</string>
         <bool name="Anchored">true</bool>
@@ -28947,7 +29081,7 @@ return VFX
         </Vector3>
       </Properties>
     </Item>
-    <Item class="SpawnLocation" referent="70">
+    <Item class="SpawnLocation" referent="72">
       <Properties>
         <string name="Name">SpawnLocation</string>
         <bool name="Anchored">true</bool>
