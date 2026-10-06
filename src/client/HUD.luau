@@ -149,11 +149,15 @@ local function slot(parent: Instance, key: string, order: number): Slot
 	local name = label(frame, {
 		Text = "",
 		TextWrapped = true,
-		TextSize = 10,
+		TextScaled = true,
 		Position = UDim2.new(0, 3, 0, 14),
 		Size = UDim2.new(1, -6, 1, -16),
 		ZIndex = 4,
 	})
+	local fit = Instance.new("UITextSizeConstraint")
+	fit.MaxTextSize = 10
+	fit.MinTextSize = 6
+	fit.Parent = name
 
 	local overlay = Instance.new("Frame")
 	overlay.AnchorPoint = Vector2.new(0, 1)

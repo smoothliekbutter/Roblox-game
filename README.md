@@ -52,7 +52,7 @@ The **CHARACTERS** button in the top bar, next to chat, opens the character pick
 
 **Health** comes back on its own at 1% a second, but only a quarter of that while you're fighting (for 8 seconds after you last hit someone or got hit).
 
-**Play testing:** the **INFINITE AWAKENING** button in the top bar keeps your awakening bar full. Awakened forms never run out, and the second stage (Yuno's Full-Crown) is always ready, so you can press G again straight away. Anyone in the server can press it. Turn it off before release by setting `Config.PlayTest.InfiniteAwakening = false` in `src/shared/Config.luau`, which hides the button and disables it on the server.
+**Play testing:** the **INFINITE AWAKENING** button in the top bar keeps your awakening bar full. Awakened forms never run out, and the second stage (Yuno's Full-Crown, Noelle's Dragon Form) is always ready, so you can press G again straight away. Anyone in the server can press it. Turn it off before release by setting `Config.PlayTest.InfiniteAwakening = false` in `src/shared/Config.luau`, which hides the button and disables it on the server.
 
 ## Characters
 
@@ -114,7 +114,7 @@ All of Asta's animations are generated from `tools/anim/asta_anims.py` and check
 - On grounded animations the body is lowered or raised so his soles rest on the floor. That's what lets lunges sink into their stance and runs bob.
 - The run and walk are smooth loops sampled from curves (no stalling at keyframes). Their speed follows the ground covered: a foot passing under him sweeps back as fast as he moves, about 11 studs a loop for the sprint (the same pace as Roblox's own R6 run), so the legs never scurry. The sprint leans in with a runner's bob: the foot is flat on the floor as each leg passes under him, and he lifts off between steps. His shoulders turn with the pumping free arm while his hips stay square, and his head stays level. The walk stays planted and rides over each step.
 
-Run `python3 tools/anim/asta_anims.py`, then `python3 tools/anim/emit.py src/client/Kits/AntiMagic/Animations.luau`. The generated files store one line of text per keyframe, decoded when the game starts (see `tools/anim/README.md`). Yuno's are in `tools/anim/yuno_anims.py`: run it to check them, then `python3 tools/anim/yuno_anims.py src/client/Kits/Wind/Animations.luau` to write them.
+Run `python3 tools/anim/asta_anims.py`, then `python3 tools/anim/emit.py src/client/Kits/AntiMagic/Animations.luau`. The generated files store one line of text per keyframe, decoded when the game starts (see `tools/anim/README.md`). Yuno's are in `tools/anim/yuno_anims.py`: run it to check them, then `python3 tools/anim/yuno_anims.py src/client/Kits/Wind/Animations.luau` to write them. Noelle's work the same way: `python3 tools/anim/noelle_anims.py`, then `python3 tools/anim/noelle_anims.py src/client/Kits/Water/Animations.luau`.
 
 Grabs pin the victim to the grabber's actual hand on every screen, so the hold looks solid at any ping. The victim plays a struggling "held by the throat" animation.
 
@@ -170,6 +170,47 @@ How he compares with Asta:
 - **Ultimates:** the Half-Crown is weaker than Black Form, but reaching the Full-Crown takes Yuno past it for 30 seconds.
 - **Matchup:** Asta's Deflect and Causality Break punish careless spell spam and counters, and Yuno's Scutum and his range answer Asta's rushdown.
 
+### Water Princess (Noelle)
+
+Royal water magic from the Silva family: a mid-range caster who hits hard from a distance, walls herself off when rushed and closes the gap in her Valkyrie Dress. Her water is see-through: glassy and shimmering, with foam-white cores, ripples, droplets and mist, and her sea dragons are built from it. Her spells are Bolt, Explosion and Zone attacks; her lance is Melee.
+
+| Key | Base: Water Princess | Valkyrie Dress (G) | Valkyrie Dress Dragon Form (G again) |
+|---|---|---|---|
+| 1 | **Sea Dragon's Waterball**: she lifts both hands and water gathers out of the air into three swirling spheres (two at her sides, a big one over her head). She throws them one after another at whoever she faces: right hand, left hand, then the big one from overhead with both hands. Each bursts in a splash that catches people next to whoever it hits; the big one knocks them flying and leaves a crater. **Air:** thrown down at them. | **Valkyrie Lance**: she coils with the lance at her hip, then charges flat out behind it on a burst of water (steerable), the spiraling water round its blade whirling like a drill. **It drills through spells:** any Bolt, Explosion, Swarm or Zone attack that meets it from the front during the charge is broken on its point and she keeps going. Caught, she drills them three times and runs them through. **Air:** the charge dives at them. | **Valkyrie Lance**: the same with her dragon lance (bigger, horned, finned), a sea dragon's head forming round its point as she charges. |
+| 2 | **Sea Dragon's Roar**: she raises her hand and the water forms the head of a huge sea dragon over her (jaws, teeth, horns, glowing eyes, fins and a mane), coiling as its serpent body grows behind it. Then she sends it: it flies at whoever she faces with its jaws open, its body streaming after it, and **goes through everyone in its path**, breaking guards and throwing them. It crashes into a splash, a crater and a burst of droplets. | **Lance of the Sea Dragon**: a sea dragon coils round her lance as she draws it back like a javelin, then she hurls it. The lance flies with the dragon's head round its point, through everyone in its path, breaking guards, and crashes in a splash with a geyser. A new lance forms in her hand. | **Lance of the Sea Dragon**: the same with the dragon lance and a bigger dragon. |
+| 3 | **Point-Blank Sea Dragon's Roar**: she draws her palm back to her hip as water rushes into it, then drives it out: a sea dragon's head bursts out of her palm at point-blank range on a torrent of water, **unblockable**, and blasts everyone in front of her (14 studs) far away. The recoil pushes her back a step. **Air:** fired down at them at an angle, spiking them. | **Mermaid Dive**: the Valkyrie Dress turns into a mermaid's tail and she dives into a pool of water in the ground. She swims under the floor to whoever she faces (a fin cutting the surface, ripples racing after it) and bursts up under them in a geyser that throws them straight up. **Unblockable**, hits people lying on the ground, and she's untouchable for the whole dive. | **Sea Dragon God's Tail**: a dragon's tail of water rises up behind her, then she whips it over her head and smashes it down on the ground ahead: a line 15 studs long that breaks guards and hits people lying on the ground. People on the ground are bounced up, people in the air are smacked down. |
+| 4 | **Sea Dragon's Nest**: a dome of water rises round her, covered in turning whirlpools with currents running round it. For 2.5s it **stops every hit from every direction** (grabs aside) and throws close attackers back, while the whirlpools keep pushing everyone inside out. She can walk slowly but not attack. | **Sea Dragon's Nest** (same) | **Sea Dragon God's Vortex**: she spins like a whirlpool, arms out, a sea dragon circling her and rings of water whirling round her. For 1.6s it **stops every hit** (whoever hits her is thrown back), drags everyone within 9 studs in and strikes them again and again, then bursts in a geyser that breaks guards and launches them. |
+| R | **Sea Dragon's Cradle**: she curls up inside a sphere of water and rides it about 27 studs the way she's moving (steerable), **untouchable** for the whole ride, then it bursts and knocks people back. In the air she floats along in it. | (same) | (same) |
+| G | **Valkyrie Dress**: the water wraps round her in a sphere and bursts into armor of water: a breastplate with a gem, faulds, spaulders, vambraces and greaves, a silver-trimmed tiara, and a spiraling water lance in her right hand (held upright, couched under her arm when she glides). She glides on a stream of water about 1.8 studs off the ground, ripples spreading under her. 45s. | **Dragon Form**: deal 60 damage in the Valkyrie Dress (the bar shows the percentage), then press **G** again. A sea dragon spirals round her and Undine circles in as the water bursts up in a geyser: she gains horns, fins, scaled plates, wings of water (bones and see-through membranes that beat slowly and sweep back when she glides), a dragon's tail and a dragon lance, with Undine's saint halo over her head. In this form her attacks **purify**: +25% damage against Asta in Black Form (a devil's power). 30s. | |
+
+**Spawning:** her grimoire comes down to her and circles her as it opens while water rises round her in a whirlpool; she waits with her arms folded and her chin up, then sweeps her arm out as the water bursts and points at them. Her M1s are whips of water: a backhand lash, the left hand back the other way, and an overhead whip crack, with finishers of her own: a palm strike that bursts a wave (knockback), a geyser under them (jump held) and a torrent brought down from the air. Her hits land as splashes and her dashes throw up spray and ripples.
+
+**How her spells look:** everything is water you can see through: glass-like spheres, shimmering skins, foam-white cores, ripples, splash crowns, droplets that fall with gravity, mist and whirlpools. Her sea dragons are built the same way, and their serpent bodies follow the path the head takes.
+
+#### Noelle numbers
+
+| Move | Damage | Cooldown | Notes |
+|---|---|---|---|
+| M1 string | 2.5 / 2.5 / 2.5 / 4 | | Water whips, a little more reach than default; the air downslam can't be blocked |
+| Sea Dragon's Waterball | 7 (2 + 2 + 3) | 9s | Bolt. Soft-locks on whoever she faces within 70 studs. 0.32s cast, then the spheres 0.18s apart. Splashes hit others nearby for 1 (the big one 2, within 7 studs). The big one knocks back and ragdolls |
+| Sea Dragon's Roar | 8 | 14s | Bolt. 0.55s cast. Goes through everyone in its path (80 studs), breaks guards, ragdolls and launches |
+| Point-Blank Sea Dragon's Roar | 9 | 15s | Explosion. Unblockable, 0.25s cast, 14 studs ahead and 9 wide, huge knockback |
+| Sea Dragon's Nest | 1.5 back to close attackers, 0.5 every 0.4s to everyone inside | 17s | Stops every hit from every direction for 2.5s (9-stud dome) |
+| Sea Dragon's Cradle (R) | 1.5 | 10s | 0.8s untouchable ride (steerable), bursts within 7 studs |
+| Valkyrie Dress (G) | ×1.15 damage | ×0.85 cooldowns | +5 speed for 45s |
+| Valkyrie Lance | 6 (3 × 1 + 3) | 9s (Dragon Form 8s) | Melee lunge, about 34 studs, steerable. Breaks spells from the front during the charge |
+| Lance of the Sea Dragon | 9 | 13s (Dragon Form 12s) | Bolt. Goes through everyone in its path, 100 studs, breaks guards |
+| Mermaid Dive | 7 | 12s | Zone. Unblockable geyser (6.5-stud radius) under whoever she faces within 34 studs (else 22 ahead); hits people lying on the ground; untouchable during the dive |
+| Dragon Form (G again) | ×1.3 damage | ×0.75 cooldowns | +8 speed for 30s. Needs 60 damage dealt in the Valkyrie Dress. Purify: ×1.25 against Asta in Black Form |
+| Sea Dragon God's Tail | 9 | 11s | Melee. 0.35s wind-up, a line 15 studs long and 8 wide that breaks guards and hits people lying on the ground |
+| Sea Dragon God's Vortex | 7.8 (8 × 0.6 + 3) | 13s | Stops every hit for 1.6s (1 back to whoever hits her), pulls in within 9 studs; the burst reaches 10 studs, breaks guards and launches |
+
+How she compares:
+
+- **Damage:** her base moves average about 8 damage on about 12.7s cooldowns, like Yuno's, with more burst up close (the Point-Blank Roar) and less control.
+- **Defense:** the Nest, the Cradle and the Vortex make her the hardest of the three to rush down; Asta's guard breaks and Yuno's pulls are how you get through.
+- **Matchup:** Asta's Deflect sends her spells back, but her Mermaid Dive and Point-Blank Roar can't be blocked, and in Dragon Form she purifies Black Form.
+
 ## Test dummies
 
 Three dummies spawn in front of you:
@@ -182,7 +223,8 @@ Three dummies spawn in front of you:
 
 ```
 src/
-  shared/   ReplicatedStorage.Shared: Config, Kits (roster), CombatState, Remotes, Impulse
+  shared/   ReplicatedStorage.Shared: Config, Kits (roster), CombatState, Remotes, Impulse, and the
+            paths shared by cutscenes on both sides (e.g. TempestDive, MermaidDive)
   server/   ServerScriptService.Server: CombatService, Hitbox, Projectile, Ragdoll, Dummies, CharacterLoader
     Kits/   one module per character: skills, awakening, weapon model
   client/   StarterPlayerScripts.Client: Input, Moves, PoseAnimator, M1Animations, VFX, Soft (the
@@ -193,6 +235,9 @@ src/
                   Moon, Comet, Ascent (cutscenes), Animations (generated)
       Wind/       init, Fx, Base, Half and Full (the moves), Look (Crown looks, entrance),
                   Saint, Nova, Waltz (big moves), Hawk, Wings, Sword (models), Animations
+      Water/      init, Fx (the water toolkit), Base, Valkyrie and Dragon (the moves), Look
+                  (Valkyrie Dress and Dragon Form, transformations, entrance), Serpent (the
+                  sea dragon), Lance, Animations
 tools/
   build.py  builds the place file and checks script sizes (below)
   anim/     the animation generators and the R6 checker

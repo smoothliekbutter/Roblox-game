@@ -476,7 +476,8 @@ function Kit.Special(ctx)
 	local aimed = softTarget(ctx, TORNADO_RANGE, 40)
 	local aimedRoot = aimed and rootOf(aimed)
 	local spot = if aimedRoot then aimedRoot.Position else ctx.root.Position + forward * TORNADO_AHEAD
-	local flat = c.Flat(spot - ctx.root.Position)
+	local toSpot = spot - ctx.root.Position
+	local flat = Vector3.new(toSpot.X, 0, toSpot.Z)
 	local along = if flat.Magnitude > 1e-3 then flat.Unit else forward
 	local distance = math.min(flat.Magnitude, reach(ctx, ctx.root.Position, along, TORNADO_RANGE))
 	local ground = floorUnder(ctx, ctx.root.Position + along * math.max(distance, 4))
@@ -790,7 +791,8 @@ local function novaVortex(ctx)
 	local aimedRoot = aimed and rootOf(aimed)
 	local from = ctx.root.Position + forward * 2 + UP * 1.5
 	local spot = if aimedRoot then aimedRoot.Position else ctx.root.Position + forward * NOVA_AHEAD
-	local flat = c.Flat(spot - ctx.root.Position)
+	local toSpot = spot - ctx.root.Position
+	local flat = Vector3.new(toSpot.X, 0, toSpot.Z)
 	local along = if flat.Magnitude > 1e-3 then flat.Unit else forward
 	local distance = math.min(flat.Magnitude, reach(ctx, from, along, NOVA_RANGE))
 	local ground = floorUnder(ctx, ctx.root.Position + along * math.max(distance, 4))
