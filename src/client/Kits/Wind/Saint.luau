@@ -2131,7 +2131,7 @@ end
 function Saint.Handle(data, character: Model, root: BasePart, context: Context)
 	local phase = data.phase
 	if phase == "Flick" then
-		context.play(character, context.anims.Conjunction)
+		context.play(character, context.anims.Point)
 		local hand = handOf(character, "Right") or root.Position
 		local forward = root.CFrame.LookVector
 		local range: number = data.range or 15

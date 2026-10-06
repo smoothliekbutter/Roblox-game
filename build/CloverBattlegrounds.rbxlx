@@ -1042,7 +1042,7 @@ Kits.List = {
 			{ name = "Heavenly Wind Ark", cooldown = 12, type = "Zone", airHold = true },
 			{ name = "Gale White Bow", cooldown = 15, type = "Bolt", airHold = true },
 		},
-		special = { name = "Conjunction", cooldown = 10, type = "Melee" },
+		special = { name = "Shooting Star", cooldown = 10, type = "Melee", airHold = true },
 		awakenedSkills = {
 			{ name = "Spirit Storm", cooldown = 12, type = "Bolt", airHold = true },
 			{ name = "Tempest Dive", cooldown = 16, type = "Melee", airHold = true },
@@ -5481,7 +5481,8 @@ return Kit
         <Item class="ModuleScript" referent="27">
           <Properties>
             <string name="Name">Wind</string>
-            <string name="Source"><![CDATA[local ReplicatedStorage = game:GetService("ReplicatedStorage")
+            <string name="Source"><![CDATA[local PhysicsService = game:GetService("PhysicsService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local CombatState = require(ReplicatedStorage:WaitForChild("Shared").CombatState)
 local SaintPlan = require(ReplicatedStorage:WaitForChild("Shared").SaintZephyr)
@@ -5903,38 +5904,166 @@ local function galeWhiteBow(ctx)
 	CombatState.SetCasting(character, 0.2)
 end
 
-local STAR_DISTANCE = 22
-local STAR_LIFE = 4
+local STAR_COIL = 0.1
+local STAR_TRAVEL = 0.18
+local STAR_REACH = 26
+local STAR_PAST = 7
+local STAR_WIDTH = 6
+local STAR_DIP = 0.7
+local STAR_DELAY = 0.42
+local STAR_RIPPLE = 0.24
+local STAR_TAPER = 1 - 0.45 / 2
+local STAR_GROUP = "StarPhase"
+
+if not PhysicsService:IsCollisionGroupRegistered(STAR_GROUP) then
+	PhysicsService:RegisterCollisionGroup(STAR_GROUP)
+end
+
+local function phase(character: Model): () -> ()
+	for _, group in PhysicsService:GetRegisteredCollisionGroups() do
+		PhysicsService:CollisionGroupSetCollidable(STAR_GROUP, group.name, false)
+	end
+	local saved: { [BasePart]: string } = {}
+	for _, part in character:GetDescendants() do
+		if part:IsA("BasePart") then
+			saved[part] = part.CollisionGroup
+			part.CollisionGroup = STAR_GROUP
+		end
+	end
+	return function()
+		for part, group in saved do
+			if part.Parent and part.CollisionGroup == STAR_GROUP then
+				part.CollisionGroup = group
+			end
+		end
+	end
+end
+
+local function clearance(ctx, origin: Vector3, direction: Vector3, length: number, heights: { number }): number
+	local params = rayParams(ctx)
+	for _, height in heights do
+		local from = origin + UP * height
+		local hit = workspace:Raycast(from, direction * (length + 3), params)
+		if hit and not isCharacterPart(hit.Instance) then
+			length = math.min(length, math.max((hit.Position - from).Magnitude - 3, 0))
+		end
+	end
+	return length
+end
 
 function Kit.Special(ctx)
 	local c, character = ctx.combat, ctx.character
-	local velocity = ctx.root.AssemblyLinearVelocity
-	local moving = Vector3.new(velocity.X, 0, velocity.Z)
-	local direction = if moving.Magnitude > 4 then moving.Unit else look(ctx)
+	local airborne = ctx.airborne
+	CombatState.SetCasting(character, STAR_COIL + STAR_TRAVEL + 0.25)
+	CombatState.GiveIFrames(character, STAR_COIL + STAR_TRAVEL + 0.05)
+	if airborne then
+		c.ApplyVelocity(character, HOVER, STAR_COIL + 0.05)
+	end
+	fx(ctx, "ShootingStar", "Coil", { airborne = airborne })
+	task.wait(STAR_COIL)
+	if interrupted(ctx) then
+		fx(ctx, "ShootingStar", "Cancel")
+		return
+	end
+
 	local origin = ctx.root.Position
-	local wall = workspace:Raycast(origin, direction * STAR_DISTANCE, rayParams(ctx))
-	local star = if wall and not isCharacterPart(wall.Instance)
-		then wall.Position - direction * 2
-		else origin + direction * STAR_DISTANCE
-	local placedAt = os.clock()
-	local since = placedAt
-	fx(ctx, "Conjunction", "Place", { origin = origin, star = star, life = STAR_LIFE })
-	while os.clock() - placedAt < STAR_LIFE and CombatState.IsAlive(character) do
-		task.wait()
-		if c.PressedSince(character, CombatState.SpecialSlot, since) then
-			if not CombatState.CanAct(character) or CombatState.IsCasting(character) then
-				since = os.clock()
-				continue
+	local aimed = softTarget(ctx, STAR_REACH, 35)
+	local aimedRoot = aimed and rootOf(aimed)
+	local direction = aimFrom(ctx, origin, aimed, STAR_DIP)
+	if not airborne then
+		local flat = c.Flat(direction)
+		direction = if flat.Magnitude > 1e-3 then flat.Unit else look(ctx)
+	end
+	local length = STAR_REACH
+	if aimedRoot then
+		length = math.clamp((aimedRoot.Position - origin):Dot(direction) + STAR_PAST, 10, STAR_REACH)
+	end
+	length = clearance(ctx, origin, direction, length, if airborne then { 0 } else { 0, -1.8 })
+	local finish = origin + direction * length
+
+	fx(ctx, "ShootingStar", "Dash", { from = origin, to = finish, travel = STAR_TRAVEL, airborne = airborne })
+	local solid = phase(character)
+	if airborne then
+		c.ApplyVelocity(
+			character,
+			direction * (length / STAR_TRAVEL) + HOVER,
+			STAR_TRAVEL,
+			{ landStop = direction.Y < 0, landKeep = 0.2 }
+		)
+	else
+		c.ApplyVelocity(character, direction * (length / STAR_TRAVEL / STAR_TAPER) + HOVER, STAR_TRAVEL)
+	end
+
+	local marked: { [Model]: boolean } = {}
+	local caught: { Model } = {}
+	local start = os.clock()
+	while true do
+		local t = math.min((os.clock() - start) / STAR_TRAVEL, 1)
+		local covered = length * t
+		if covered > 0.5 then
+			local box = CFrame.lookAt(origin + direction * (covered / 2), origin + direction * covered)
+			for _, victim in c.Box(character, box, Vector3.new(STAR_WIDTH, STAR_WIDTH + 1, covered + 3)) do
+				if not marked[victim] then
+					marked[victim] = true
+					local result = c.Hit(character, victim, {
+						damage = 1,
+						stun = STAR_DELAY + STAR_RIPPLE + 0.5,
+						attackType = "Melee",
+						velocity = Vector3.zero,
+						noShake = true,
+					})
+					if result == "Hit" then
+						table.insert(caught, victim)
+						fx(ctx, "ShootingStar", "Mark", { victim = victim })
+					end
+				end
 			end
-			local from = ctx.root.Position
-			CombatState.GiveIFrames(character, 0.3)
-			ctx.root.CFrame = CFrame.lookAt(star, star + c.Flat(ctx.root.CFrame.LookVector))
-			c.ApplyVelocity(character, Vector3.zero, 0.05)
-			fx(ctx, "Conjunction", "Warp", { from = from, star = star })
-			return
+		end
+		if t >= 1 then
+			break
+		end
+		task.wait()
+	end
+	solid()
+	c.ApplyVelocity(character, HOVER, 0.06)
+	CombatState.SetCasting(character, 0.15)
+	fx(ctx, "ShootingStar", "Arrive", { direction = direction, caught = #caught })
+
+	task.wait(STAR_DELAY)
+	if not CombatState.IsAlive(character) then
+		fx(ctx, "ShootingStar", "Cancel")
+		return
+	end
+	local bursting: { Model } = {}
+	for _, victim in caught do
+		if CombatState.IsAlive(victim) and CombatState.IsStunned(victim) then
+			table.insert(bursting, victim)
 		end
 	end
-	fx(ctx, "Conjunction", "Fade", { star = star })
+	fx(ctx, "ShootingStar", "Burst", { from = origin, to = finish, victims = bursting, ripple = STAR_RIPPLE })
+	local outward = c.Flat(direction)
+	for _, victim in bursting do
+		local victimRoot = rootOf(victim)
+		local along = if victimRoot
+			then math.clamp((victimRoot.Position - origin):Dot(direction) / math.max(length, 1), 0, 1)
+			else 1
+		task.delay(STAR_RIPPLE * along, function()
+			if CombatState.IsAlive(victim) then
+				c.Hit(character, victim, {
+					damage = 5,
+					stun = 1,
+					attackType = "Explosion",
+					unblockable = true,
+					heavy = true,
+					ragdoll = 1,
+					velocity = UP * 58 + (if outward.Magnitude > 1e-3 then outward.Unit * 8 else Vector3.zero),
+				})
+			end
+		end)
+	end
+	if #bursting > 0 then
+		c.ShakeArea((origin + finish) / 2, 45, 0.35)
+	end
 end
 
 local STORM_CHARGE = 0.45
@@ -16470,7 +16599,7 @@ Animations.Bow = clip(
 ]]
 )
 
-Animations.Conjunction = clip(
+Animations.Point = clip(
 	{ fadeOut = 0.2 },
 	[[
 0|b.093 -3 12|r2 -10|l12 4 10|l30 -8 -16|r-4 0 6|r6 0 -7
@@ -16481,11 +16610,34 @@ Animations.Conjunction = clip(
 ]]
 )
 
-Animations.Warp = clip(
-	{ fadeIn = 0.01 },
+Animations.StarDash = clip(
+	{ fadeIn = 0.03, fadeOut = 0.05 },
 	[[
-0|b.017 -16 10|r10 -8|l30 0 40|l30 0 -40|r-22 0 12|r22 0 -12
-.35 So|b.093 -3 12|r2 -10|l12 4 10|l30 -8 -16|r-4 0 6|r6 0 -7
+0|b.093 -3 12|r2 -10|l12 4 10|l30 -8 -16|r-4 0 6|r6 0 -7
+.1 So|b.081 -24 -16|r16 14|l-34 0 22|l58 -16 -14|r-30 0 8|r38 0 -6
+.15 To|b-.252 -40 12|r30 -10|l124 -8 4|l-46 0 -22|r-48 0 6|r30 0 -6
+.34 Lo|b-.252 -40 12|r30 -10|l124 -8 4|l-46 0 -22|r-48 0 6|r30 0 -6
+]]
+)
+
+Animations.StarDashAir = clip(
+	{ fadeIn = 0.03, fadeOut = 0.05 },
+	[[
+0|r-6|r4|l40 0 30|l40 0 -30|r30|r-12
+.1 So|r-12 -16|r12 14|l-30 0 22|l56 -16 -14|r40 0 8|r14 0 -6
+.15 To|r-60 10|r36 -10|l118 -8 4|l-50 0 -22|r-62 0 6|r-44 0 -6
+.34 Lo|r-60 10|r36 -10|l118 -8 4|l-50 0 -22|r-62 0 6|r-44 0 -6
+]]
+)
+
+Animations.StarLand = clip(
+	{ fadeIn = 0.03, fadeOut = 0.25 },
+	[[
+0|b-.252 -40 12|r30 -10|l124 -8 4|l-46 0 -22|r-48 0 6|r30 0 -6
+.06 To|b-.151 -22 -24|r6 -40|l70 -30 72|l30 8 -20|r44 0 12|r-40 0 -14
+.18 So|b-.243 -26 -28|r6 -46|l66 -34 80|l26 8 -22|r46 0 12|r-42 0 -14
+.45 Sx|b.014 -14 -18|r4 -30|l44 -20 56|l26 6 -18|r30 0 10|r-28 0 -12
+.8 Sx|b.093 -3 12|r2 -10|l12 4 10|l30 -8 -16|r-4 0 6|r6 0 -7
 ]]
 )
 
@@ -17810,116 +17962,346 @@ function handlers.GaleWhiteBow(data, character, root)
 	end
 end
 
-local stars: { [Model]: Star } = {}
+type StarRun = {
+	parts: { BasePart },
+	beams: { Beam },
+	anchors: { Attachment },
+	trails: { Trail },
+	marks: { [Model]: () -> () },
+	travelling: boolean,
+}
 
-function handlers.Conjunction(data, character, root)
-	if data.phase == "Place" then
-		play(character, ANIMS.Conjunction)
-		local old = stars[character]
-		if old then
-			old.fade(0.1)
+local starRuns: { [Model]: StarRun } = {}
+
+local function endStarRun(character: Model, duration: number)
+	local run = starRuns[character]
+	if not run then
+		return
+	end
+	starRuns[character] = nil
+	run.travelling = false
+	for _, trail in run.trails do
+		Soft.endTrail(trail)
+	end
+	fadeOut(run.parts, duration)
+	fadeBeams(run.beams, duration, run.anchors)
+	for _, pop in run.marks do
+		pop()
+	end
+end
+
+local function starlightBody(character: Model, duration: number)
+	local parts: { BasePart } = {}
+	for _, part in character:GetDescendants() do
+		if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+			part.LocalTransparencyModifier = 0.7
+			table.insert(parts, part)
 		end
-		local origin: Vector3 = data.origin
-		local spot: Vector3 = data.star
-		local star = makeStar(1.8)
-		stars[character] = star
-		local from, at = worldAnchor(origin), worldAnchor(origin)
-		local thread = Soft.starStream(from, at, 0.35, 5)
-		task.delay(0.15, fadeBeams, { thread }, 0.25, { from, at })
-		local halo = softRing({
-			color = ColorSequence.new(STAR_WHITE, STAR),
-			width0 = 0.3,
-			width1 = 0.3,
-			transparency = NumberSequence.new(0.45),
-			texture = SPARKLE,
-			wrap = true,
-			length = 0.8,
-			speed = 1,
-		})
-		local arrived = false
-		every(data.life, function(elapsed)
-			if stars[character] ~= star then
-				return false
+	end
+	U.highlight(character, STAR, duration + 0.25, 0.45)
+	task.delay(duration, function()
+		for _, part in parts do
+			if part.Parent then
+				U.tween(part, 0.15, { LocalTransparencyModifier = 0 })
 			end
-			local travel = math.min(elapsed / 0.15, 1)
-			local position = origin:Lerp(spot, 1 - (1 - travel) ^ 2)
-			star.place(position + UP * math.sin(elapsed * 3) * 0.15, elapsed * 2.5)
-			if at.Parent then
-				at.CFrame = CFrame.new(position)
-			end
-			local camera = workspace.CurrentCamera.CFrame.Position
-			halo.set(
-				CFrame.lookAt(position, camera) * CFrame.Angles(rad(90), 0, 0),
-				(1.6 + 0.15 * math.sin(elapsed * 4)) * travel + 0.05
-			)
-			if travel >= 1 and not arrived then
-				arrived = true
-				twinkle(spot, 4, STAR, 0.25)
-			end
-			return true
-		end, function()
-			halo.fade(0.2)
-			if stars[character] == star then
-				stars[character] = nil
-				star.fade(0.3)
+		end
+	end)
+end
+
+local function starMark(victim: Model): () -> ()
+	local star = makeStar(1.3)
+	local halo = softRing({
+		color = ColorSequence.new(STAR_WHITE, STAR),
+		width0 = 0.22,
+		width1 = 0.22,
+		transparency = NumberSequence.new(0.3),
+		texture = SPARKLE,
+		wrap = true,
+		length = 0.8,
+		speed = 1.5,
+	})
+	local done = false
+	local function pop()
+		if not done then
+			done = true
+			star.fade(0.12)
+			halo.fade(0.12)
+		end
+	end
+	every(3, function(elapsed)
+		local torso = victim:FindFirstChild("Torso") or victim:FindFirstChild("HumanoidRootPart")
+		if done or not (torso and torso:IsA("BasePart")) then
+			return false
+		end
+		local at = torso.Position
+		star.place(at + UP * 0.3, elapsed * 5)
+		halo.set(CFrame.new(at) * CFrame.Angles(rad(18), elapsed * 2.5, rad(-12)), 2.3 + math.sin(elapsed * 9) * 0.15)
+		return true
+	end, pop)
+	local torso = victim:FindFirstChild("Torso")
+	if torso and torso:IsA("BasePart") then
+		local at = torso.Position
+		local across = (torso.CFrame.RightVector + UP * 0.7).Unit
+		local cut = bar(at - across * 2.6, at + across * 2.6, 0.12, STAR_WHITE, 0)
+		local sheen = bar(at - across * 2.8, at + across * 2.8, 0.7, STAR, 0.6)
+		fadeOut({ cut, sheen }, 0.3)
+		U.glint(at, 1.1, STAR_WHITE)
+		twinkle(at, 4, STAR, 0.3)
+	end
+	U.highlight(victim, STAR, 0.5, 0.65)
+	return pop
+end
+
+local function starBurst(at: Vector3, big: boolean, involved: boolean)
+	local floor = U.groundBelow(at, nil, 8)
+	local base = if floor then floor.Position else at - UP * 3
+	local k = if big then 1 else 0.45
+	U.flash(at, STAR_WHITE, 7 * k, 0.22)
+	twinkle(at, 6 * k, STAR, 0.35)
+	U.impactSpikes(at, STAR, if big then 10 else 6, 7 * k, 0.3, STAR_WHITE)
+	lightRing(base + UP * 0.2, UP, 0.5, 8 * k, 0.35)
+	windRing(base + UP * 0.3, UP, 1, 7 * k, 0.35)
+	starDust(at, math.floor(20 * k), 30 * k, UP)
+	U.light(at, STAR, 6 * k, 18 * k, 0.4)
+	if big then
+		U.pillar(base, STAR, 1.1, 22, 0.5, Enum.Material.Neon, 0.35)
+		U.pillar(base, WIND, 2.6, 16, 0.45, Enum.Material.ForceField, 0.4)
+		U.shards(at, STAR, 8)
+		featherBurst(at, 6, 14)
+		gust(at, 4, UP)
+	end
+	if involved then
+		CameraShake.Add(if big then 0.35 else 0.12)
+	end
+end
+
+function handlers.ShootingStar(data, character, root)
+	local phase = data.phase
+	if phase == "Coil" then
+		endStarRun(character, 0.1)
+		play(character, if data.airborne then ANIMS.StarDashAir else ANIMS.StarDash)
+		local feet = root.Position - UP * 2.8
+		for _ = 1, 6 do
+			inflow(root.Position, 5, STAR)
+		end
+		lightRing(feet + UP * 0.1, UP, 4.5, 1, 0.12)
+		task.delay(0.07, function()
+			local hand = handOf(character, "Right")
+			if hand then
+				U.glint(hand, 0.9, STAR_WHITE)
 			end
 		end)
-		U.ringBurst(CFrame.new(spot), STAR, 0.4, 3, 0.35, 0.1)
-		lightRing(spot, UP, 0.3, 3.5, 0.3)
-	elseif data.phase == "Warp" then
-		local star = stars[character]
-		stars[character] = nil
-		if star then
-			star.fade(0.15)
-		end
-		local from: Vector3 = data.from
-		local spot: Vector3 = data.star
-		play(character, ANIMS.Warp)
-		local line = bar(from, spot, 0.25, STAR_WHITE, 0.1)
-		local glow = bar(from, spot, 0.9, STAR, 0.6)
-		fadeOut({ line, glow }, 0.25)
-		U.afterimage(character, STAR, 0.45, from - root.Position)
-		starDust(from, 16, 14)
-		featherBurst(spot, 6, 10)
-		U.impactSpikes(spot, STAR, 10, 6, 0.24, STAR_WHITE)
-		local a0, a1 = worldAnchor(from, spot - from), worldAnchor(spot, spot - from)
-		fadeBeams({
-			Soft.starStream(a0, a1, 1.2, 14),
-			softBeam(a0, a1, {
-				color = ColorSequence.new(WIND_WHITE, WIND),
-				width0 = 2.5,
-				width1 = 4,
-				transparency = NumberSequence.new({ key(0, 0.6), key(1, 0.75) }),
-				texture = SMOKE,
-				speed = 10,
-				length = 6,
-			}),
-		}, 0.35, { a0, a1 })
-		windPuff(from, 2.5)
-		for _, at in { from, spot } do
-			twinkle(at, 5, STAR, 0.25)
-			lightRing(at - UP * 2.6, UP, 0.5, 6, 0.3)
-			U.flash(at, STAR_WHITE, 6, 0.25)
-			U.ringBurst(CFrame.new(at - UP * 2.6), STAR, 1, 6, 0.3, 0.12)
-			U.burst(at, {
-				color = STAR,
-				count = 14,
-				size = 0.35,
-				speed = NumberRange.new(8, 20),
-				lifetime = NumberRange.new(0.3, 0.6),
-				spread = 180,
-				drag = 3,
-			})
-		end
-		U.light(spot, STAR, 4, 16, 0.3)
 		if U.isLocal(character) then
-			CameraShake.FovKick(-6)
+			CameraShake.FovKick(-4)
 		end
-	elseif data.phase == "Fade" then
-		local star = stars[character]
-		stars[character] = nil
-		if star then
-			star.fade(0.3)
+	elseif phase == "Dash" then
+		local from: Vector3 = data.from
+		local to: Vector3 = data.to
+		local travel: number = data.travel
+		local offset = to - from
+		local reach = offset.Magnitude
+		local direction = if reach > 1e-3 then offset.Unit else root.CFrame.LookVector
+		local core = bar(from, from + direction * 0.1, 0.1, STAR_WHITE, 0)
+		local glow = bar(from, from + direction * 0.1, 0.6, STAR, 0.72)
+		local a0, a1 = worldAnchor(from, direction), worldAnchor(from, direction)
+		local stream = Soft.starStream(a0, a1, 0.9, 10)
+		local mist = softBeam(a0, a1, {
+			color = ColorSequence.new(WIND_WHITE, WIND),
+			width0 = 1.8,
+			width1 = 1.8,
+			transparency = NumberSequence.new({ key(0, 0.75), key(0.5, 0.55), key(1, 0.75) }),
+			texture = SMOKE,
+			speed = 6,
+			length = 5,
+		})
+		local run: StarRun = {
+			parts = { core, glow },
+			beams = { stream, mist },
+			anchors = { a0, a1 },
+			trails = {},
+			marks = {},
+			travelling = true,
+		}
+		starRuns[character] = run
+		local torso = character:FindFirstChild("Torso")
+		if torso and torso:IsA("BasePart") then
+			table.insert(
+				run.trails,
+				Soft.trail(torso, Vector3.new(0, 1.4, 0), Vector3.new(0, -1.4, 0), {
+					color = ColorSequence.new(STAR_WHITE, STAR),
+					transparency = NumberSequence.new({ key(0, 0.15), key(1, 1) }),
+					width = NumberSequence.new({ key(0, 1), key(1, 0.15) }),
+					lifetime = 0.3,
+				})
+			)
+			table.insert(
+				run.trails,
+				Soft.trail(torso, Vector3.new(0, 2.4, 0), Vector3.new(0, -2.4, 0), {
+					color = ColorSequence.new(WIND_WHITE, WIND),
+					transparency = NumberSequence.new({ key(0, 0.5), key(1, 1) }),
+					width = NumberSequence.new({ key(0, 1), key(1, 0.4) }),
+					lifetime = 0.45,
+					texture = SMOKE,
+				})
+			)
+		end
+		starlightBody(character, travel + 0.05)
+		local carried = Instance.new("PointLight")
+		carried.Color = STAR
+		carried.Range = 16
+		carried.Brightness = 3
+		carried.Parent = root
+		task.delay(travel + 0.15, carried.Destroy, carried)
+		local head = makeStar(2.4)
+		local headLit = true
+		local ghosts = 0
+		local reached = 0
+		every(travel + 0.2, function(elapsed)
+			if not run.travelling then
+				reached = reach
+				if headLit then
+					headLit = false
+					head.fade(0.15)
+				end
+			else
+				reached = math.max(reached, math.clamp((root.Position - from):Dot(direction), 0, reach))
+				head.place(root.Position + direction * 1.4, elapsed * 14)
+				if elapsed >= ghosts * 0.04 and ghosts < 5 then
+					ghosts += 1
+					U.afterimage(character, if ghosts % 2 == 0 then WIND_WHITE else STAR, 0.32)
+					Soft.streaks(root.Position, 3, 30, -direction, 25)
+				end
+			end
+			local tip = from + direction * math.max(reached, 0.1)
+			Soft.stretch(core, from, tip)
+			Soft.stretch(glow, from, tip)
+			Soft.aim(a1, tip, direction)
+			return starRuns[character] == run
+		end, function()
+			if headLit then
+				headLit = false
+				head.fade(0.15)
+			end
+		end)
+		if not data.airborne then
+			local start = U.groundBelow(from, { character }, 8)
+			local finish = U.groundBelow(to, { character }, 8)
+			if start and finish then
+				U.groove(start.Position, finish.Position, 0.5, STAR, 1.6, reach / travel)
+			end
+			U.dustWave(from, 4, nil, 6)
+		end
+		featherBurst(from, 6, 10)
+		windPuff(from, 2.5, -direction)
+		U.flash(from, STAR_WHITE, 4, 0.15)
+		lightRing(from, direction, 0.4, 4, 0.25)
+		U.ringBurst(CFrame.lookAt(from, from + direction) * CFrame.Angles(rad(90), 0, 0), STAR, 0.6, 4, 0.25, 0.12)
+		if U.isLocal(character) then
+			U.speedLines(root, direction, travel + 0.05, STAR_WHITE)
+			CameraShake.FovKick(10)
+		end
+	elseif phase == "Mark" then
+		local run = starRuns[character]
+		local victim = data.victim
+		if run and typeof(victim) == "Instance" and victim:IsA("Model") and not run.marks[victim] then
+			run.marks[victim] = starMark(victim)
+		end
+	elseif phase == "Arrive" then
+		local run = starRuns[character]
+		play(character, ANIMS.StarLand)
+		local direction: Vector3 = data.direction
+		local flat = Vector3.new(direction.X, 0, direction.Z)
+		local ahead = if flat.Magnitude > 1e-3 then flat.Unit else root.CFrame.LookVector
+		if run then
+			run.travelling = false
+			for _, trail in run.trails do
+				Soft.endTrail(trail)
+			end
+			run.trails = {}
+		end
+		local at = root.Position
+		local feet = at - UP * 2.8
+		windPuff(feet + UP * 0.5, 3, ahead)
+		featherBurst(at, 8, 12)
+		twinkle(at, 4, STAR, 0.3)
+		U.flash(at, STAR_WHITE, 5, 0.2)
+		lightRing(feet + UP * 0.1, UP, 0.5, 6, 0.3)
+		U.dustWave(at, 5, nil, 8)
+		U.groove(feet - ahead * 3, feet + ahead * 1.5, 0.6, STAR, 1.4)
+		if (data.caught or 0) > 0 then
+			local involved = U.isLocal(character)
+			if not involved and run then
+				for victim in run.marks do
+					if U.isLocal(victim) then
+						involved = true
+					end
+				end
+			end
+			if involved then
+				Soft.focusLines(0.35)
+				CameraShake.FovKick(-6)
+			end
+		end
+	elseif phase == "Burst" then
+		local run = starRuns[character]
+		local from: Vector3 = data.from
+		local to: Vector3 = data.to
+		local ripple: number = data.ripple
+		local offset = to - from
+		local reach = offset.Magnitude
+		local direction = if reach > 1e-3 then offset.Unit else root.CFrame.LookVector
+		local steps = math.max(math.floor(reach / 2.5), 1)
+		for i = 0, steps do
+			local point = from + direction * (reach * i / steps)
+			task.delay(ripple * i / steps, function()
+				twinkle(point, 3.5, STAR, 0.3)
+				U.flash(point, STAR_WHITE, 2.4, 0.14)
+				lightRing(point, direction, 0.2, 2.6, 0.28)
+				starDust(point, 5, 12, UP)
+				if i % 2 == 0 then
+					windPuff(point, 1.6, UP)
+				end
+			end)
+		end
+		task.delay(ripple, function()
+			if starRuns[character] == run then
+				endStarRun(character, 0.3)
+			end
+			twinkle(to, 6, STAR, 0.4)
+		end)
+		local victims = if type(data.victims) == "table" then data.victims else {}
+		local involved = U.isLocal(character)
+		for _, victim in victims do
+			if typeof(victim) == "Instance" and victim:IsA("Model") then
+				involved = involved or U.isLocal(victim)
+			end
+		end
+		for _, victim in victims do
+			local victimRoot = if typeof(victim) == "Instance" and victim:IsA("Model") then U.getRoot(victim) else nil
+			if victimRoot then
+				local along = math.clamp((victimRoot.Position - from):Dot(direction) / math.max(reach, 1), 0, 1)
+				task.delay(ripple * along, function()
+					local pop = run and run.marks[victim]
+					if pop then
+						run.marks[victim] = nil
+						pop()
+					end
+					if victimRoot.Parent then
+						starBurst(victimRoot.Position, true, involved)
+					end
+				end)
+			end
+		end
+		if #victims == 0 then
+			task.delay(ripple, starBurst, to, false, false)
+		elseif involved then
+			task.delay(ripple * 0.5, CameraShake.FovKick, 5)
+		end
+	elseif phase == "Cancel" then
+		endStarRun(character, 0.2)
+		local current = PoseAnimator.Current(character)
+		if current == ANIMS.StarDash or current == ANIMS.StarDashAir then
+			PoseAnimator.FadeOut(character, 0.15)
 		end
 	end
 end
@@ -23133,7 +23515,7 @@ end
 function Saint.Handle(data, character: Model, root: BasePart, context: Context)
 	local phase = data.phase
 	if phase == "Flick" then
-		context.play(character, context.anims.Conjunction)
+		context.play(character, context.anims.Point)
 		local hand = handOf(character, "Right") or root.Position
 		local forward = root.CFrame.LookVector
 		local range: number = data.range or 15

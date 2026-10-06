@@ -130,11 +130,28 @@ BOW_AIM = pose(R(-4, -68), R(4, 62), L(92, 70, 0), L(90, 64, 0), R(-16, 20, 8), 
 BOW_FULL = pose(R(-6, -72), R(4, 66), L(90, 50, -2), L(90, 70, 0), R(-18, 22, 8), R(18, 22, -6))
 BOW = [(0.0, STANCE), (0.25, BOW_AIM), (0.5, BOW_FULL), (1.35, BOW_FULL)]
 
-# Conjunction: points where the star goes (0.12); arrives low and poised.
+# Points where a star goes (0.12): Saint Spirit of Zephyr's flick.
 POINT = pose(R(-4, -10), R(6, 10), L(104, 14, 4), L(20, 0, -18), R(-10, 0, 6), R(12, 0, -6))
-CONJUNCTION = [(0.0, STANCE), (0.12, POINT), (0.4, POINT)]
-ARRIVE = pose(R(-16, 10), R(10, -8), L(30, 0, 40), L(30, 0, -40), R(-22, 0, 12), R(22, 0, -12))
-WARP = [(0.0, ARRIVE), (0.35, STANCE)]
+POINTING = [(0.0, STANCE), (0.12, POINT), (0.4, POINT)]
+
+# Shooting Star (R): coiled low like a sprinter, the right hand drawn back at
+# the hip like a blade (0.1); then the rush, a low streaking stride with that
+# hand leading and the free arm flung back (0.15). (Legs: +x swings the foot
+# forward, -x back.) He arrives in a skid, his back to whoever he went
+# through, the hand swept out to the side, glancing back over his shoulder;
+# it carries on a little past the stop, then he rises.
+STAR_COIL = pose(R(-24, -16), R(16, 14), L(-34, 0, 22), L(58, -16, -14), R(-30, 0, 8), R(38, 0, -6))
+STAR_RUSH = pose(R(-40, 12), R(30, -10), L(124, -8, 4), L(-46, 0, -22), R(-48, 0, 6), R(30, 0, -6))
+STAR_SKID = pose(R(-22, -24), R(6, -40), L(70, -30, 72), L(30, 8, -20), R(44, 0, 12), R(-40, 0, -14))
+STAR_SKID_OVER = pose(R(-26, -28), R(6, -46), L(66, -34, 80), L(26, 8, -22), R(46, 0, 12), R(-42, 0, -14))
+STAR_SKID_SETTLE = pose(R(-14, -18), R(4, -30), L(44, -20, 56), L(26, 6, -18), R(30, 0, 10), R(-28, 0, -12))
+STAR_DASH = [(0.0, STANCE), (0.1, STAR_COIL), (0.15, STAR_RUSH), (0.34, STAR_RUSH)]
+STAR_LAND = [(0.0, STAR_RUSH), (0.06, STAR_SKID), (0.18, STAR_SKID_OVER), (0.45, STAR_SKID_SETTLE), (0.8, STANCE)]
+# In the air: knees up for the coil, then a dive down at the ground ahead,
+# legs streaming out behind.
+STAR_COIL_AIR = pose(R(-12, -16), R(12, 14), L(-30, 0, 22), L(56, -16, -14), R(40, 0, 8), R(14, 0, -6))
+STAR_RUSH_AIR = pose(R(-60, 10), R(36, -10), L(118, -8, 4), L(-50, 0, -22), R(-62, 0, 6), R(-44, 0, -6))
+STAR_DASH_AIR = [(0.0, AIR[0][1]), (0.1, STAR_COIL_AIR), (0.15, STAR_RUSH_AIR), (0.34, STAR_RUSH_AIR)]
 
 # ---------------- Half-Crown Spirit of Zephyr ----------------
 # Spirit Storm: palm out, the left hand bracing the wrist, mana gathering
@@ -283,8 +300,10 @@ SPEC = {
     'Ark': dict(keys=ARK, ease=snap(4), fadeOut=0.3, doc="Heavenly Wind Ark: low and wide, then both arms sweep up."),
     'AirArk': dict(keys=AIR_ARK, ease=snap(4), fadeOut=0.3, doc="Heavenly Wind Ark in the air: both arms sweep down."),
     'Bow': dict(keys=BOW, ease=[None, SINE_OUT, SINE_IO, LINEAR], fadeOut=0.25, doc="Gale White Bow: archer's stance, held through the volley."),
-    'Conjunction': dict(keys=CONJUNCTION, ease=snap(3), fadeOut=0.2, doc="Conjunction: points where the star goes."),
-    'Warp': dict(keys=WARP, ease=[None, SINE_OUT], fadeIn=0.01, doc="Conjunction: arriving at the star, low and poised."),
+    'Point': dict(keys=POINTING, ease=snap(3), fadeOut=0.2, doc="Points where a star goes (Saint Spirit of Zephyr's flick)."),
+    'StarDash': dict(keys=STAR_DASH, ease=[None, SINE_OUT, QUART_OUT, LINEAR], fadeIn=0.03, fadeOut=0.05, doc="Shooting Star: coiled low, then the rush, hand leading like a blade."),
+    'StarDashAir': dict(keys=STAR_DASH_AIR, ease=[None, SINE_OUT, QUART_OUT, LINEAR], fadeIn=0.03, fadeOut=0.05, doc="Shooting Star in the air: knees up, then the dive."),
+    'StarLand': dict(keys=STAR_LAND, ease=[None, QUART_OUT, SINE_OUT, SINE_IO, SINE_IO], fadeIn=0.03, fadeOut=0.25, doc="Shooting Star: the skid stop, his back to them, glancing back, then up."),
     'StormCharge': dict(keys=STORM_CHARGE, ease=[None, SINE_OUT, LINEAR], fadeOut=0.05, doc="Spirit Storm: palm out, mana gathering."),
     'StormFire': dict(keys=STORM_FIRE, ease=[None, QUART_OUT, LINEAR], fadeIn=0.02, fadeOut=0.3, doc="Spirit Storm: leaning into the beam."),
     'Scutum': dict(keys=SCUTUM, ease=[None, SINE_OUT, LINEAR], fadeOut=0.2, doc="Quartile Scutum: hands out, holding the barrier."),
@@ -366,13 +385,13 @@ def lively(spec, k=0.14):
     ease = ease[:i + 1] + [a[2] for a in added] + [SINE_IO_ if held else e for e in tail_ease]
     spec['keys'], spec['ease'] = keys, ease
 
-for _name in ('Shower', 'Hawk', 'Ark', 'AirArk', 'Bow', 'Conjunction', 'Warp', 'StormCharge', 'StormFire', 'Scutum',
+for _name in ('Shower', 'Hawk', 'Ark', 'AirArk', 'Bow', 'Point', 'StormCharge', 'StormFire', 'Scutum',
               'NovaForm', 'NovaFlick', 'NovaFormAir', 'NovaFlickAir', 'Notos', 'ZephyrusLunge', 'ZephyrusThrust',
               'BoreasForm', 'BoreasChop', 'EurosDraw', 'EurosLoose', 'TempestDrag'):
     lively(SPEC[_name])
 
 # Played in the air (not planted, feet not checked); the run sets its own height.
-AIRBORNE = {'Air', 'AirArk', 'TempestDrag', 'NovaFormAir', 'NovaFlickAir', 'HoverIdle', 'HoverMove', 'SaintCut', 'SaintCutBack', 'SaintAscend', 'SaintPoise', 'SaintRise', 'SaintStrike', 'ZephyrusDraw', 'ZephyrusSkewer'}
+AIRBORNE = {'Air', 'AirArk', 'StarDashAir', 'TempestDrag', 'NovaFormAir', 'NovaFlickAir', 'HoverIdle', 'HoverMove', 'SaintCut', 'SaintCutBack', 'SaintAscend', 'SaintPoise', 'SaintRise', 'SaintStrike', 'ZephyrusDraw', 'ZephyrusSkewer'}
 OWN_HEIGHT = {'Run'}
 ALL = {name: spec['keys'] if name in AIRBORNE or name in OWN_HEIGHT else plant(spec['keys']) for name, spec in SPEC.items()}
 

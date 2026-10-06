@@ -137,7 +137,7 @@ Kits.List = {
 			{ name = "Heavenly Wind Ark", cooldown = 12, type = "Zone", airHold = true },
 			{ name = "Gale White Bow", cooldown = 15, type = "Bolt", airHold = true },
 		},
-		special = { name = "Conjunction", cooldown = 10, type = "Melee" },
+		special = { name = "Shooting Star", cooldown = 10, type = "Melee", airHold = true },
 		awakenedSkills = {
 			{ name = "Spirit Storm", cooldown = 12, type = "Bolt", airHold = true },
 			{ name = "Tempest Dive", cooldown = 16, type = "Melee", airHold = true },

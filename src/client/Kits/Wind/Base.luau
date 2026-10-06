@@ -1021,116 +1021,346 @@ function handlers.GaleWhiteBow(data, character, root)
 	end
 end
 
-local stars: { [Model]: Star } = {}
+type StarRun = {
+	parts: { BasePart },
+	beams: { Beam },
+	anchors: { Attachment },
+	trails: { Trail },
+	marks: { [Model]: () -> () },
+	travelling: boolean,
+}
 
-function handlers.Conjunction(data, character, root)
-	if data.phase == "Place" then
-		play(character, ANIMS.Conjunction)
-		local old = stars[character]
-		if old then
-			old.fade(0.1)
+local starRuns: { [Model]: StarRun } = {}
+
+local function endStarRun(character: Model, duration: number)
+	local run = starRuns[character]
+	if not run then
+		return
+	end
+	starRuns[character] = nil
+	run.travelling = false
+	for _, trail in run.trails do
+		Soft.endTrail(trail)
+	end
+	fadeOut(run.parts, duration)
+	fadeBeams(run.beams, duration, run.anchors)
+	for _, pop in run.marks do
+		pop()
+	end
+end
+
+local function starlightBody(character: Model, duration: number)
+	local parts: { BasePart } = {}
+	for _, part in character:GetDescendants() do
+		if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+			part.LocalTransparencyModifier = 0.7
+			table.insert(parts, part)
 		end
-		local origin: Vector3 = data.origin
-		local spot: Vector3 = data.star
-		local star = makeStar(1.8)
-		stars[character] = star
-		local from, at = worldAnchor(origin), worldAnchor(origin)
-		local thread = Soft.starStream(from, at, 0.35, 5)
-		task.delay(0.15, fadeBeams, { thread }, 0.25, { from, at })
-		local halo = softRing({
-			color = ColorSequence.new(STAR_WHITE, STAR),
-			width0 = 0.3,
-			width1 = 0.3,
-			transparency = NumberSequence.new(0.45),
-			texture = SPARKLE,
-			wrap = true,
-			length = 0.8,
-			speed = 1,
-		})
-		local arrived = false
-		every(data.life, function(elapsed)
-			if stars[character] ~= star then
-				return false
+	end
+	U.highlight(character, STAR, duration + 0.25, 0.45)
+	task.delay(duration, function()
+		for _, part in parts do
+			if part.Parent then
+				U.tween(part, 0.15, { LocalTransparencyModifier = 0 })
 			end
-			local travel = math.min(elapsed / 0.15, 1)
-			local position = origin:Lerp(spot, 1 - (1 - travel) ^ 2)
-			star.place(position + UP * math.sin(elapsed * 3) * 0.15, elapsed * 2.5)
-			if at.Parent then
-				at.CFrame = CFrame.new(position)
-			end
-			local camera = workspace.CurrentCamera.CFrame.Position
-			halo.set(
-				CFrame.lookAt(position, camera) * CFrame.Angles(rad(90), 0, 0),
-				(1.6 + 0.15 * math.sin(elapsed * 4)) * travel + 0.05
-			)
-			if travel >= 1 and not arrived then
-				arrived = true
-				twinkle(spot, 4, STAR, 0.25)
-			end
-			return true
-		end, function()
-			halo.fade(0.2)
-			if stars[character] == star then
-				stars[character] = nil
-				star.fade(0.3)
+		end
+	end)
+end
+
+local function starMark(victim: Model): () -> ()
+	local star = makeStar(1.3)
+	local halo = softRing({
+		color = ColorSequence.new(STAR_WHITE, STAR),
+		width0 = 0.22,
+		width1 = 0.22,
+		transparency = NumberSequence.new(0.3),
+		texture = SPARKLE,
+		wrap = true,
+		length = 0.8,
+		speed = 1.5,
+	})
+	local done = false
+	local function pop()
+		if not done then
+			done = true
+			star.fade(0.12)
+			halo.fade(0.12)
+		end
+	end
+	every(3, function(elapsed)
+		local torso = victim:FindFirstChild("Torso") or victim:FindFirstChild("HumanoidRootPart")
+		if done or not (torso and torso:IsA("BasePart")) then
+			return false
+		end
+		local at = torso.Position
+		star.place(at + UP * 0.3, elapsed * 5)
+		halo.set(CFrame.new(at) * CFrame.Angles(rad(18), elapsed * 2.5, rad(-12)), 2.3 + math.sin(elapsed * 9) * 0.15)
+		return true
+	end, pop)
+	local torso = victim:FindFirstChild("Torso")
+	if torso and torso:IsA("BasePart") then
+		local at = torso.Position
+		local across = (torso.CFrame.RightVector + UP * 0.7).Unit
+		local cut = bar(at - across * 2.6, at + across * 2.6, 0.12, STAR_WHITE, 0)
+		local sheen = bar(at - across * 2.8, at + across * 2.8, 0.7, STAR, 0.6)
+		fadeOut({ cut, sheen }, 0.3)
+		U.glint(at, 1.1, STAR_WHITE)
+		twinkle(at, 4, STAR, 0.3)
+	end
+	U.highlight(victim, STAR, 0.5, 0.65)
+	return pop
+end
+
+local function starBurst(at: Vector3, big: boolean, involved: boolean)
+	local floor = U.groundBelow(at, nil, 8)
+	local base = if floor then floor.Position else at - UP * 3
+	local k = if big then 1 else 0.45
+	U.flash(at, STAR_WHITE, 7 * k, 0.22)
+	twinkle(at, 6 * k, STAR, 0.35)
+	U.impactSpikes(at, STAR, if big then 10 else 6, 7 * k, 0.3, STAR_WHITE)
+	lightRing(base + UP * 0.2, UP, 0.5, 8 * k, 0.35)
+	windRing(base + UP * 0.3, UP, 1, 7 * k, 0.35)
+	starDust(at, math.floor(20 * k), 30 * k, UP)
+	U.light(at, STAR, 6 * k, 18 * k, 0.4)
+	if big then
+		U.pillar(base, STAR, 1.1, 22, 0.5, Enum.Material.Neon, 0.35)
+		U.pillar(base, WIND, 2.6, 16, 0.45, Enum.Material.ForceField, 0.4)
+		U.shards(at, STAR, 8)
+		featherBurst(at, 6, 14)
+		gust(at, 4, UP)
+	end
+	if involved then
+		CameraShake.Add(if big then 0.35 else 0.12)
+	end
+end
+
+function handlers.ShootingStar(data, character, root)
+	local phase = data.phase
+	if phase == "Coil" then
+		endStarRun(character, 0.1)
+		play(character, if data.airborne then ANIMS.StarDashAir else ANIMS.StarDash)
+		local feet = root.Position - UP * 2.8
+		for _ = 1, 6 do
+			inflow(root.Position, 5, STAR)
+		end
+		lightRing(feet + UP * 0.1, UP, 4.5, 1, 0.12)
+		task.delay(0.07, function()
+			local hand = handOf(character, "Right")
+			if hand then
+				U.glint(hand, 0.9, STAR_WHITE)
 			end
 		end)
-		U.ringBurst(CFrame.new(spot), STAR, 0.4, 3, 0.35, 0.1)
-		lightRing(spot, UP, 0.3, 3.5, 0.3)
-	elseif data.phase == "Warp" then
-		local star = stars[character]
-		stars[character] = nil
-		if star then
-			star.fade(0.15)
-		end
-		local from: Vector3 = data.from
-		local spot: Vector3 = data.star
-		play(character, ANIMS.Warp)
-		local line = bar(from, spot, 0.25, STAR_WHITE, 0.1)
-		local glow = bar(from, spot, 0.9, STAR, 0.6)
-		fadeOut({ line, glow }, 0.25)
-		U.afterimage(character, STAR, 0.45, from - root.Position)
-		starDust(from, 16, 14)
-		featherBurst(spot, 6, 10)
-		U.impactSpikes(spot, STAR, 10, 6, 0.24, STAR_WHITE)
-		local a0, a1 = worldAnchor(from, spot - from), worldAnchor(spot, spot - from)
-		fadeBeams({
-			Soft.starStream(a0, a1, 1.2, 14),
-			softBeam(a0, a1, {
-				color = ColorSequence.new(WIND_WHITE, WIND),
-				width0 = 2.5,
-				width1 = 4,
-				transparency = NumberSequence.new({ key(0, 0.6), key(1, 0.75) }),
-				texture = SMOKE,
-				speed = 10,
-				length = 6,
-			}),
-		}, 0.35, { a0, a1 })
-		windPuff(from, 2.5)
-		for _, at in { from, spot } do
-			twinkle(at, 5, STAR, 0.25)
-			lightRing(at - UP * 2.6, UP, 0.5, 6, 0.3)
-			U.flash(at, STAR_WHITE, 6, 0.25)
-			U.ringBurst(CFrame.new(at - UP * 2.6), STAR, 1, 6, 0.3, 0.12)
-			U.burst(at, {
-				color = STAR,
-				count = 14,
-				size = 0.35,
-				speed = NumberRange.new(8, 20),
-				lifetime = NumberRange.new(0.3, 0.6),
-				spread = 180,
-				drag = 3,
-			})
-		end
-		U.light(spot, STAR, 4, 16, 0.3)
 		if U.isLocal(character) then
-			CameraShake.FovKick(-6)
+			CameraShake.FovKick(-4)
 		end
-	elseif data.phase == "Fade" then
-		local star = stars[character]
-		stars[character] = nil
-		if star then
-			star.fade(0.3)
+	elseif phase == "Dash" then
+		local from: Vector3 = data.from
+		local to: Vector3 = data.to
+		local travel: number = data.travel
+		local offset = to - from
+		local reach = offset.Magnitude
+		local direction = if reach > 1e-3 then offset.Unit else root.CFrame.LookVector
+		local core = bar(from, from + direction * 0.1, 0.1, STAR_WHITE, 0)
+		local glow = bar(from, from + direction * 0.1, 0.6, STAR, 0.72)
+		local a0, a1 = worldAnchor(from, direction), worldAnchor(from, direction)
+		local stream = Soft.starStream(a0, a1, 0.9, 10)
+		local mist = softBeam(a0, a1, {
+			color = ColorSequence.new(WIND_WHITE, WIND),
+			width0 = 1.8,
+			width1 = 1.8,
+			transparency = NumberSequence.new({ key(0, 0.75), key(0.5, 0.55), key(1, 0.75) }),
+			texture = SMOKE,
+			speed = 6,
+			length = 5,
+		})
+		local run: StarRun = {
+			parts = { core, glow },
+			beams = { stream, mist },
+			anchors = { a0, a1 },
+			trails = {},
+			marks = {},
+			travelling = true,
+		}
+		starRuns[character] = run
+		local torso = character:FindFirstChild("Torso")
+		if torso and torso:IsA("BasePart") then
+			table.insert(
+				run.trails,
+				Soft.trail(torso, Vector3.new(0, 1.4, 0), Vector3.new(0, -1.4, 0), {
+					color = ColorSequence.new(STAR_WHITE, STAR),
+					transparency = NumberSequence.new({ key(0, 0.15), key(1, 1) }),
+					width = NumberSequence.new({ key(0, 1), key(1, 0.15) }),
+					lifetime = 0.3,
+				})
+			)
+			table.insert(
+				run.trails,
+				Soft.trail(torso, Vector3.new(0, 2.4, 0), Vector3.new(0, -2.4, 0), {
+					color = ColorSequence.new(WIND_WHITE, WIND),
+					transparency = NumberSequence.new({ key(0, 0.5), key(1, 1) }),
+					width = NumberSequence.new({ key(0, 1), key(1, 0.4) }),
+					lifetime = 0.45,
+					texture = SMOKE,
+				})
+			)
+		end
+		starlightBody(character, travel + 0.05)
+		local carried = Instance.new("PointLight")
+		carried.Color = STAR
+		carried.Range = 16
+		carried.Brightness = 3
+		carried.Parent = root
+		task.delay(travel + 0.15, carried.Destroy, carried)
+		local head = makeStar(2.4)
+		local headLit = true
+		local ghosts = 0
+		local reached = 0
+		every(travel + 0.2, function(elapsed)
+			if not run.travelling then
+				reached = reach
+				if headLit then
+					headLit = false
+					head.fade(0.15)
+				end
+			else
+				reached = math.max(reached, math.clamp((root.Position - from):Dot(direction), 0, reach))
+				head.place(root.Position + direction * 1.4, elapsed * 14)
+				if elapsed >= ghosts * 0.04 and ghosts < 5 then
+					ghosts += 1
+					U.afterimage(character, if ghosts % 2 == 0 then WIND_WHITE else STAR, 0.32)
+					Soft.streaks(root.Position, 3, 30, -direction, 25)
+				end
+			end
+			local tip = from + direction * math.max(reached, 0.1)
+			Soft.stretch(core, from, tip)
+			Soft.stretch(glow, from, tip)
+			Soft.aim(a1, tip, direction)
+			return starRuns[character] == run
+		end, function()
+			if headLit then
+				headLit = false
+				head.fade(0.15)
+			end
+		end)
+		if not data.airborne then
+			local start = U.groundBelow(from, { character }, 8)
+			local finish = U.groundBelow(to, { character }, 8)
+			if start and finish then
+				U.groove(start.Position, finish.Position, 0.5, STAR, 1.6, reach / travel)
+			end
+			U.dustWave(from, 4, nil, 6)
+		end
+		featherBurst(from, 6, 10)
+		windPuff(from, 2.5, -direction)
+		U.flash(from, STAR_WHITE, 4, 0.15)
+		lightRing(from, direction, 0.4, 4, 0.25)
+		U.ringBurst(CFrame.lookAt(from, from + direction) * CFrame.Angles(rad(90), 0, 0), STAR, 0.6, 4, 0.25, 0.12)
+		if U.isLocal(character) then
+			U.speedLines(root, direction, travel + 0.05, STAR_WHITE)
+			CameraShake.FovKick(10)
+		end
+	elseif phase == "Mark" then
+		local run = starRuns[character]
+		local victim = data.victim
+		if run and typeof(victim) == "Instance" and victim:IsA("Model") and not run.marks[victim] then
+			run.marks[victim] = starMark(victim)
+		end
+	elseif phase == "Arrive" then
+		local run = starRuns[character]
+		play(character, ANIMS.StarLand)
+		local direction: Vector3 = data.direction
+		local flat = Vector3.new(direction.X, 0, direction.Z)
+		local ahead = if flat.Magnitude > 1e-3 then flat.Unit else root.CFrame.LookVector
+		if run then
+			run.travelling = false
+			for _, trail in run.trails do
+				Soft.endTrail(trail)
+			end
+			run.trails = {}
+		end
+		local at = root.Position
+		local feet = at - UP * 2.8
+		windPuff(feet + UP * 0.5, 3, ahead)
+		featherBurst(at, 8, 12)
+		twinkle(at, 4, STAR, 0.3)
+		U.flash(at, STAR_WHITE, 5, 0.2)
+		lightRing(feet + UP * 0.1, UP, 0.5, 6, 0.3)
+		U.dustWave(at, 5, nil, 8)
+		U.groove(feet - ahead * 3, feet + ahead * 1.5, 0.6, STAR, 1.4)
+		if (data.caught or 0) > 0 then
+			local involved = U.isLocal(character)
+			if not involved and run then
+				for victim in run.marks do
+					if U.isLocal(victim) then
+						involved = true
+					end
+				end
+			end
+			if involved then
+				Soft.focusLines(0.35)
+				CameraShake.FovKick(-6)
+			end
+		end
+	elseif phase == "Burst" then
+		local run = starRuns[character]
+		local from: Vector3 = data.from
+		local to: Vector3 = data.to
+		local ripple: number = data.ripple
+		local offset = to - from
+		local reach = offset.Magnitude
+		local direction = if reach > 1e-3 then offset.Unit else root.CFrame.LookVector
+		local steps = math.max(math.floor(reach / 2.5), 1)
+		for i = 0, steps do
+			local point = from + direction * (reach * i / steps)
+			task.delay(ripple * i / steps, function()
+				twinkle(point, 3.5, STAR, 0.3)
+				U.flash(point, STAR_WHITE, 2.4, 0.14)
+				lightRing(point, direction, 0.2, 2.6, 0.28)
+				starDust(point, 5, 12, UP)
+				if i % 2 == 0 then
+					windPuff(point, 1.6, UP)
+				end
+			end)
+		end
+		task.delay(ripple, function()
+			if starRuns[character] == run then
+				endStarRun(character, 0.3)
+			end
+			twinkle(to, 6, STAR, 0.4)
+		end)
+		local victims = if type(data.victims) == "table" then data.victims else {}
+		local involved = U.isLocal(character)
+		for _, victim in victims do
+			if typeof(victim) == "Instance" and victim:IsA("Model") then
+				involved = involved or U.isLocal(victim)
+			end
+		end
+		for _, victim in victims do
+			local victimRoot = if typeof(victim) == "Instance" and victim:IsA("Model") then U.getRoot(victim) else nil
+			if victimRoot then
+				local along = math.clamp((victimRoot.Position - from):Dot(direction) / math.max(reach, 1), 0, 1)
+				task.delay(ripple * along, function()
+					local pop = run and run.marks[victim]
+					if pop then
+						run.marks[victim] = nil
+						pop()
+					end
+					if victimRoot.Parent then
+						starBurst(victimRoot.Position, true, involved)
+					end
+				end)
+			end
+		end
+		if #victims == 0 then
+			task.delay(ripple, starBurst, to, false, false)
+		elseif involved then
+			task.delay(ripple * 0.5, CameraShake.FovKick, 5)
+		end
+	elseif phase == "Cancel" then
+		endStarRun(character, 0.2)
+		local current = PoseAnimator.Current(character)
+		if current == ANIMS.StarDash or current == ANIMS.StarDashAir then
+			PoseAnimator.FadeOut(character, 0.15)
 		end
 	end
 end
