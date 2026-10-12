@@ -1049,7 +1049,7 @@ Kits.List = {
 			{ name = "Heavenly Wind Ark", cooldown = 12, type = "Zone", airHold = true },
 			{ name = "Gale White Bow", cooldown = 15, type = "Bolt", airHold = true },
 		},
-		special = { name = "Tornado Fang", cooldown = 10, type = "Zone", airHold = true },
+		special = { name = "Tornado Fang", cooldown = 15, type = "Zone", airHold = true },
 		awakenedSkills = {
 			{ name = "Spirit Storm", cooldown = 12, type = "Bolt", airHold = true },
 			{ name = "Tempest Dive", cooldown = 16, type = "Melee", airHold = true },
@@ -6680,9 +6680,9 @@ end
 
 local TORNADO_CAST = 0.3
 local TORNADO_LIFE = 3.2
-local TORNADO_AHEAD = 14
-local TORNADO_RANGE = 30
-local TORNADO_PULL = 11
+local TORNADO_AHEAD = 10
+local TORNADO_RANGE = 18
+local TORNADO_PULL = 9
 local TORNADO_EYE = 4
 local TORNADO_HOLD = 5
 local TORNADO_TICK = 0.15

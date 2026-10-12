@@ -106,9 +106,9 @@ end
 
 local TORNADO_CAST = 0.3
 local TORNADO_LIFE = 3.2
-local TORNADO_AHEAD = 14
-local TORNADO_RANGE = 30
-local TORNADO_PULL = 11
+local TORNADO_AHEAD = 10
+local TORNADO_RANGE = 18
+local TORNADO_PULL = 9
 local TORNADO_EYE = 4
 local TORNADO_HOLD = 5
 local TORNADO_TICK = 0.15
