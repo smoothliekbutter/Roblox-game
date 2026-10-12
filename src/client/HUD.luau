@@ -401,7 +401,10 @@ local function refreshKit(character: Model?)
 	shownSword = sword
 	shownAscended = ascended
 	local kit = Kits.Get(kitId)
-	local skills = if character then Kits.SkillsOf(character) else {}
+	local skills = if character and character:GetAttribute("Kit") ~= nil
+		then Kits.SkillsOf(character)
+		elseif kit then kit.skills
+		else {}
 
 	for i, s in ui.skills do
 		local skill = skills[i]
@@ -488,10 +491,11 @@ local function update(dt: number)
 
 		local perfectLeft = math.max((tonumber(character:GetAttribute("PerfectCD")) or 0) - CombatState.Now(), 0)
 		local perfectReady = perfectLeft <= 0
-		ui.perfectFill.Size = UDim2.fromScale(
-			1,
-			if perfectReady then 1 else 1 - math.clamp(perfectLeft / Config.Block.PerfectCooldown, 0, 1)
-		)
+		local perfectSpan = if perfectLeft > Config.Block.PerfectAttemptCooldown
+			then Config.Block.PerfectCooldown
+			else Config.Block.PerfectAttemptCooldown
+		ui.perfectFill.Size =
+			UDim2.fromScale(1, if perfectReady then 1 else 1 - math.clamp(perfectLeft / perfectSpan, 0, 1))
 		ui.perfectFill.BackgroundTransparency = if perfectReady then 0.75 else 0.85
 		ui.perfectGem.BackgroundColor3 = if perfectReady then COLORS.Text else COLORS.SubText
 		ui.perfectGem.BackgroundTransparency = if perfectReady then 0 else 0.6

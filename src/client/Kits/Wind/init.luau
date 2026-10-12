@@ -171,6 +171,10 @@ VFX.RegisterKitEffect("Wind", "Dash", function(data)
 		return
 	end
 	local direction = if type(data.direction) == "string" then data.direction else "Front"
+	local animation = ANIMS["Dash" .. direction]
+	if animation then
+		play(character, animation)
+	end
 	U.afterimage(character, WIND, 0.3)
 	for i = 1, 3 do
 		task.delay(i * 0.05, function()

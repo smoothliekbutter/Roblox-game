@@ -135,3 +135,25 @@ def verify(name, keys, floor=-2.85, hidden_until=-1.0, grounded=False, reach=Non
     print(f"{name:12s} " + " ".join(fmt(t) for t in tips))
     for p in problems: print("   !!", p)
     return not problems
+
+# ---- bigger body movement for M1 swings ----
+def amplify(keys, k=1.3, lean=-5):
+    """Swings with more body in them: the torso and head turn `k` times as
+    far (the legs' counter-twist too), and the body leans `lean` degrees
+    further into the strike and its settle (the head lifts to keep the gaze
+    level)."""
+    out = []
+    for i, (t, pose, *rest) in enumerate(keys):
+        p = dict(pose)
+        for joint in ('Torso', 'Head', 'RightLeg', 'LeftLeg'):
+            v = p.get(joint)
+            if not v or v[0] != 'rot':
+                continue
+            x, y, z = (list(v[1:]) + [0, 0, 0])[:3]
+            if i >= 3 and joint == 'Torso':
+                x += lean
+            if i >= 3 and joint == 'Head':
+                x -= lean * 0.6
+            p[joint] = ('rot', round(x, 2), round(y * k, 2), round(z, 2))
+        out.append((t, p, *rest))
+    return out

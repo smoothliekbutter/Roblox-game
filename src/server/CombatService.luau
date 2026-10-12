@@ -38,6 +38,8 @@ export type CharData = {
 	skillHeld: { [number]: boolean },
 	moveToken: number,
 	grabbedBy: Model?,
+	heldBy: Model?,
+	heldToken: number,
 }
 
 export type HitInfo = {
@@ -571,8 +573,8 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	if CombatState.IsBlocking(victim) and facing and not hit.unblockable then
 		local blockAge = CombatState.Now() - (tonumber(victim:GetAttribute("BlockStart")) or 0)
 
-		local perfectReady = CombatState.Now() >= (tonumber(victim:GetAttribute("PerfectCD")) or 0)
-		if blockAge <= Config.Block.PerfectWindow and perfectReady then
+		if blockAge <= Config.Block.PerfectWindow and victim:GetAttribute("PerfectArmed") == true then
+			victim:SetAttribute("PerfectArmed", false)
 			victim:SetAttribute("PerfectCD", CombatState.Now() + Config.Block.PerfectCooldown)
 			CombatState.Stun(attacker, Config.Block.ParryStun)
 			CombatService.FireVFX("PerfectBlock", clash)
@@ -597,7 +599,11 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	end
 
 	local awakening = awakeningOf(attacker)
-	local damage = hit.damage * (if awakening then awakening.damageMultiplier else 1)
+	local bonus = if awakening then awakening.damageMultiplier - 1 else 0
+	if hit.variant ~= nil then
+		bonus *= Config.M1.AwakenedShare
+	end
+	local damage = hit.damage * (1 + bonus)
 	if stateActive(attacker, "PowerUntil") then
 		damage *= Config.States.PowerMultiplier
 	end
@@ -607,11 +613,14 @@ function CombatService.Hit(attacker: Model, victim: Model, hit: HitInfo): string
 	humanoid:TakeDamage(damage)
 	CombatState.SetBlocking(victim, false)
 	CombatState.Stun(victim, hit.stun)
+	if victimData and attackerData and hit.variant == nil and CombatState.IsCasting(attacker) then
+		victimData.heldBy = attacker
+		victimData.heldToken = attackerData.moveToken
+	end
 
 	if victimData then
 		victimData.lastDamaged = now
 	end
-	addMeter(victim, "Evasive", damage * Config.Evasive.GainPerDamage, Config.Evasive.Max)
 	if not CombatState.IsAwakened(attacker) then
 		addMeter(attacker, "Awakening", damage * Config.Awakening.GainPerDamageDealt, Config.Awakening.Max)
 	else
@@ -803,6 +812,12 @@ function CombatService.SetBlock(character: Model, wantBlock: boolean)
 		if os.clock() < data.nextBlock then
 			return
 		end
+		local now = CombatState.Now()
+		local armed = now >= (tonumber(character:GetAttribute("PerfectCD")) or 0)
+		character:SetAttribute("PerfectArmed", armed)
+		if armed then
+			character:SetAttribute("PerfectCD", now + Config.Block.PerfectAttemptCooldown)
+		end
 		CombatState.SetBlocking(character, true)
 	elseif CombatState.IsBlocking(character) then
 		CombatState.SetBlocking(character, false)
@@ -836,12 +851,25 @@ function CombatService.Dash(character: Model, direction: string): boolean
 	return true
 end
 
+local function inMove(data: CharData): boolean
+	local holder = data.heldBy
+	local holderData = holder and registry[holder]
+	return holder ~= nil
+		and holderData ~= nil
+		and holderData.moveToken == data.heldToken
+		and CombatState.IsAlive(holder)
+		and CombatState.IsCasting(holder)
+end
+
 function CombatService.Evasive(character: Model): boolean
 	local data = registry[character]
-	if not data or not CombatState.IsAlive(character) then
+	local root = getRoot(character)
+	if not data or not root or not CombatState.IsAlive(character) then
 		return false
 	end
-	if not (CombatState.IsStunned(character) or CombatState.IsRagdolled(character)) then
+	local ragdolled = CombatState.IsRagdolled(character)
+	local airStunned = CombatState.IsStunned(character) and CombatService.IsAirborne(character)
+	if not (ragdolled or airStunned) or root.Anchored or data.grabbedBy or inMove(data) then
 		return false
 	end
 	if (tonumber(character:GetAttribute("Evasive")) or 0) < Config.Evasive.Max then
@@ -855,11 +883,8 @@ function CombatService.Evasive(character: Model): boolean
 	CombatState.ClearCasting(character)
 	CombatState.GiveIFrames(character, Config.Evasive.IFrames)
 
-	local root = getRoot(character)
-	if root then
-		local back = -flat(root.CFrame.LookVector)
-		CombatService.ApplyVelocity(character, back * Config.Evasive.Speed + Vector3.new(0, 8, 0), 0.2)
-	end
+	local back = -flat(root.CFrame.LookVector)
+	CombatService.ApplyVelocity(character, back * Config.Evasive.Speed + Vector3.new(0, 8, 0), 0.2)
 	CombatService.FireVFX("Evasive", { character = character })
 	return true
 end
@@ -962,6 +987,7 @@ local function endAwakening(character: Model)
 		character:SetAttribute("Ascended", false)
 		character:SetAttribute("Ascension", 0)
 		CombatState.ResetCooldowns(character)
+		CombatState.ResetSpecial(character)
 		local kit = Kits.Of(character)
 		local serverKit = kit and serverKits[kit.id]
 		local ctx = makeContext(character)
@@ -1009,6 +1035,7 @@ local function ascend(ctx: Context)
 	character:SetAttribute("Ascended", true)
 	character:SetAttribute("Ascension", 0)
 	CombatState.ResetCooldowns(character)
+	CombatState.ResetSpecial(character)
 	data.moveToken += 1
 	drainAwakening(character, data, ascension.duration)
 	task.spawn(serverKit.Ascend, ctx)
@@ -1039,6 +1066,7 @@ function CombatService.Awaken(character: Model)
 	character:SetAttribute("Awakened", true)
 	character:SetAttribute("Ascension", 0)
 	CombatState.ResetCooldowns(character)
+	CombatState.ResetSpecial(character)
 	ctx.awakened = true
 	data.moveToken += 1
 	drainAwakening(character, data, awakening.duration)
@@ -1089,7 +1117,7 @@ function CombatService.SelectKit(player: Player, kitId: string)
 		return
 	end
 	if
-		os.clock() - data.lastCombat < Config.KitSwitchCombatLock
+		os.clock() - data.lastCombat < Config.CombatTag
 		or not CombatState.CanAct(character)
 		or CombatState.IsCasting(character)
 	then
@@ -1137,6 +1165,8 @@ function CombatService.Register(character: Model)
 		skillHeld = {},
 		moveToken = 0,
 		grabbedBy = nil,
+		heldBy = nil,
+		heldToken = 0,
 	}
 	registry[character] = data
 
@@ -1355,14 +1385,19 @@ function CombatService.Start()
 		if regenTimer >= 0.25 then
 			local now = os.clock()
 			for character, data in registry do
-				addMeter(character, "Evasive", Config.Evasive.RegenPerSecond * regenTimer, Config.Evasive.Max)
+				addMeter(
+					character,
+					"Evasive",
+					Config.Evasive.Max / Config.Evasive.RechargeTime * regenTimer,
+					Config.Evasive.Max
+				)
 				local humanoid = data.humanoid
 				if
 					Players:GetPlayerFromCharacter(character)
 					and humanoid.Health > 0
 					and humanoid.Health < humanoid.MaxHealth
 				then
-					local rate = if now - data.lastCombat < Config.Regen.CombatTime
+					local rate = if now - data.lastCombat < Config.CombatTag
 						then Config.Regen.CombatRate
 						else Config.Regen.Rate
 					humanoid.Health =

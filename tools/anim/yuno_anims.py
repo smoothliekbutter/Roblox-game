@@ -58,7 +58,7 @@ def stride(swing, reach):
 def cycle(fn, keys):
     return [(round(i / keys, 4), fn(i / keys)) for i in range(keys + 1)]
 
-RUN_LEAN, RUN_SWING, RUN_REACH, RUN_LIFT = 14, 50, 7, 0.18
+RUN_LEAN, RUN_SWING, RUN_REACH, RUN_LIFT = 16, 50, 7, 0.22
 RUN_STRIDE = stride(RUN_SWING, RUN_REACH)
 
 def run_lift(p):
@@ -66,19 +66,19 @@ def run_lift(p):
 
 def run_pose(p, base=0.0):
     s, bob = sin(TAU * p), cos(2 * TAU * p - 0.35)
-    twist, roll = -6 * s, 3 * cos(TAU * p)
-    torso = R(_r(-RUN_LEAN - 1.5 * (1 - bob) / 2), _r(twist), _r(roll))
+    twist, roll = -9 * s, 3.5 * cos(TAU * p)
+    torso = R(_r(-RUN_LEAN - 2.5 * (1 - bob) / 2), _r(twist), _r(roll))
     return {
         'Torso': ('body', _r(base + run_lift(p)), *torso[1:]),
         'Head': R(_r(RUN_LEAN * 0.85 + bob), _r(-twist), _r(-roll)),
-        'RightArm': L(_r(6 - 46 * s), _r(-8 * s), _r(8 + 3 * s * s)),
-        'LeftArm': L(_r(6 + 46 * s), _r(-8 * s), _r(-8 - 3 * s * s)),
+        'RightArm': L(_r(6 - 58 * s), _r(-10 * s), _r(8 + 3 * s * s)),
+        'LeftArm': L(_r(6 + 58 * s), _r(-10 * s), _r(-8 - 3 * s * s)),
         'RightLeg': L(_r(RUN_REACH + RUN_SWING * s + RUN_LEAN), _r(-twist), _r(-0.6 * roll)),
         'LeftLeg': L(_r(RUN_REACH - RUN_SWING * s + RUN_LEAN), _r(-twist), _r(-0.6 * roll)),
     }
 
 RUN_BASE = plant_pose(run_pose(0.35 / (2 * TAU)))['Torso'][1]
-RUN = cycle(lambda p: run_pose(p, RUN_BASE), 16)
+RUN = cycle(lambda p: run_pose(p, RUN_BASE), 8)
 
 WALK_LEAN, WALK_SWING, WALK_REACH = 4, 28, 3
 WALK_STRIDE = stride(WALK_SWING, WALK_REACH)
@@ -126,6 +126,7 @@ SWIPE1 = swing(
     M1POSE(R(-8, 36), R(0, -26), L(84, 70, 0), L(30, -20, -20), LEGS(-34)),
     M1POSE(R(-6, 26), R(0, -18), L(72, 55, 6), L(32, -18, -20), LEGS(-24)),
 )
+SWIPE1 = amplify(SWIPE1)
 # The left hand back the other way.
 SWIPE2 = swing(
     M1POSE(R(2, 34), R(0, -26), L(45, -20, 10), L(84, 95, 0), LEGS(-32)),
@@ -133,6 +134,7 @@ SWIPE2 = swing(
     M1POSE(R(-8, -36), R(0, 26), L(30, 20, 20), L(84, -70, 0), LEGS(34)),
     M1POSE(R(-6, -26), R(0, 18), L(32, 18, 20), L(72, -55, -6), LEGS(24)),
 )
+SWIPE2 = amplify(SWIPE2)
 # Rising: the right hand from low on his left up past his right shoulder.
 SWIPE3 = swing(
     M1POSE(R(-14, 24), R(10, -16), L(30, 40, -10), L(50, -10, -20), LEGS(-22)),
@@ -140,6 +142,7 @@ SWIPE3 = swing(
     M1POSE(R(8, -26), R(-10, 16), L(160, -30, 10), L(26, 10, -24), LEGS(24)),
     M1POSE(R(4, -18), R(-6, 12), L(140, -22, 10), L(30, 8, -22), LEGS(16)),
 )
+SWIPE3 = amplify(SWIPE3)
 # Finisher: both palms driven out together, a gale off them.
 GALE_PUSH = swing(
     M1POSE(R(6), R(-4), L(-10, 0, 14), L(-10, 0, -14), LEGS(0)),
@@ -148,6 +151,7 @@ GALE_PUSH = swing(
     M1POSE(R(-10), R(6), L(84, 12, 4), L(84, -12, -4), LEGS(0)),
     heavy=True,
 )
+GALE_PUSH = amplify(GALE_PUSH)
 # Finisher (jump held): both hands swept up, an updraft under them.
 GALE_RISE = swing(
     M1POSE(R(-18), R(10), L(10, 20, 10), L(10, -20, -10), LEGS(0)),
@@ -156,6 +160,7 @@ GALE_RISE = swing(
     M1POSE(R(8), R(-12), L(155, 10, 10), L(155, -10, -10), LEGS(0)),
     heavy=True,
 )
+GALE_RISE = amplify(GALE_RISE)
 # Finisher (in the air): both hands brought down like a hammer, a downdraft.
 GALE_FALL = swing(
     {'Torso': R(16), 'Head': R(-10), 'RightArm': L(172, 8, 6), 'LeftArm': L(172, -8, -6)},
@@ -164,6 +169,7 @@ GALE_FALL = swing(
     {'Torso': R(-28), 'Head': R(14), 'RightArm': L(44, 8, 0), 'LeftArm': L(44, -8, 0)},
     heavy=True,
 )
+GALE_FALL = amplify(GALE_FALL, 1.0, -4)
 
 # ---------------- Base: Prince of Wind ----------------
 # Wind Blades Shower: right hand up to the sky as the blades form (0.2), then
@@ -330,7 +336,31 @@ AWAKEN = [(0.0, STANCE), (0.3, GATHER), (0.8, BURST), (1.1, BURST), (1.5, STANCE
 ASCEND_BURST = pose(R(12), R(28), L(176, 0, 18), L(176, 0, -18), R(-22, 0, 10), R(22, 0, -10))
 ASCEND = [(0.0, STANCE), (0.35, GATHER), (0.8, ASCEND_BURST), (1.15, ASCEND_BURST), (1.5, STANCE)]
 
-SINE_IO = ('Sine', 'InOut'); QUAD_IN = ('Quad', 'In'); QUART_OUT = ('Quart', 'Out')
+
+# ---------------- Dashes (0.28s) ----------------
+# More body in them: the front dash lunges in low and takes a long stride
+# (two beats), the others lean hard the way they go.
+UPPER = {k: v for k, v in STANCE.items() if k not in ('RightLeg', 'LeftLeg')}
+DASH_FRONT = [(0.0, UPPER),
+              (0.05, {'Torso': R(-42, 8), 'Head': R(30, -6), 'RightArm': L(-42, 0, 22), 'LeftArm': L(-42, 0, -22),
+                      'RightLeg': R(-46), 'LeftLeg': R(52)}),
+              (0.16, {'Torso': R(-36, -6), 'Head': R(26, 6), 'RightArm': L(-48, 0, 26), 'LeftArm': L(-36, 0, -18),
+                      'RightLeg': R(48), 'LeftLeg': R(-40)}),
+              (0.26, {'Torso': R(-28, 0), 'Head': R(20, 0), 'RightArm': L(-36, 0, 20), 'LeftArm': L(-36, 0, -20),
+                      'RightLeg': R(30), 'LeftLeg': R(-28)})]
+DASH_BACK = [(0.0, UPPER), (0.06, {'Torso': R(16), 'Head': R(-8), 'RightArm': L(62, 10, 14), 'LeftArm': L(62, -10, -14),
+                                    'RightLeg': R(28), 'LeftLeg': R(-8)}), (0.26, {'Torso': R(12), 'Head': R(-6),
+             'RightArm': L(55, 10, 14), 'LeftArm': L(55, -10, -14), 'RightLeg': R(22), 'LeftLeg': R(-6)})]
+DASH_LEFT = [(0.0, UPPER), (0.06, {'Torso': R(-10, 18, 16), 'Head': R(4, -14), 'RightArm': L(20, 0, 50),
+                                    'LeftArm': L(10, 0, -64), 'RightLeg': R(0, 0, 26), 'LeftLeg': R(0, 0, -6)}),
+             (0.26, {'Torso': R(-8, 15, 12), 'Head': R(4, -12), 'RightArm': L(20, 0, 44), 'LeftArm': L(10, 0, -56),
+                     'RightLeg': R(0, 0, 22), 'LeftLeg': R(0, 0, -6)})]
+DASH_RIGHT = [(0.0, UPPER), (0.06, {'Torso': R(-10, -18, -16), 'Head': R(4, 14), 'RightArm': L(10, 0, 64),
+                                     'LeftArm': L(20, 0, -50), 'RightLeg': R(0, 0, 6), 'LeftLeg': R(0, 0, -26)}),
+              (0.26, {'Torso': R(-8, -15, -12), 'Head': R(4, 12), 'RightArm': L(10, 0, 56), 'LeftArm': L(20, 0, -44),
+                      'RightLeg': R(0, 0, 6), 'LeftLeg': R(0, 0, -22)})]
+
+SINE_IO = ('Sine', 'InOut'); QUAD_IN = ('Quad', 'In'); QUART_OUT = ('Quart', 'Out'); QUART_IO = ('Quart', 'InOut')
 SINE_OUT = ('Sine', 'Out'); LINEAR = ('Linear', 'Out'); BACK_OUT = ('Back', 'Out')
 
 def snap(n):
@@ -342,7 +372,7 @@ SWING_EASE = [None, None, SINE_IO, QUAD_IN, QUART_OUT]
 SPEC = {
     'Idle': dict(keys=IDLE, ease=[None, SINE_IO, SINE_IO], loop=True, delays={'Head': 0.12, 'RightArm': 0.1, 'LeftArm': 0.2},
                  doc="Standing: calm, turned a little, the left hand loose in front where the wind gathers."),
-    'Run': dict(keys=RUN, ease=[None] + [LINEAR] * (len(RUN) - 1), loop=True, delays={'Head': 0.03, 'RightArm': 0.03, 'LeftArm': 0.03},
+    'Run': dict(keys=RUN, ease=[None] + [QUART_IO] * (len(RUN) - 1), loop=True, delays={'Head': 0.03, 'RightArm': 0.03, 'LeftArm': 0.03},
                 doc="Moving: a light sprint, both arms swinging. Plays with the distance travelled (RUN_STRIDE studs a loop)."),
     'Walk': dict(keys=WALK, ease=[None] + [LINEAR] * (len(WALK) - 1), loop=True, delays={'Head': 0.03, 'RightArm': 0.03, 'LeftArm': 0.03},
                  doc="Moving slowly (casting, blocking): an easy walk, same phase as the run."),
@@ -351,6 +381,11 @@ SPEC = {
                       doc="Awakened: hovering on the wind, rising and settling slowly."),
     'HoverMove': dict(keys=HOVER_MOVE, ease=[None, SINE_IO, SINE_IO], loop=True,
                       doc="Awakened: gliding on the wind, leaning into it, legs swept back."),
+    'DashFront': dict(keys=DASH_FRONT, ease=[None, QUART_OUT, SINE_IO, SINE_OUT], fadeIn=0.03, fadeOut=0.16,
+                      doc="Front dash: lunging in low, then a long stride."),
+    'DashBack': dict(keys=DASH_BACK, ease=[None, QUART_OUT, SINE_OUT], fadeIn=0.03, fadeOut=0.16, doc="Back dash: leaning back."),
+    'DashLeft': dict(keys=DASH_LEFT, ease=[None, QUART_OUT, SINE_OUT], fadeIn=0.03, fadeOut=0.16, doc="Left dash: leaning left."),
+    'DashRight': dict(keys=DASH_RIGHT, ease=[None, QUART_OUT, SINE_OUT], fadeIn=0.03, fadeOut=0.16, doc="Right dash: leaning right."),
     'Swipe1': dict(keys=SWIPE1, ease=SWING_EASE, additive=['RightLeg', 'LeftLeg'], fadeIn=SWING_TIMES[0], fadeOut=0.22,
                    events=[(SWING_TIMES[1], 'Strike')], doc="M1 1: the right hand swept across, a crescent of wind off it."),
     'Swipe2': dict(keys=SWIPE2, ease=SWING_EASE, additive=['RightLeg', 'LeftLeg'], fadeIn=SWING_TIMES[0], fadeOut=0.22,

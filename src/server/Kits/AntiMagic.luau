@@ -1051,17 +1051,20 @@ local function blackHurricane(ctx)
 			fx(ctx, "BlackHurricane", "Stop")
 			return
 		end
+		local carry = Vector3.new(push.X, math.max(push.Y, 0), push.Z) + UP * 2
 		for _, victim in c.Sphere(character, ctx.root.Position, 7) do
-			if
-				c.Hit(character, victim, {
-					damage = 1,
-					stun = 0.6,
-					attackType = "Melee",
-					velocity = Vector3.new(push.X, math.max(push.Y, 0), push.Z) + UP * 2,
-					velocityTime = 0.12,
-				}) == "Hit"
-			then
+			local result = c.Hit(character, victim, {
+				damage = 1,
+				stun = 0.6,
+				attackType = "Melee",
+				velocity = carry,
+				velocityTime = 0.12,
+			})
+			if result == "Hit" or result == "Blocked" then
 				caught[victim] = true
+			end
+			if result == "Blocked" then
+				c.ApplyVelocity(victim, carry, 0.12)
 			end
 		end
 	end
@@ -1073,6 +1076,7 @@ local function blackHurricane(ctx)
 				damage = 5,
 				stun = 1,
 				attackType = "Melee",
+				guardBreak = true,
 				heavy = true,
 				ragdoll = 1.4,
 				velocity = if airborne then forward * 30 + UP * -60 else forward * 45 + UP * 45,
@@ -1112,7 +1116,7 @@ local function grandDivider(ctx)
 	for _, victim in c.Box(character, box, size) do
 		struck[victim] = true
 		c.Hit(character, victim, {
-			damage = 10,
+			damage = 12,
 			stun = 1.2,
 			attackType = "Explosion",
 			guardBreak = true,
@@ -1124,7 +1128,7 @@ local function grandDivider(ctx)
 	local direction = if airborne then (forward + UP * -0.6).Unit else forward
 	local origin = ctx.root.Position + direction * 4 + UP * 1
 	blackSlash(ctx, origin, direction, {
-		damage = 9,
+		damage = 10.5,
 		size = Vector3.new(18, 8, 3),
 		speed = 95,
 		range = if airborne then waveRange(ctx, origin, direction, 55) else 55,
@@ -1327,6 +1331,8 @@ local RECALL_OUT = 0.42
 local RECALL_HANG = 1.2
 local RECALL_SPEED = 95
 local RECALL_RADIUS = 5
+local RECALL_SPIN_TICK = 0.2
+local RECALL_SPIN_DAMAGE = 0.5
 
 local function slayerRecall(ctx)
 	local c, character = ctx.combat, ctx.character
@@ -1367,7 +1373,7 @@ local function slayerRecall(ctx)
 		local a = (os.clock() - thrownAt) / RECALL_OUT
 		sweep(origin:Lerp(stop, 1 - (1 - a) ^ 2), function(victim)
 			c.Hit(character, victim, {
-				damage = 8,
+				damage = 6.5,
 				stun = 0.9,
 				attackType = "Bolt",
 				velocity = direction * 18 + UP * 6,
@@ -1377,9 +1383,26 @@ local function slayerRecall(ctx)
 		task.wait()
 	end
 
+	local lastSpin = os.clock()
 	while os.clock() - thrownAt < RECALL_OUT + RECALL_HANG do
 		if c.PressedSince(character, 2, thrownAt) or moved() or not CombatState.IsAlive(character) then
 			break
+		end
+		if os.clock() - lastSpin >= RECALL_SPIN_TICK then
+			lastSpin = os.clock()
+			for _, victim in c.Sphere(character, stop, RECALL_RADIUS + 1) do
+				local victimRoot = rootOf(victim)
+				local toward = if victimRoot then stop - victimRoot.Position else Vector3.zero
+				c.Hit(character, victim, {
+					damage = RECALL_SPIN_DAMAGE,
+					stun = 0.45,
+					attackType = "Bolt",
+					hitsDowned = true,
+					noShake = true,
+					velocity = Vector3.new(toward.X, 0, toward.Z) / 0.3 + HOVER,
+					velocityTime = RECALL_SPIN_TICK + 0.05,
+				})
+			end
 		end
 		task.wait()
 	end
@@ -1406,7 +1429,7 @@ local function slayerRecall(ctx)
 			local toward = if victimRoot then ctx.root.Position - victimRoot.Position else -direction
 			local pull = math.clamp((toward.Magnitude - 5) / 0.3, 0, 110)
 			c.Hit(character, victim, {
-				damage = 6,
+				damage = 5,
 				stun = 1.1,
 				attackType = "Bolt",
 				heavy = true,
@@ -1775,7 +1798,7 @@ function Kit.AwakenedSpecial(ctx)
 	end
 	local index = table.find(SWORD_KINDS, current) or 0
 	local kind = SWORD_KINDS[index % #SWORD_KINDS + 1]
-	CombatState.SetCasting(character, 0.4)
+	CombatState.SetCasting(character, 0.25)
 	fx(ctx, "SwordSwap", "Swap", { sword = kind })
 	task.wait(SWAP_DRAW)
 	if CombatState.IsAlive(character) and character.Parent then

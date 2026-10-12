@@ -62,7 +62,7 @@ def cycle(pose, keys):
 # legs turn back against the torso), he rolls a touch over the leg that's
 # down, and the head stays level and looking ahead. The sword rides steady
 # on his shoulder with a small bounce.
-RUN_LEAN, RUN_SWING, RUN_REACH, RUN_LIFT = 17, 52, 7, 0.2
+RUN_LEAN, RUN_SWING, RUN_REACH, RUN_LIFT = 19, 52, 7, 0.24
 RUN_STRIDE = stride(RUN_SWING, RUN_REACH)
 
 def run_lift(p):
@@ -70,14 +70,14 @@ def run_lift(p):
 
 def run_pose(p, base=0.0):
     s, bob = sin(TAU * p), cos(2 * TAU * p - 0.35)
-    twist, roll = -7 * s, 3 * cos(TAU * p)
-    torso = R(_r(-RUN_LEAN - 1.5 * (1 - bob) / 2), _r(twist), _r(roll))
+    twist, roll = -10 * s, 3.5 * cos(TAU * p)
+    torso = R(_r(-RUN_LEAN - 2.5 * (1 - bob) / 2), _r(twist), _r(roll))
     return {
         'Torso': ('body', _r(base + run_lift(p)), *torso[1:]),
         'Head': R(_r(RUN_LEAN * 0.85 + bob), _r(-twist), _r(-roll)),
-        'RightArm': L(_r(86 + 3 * bob), 25, 10),
+        'RightArm': L(_r(86 + 4 * bob), 25, 10),
         'Sword': torso_dir(torso, SHOULDER),
-        'LeftArm': L(_r(8 + 50 * s), _r(-10 * s), _r(-10 - 4 * s * s)),
+        'LeftArm': L(_r(8 + 62 * s), _r(-12 * s), _r(-10 - 4 * s * s)),
         'RightLeg': L(_r(RUN_REACH + RUN_SWING * s + RUN_LEAN), _r(-twist), _r(-0.6 * roll)),
         'LeftLeg': L(_r(RUN_REACH - RUN_SWING * s + RUN_LEAN), _r(-twist), _r(-0.6 * roll)),
     }
@@ -85,7 +85,7 @@ def run_pose(p, base=0.0):
 # Body height where the foot that's down is flat on the floor (the bottom of
 # the bob, just after the passing pose).
 RUN_BASE = plant_pose(run_pose(0.35 / (2 * TAU)))['Torso'][1]
-RUN = cycle(lambda p: run_pose(p, RUN_BASE), 16)
+RUN = cycle(lambda p: run_pose(p, RUN_BASE), 8)
 
 # Walk (when slowed: attacking, blocking, casting): upright, a shorter, easy
 # swing with the same phase as the run. Planted, so the body rides over each
@@ -139,18 +139,21 @@ SLASH1 = swing(
     {'Torso': R(-8,38), 'Head': R(0,-28), 'RightArm': L(82,70), 'Sword': A(-0.9,-0.1,-0.35), 'LeftArm': L(20,-40), **LEGS(-36)},
     {'Torso': R(-6,28), 'Head': R(0,-20), 'RightArm': L(70,55), 'Sword': A(-0.75,-0.35,-0.5), 'LeftArm': L(25,-35), **LEGS(-26)},
 )
+SLASH1 = amplify(SLASH1)
 SLASH2 = swing(
     {'Torso': R(3,35), 'Head': R(0,-28), 'RightArm': L(82,80), 'Sword': A(-0.8,0.2,0.5), 'LeftArm': L(35,-10), **LEGS(-34)},
     {'Torso': R(-4,0), 'Head': R(0,-2), 'RightArm': L(85,10), 'Sword': A(-0.3,0.05,-0.95), 'LeftArm': L(35,-25), **LEGS(0)},
     {'Torso': R(-8,-38), 'Head': R(0,28), 'RightArm': L(80,-85), 'Sword': A(0.95,-0.1,-0.25), 'LeftArm': L(40,-30), **LEGS(36)},
     {'Torso': R(-6,-26), 'Head': R(0,18), 'RightArm': L(72,-65), 'Sword': A(0.75,-0.35,-0.45), 'LeftArm': L(38,-28), **LEGS(24)},
 )
+SLASH2 = amplify(SLASH2)
 SLASH3 = swing(
     {'Torso': R(-14,-25), 'Head': R(10,18), 'RightArm': L(25,-40), 'Sword': A(0.45,-0.35,-0.8), 'LeftArm': L(45,-20), **LEGS(22)},
     {'Torso': R(-3,0), 'Head': R(0,0), 'RightArm': L(85,-5), 'Sword': A(0.1,0.3,-0.95), 'LeftArm': L(35,-20), **LEGS(0)},
     {'Torso': R(10,28), 'Head': R(-10,-15), 'RightArm': L(150,30), 'Sword': A(-0.45,0.85,-0.25), 'LeftArm': L(20,-20), **LEGS(-26)},
     {'Torso': R(6,20), 'Head': R(-6,-10), 'RightArm': L(135,25), 'Sword': A(-0.35,0.8,0.45), 'LeftArm': L(25,-22), **LEGS(-18)},
 )
+SLASH3 = amplify(SLASH3)
 CLEAVE = swing(
     {'Torso': R(4,-60), 'Head': R(0,40), 'RightArm': L(80,-120), 'Sword': A(0.45,0.2,0.85), 'LeftArm': L(65,-30), **LEGS(55)},
     {'Torso': R(-4,-10), 'Head': R(0,8), 'RightArm': L(85,-20), 'Sword': A(0.4,0.05,-0.9), 'LeftArm': L(45,-35), **LEGS(8)},
@@ -158,6 +161,7 @@ CLEAVE = swing(
     {'Torso': R(-10,50), 'Head': R(0,-34), 'RightArm': L(72,80), 'Sword': A(-0.7,-0.35,0.6), 'LeftArm': L(22,-40), **LEGS(-46)},
     heavy=True,
 )
+CLEAVE = amplify(CLEAVE)
 RISING = swing(
     {'Torso': R(-22,-15), 'Head': R(14,10), 'RightArm': L(15,-25), 'Sword': A(0.45,-0.3,-0.84), 'LeftArm': L(70,-25), 'RightLeg': R(-10,15), 'LeftLeg': R(15,15)},
     {'Torso': R(-8,0), 'Head': R(2,0), 'RightArm': L(80,0), 'Sword': A(0.05,0.45,-0.9), 'LeftArm': L(50,-25), 'RightLeg': R(-5,0), 'LeftLeg': R(5,0)},
@@ -165,6 +169,7 @@ RISING = swing(
     {'Torso': R(10,10), 'Head': R(-14,-8), 'RightArm': L(160,10), 'Sword': A(0.05,0.8,0.6), 'LeftArm': L(32,-20), 'RightLeg': R(0,-10), 'LeftLeg': R(0,-10)},
     heavy=True,
 )
+RISING = amplify(RISING)
 CHOP = swing(
     {'Torso': R(20), 'Head': R(-12), 'RightArm': L(175,8), 'LeftArm': L(170,-8), 'Sword': A(0,0.55,0.83)},
     {'Torso': R(0), 'Head': R(0), 'RightArm': L(115,8), 'LeftArm': L(110,-8), 'Sword': A(0,0.75,-0.65)},
@@ -172,6 +177,7 @@ CHOP = swing(
     {'Torso': R(-28), 'Head': R(14), 'RightArm': L(48,8), 'LeftArm': L(52,-8), 'Sword': A(0,-0.36,-0.93)},
     heavy=True,
 )
+CHOP = amplify(CHOP, 1.0, -2)
 
 # ---------------- Entrance ----------------
 CROUCH = {'Torso': R(-28), 'Head': R(22), 'RightArm': L(-12,0,28), 'LeftArm': L(-12,0,-28),
@@ -215,8 +221,13 @@ UPPER = {k: v for k, v in READY.items() if k not in ('RightLeg', 'LeftLeg')}
 def dash(pose):
     return [(0.0, UPPER), (0.06, pose), (0.26, pose)]
 
-DASH_FRONT = dash({'Torso': R(-28, 6), 'Head': R(20, -4), 'RightArm': L(-25, 0, 20), 'Sword': A(0.2, -0.2, 0.96),
-                   'LeftArm': L(30, -20), 'RightLeg': R(-32), 'LeftLeg': R(36)})
+DASH_FRONT = [(0.0, UPPER),
+              (0.05, {'Torso': R(-42, 8), 'Head': R(30, -6), 'RightArm': L(-28, 0, 20), 'Sword': A(0.2, 0.15, 0.97),
+                      'LeftArm': L(-35, -10, -25), 'RightLeg': R(-46), 'LeftLeg': R(52)}),
+              (0.16, {'Torso': R(-36, -6), 'Head': R(26, 6), 'RightArm': L(-28, 0, 20), 'Sword': A(0.2, 0.05, 0.98),
+                      'LeftArm': L(45, -15, -15), 'RightLeg': R(48), 'LeftLeg': R(-40)}),
+              (0.26, {'Torso': R(-30, 0), 'Head': R(20, 0), 'RightArm': L(-25, 0, 20), 'Sword': A(0.2, -0.2, 0.96),
+                      'LeftArm': L(20, -15, -15), 'RightLeg': R(30), 'LeftLeg': R(-28)})]
 DASH_BACK = dash({'Torso': R(14), 'Head': R(-6), 'RightArm': L(70, 25), 'Sword': A(0.15, 0.4, -0.9),
                   'LeftArm': L(-20, 0, -25), 'RightLeg': R(26), 'LeftLeg': R(-8)})
 DASH_LEFT = dash({'Torso': R(-8, 15, 14), 'Head': R(4, -12), 'RightArm': L(35, -35, 20), 'Sword': A(0.9, -0.1, 0.42),

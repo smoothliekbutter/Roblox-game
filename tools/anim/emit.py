@@ -3,7 +3,7 @@ import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from asta_anims import *
 
 SINE_IO = ('Sine', 'InOut'); QUAD_IN = ('Quad', 'In'); QUART_OUT = ('Quart', 'Out')
-SINE_OUT = ('Sine', 'Out'); LINEAR = ('Linear', 'Out'); QUAD_OUT = ('Quad', 'Out')
+SINE_OUT = ('Sine', 'Out'); LINEAR = ('Linear', 'Out'); QUAD_OUT = ('Quad', 'Out'); QUART_IO = ('Quart', 'InOut')
 
 SWING_EASE = [None, SINE_IO, QUAD_IN, QUART_OUT, SINE_OUT]
 OVERLAP = {'Head': -0.01, 'RightArm': 0.012, 'LeftArm': 0.02, 'Sword': 0.03}
@@ -12,7 +12,7 @@ SPEC = {
     'Idle': dict(keys=IDLE, ease=[None, SINE_IO, SINE_IO], loop=True,
                  delays={'Head': 0.12, 'RightArm': 0.08, 'Sword': 0.16, 'LeftArm': 0.2},
                  doc="Standing still: wide stance, sword resting on the right shoulder, slow breathing."),
-    'Run': dict(keys=RUN, ease=[None] + [LINEAR] * (len(RUN) - 1), loop=True,
+    'Run': dict(keys=RUN, ease=[None] + [QUART_IO] * (len(RUN) - 1), loop=True,
                 delays={'Head': 0.03, 'Sword': 0.06, 'LeftArm': 0.03},
                 doc="Moving: a sprint, leaning in, the sword riding on the shoulder. Plays with the distance travelled (RUN_STRIDE studs a loop)."),
     'Walk': dict(keys=WALK, ease=[None] + [LINEAR] * (len(WALK) - 1), loop=True,
@@ -32,7 +32,7 @@ SPEC = {
                    fadeIn=HEAVY_SWING_TIMES[0], doc="Finisher (jump held): rising vertical slash."),
     'Chop': dict(keys=CHOP, ease=SWING_EASE, delays=OVERLAP, fadeOut=0.28,
                  fadeIn=HEAVY_SWING_TIMES[0], doc="Finisher (airborne): two-handed overhead chop."),
-    'DashFront': dict(keys=DASH_FRONT, ease=[None, QUART_OUT, SINE_OUT], fadeIn=0.03, fadeOut=0.16,
+    'DashFront': dict(keys=DASH_FRONT, ease=[None, QUART_OUT, SINE_IO, SINE_OUT], fadeIn=0.03, fadeOut=0.16,
                       delays={'Sword': 0.03}, doc="Front dash: leaning hard into it, sword trailing low behind."),
     'DashBack': dict(keys=DASH_BACK, ease=[None, QUART_OUT, SINE_OUT], fadeIn=0.03, fadeOut=0.16,
                      delays={'Sword': 0.03}, doc="Back dash: leaning back, sword held out in front."),

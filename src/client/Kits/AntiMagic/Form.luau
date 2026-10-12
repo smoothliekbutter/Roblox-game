@@ -666,6 +666,11 @@ local function driveRecall(character: Model, recall: Recall)
 				end
 			end
 		end
+		if recall.phase == "hang" and now - lastBolt > 0.2 then
+			lastBolt = now
+			U.ringBurst(CFrame.new(recall.position), RED, 1.5, 6.5, 0.2, 0.18)
+			redSparks(recall.position, 4, 0.3)
+		end
 		local bob = if recall.phase == "hang" then UP * math.sin(age * 7) * 0.3 else Vector3.zero
 		recall.handle.CFrame = CFrame.new(recall.position + bob)
 			* CFrame.Angles(0, spin, 0)

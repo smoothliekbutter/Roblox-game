@@ -21,8 +21,9 @@ Config.Movement = {
 
 Config.M1 = {
 	ComboLength = 4,
-	Damage = 2.5,
-	FinisherDamage = 4,
+	Damage = 2.2,
+	FinisherDamage = 3.5,
+	AwakenedShare = 0.5,
 
 	SwingCooldown = 0.36,
 	ResetTime = 1.2,
@@ -47,7 +48,7 @@ Config.M1 = {
 
 	Push = 10,
 	PushTime = 0.18,
-	LungeSpeed = 13,
+	LungeSpeed = 17,
 	LungeTime = 0.16,
 	AirFloat = 0.45,
 
@@ -59,8 +60,9 @@ Config.M1 = {
 }
 
 Config.Block = {
-	PerfectWindow = 0.2,
+	PerfectWindow = 0.12,
 	PerfectCooldown = 10,
+	PerfectAttemptCooldown = 3,
 	ParryStun = 1.25,
 	GuardBreakStun = 1.75,
 	Cooldown = 0.4,
@@ -84,8 +86,8 @@ Config.Dash = {
 
 Config.Awakening = {
 	Max = 100,
-	GainPerDamageDealt = 1.1,
-	GainPerDamageTaken = 0.5,
+	GainPerDamageDealt = 0.75,
+	GainPerDamageTaken = 0.35,
 }
 
 Config.States = {
@@ -94,7 +96,7 @@ Config.States = {
 	SlowMultiplier = 0.6,
 }
 
-Config.KitSwitchCombatLock = 5
+Config.CombatTag = 12
 
 Config.Ragdoll = {
 	Duration = 1.5,
@@ -112,13 +114,11 @@ Config.Physics = {
 Config.Regen = {
 	Rate = 0.01,
 	CombatRate = 0.0025,
-	CombatTime = 8,
 }
 
 Config.Evasive = {
 	Max = 100,
-	GainPerDamage = 5,
-	RegenPerSecond = 1.5,
+	RechargeTime = 30,
 	IFrames = 0.6,
 	Speed = 55,
 }

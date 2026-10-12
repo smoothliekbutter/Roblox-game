@@ -70,8 +70,8 @@ Kits.List = {
 		m1 = {
 			HitboxSize = Vector3.new(7, 6, 7),
 			HitboxOffset = 3.75,
-			Damage = 3,
-			FinisherDamage = 4.5,
+			Damage = 2.6,
+			FinisherDamage = 4,
 			WindUp = 0.11,
 			FinisherWindUp = 0.18,
 		},

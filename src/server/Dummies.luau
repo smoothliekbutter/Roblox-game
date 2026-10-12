@@ -71,9 +71,6 @@ local function runBehavior(model: Model, spec: Spec, humanoid: Humanoid, root: B
 		local canAct = CombatState.CanAct(model)
 
 		if spec.behavior == "Block" then
-			if target and canAct then
-				face(root, target.Position)
-			end
 			if canAct and not CombatState.IsBlocking(model) then
 				CombatService.SetBlock(model, true)
 			end

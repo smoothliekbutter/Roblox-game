@@ -1041,7 +1041,7 @@ local function cleanM1Hit(data, heavy: boolean): boolean
 	if not palette.cleanM1 or data.variant == nil then
 		return false
 	end
-	highlight(data.victim, Color3.new(1, 1, 1), if heavy then 0.18 else 0.1)
+	highlight(data.victim, Color3.new(1, 1, 1), if heavy then 0.32 else 0.25, 0.05)
 	if data.damage then
 		popup(data.position, string.format("%g", data.damage), Color3.new(1, 1, 1), if heavy then 1.2 else 1)
 	end
@@ -1086,7 +1086,11 @@ function Effects.Hit(data)
 	flash(position, palette.flash, 3.2, 0.12)
 	impactRing(position, direction, palette.flash, 0.5, 2.8, 0.18)
 	light(position, palette.hit, 4, 10, 0.15)
-	highlight(data.victim, Color3.new(1, 1, 1), 0.15)
+	if data.variant ~= nil then
+		highlight(data.victim, Color3.new(1, 1, 1), 0.25, 0.05)
+	else
+		highlight(data.victim, Color3.new(1, 1, 1), 0.15)
+	end
 	if data.damage then
 		popup(position, string.format("%g", data.damage), Color3.new(1, 1, 1))
 	end
@@ -1118,7 +1122,11 @@ function Effects.HeavyHit(data)
 	impactRing(position, direction, palette.heavy, 0.8, 5.5, 0.25)
 	task.delay(0.06, impactRing, position, direction, palette.flash, 0.5, 4, 0.22)
 	light(position, palette.heavy, 8, 18, 0.3)
-	highlight(data.victim, palette.heavy, 0.25)
+	if data.variant ~= nil then
+		highlight(data.victim, Color3.new(1, 1, 1), 0.32, 0.05)
+	else
+		highlight(data.victim, palette.heavy, 0.25)
+	end
 	if data.damage then
 		popup(position, string.format("%g", data.damage), palette.heavy, 1.3)
 	end

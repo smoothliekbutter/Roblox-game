@@ -1042,7 +1042,6 @@ function handlers.BlackDivider(data, character, root)
 				return
 			end
 			local spot = ground.Position
-			U.flash(spot + UP, BLACK, if perfect then 12 else 7, 0.25)
 			U.impactSpikes(spot + UP, RED, if perfect then 14 else 10, if perfect then 12 else 8, 0.28, WHITE_HOT)
 			U.scorch(spot, if perfect then 6 else 4, RED, 2.5)
 			U.dustWave(spot, if perfect then 14 else 10)

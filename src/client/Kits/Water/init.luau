@@ -162,6 +162,10 @@ VFX.RegisterKitEffect("Water", "Dash", function(data)
 		return
 	end
 	local direction = if type(data.direction) == "string" then data.direction else "Front"
+	local animation = ANIMS["Dash" .. direction]
+	if animation then
+		play(character, animation)
+	end
 	U.afterimage(character, WATER_LIGHT, 0.3)
 	for i = 1, 3 do
 		task.delay(i * 0.05, function()

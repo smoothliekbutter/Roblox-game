@@ -165,7 +165,6 @@ VFX.Register("PerfectDivider", function(data)
 	local position: Vector3 = data.position
 	blackLightning(position, 8, 6)
 	blackSmoke(position, 12, 4, 20)
-	U.flash(position, BLACK, 9, 0.25)
 	if U.isLocal(data.attacker) or U.isLocal(data.victim) then
 		CameraShake.Add(0.5)
 	end
