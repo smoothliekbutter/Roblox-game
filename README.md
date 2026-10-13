@@ -72,4 +72,4 @@ src/
 
 ## Also in this repo: PSAT Prep
 
-[`psat-prep/`](psat-prep/) is a separate PSAT study website with practice questions, explanations, and skill analytics. See [`psat-prep/README.md`](psat-prep/README.md).
+[`psat-prep/`](psat-prep/) is a separate PSAT study website with practice questions, explanations, a built-in Desmos calculator, and skill analytics. It's published with GitHub Pages at https://smoothliekbutter.github.io/Roblox-game/ (the root `index.html` and `.nojekyll` are for that). See [`psat-prep/README.md`](psat-prep/README.md).

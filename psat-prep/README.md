@@ -4,7 +4,17 @@ A study website for the PSAT/NMSQT and PSAT 10. Practice questions from the Coll
 
 It's plain HTML, CSS, and JavaScript. There's nothing to install and no server to run.
 
+## Website
+
+Once GitHub Pages is on, the site is at **https://smoothliekbutter.github.io/Roblox-game/** (it opens `psat-prep/`).
+
+To turn it on (one time): on GitHub, open the repo's **Settings → Pages**. Under **Build and deployment**, set **Source** to **Deploy from a branch**, pick the branch **`claude/gifted-cori-osoeco`** and the **`/ (root)`** folder, and select **Save**. The site goes live a minute or two later, and every push to that branch updates it. If the site files move to a different branch, pick that branch here instead.
+
+The `.nojekyll` file at the repo root tells GitHub to serve the files as they are.
+
 ## Start practicing
+
+Use the website above, or run it from your computer:
 
 1. Download this folder (`psat-prep`).
 2. Open `index.html` in Chrome, Edge, Firefox, or Safari.
