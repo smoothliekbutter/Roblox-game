@@ -622,3 +622,8 @@ label.tool { cursor: pointer; }
   .q-dots { display: none; }
   .stat .value { font-size: var(--step-2); }
 }
+
+/* ---------- Loading ---------- */
+.loading-panel { display: flex; flex-direction: column; gap: 12px; max-width: 640px; }
+.load-bar { height: 10px; border-radius: 5px; background: var(--grid); overflow: hidden; }
+.load-bar span { display: block; height: 100%; border-radius: 5px; background: var(--accent); transition: width 0.3s ease; }

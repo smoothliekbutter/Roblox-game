@@ -83,20 +83,26 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Question bank and taxonomy
+  // Question bank and taxonomy. The question files are large, so they load
+  // after the page appears; the bank is built once they arrive.
   // ---------------------------------------------------------------------------
-  const BANK_LOADED = Array.isArray(window.PSAT_BANK) && window.PSAT_BANK.length > 0;
-  const BANK_INFO = window.PSAT_BANK_INFO || null;
+  const DATA_FILES = [
+    ["data/questions-rw-ini.js", "Reading and Writing: Information and Ideas"],
+    ["data/questions-rw-cas.js", "Reading and Writing: Craft and Structure"],
+    ["data/questions-rw-eoi.js", "Reading and Writing: Expression of Ideas"],
+    ["data/questions-rw-sec.js", "Reading and Writing: Standard English Conventions"],
+    ["data/questions-math-h.js", "Math: Algebra"],
+    ["data/questions-math-p.js", "Math: Advanced Math"],
+    ["data/questions-math-q.js", "Math: Problem-Solving and Data Analysis"],
+    ["data/questions-math-s.js", "Math: Geometry and Trigonometry"],
+  ];
+  let BANK_LOADED = false;
+  let BANK_INFO = null;
+  let bankReady = false;
+  const bankFailed = [];
+  const bankProgress = { done: 0, total: DATA_FILES.length };
   const QUESTIONS = [];
   const QBYID = new Map();
-  for (const q of BANK_LOADED ? window.PSAT_BANK : window.PSAT_SAMPLE || []) {
-    if (!q || !q.id || !SECTIONS[q.section] || QBYID.has(q.id)) continue;
-    if (q.type !== "spr" && !(q.choices && q.choices.length)) continue;
-    if (!q.answer || !q.answer.length) continue;
-    QUESTIONS.push(q);
-    QBYID.set(q.id, q);
-  }
-
   const DOMAINS = [];
   const SKILLS = new Map();
   function addDomain(section, code, name, weight) {
@@ -110,30 +116,78 @@
     SKILLS.set(s.key, s);
     return s;
   }
-  for (const b of BLUEPRINT) {
-    const d = addDomain(b.section, b.code, b.name, b.weight);
-    for (const [code, name] of b.skills) addSkill(d, code, name);
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const el = document.createElement("script");
+      el.src = src;
+      el.onload = resolve;
+      el.onerror = () => {
+        el.remove();
+        reject(new Error(src));
+      };
+      document.body.appendChild(el);
+    });
   }
-  for (const q of QUESTIONS) {
-    let dom = DOMAINS.find((d) => d.section === q.section && ((q.domainCode && d.code === q.domainCode) || norm(d.name) === norm(q.domain)));
-    if (!dom) dom = addDomain(q.section, q.domainCode, q.domain || "Other", 0.1);
-    let sk = dom.skills.find((s) => norm(s.name) === norm(q.skill)) || (q.skillCode ? dom.skills.find((s) => s.code === q.skillCode) : null);
-    if (!sk) sk = addSkill(dom, q.skillCode, q.skill || "Other");
-    q._dom = dom;
-    q._skill = sk;
-    sk.qids.push(q.id);
+  // Loads every question file in parallel, retrying a failed one once.
+  async function loadBank() {
+    await Promise.all(
+      DATA_FILES.map(async ([src, label]) => {
+        try {
+          await loadScript(src);
+        } catch (e) {
+          await new Promise((r) => setTimeout(r, 1500));
+          try {
+            await loadScript(src + "?retry=" + Date.now());
+          } catch (e2) {
+            bankFailed.push(label);
+          }
+        }
+        bankProgress.done++;
+        updateLoading();
+      })
+    );
   }
-  // With the real bank loaded, drop SAT-only skills the PSAT bank doesn't cover
-  // (it has no Circles questions, for example).
-  if (BANK_LOADED) {
-    for (const d of DOMAINS) {
-      d.skills = d.skills.filter((s) => {
-        if (!s.qids.length) SKILLS.delete(s.key);
-        return s.qids.length > 0;
-      });
+  function buildBank() {
+    BANK_LOADED = Array.isArray(window.PSAT_BANK) && window.PSAT_BANK.length > 0;
+    BANK_INFO = window.PSAT_BANK_INFO || null;
+    // Files arrive in any order; keep Reading and Writing first, then domains in test order.
+    const domainOrder = (q) => {
+      const i = BLUEPRINT.findIndex((b) => b.section === q.section && (b.code === q.domainCode || norm(b.name) === norm(q.domain)));
+      return i < 0 ? 99 : i;
+    };
+    const source = (BANK_LOADED ? window.PSAT_BANK : window.PSAT_SAMPLE || []).slice().sort((x, y) => domainOrder(x) - domainOrder(y));
+    for (const q of source) {
+      if (!q || !q.id || !SECTIONS[q.section] || QBYID.has(q.id)) continue;
+      if (q.type !== "spr" && !(q.choices && q.choices.length)) continue;
+      if (!q.answer || !q.answer.length) continue;
+      QUESTIONS.push(q);
+      QBYID.set(q.id, q);
     }
+    for (const b of BLUEPRINT) {
+      const d = addDomain(b.section, b.code, b.name, b.weight);
+      for (const [code, name] of b.skills) addSkill(d, code, name);
+    }
+    for (const q of QUESTIONS) {
+      let dom = DOMAINS.find((d) => d.section === q.section && ((q.domainCode && d.code === q.domainCode) || norm(d.name) === norm(q.domain)));
+      if (!dom) dom = addDomain(q.section, q.domainCode, q.domain || "Other", 0.1);
+      let sk = dom.skills.find((s) => norm(s.name) === norm(q.skill)) || (q.skillCode ? dom.skills.find((s) => s.code === q.skillCode) : null);
+      if (!sk) sk = addSkill(dom, q.skillCode, q.skill || "Other");
+      q._dom = dom;
+      q._skill = sk;
+      sk.qids.push(q.id);
+    }
+    // With the real bank loaded, drop SAT-only skills the PSAT bank doesn't
+    // cover (it has no Circles questions, for example).
+    if (BANK_LOADED) {
+      for (const d of DOMAINS) {
+        d.skills = d.skills.filter((s) => {
+          if (!s.qids.length) SKILLS.delete(s.key);
+          return s.qids.length > 0;
+        });
+      }
+    }
+    for (const d of DOMAINS) for (const s of d.skills) s.weight = d.weight / Math.max(1, d.skills.length);
   }
-  for (const d of DOMAINS) for (const s of d.skills) s.weight = d.weight / Math.max(1, d.skills.length);
   const skillsOf = (section) => [...SKILLS.values()].filter((s) => !section || s.section === section);
 
   // ---------------------------------------------------------------------------
@@ -634,8 +688,35 @@
     if (location.hash !== "#" + r) location.hash = r;
     else render();
   }
+  function viewLoading() {
+    const pct = Math.round((bankProgress.done / bankProgress.total) * 100);
+    return `<section class="panel loading-panel">
+      <h1>Loading PSAT questions</h1>
+      <p class="lede">Getting every question and explanation ready. The first visit takes a few seconds; it's faster after that.</p>
+      <div class="load-bar" id="load-bar" role="progressbar" aria-label="Questions loaded" aria-valuemin="0" aria-valuemax="${bankProgress.total}" aria-valuenow="${bankProgress.done}"><span style="width:${pct}%"></span></div>
+      <p class="muted small" id="load-text">${bankProgress.done} of ${bankProgress.total} parts loaded. The Calculator tab works while you wait.</p>
+    </section>`;
+  }
+  function updateLoading() {
+    const bar = document.getElementById("load-bar");
+    if (!bar) return;
+    bar.setAttribute("aria-valuenow", String(bankProgress.done));
+    bar.firstElementChild.style.width = Math.round((bankProgress.done / bankProgress.total) * 100) + "%";
+    const t = document.getElementById("load-text");
+    if (t) t.textContent = `${bankProgress.done} of ${bankProgress.total} parts loaded. The Calculator tab works while you wait.`;
+  }
   function render() {
     let r = route();
+    if (!bankReady && r !== "calculator") {
+      document.querySelectorAll(".tabs a").forEach((a) => {
+        if (a.dataset.route === (TAB_FOR[r] || r)) a.setAttribute("aria-current", "page");
+        else a.removeAttribute("aria-current");
+      });
+      stopTimer();
+      view.classList.remove("wide");
+      view.innerHTML = viewLoading();
+      return;
+    }
     if (r === "session" && !session) r = "practice";
     if (r === "summary" && !lastSummary) r = "practice";
     if (r === "question" && !viewer) r = "review";
@@ -675,7 +756,10 @@
     return `<span class="meter"><span class="track"><span class="fill lvl-${l.key}" style="width:${w}%"></span></span><span class="pct">${st && st.n ? w + "%" : "–"}</span></span>`;
   }
   function sampleBanner() {
-    if (BANK_LOADED) return "";
+    const reload = `<button class="btn btn-secondary btn-sm" data-action="reload">Reload</button>`;
+    if (BANK_LOADED && !bankFailed.length) return "";
+    if (BANK_LOADED) return `<div class="banner"><p><b>Some questions didn't load:</b> ${esc(bankFailed.join(", "))}. Check your connection and reload the page to get them.</p>${reload}</div>`;
+    if (bankFailed.length) return `<div class="banner"><p><b>The question bank didn't load.</b> Check your internet connection and reload the page. Until then you can try ${QUESTIONS.length} sample questions.</p>${reload}</div>`;
     return `<div class="banner"><p><b>Sample mode.</b> The full College Board PSAT question bank isn't loaded yet, so you're practicing with ${QUESTIONS.length} original sample questions. Run <code>node scripts/fetch-questions.mjs</code> in the <code>psat-prep</code> folder to download every question and explanation.</p></div>`;
   }
   function statusChips(id) {
@@ -1691,7 +1775,9 @@
   function renderFooter() {
     const el = document.getElementById("footer");
     if (!el) return;
-    if (BANK_LOADED) {
+    if (!bankReady) {
+      el.textContent = "";
+    } else if (BANK_LOADED) {
       const when = BANK_INFO && BANK_INFO.fetchedAt ? new Date(BANK_INFO.fetchedAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : "";
       el.innerHTML = `Questions and explanations come from the College Board SAT Suite Question Bank${BANK_INFO && BANK_INFO.exam ? ` (${esc(BANK_INFO.exam)})` : ""}${when ? `, downloaded ${esc(when)}` : ""}. ${QUESTIONS.length.toLocaleString()} questions. This study site is not affiliated with or endorsed by College Board.`;
     } else {
@@ -1714,6 +1800,9 @@
     "practice-skill"(el) {
       const sk = SKILLS.get(el.dataset.skill);
       if (sk && sk.qids.length) startSession(skillSet(sk, 10), { label: sk.name });
+    },
+    reload() {
+      location.reload();
     },
     "hide-demo"() {
       setPref("hideDemo", true);
@@ -2053,14 +2142,22 @@
   // ---------------------------------------------------------------------------
   function start(hot) {
     loadLocal();
-    if (hot && typeof hot === "object") {
-      if (hot.session && hot.session.ids && hot.session.ids.every((id) => QBYID.has(id))) session = hot.session;
-      if (hot.lastSummary) lastSummary = hot.lastSummary;
-      if (hot.viewer) viewer = hot.viewer;
-    }
     render();
     setSync("local");
     initCloud();
+    loadBank().then(() => {
+      buildBank();
+      bankReady = true;
+      invalidate();
+      if (hot && typeof hot === "object") {
+        if (hot.session && hot.session.ids && hot.session.ids.every((id) => QBYID.has(id))) session = hot.session;
+        if (hot.lastSummary) lastSummary = hot.lastSummary;
+        if (hot.viewer) viewer = hot.viewer;
+      }
+      // Don't redraw a calculator someone is typing in; the bank isn't used there.
+      if (route() === "calculator") renderFooter();
+      else render();
+    });
   }
   const hotApi = window.claude && window.claude.hot;
   try {

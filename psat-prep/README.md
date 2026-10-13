@@ -6,11 +6,17 @@ It's plain HTML, CSS, and JavaScript. There's nothing to install and no server t
 
 ## Website
 
-Once GitHub Pages is on, the site is at **https://smoothliekbutter.github.io/Roblox-game/** (it opens `psat-prep/`).
+The site is live at **https://smoothliekbutter.github.io/Roblox-game/**. Share that link; nobody needs an account, and each person's progress saves in their own browser.
 
-To turn it on (one time): on GitHub, open the repo's **Settings → Pages**. Under **Build and deployment**, set **Source** to **Deploy from a branch**, pick the branch **`claude/gifted-cori-osoeco`** and the **`/ (root)`** folder, and select **Save**. The site goes live a minute or two later, and every push to that branch updates it. If the site files move to a different branch, pick that branch here instead.
+GitHub Pages serves it from the `gh-pages` branch, which holds a build of this folder. To publish changes:
 
-The `.nojekyll` file at the repo root tells GitHub to serve the files as they are.
+```
+psat-prep/scripts/publish-site.sh
+```
+
+That runs `scripts/build-site.mjs`, which copies the site into `dist/` and moves the ~2,600 math pictures out of the question files into `data/img/`, so visitors download about 3.5 MB to start instead of about 12 MB and only fetch pictures for questions they open. Then it commits `dist/` to `gh-pages` and pushes. The site updates a minute or two later.
+
+The question files load after the page appears, with a progress bar. If one fails it's retried once, and the page says which part is missing if it still fails.
 
 ## Start practicing
 

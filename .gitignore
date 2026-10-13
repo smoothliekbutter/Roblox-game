@@ -4,3 +4,4 @@ sourcemap.json
 
 # PSAT Prep question download cache
 psat-prep/.cache/
+psat-prep/dist/
