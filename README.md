@@ -3,5 +3,5 @@
 This branch is the published copy of the PSAT Prep site, served by GitHub Pages at
 https://smoothliekbutter.github.io/Roblox-game/
 
-Don't edit it by hand. The source lives in `psat-prep/` on the `claude/gifted-cori-osoeco` branch;
-copy `index.html`, `styles.css`, `app.js`, and `data/` from there to update the site.
+Don't edit it by hand. It's built from `psat-prep/` on the `claude/gifted-cori-osoeco` branch by
+`scripts/build-site.mjs` and published with `scripts/publish-site.sh`.
