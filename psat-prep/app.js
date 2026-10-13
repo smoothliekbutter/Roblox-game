@@ -116,36 +116,64 @@
     SKILLS.set(s.key, s);
     return s;
   }
+  // A file that hasn't arrived after this long counts as failed and is retried
+  // (the slowest file is about 3 MB compressed).
+  const FILE_TIMEOUT_MS = 90000;
   function loadScript(src) {
     return new Promise((resolve, reject) => {
       const el = document.createElement("script");
+      const timer = setTimeout(() => {
+        el.onload = el.onerror = null;
+        reject(new Error("timeout " + src));
+      }, FILE_TIMEOUT_MS);
       el.src = src;
-      el.onload = resolve;
+      el.onload = () => {
+        clearTimeout(timer);
+        resolve();
+      };
       el.onerror = () => {
+        clearTimeout(timer);
         el.remove();
         reject(new Error(src));
       };
       document.body.appendChild(el);
     });
   }
-  // Loads every question file in parallel, retrying a failed one once.
-  async function loadBank() {
-    await Promise.all(
+  // Loads every question file in parallel, retrying a failed one up to twice.
+  // Resolves when all have settled, or early if someone chooses to start with
+  // what has arrived (see "start-partial").
+  let finishLoadingEarly = null;
+  const pendingFiles = new Set(DATA_FILES.map(([, label]) => label));
+  function loadBank() {
+    const all = Promise.all(
       DATA_FILES.map(async ([src, label]) => {
-        try {
-          await loadScript(src);
-        } catch (e) {
-          await new Promise((r) => setTimeout(r, 1500));
+        for (let attempt = 0; attempt < 3; attempt++) {
           try {
-            await loadScript(src + "?retry=" + Date.now());
-          } catch (e2) {
-            bankFailed.push(label);
+            await loadScript(attempt ? `${src}?retry=${attempt}-${Date.now()}` : src);
+            pendingFiles.delete(label);
+            break;
+          } catch (e) {
+            if (attempt === 2) {
+              pendingFiles.delete(label);
+              if (!bankReady) bankFailed.push(label);
+            } else await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
           }
         }
         bankProgress.done++;
         updateLoading();
       })
     );
+    const early = new Promise((resolve) => {
+      finishLoadingEarly = () => {
+        for (const label of pendingFiles) if (!bankFailed.includes(label)) bankFailed.push(label);
+        resolve();
+      };
+    });
+    setTimeout(() => {
+      const b = document.getElementById("load-early");
+      if (b && !bankReady) b.hidden = false;
+    }, 15000);
+    return Promise.race([all, early]);
   }
   function buildBank() {
     BANK_LOADED = Array.isArray(window.PSAT_BANK) && window.PSAT_BANK.length > 0;
@@ -695,6 +723,7 @@
       <p class="lede">Getting every question and explanation ready. The first visit takes a few seconds; it's faster after that.</p>
       <div class="load-bar" id="load-bar" role="progressbar" aria-label="Questions loaded" aria-valuemin="0" aria-valuemax="${bankProgress.total}" aria-valuenow="${bankProgress.done}"><span style="width:${pct}%"></span></div>
       <p class="muted small" id="load-text">${bankProgress.done} of ${bankProgress.total} parts loaded. The Calculator tab works while you wait.</p>
+      <div id="load-early" hidden><p class="small">This is taking a while. Your connection may be slow.</p><div class="btn-row" style="margin-top:8px"><button class="btn btn-secondary btn-sm" data-action="start-partial">Start with what's loaded</button><button class="btn btn-ghost btn-sm" data-action="reload">Reload</button></div></div>
     </section>`;
   }
   function updateLoading() {
@@ -1803,6 +1832,9 @@
     },
     reload() {
       location.reload();
+    },
+    "start-partial"() {
+      if (finishLoadingEarly) finishLoadingEarly();
     },
     "hide-demo"() {
       setPref("hideDemo", true);
