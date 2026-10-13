@@ -556,6 +556,7 @@ body.calc-expanded { overflow: hidden; }
 /* Desmos workspace: calculator tabs and file buttons above the calculator */
 .desmos { display: flex; flex-direction: column; width: 100%; min-width: 0; min-height: 0; }
 .desmos-bar {
+  position: relative; z-index: 2;
   display: flex; align-items: center; justify-content: space-between; gap: 6px 10px; flex-wrap: wrap;
   padding: 6px 8px; border-bottom: 1px solid var(--rule); background: var(--sheet);
 }
@@ -571,17 +572,32 @@ body.calc-expanded { overflow: hidden; }
 .desmos-msg { font-size: var(--step--1); color: var(--ink-2); padding: 6px 12px; border-top: 1px solid var(--rule); }
 .desmos-msg:empty { display: none; }
 label.tool { cursor: pointer; }
-.desmos-more { position: relative; }
+/* Menus hang from the right edge of the toolbar so they stay inside the panel at any width */
+.desmos-more { position: static; }
 .desmos-more summary { list-style: none; }
 .desmos-more summary::-webkit-details-marker { display: none; }
 .desmos-menu {
-  position: absolute; right: 0; top: calc(100% + 6px); z-index: 50; min-width: 200px;
+  position: absolute; right: 8px; top: calc(100% - 2px); z-index: 50; min-width: 200px; max-width: calc(100% - 16px);
   display: flex; flex-direction: column; padding: 6px;
   background: var(--sheet); border: 1px solid var(--rule-strong); border-radius: 10px; box-shadow: 0 10px 28px rgba(10, 14, 20, 0.18);
 }
 .desmos-menu p { font-size: var(--step--1); color: var(--ink-3); padding: 4px 8px; }
 .desmos-menu a { padding: 7px 8px; border-radius: 6px; text-decoration: none; color: var(--ink); font-weight: 600; }
 .desmos-menu a:hover { background: var(--paper); }
+.desmos-more[open] > summary { background: var(--accent-wash); color: var(--accent); }
+.reg-menu { width: 360px; gap: 8px; padding: 12px; }
+.reg-menu > p { padding: 0; color: var(--ink-2); }
+.reg-label { font-size: var(--step--1); font-weight: 700; color: var(--ink-2); }
+.reg-menu select { width: 100%; }
+.reg-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.reg-model {
+  font: inherit; text-align: left; cursor: pointer; min-width: 0;
+  display: flex; flex-direction: column; gap: 2px; padding: 8px 10px;
+  border-radius: 8px; border: 1px solid var(--rule-strong); background: var(--sheet); color: var(--ink);
+}
+.reg-model:hover { border-color: var(--accent); background: var(--accent-wash); }
+.reg-model b { font-size: var(--step--1); }
+.reg-model span { font-size: 0.75rem; color: var(--ink-3); font-family: var(--font-read); overflow-wrap: anywhere; }
 @media (max-width: 960px) {
   .session.with-calc { grid-template-columns: minmax(0, 1fr); }
   .calc-dock { position: static; order: 2; height: 540px; }

@@ -49,6 +49,7 @@ The **Calculator** tab, and the calculator panel on Math questions, have everyth
 
 - **Graphing**, **Scientific**, and **Four-function** calculators, switchable with tabs
 - Every graphing feature turned on: tables, sliders, regressions (including custom ones), statistics and distributions, inequalities, points of interest and tracing, folders, notes, images, actions, the full keyboard and function menus, and the settings menu (degrees or radians, grid, axes, projector mode, braille)
+- **Regression** menu: pick linear, quadratic, cubic, exponential, power, logarithmic, logistic, or sinusoidal, and it fits that model to a table of data (or adds an empty table for you to fill in). Desmos shows r², the fitted parameters, and residuals under the equation. Fit several models to the same table to compare them; each gets its own parameters.
 - **New**, **Open**, and **Save** for calculator files (.json), and **Image** to save the graph as a PNG
 - **Expand** to fill the screen during practice (<kbd>Esc</kbd> shrinks it again)
 - Your work stays as you move between questions and saves in your browser, so it's still there after a reload

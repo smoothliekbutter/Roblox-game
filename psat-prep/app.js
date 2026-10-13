@@ -1104,8 +1104,110 @@
     image: svgIcon('<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4 17 5-4.5 3.5 3 3-2.5 4.5 4"/>'),
     expand: svgIcon('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'),
     collapse: svgIcon('<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>'),
+    regress: svgIcon('<path d="M4 20 20 5"/><circle cx="6.5" cy="14.5" r="1.3"/><circle cx="10" cy="15" r="1.3"/><circle cx="13" cy="9.5" r="1.3"/><circle cx="17.5" cy="10" r="1.3"/>'),
     out: svgIcon('<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>'),
   };
+
+  // Regression models for the Regression menu. @X and @Y become the table's
+  // columns; @a, @b, ... become parameters (subscripted when a graph already
+  // uses the plain letters), which Desmos fits to the data.
+  const REGRESSIONS = [
+    { key: "linear", name: "Linear", shows: "y = mx + b", latex: "@Y\\sim @m@X+@b" },
+    { key: "quadratic", name: "Quadratic", shows: "y = ax² + bx + c", latex: "@Y\\sim @a@X^{2}+@b@X+@c" },
+    { key: "cubic", name: "Cubic", shows: "y = ax³ + bx² + cx + d", latex: "@Y\\sim @a@X^{3}+@b@X^{2}+@c@X+@d" },
+    { key: "exponential", name: "Exponential", shows: "y = a · bˣ", latex: "@Y\\sim @a@b^{@X}" },
+    { key: "power", name: "Power", shows: "y = a · xᵇ", latex: "@Y\\sim @a@X^{@b}" },
+    { key: "logarithmic", name: "Logarithmic", shows: "y = a + b ln x", latex: "@Y\\sim @a+@b\\ln\\left(@X\\right)" },
+    { key: "logistic", name: "Logistic", shows: "y = c ⁄ (1 + a·e⁻ᵇˣ)", latex: "@Y\\sim\\frac{@c}{1+@ae^{-@b@X}}" },
+    { key: "sinusoidal", name: "Sinusoidal", shows: "y = a sin(bx + c) + d", latex: "@Y\\sim @a\\sin\\left(@b@X+@c\\right)+@d" },
+  ];
+  const SUBSCRIPT = "₀₁₂₃₄₅₆₇₈₉";
+  const prettyVar = (latex) => String(latex).replace(/_\{?(\d+)\}?/g, (m, d) => d.replace(/\d/g, (x) => SUBSCRIPT[x]));
+  const colName = (base, k) => (k < 10 ? `${base}_${k}` : `${base}_{${k}}`);
+  function dataTables(calc) {
+    return calc
+      .getExpressions()
+      .filter((e) => e.type === "table" && e.columns && e.columns.length >= 2 && e.columns[0].latex && e.columns[1].latex)
+      .map((e) => ({
+        id: e.id,
+        x: e.columns[0].latex,
+        y: e.columns[1].latex,
+        points: (e.columns[0].values || []).filter((v, i) => String(v).trim() !== "" && String((e.columns[1].values || [])[i] || "").trim() !== "").length,
+      }));
+  }
+  function allLatex(exprs) {
+    const out = [];
+    for (const e of exprs) {
+      if (e.latex) out.push(e.latex.replace(/\s+/g, ""));
+      if (e.columns) for (const c of e.columns) if (c.latex) out.push(c.latex.replace(/\s+/g, ""));
+    }
+    return out;
+  }
+  // First k where neither x_k nor y_k appears anywhere in the graph.
+  function freeColumnIndex(exprs) {
+    const text = allLatex(exprs).join(" ");
+    for (let k = 1; k < 100; k++) {
+      if (!new RegExp(`[xy]_(\\{${k}\\}|${k}(?![0-9]))`).test(text)) return k;
+    }
+    return 100;
+  }
+  // 1 for plain a, b, c, ...; otherwise the next subscript no other
+  // regression or definition is using.
+  function regressionIndex(exprs) {
+    const lat = allLatex(exprs);
+    let n = lat.filter((l) => l.includes("\\sim")).length + 1;
+    const taken = (k) =>
+      lat.some((l) =>
+        ["a", "b", "c", "d", "m"].some((b) => {
+          const name = k === 1 ? b : `${b}_{${k}}`;
+          return l.startsWith(name + "=") || (k > 1 && l.includes("\\sim") && l.includes(name));
+        })
+      );
+    while (taken(n)) n++;
+    return n;
+  }
+  function addRegression(calc, model, tableId) {
+    const exprs = calc.getExpressions();
+    const table = tableId ? dataTables(calc).find((t) => t.id === tableId) : null;
+    let X, Y;
+    if (table) {
+      X = table.x;
+      Y = table.y;
+    } else {
+      const k = freeColumnIndex(exprs);
+      X = colName("x", k);
+      Y = colName("y", k);
+      calc.setExpression({ id: "psat-table-" + Date.now().toString(36), type: "table", columns: [{ latex: X, values: ["", "", "", "", "", ""] }, { latex: Y, values: ["", "", "", "", "", ""] }] });
+    }
+    const n = regressionIndex(exprs);
+    const param = (b) => (n === 1 ? b : `${b}_{${n}}`);
+    const latex = model.latex.replace(/@X/g, X).replace(/@Y/g, Y).replace(/@([a-z])/g, (m, b) => param(b));
+    calc.setExpression({ id: "psat-reg-" + Date.now().toString(36), latex });
+    try {
+      calc.updateSettings({ expressionsCollapsed: false });
+    } catch (e) {
+      /* older builds lack this setting */
+    }
+    saveCalcState("graphing");
+    const name = model.name.toLowerCase();
+    const an = /^[aeiou]/.test(name) ? "an" : "a";
+    setCalcMessage(
+      table
+        ? `Added ${an} ${name} regression of ${prettyVar(Y)} on ${prettyVar(X)}. Desmos shows r² and the fitted values under the equation.`
+        : `Added a table and ${an} ${name} regression. Type your data into the ${prettyVar(X)} and ${prettyVar(Y)} columns (or paste two columns from a spreadsheet); r² and the fitted values update as you type.`
+    );
+  }
+  function fillRegressionTables() {
+    const sel = document.getElementById("reg-table");
+    const c = calcs.graphing;
+    if (!sel) return;
+    const tables = c ? dataTables(c.calc) : [];
+    const keep = sel.value;
+    sel.innerHTML =
+      tables.map((t) => `<option value="${esc(t.id)}">Table: ${esc(prettyVar(t.x))} and ${esc(prettyVar(t.y))} (${plural(t.points, "point")})</option>`).join("") +
+      `<option value="">New table</option>`;
+    if (keep && [...sel.options].some((o) => o.value === keep)) sel.value = keep;
+  }
 
   function workspaceHtml(mode) {
     const type = calcType();
@@ -1121,7 +1223,19 @@
           <label class="tool" for="calc-open-file" title="Open a saved calculator file">${ICON_DESMOS.open}<span class="tl">Open</span></label>
           <input type="file" id="calc-open-file" accept=".json,application/json" data-change="calc-open" hidden>
           ${act("calc-save", ICON_DESMOS.save, "Save")}
-          ${type === "graphing" ? act("calc-image", ICON_DESMOS.image, "Image") : ""}
+          ${
+            type === "graphing"
+              ? `<details class="desmos-more desmos-reg"><summary class="tool" title="Fit a regression to a table of data">${ICON_DESMOS.regress}<span class="tl">Regression</span></summary>
+            <div class="desmos-menu reg-menu">
+              <p>Fit a curve to a table of data. Desmos finds the parameters and shows r² under the equation.</p>
+              <label class="reg-label" for="reg-table">Data</label>
+              <select id="reg-table"><option value="">New table</option></select>
+              <div class="reg-grid">${REGRESSIONS.map((m) => `<button type="button" class="reg-model" data-action="calc-regress" data-model="${m.key}"><b>${m.name}</b><span>${esc(m.shows)}</span></button>`).join("")}</div>
+            </div>
+          </details>
+          ${act("calc-image", ICON_DESMOS.image, "Image")}`
+              : ""
+          }
           ${mode === "dock" ? act("calc-expand", calcExpanded ? ICON_DESMOS.collapse : ICON_DESMOS.expand, calcExpanded ? "Shrink" : "Expand", `aria-pressed="${calcExpanded}"`) : ""}
           <details class="desmos-more"><summary class="tool" title="More Desmos tools">${ICON_DESMOS.out}<span class="tl">More</span></summary>
             <div class="desmos-menu"><p>Open on desmos.com:</p>${DESMOS_ONLINE.map(([n, u]) => `<a href="${u}" target="_blank" rel="noopener">${n} ↗</a>`).join("")}</div>
@@ -1345,12 +1459,24 @@
     reader.readAsText(file);
   }
   window.addEventListener("pagehide", () => saveCalcState());
+  document.addEventListener(
+    "toggle",
+    (e) => {
+      if (e.target.classList && e.target.classList.contains("desmos-reg") && e.target.open) fillRegressionTables();
+    },
+    true
+  );
+  document.addEventListener("click", (e) => {
+    document.querySelectorAll("details.desmos-more[open]").forEach((d) => {
+      if (!d.contains(e.target)) d.open = false;
+    });
+  });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && calcExpanded) setExpanded(false);
   });
 
   function viewCalculator() {
-    return `<div class="page-head"><div><h1>Desmos calculator</h1><p class="lede">The same Desmos calculators you get on the digital PSAT, with every tool turned on: tables, sliders, regressions, statistics, folders, notes, and images. Your work saves in this browser. Use Save to keep a copy as a file.</p></div></div>
+    return `<div class="page-head"><div><h1>Desmos calculator</h1><p class="lede">The same Desmos calculators you get on the digital PSAT, with every tool turned on: tables, sliders, regressions, statistics, folders, notes, and images. Use <b>Regression</b> to fit a line or curve to a table of data. Your work saves in this browser; use Save to keep a copy as a file.</p></div></div>
     <div class="calc-page">${workspaceHtml("page")}</div>`;
   }
 
@@ -1710,6 +1836,15 @@
     },
     "calc-image"() {
       saveCalcImage();
+    },
+    "calc-regress"(el) {
+      const c = calcs.graphing;
+      const model = REGRESSIONS.find((m) => m.key === el.dataset.model);
+      if (!c || !model) return;
+      const sel = document.getElementById("reg-table");
+      addRegression(c.calc, model, sel ? sel.value : "");
+      const d = el.closest("details");
+      if (d) d.open = false;
     },
     "calc-expand"() {
       setExpanded(!calcExpanded);
